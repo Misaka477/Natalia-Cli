@@ -10,6 +10,11 @@ import {
   buildPlanDocUpdated,
 } from "./plan-registry";
 import {
+  buildWorkContractAccepted,
+  buildWorkContractDrafted,
+  validateWorkContractFields,
+} from "./work-contract";
+import {
   agentActionNode,
   approvalEdge,
   approvalNode,
@@ -39,6 +44,9 @@ export function createWorkLedgerController(
     buildPlanDocUpdated,
     evaluateDrift: driftEvaluator.evaluate,
     buildDriftFindingUpdate,
+    buildWorkContractDrafted,
+    buildWorkContractAccepted,
+    validateWorkContractFields,
     agentActionNode,
     approvalEdge,
     approvalNode,

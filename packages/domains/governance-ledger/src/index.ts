@@ -6,8 +6,13 @@ export {
 } from "./instance-store";
 export {
   SELF_PROTECTION_RULES,
+  buildConstitutionRuleEnabledChange,
+  buildConstitutionRuleRemoved,
+  buildProposedConstitutionRule,
   recordDecision,
   seedConstitutionRules,
+  validateConstitutionRuleProposal,
+  type ConstitutionRuleProposal,
 } from "./constitution-ledger";
 export {
   boundValidationOutcome,

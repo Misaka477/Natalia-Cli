@@ -1,4 +1,11 @@
-import { recordDecision, seedConstitutionRules } from "./constitution-ledger";
+import {
+  buildConstitutionRuleEnabledChange,
+  buildConstitutionRuleRemoved,
+  buildProposedConstitutionRule,
+  recordDecision,
+  seedConstitutionRules,
+  validateConstitutionRuleProposal,
+} from "./constitution-ledger";
 import {
   boundValidationOutcome,
   buildCompletionRecorded,
@@ -15,5 +22,9 @@ export function createGovernanceLedgerController(): GovernanceLedgerController {
     buildCompletionRecorded,
     buildEvidenceRecorded,
     evidenceStatusForPlanState,
+    validateConstitutionRuleProposal,
+    buildProposedConstitutionRule,
+    buildConstitutionRuleEnabledChange,
+    buildConstitutionRuleRemoved,
   };
 }

@@ -4,7 +4,8 @@ export const constitutionRuleSchema = z.object({
   statement: z.string().min(1),
   scope: z.enum(["project", "package", "sandbox", "task", "release"]),
   priority: z.enum(["critical", "high", "medium", "low"]),
-  source: z.enum(["user", "master_plan", "policy"]),
+  /** `agent_proposed` marks a model-authored rule approved by the user (EI §3.8 P-1.c). */
+  source: z.enum(["user", "master_plan", "policy", "agent_proposed"]),
   enforcement: z.enum(["deny", "approval", "warn"]),
   overridePolicy: z.enum(["forbidden", "user_scoped", "user_explicit"]),
   evidenceRefs: z.array(z.string()).default([]),

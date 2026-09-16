@@ -20,6 +20,16 @@ export {
 } from "./plan-registry";
 export { createWorkLedgerController } from "./work-ledger-controller";
 export {
+  buildWorkContractAccepted,
+  buildWorkContractDrafted,
+  isPlaceholderContractValue,
+  isUnverifiableContract,
+  validateWorkContractFields,
+  type WorkContractAcceptedEvent,
+  type WorkContractDraftedEvent,
+  type WorkContractFields,
+} from "./work-contract";
+export {
   agentActionNode,
   agentActionNodeID,
   approvalEdge,

@@ -1418,14 +1418,16 @@ export function applySessionTurnFact(
   }
 }
 
-/** Effective constitution rules keyed by ruleID, plus raw override grants. */
+/** Effective constitution rules keyed by ruleID, plus raw override grants and
+ * the set of rules disabled by `rule_updated(enabled:false)`. */
 export type SessionConstitutionFactState = {
   rules: Map<string, ConstitutionRuleAdded>;
+  disabled: Set<string>;
   overrides: ConstitutionOverrideGranted[];
 };
 
 export function emptySessionConstitutionFactState(): SessionConstitutionFactState {
-  return { rules: new Map(), overrides: [] };
+  return { rules: new Map(), disabled: new Set(), overrides: [] };
 }
 
 export function applySessionConstitutionFact(
@@ -1434,18 +1436,31 @@ export function applySessionConstitutionFact(
 ): void {
   if (event.type === "constitution.rule_added") {
     if (!state.rules.has(event.ruleID)) state.rules.set(event.ruleID, event);
+    state.disabled.delete(event.ruleID);
     return;
   }
   if (event.type === "constitution.rule_updated") {
+    // A disable is reversible (enabled:false) and keeps the rule in the
+    // journal; only rule_removed is the durable tombstone.
+    if (event.enabled === false) state.disabled.add(event.ruleID);
+    else if (event.enabled === true) state.disabled.delete(event.ruleID);
     const existing = state.rules.get(event.ruleID);
     if (!existing) return;
     state.rules.set(event.ruleID, {
       ...existing,
-      statement: event.statement ?? existing.statement,
-      priority: event.priority ?? existing.priority,
-      enforcement: event.enforcement ?? existing.enforcement,
-      overridePolicy: event.overridePolicy ?? existing.overridePolicy,
+      ...(event.statement ? { statement: event.statement } : {}),
+      ...(event.priority ? { priority: event.priority } : {}),
+      ...(event.enforcement ? { enforcement: event.enforcement } : {}),
+      ...(event.overridePolicy ? { overridePolicy: event.overridePolicy } : {}),
+      ...(event.appliesTo ? { appliesTo: event.appliesTo } : {}),
     });
+    return;
+  }
+  if (event.type === "constitution.rule_removed") {
+    // The tombstone stays in the journal (history is complete); the effective
+    // set simply drops the rule.
+    state.rules.delete(event.ruleID);
+    state.disabled.delete(event.ruleID);
     return;
   }
   if (event.type === "constitution.override_granted")
@@ -1455,7 +1470,9 @@ export function applySessionConstitutionFact(
 export function sessionConstitutionRulesFrom(
   state: SessionConstitutionFactState,
 ): ConstitutionRuleAdded[] {
-  return [...state.rules.values()];
+  return [...state.rules.values()].filter(
+    (rule) => !state.disabled.has(rule.ruleID),
+  );
 }
 
 /** Overrides are time-filtered at read time, so the fold stays deterministic. */
@@ -1603,6 +1620,82 @@ export function sessionDecisionRecordsFrom(
 }
 
 /**
+ * Work contracts keyed by planID (EI §8.2): the latest accepted contract
+ * ("current" — the R drift is judged against) or, when none was accepted, the
+ * latest draft. A draft is marked stale when the plan document changed after
+ * it was extracted: the draft is bound to a planVersion, and a document edit
+ * produces a new version, so the draft must be re-proposed. An accepted
+ * contract is the user's promise and stays current until a new one is
+ * approved — nothing replaces it silently.
+ */
+export type SessionWorkContractFactState = {
+  contracts: Map<string, ProjectedWorkContract>;
+};
+
+export type ProjectedWorkContract = {
+  planID: string;
+  version: number;
+  scope?: string[];
+  verification?: string[];
+  constraints?: string[];
+  status: "current" | "draft";
+  /** The plan document changed after this draft was written. */
+  stale?: boolean;
+  /** Approved with no extractable fields — advisory-only judgment. */
+  unverifiable?: boolean;
+  acceptedBy?: "user";
+  acceptedAt?: string;
+};
+
+export function emptySessionWorkContractFactState(): SessionWorkContractFactState {
+  return { contracts: new Map() };
+}
+
+export function applySessionWorkContractFact(
+  state: SessionWorkContractFactState,
+  event: RuntimeEvent,
+): void {
+  if (event.type === "work_contract.drafted") {
+    state.contracts.set(event.planID, {
+      planID: event.planID,
+      version: event.planVersion,
+      ...(event.scope ? { scope: event.scope } : {}),
+      ...(event.verification ? { verification: event.verification } : {}),
+      ...(event.constraints ? { constraints: event.constraints } : {}),
+      status: "draft",
+    });
+    return;
+  }
+  if (event.type === "work_contract.accepted") {
+    state.contracts.set(event.planID, {
+      planID: event.planID,
+      version: event.planVersion,
+      ...(event.scope ? { scope: event.scope } : {}),
+      ...(event.verification ? { verification: event.verification } : {}),
+      ...(event.constraints ? { constraints: event.constraints } : {}),
+      status: "current",
+      acceptedBy: event.acceptedBy,
+      acceptedAt: event.acceptedAt,
+      ...(event.unverifiable ? { unverifiable: true } : {}),
+    });
+    return;
+  }
+  // A plan document edit invalidates a draft extracted from the older version;
+  // an accepted contract is the user's commitment and survives until a new
+  // one is approved.
+  if (event.type === "plan.doc.updated") {
+    const contract = state.contracts.get(event.planID);
+    if (contract && contract.status === "draft") contract.stale = true;
+  }
+}
+
+export function sessionWorkContractsFrom(
+  state: SessionWorkContractFactState,
+): ProjectedWorkContract[] {
+  return [...state.contracts.values()];
+}
+
+/**
  * Intelligence snapshot facts, folded so `buildSessionIntelligenceSnapshot`
  * and the incremental hot state share one reducer. Counts are cumulative
  * workspace facts; latest output / terminal / sandbox are last-write-wins.
@@ -1696,6 +1789,7 @@ export function sessionIntelligenceFactsFromEvents(
 export type SessionFactState = {
   turns: SessionTurnFactState;
   constitution: SessionConstitutionFactState;
+  workContracts: SessionWorkContractFactState;
   drift: SessionDriftFactState;
   mailbox: SessionMailboxFactState;
   decisions: SessionDecisionFactState;
@@ -1748,6 +1842,7 @@ export function emptySessionFactState(): SessionFactState {
   return {
     turns: emptySessionTurnFactState(),
     constitution: emptySessionConstitutionFactState(),
+    workContracts: emptySessionWorkContractFactState(),
     drift: emptySessionDriftFactState(),
     mailbox: emptySessionMailboxFactState(),
     decisions: emptySessionDecisionFactState(),
@@ -1764,6 +1859,7 @@ export function applySessionFactEvent(
 ): void {
   applySessionTurnFact(state.turns, event);
   applySessionConstitutionFact(state.constitution, event);
+  applySessionWorkContractFact(state.workContracts, event);
   applySessionDriftFact(state.drift, event);
   applySessionMailboxFact(state.mailbox, event);
   applySessionDecisionFact(state.decisions, event);
@@ -1790,6 +1886,12 @@ export function sessionFactConstitutionRules(
   state: SessionFactState,
 ): ConstitutionRuleAdded[] {
   return sessionConstitutionRulesFrom(state.constitution);
+}
+
+export function sessionFactWorkContracts(
+  state: SessionFactState,
+): ProjectedWorkContract[] {
+  return sessionWorkContractsFrom(state.workContracts);
 }
 
 export function sessionFactConstitutionOverrides(

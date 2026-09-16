@@ -1,8 +1,12 @@
 import { expect, test } from "bun:test";
 import {
   SELF_PROTECTION_RULES,
+  buildConstitutionRuleEnabledChange,
+  buildConstitutionRuleRemoved,
+  buildProposedConstitutionRule,
   recordDecision,
   seedConstitutionRules,
+  validateConstitutionRuleProposal,
 } from "../src/constitution-ledger";
 import type { RuntimeEvent } from "@natalia/contracts";
 
@@ -123,4 +127,98 @@ test("recordDecision stays minimal when optional fields are omitted", () => {
   expect("rationale" in event).toBe(false);
   expect("alternatives" in event).toBe(false);
   expect("consequences" in event).toBe(false);
+});
+
+test("a model proposal must carry a structured anchor for hard enforcement", () => {
+  // deny without appliesTo is a slogan, not a rule the matcher can execute.
+  expect(
+    validateConstitutionRuleProposal({
+      statement: "never force push",
+      enforcement: "deny",
+    }),
+  ).toEqual([
+    "deny rules require a non-empty appliesTo (tools, paths or commandPattern)",
+  ]);
+  expect(
+    validateConstitutionRuleProposal({
+      statement: "never force push",
+      enforcement: "approval",
+      appliesTo: { tools: [] },
+    }),
+  ).toHaveLength(1);
+  expect(
+    validateConstitutionRuleProposal({
+      statement: "never force push",
+      enforcement: "deny",
+      appliesTo: { tools: ["run_shell"], commandPattern: "git push.*--force" },
+    }),
+  ).toEqual([]);
+});
+
+test("a model proposal cannot target release scope", () => {
+  expect(
+    validateConstitutionRuleProposal({
+      statement: "relax the terminal guard",
+      enforcement: "deny",
+      scope: "release",
+      appliesTo: { paths: ["packages/framework/runtime"] },
+    }),
+  ).toEqual([
+    'scope "release" is not user-owned; only project or package rules can be proposed',
+  ]);
+  expect(
+    validateConstitutionRuleProposal({
+      statement: "keep runtime covered",
+      enforcement: "warn",
+      scope: "project",
+    }),
+  ).toEqual([]);
+});
+
+test("an approved model proposal lands as agent_proposed provenance", () => {
+  const event = buildProposedConstitutionRule({
+    id: "constitution:rule:prompt-1",
+    ruleID: "P-TEST-001",
+    proposal: {
+      statement: "no new runtime dependencies",
+      enforcement: "deny",
+      appliesTo: { paths: ["packages/framework/runtime/src"] },
+      scope: "project",
+    },
+  });
+  expect(event).toMatchObject({
+    type: "constitution.rule_added",
+    ruleID: "P-TEST-001",
+    scope: "project",
+    source: "agent_proposed",
+    enforcement: "deny",
+    overridePolicy: "user_explicit",
+    appliesTo: { paths: ["packages/framework/runtime/src"] },
+  });
+});
+
+test("a disable is reversible and a removal is a durable tombstone", () => {
+  const disabled = buildConstitutionRuleEnabledChange({
+    id: "constitution:update:prompt-1",
+    ruleID: "P-TEST-001",
+    enabled: false,
+  });
+  expect(disabled).toEqual({
+    type: "constitution.rule_updated",
+    id: "constitution:update:prompt-1",
+    ruleID: "P-TEST-001",
+    enabled: false,
+  });
+  const removed = buildConstitutionRuleRemoved({
+    id: "constitution:removed:prompt-1",
+    ruleID: "P-TEST-001",
+    removedAt: "2026-09-16T00:00:00.000Z",
+  });
+  expect(removed).toEqual({
+    type: "constitution.rule_removed",
+    id: "constitution:removed:prompt-1",
+    ruleID: "P-TEST-001",
+    removedAt: "2026-09-16T00:00:00.000Z",
+    removedBy: "user",
+  });
 });

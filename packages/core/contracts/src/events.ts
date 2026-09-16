@@ -1108,6 +1108,43 @@ type RuntimeEventData =
       recordedAt: string;
     }
   | {
+      /**
+       * A model-drafted WorkContract (EI §8.2): the scope/verification/constraints
+       * the proposer extracted from the plan document, bound to the plan version
+       * it was extracted from. Repeatable — a rejected draft is re-proposed with
+       * the user's feedback folded in. The projection keeps the latest draft per
+       * plan; `work_contract_read` serves it as the "draft" state.
+       */
+      type: "work_contract.drafted";
+      id: string;
+      planID: string;
+      planVersion: number;
+      scope?: string[];
+      verification?: string[];
+      constraints?: string[];
+      draftedAt: string;
+      source: "model";
+    }
+  | {
+      /**
+       * The user-approved WorkContract — the R (reference frame) drift is judged
+       * against. Written once per approval after a gate; a plan document change
+       * invalidates the draft and forces a re-propose, it never silently
+       * replaces an accepted contract. `unverifiable` marks a plan approved with
+       * no extractable fields (advisory-only judgment).
+       */
+      type: "work_contract.accepted";
+      id: string;
+      planID: string;
+      planVersion: number;
+      scope?: string[];
+      verification?: string[];
+      constraints?: string[];
+      acceptedBy: "user";
+      acceptedAt: string;
+      unverifiable?: boolean;
+    }
+  | {
       type: "constitution.check";
       id: string;
       ruleID: string;
@@ -1126,9 +1163,19 @@ type RuntimeEventData =
       statement: string;
       scope: "project" | "package" | "sandbox" | "task" | "release";
       priority: "critical" | "high" | "medium" | "low";
-      source: "user" | "master_plan" | "policy";
+      source: "user" | "master_plan" | "policy" | "agent_proposed";
       enforcement: "deny" | "approval" | "warn";
       overridePolicy: "forbidden" | "user_scoped" | "user_explicit";
+      /**
+       * Structured anchor for hard enforcement (EI §3.8 P-1.c): `deny`/`approval`
+       * rules require a non-empty appliesTo so the runtime matcher has something
+       * to execute against. Prose rules without an anchor stay `warn`.
+       */
+      appliesTo?: {
+        tools?: string[];
+        paths?: string[];
+        commandPattern?: string;
+      };
       evidenceRefs?: string[];
     }
   | {
@@ -1149,6 +1196,27 @@ type RuntimeEventData =
       priority?: "critical" | "high" | "medium" | "low";
       enforcement?: "deny" | "approval" | "warn";
       overridePolicy?: "forbidden" | "user_scoped" | "user_explicit";
+      /** `false` disables the rule without deleting it; the tombstone is
+       * `constitution.rule_removed` (EI §3.8 P-1.c). */
+      enabled?: boolean;
+      appliesTo?: {
+        tools?: string[];
+        paths?: string[];
+        commandPattern?: string;
+      };
+    }
+  | {
+      /**
+       * Append-only tombstone for a deleted rule (EI §3.8 P-1.c): a disable is a
+       * reversible `rule_updated(enabled:false)`, a removal is durable history —
+       * `rule_removed` preserves the full audit trail. Only a user may remove;
+       * a model never deletes or weakens an existing rule.
+       */
+      type: "constitution.rule_removed";
+      id: string;
+      ruleID: string;
+      removedAt: string;
+      removedBy: "user";
     }
   | {
       type: "decision.recorded";
@@ -3309,9 +3377,16 @@ export type RuntimeClient = {
       statement: string;
       scope: "project" | "package" | "sandbox" | "task" | "release";
       priority: "critical" | "high" | "medium" | "low";
-      source: "user" | "master_plan" | "policy";
+      /** `agent_proposed` marks a model-authored rule approved by the user (EI §3.8 P-1.c). */
+      source: "user" | "master_plan" | "policy" | "agent_proposed";
       enforcement: "deny" | "approval" | "warn";
       overridePolicy: "forbidden" | "user_scoped" | "user_explicit";
+      /** Structured anchor for hard enforcement (EI §3.8 P-1.c). */
+      appliesTo?: {
+        tools?: string[];
+        paths?: string[];
+        commandPattern?: string;
+      };
     }>
   >;
   decisionRecords?(sessionID?: string): Promise<

@@ -905,6 +905,10 @@ export interface GovernanceLedgerController {
   buildCompletionRecorded: ServiceOperation;
   buildEvidenceRecorded: ServiceOperation;
   evidenceStatusForPlanState: ServiceOperation;
+  validateConstitutionRuleProposal: ServiceOperation;
+  buildProposedConstitutionRule: ServiceOperation;
+  buildConstitutionRuleEnabledChange: ServiceOperation;
+  buildConstitutionRuleRemoved: ServiceOperation;
 }
 export interface WorkLedgerController {
   buildPlanDocCreated: ServiceOperation;
@@ -914,6 +918,9 @@ export interface WorkLedgerController {
   buildPlanDocStatus: ServiceOperation;
   evaluateDrift: ServiceOperation;
   buildDriftFindingUpdate: ServiceOperation;
+  buildWorkContractDrafted: ServiceOperation;
+  buildWorkContractAccepted: ServiceOperation;
+  validateWorkContractFields: ServiceOperation;
   agentActionNode: ServiceOperation;
   approvalEdge: ServiceOperation;
   approvalNode: ServiceOperation;

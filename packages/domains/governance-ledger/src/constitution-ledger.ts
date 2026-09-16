@@ -177,3 +177,139 @@ export function recordDecision(input: {
     status: "accepted",
   };
 }
+
+/* ---------------------------------------------------------------------------
+ * Model rule proposals and the disable / remove lifecycle (EI §3.8 P-1.c).
+ *
+ * The document authoring face and the journal execution face share one rule
+ * vocabulary, but only the journal face is executable: a prose paragraph is a
+ * soft constraint (warn), an HTML-comment-annotated or promoted rule with a
+ * non-empty appliesTo is a hard one. A model may only PROPOSE rules that
+ * tighten itself; a user owns approval, disable and removal.
+ * ------------------------------------------------------------------------- */
+
+export type ConstitutionRuleProposal = {
+  statement: string;
+  enforcement: "deny" | "approval" | "warn";
+  appliesTo?: {
+    tools?: string[];
+    paths?: string[];
+    commandPattern?: string;
+  };
+  priority?: "critical" | "high" | "medium" | "low";
+  /**
+   * Raw scope as proposed (the model's tool arguments are untrusted JSON): only
+   * "project" and "package" are user-owned; "release" is runtime
+   * self-protection and rejected here.
+   */
+  scope?: string;
+};
+
+/**
+ * Validates a model rule proposal before the gate (EI §3.8 P-1.c):
+ *
+ * - `deny` / `approval` require a non-empty `appliesTo` — a hard rule the
+ *   runtime matcher cannot execute is not a rule, it is a slogan;
+ * - `scope: "release"` is rejected — the runtime self-protection rules are not
+ *   a model's to touch.
+ *
+ * Returns the rejection reasons; an empty array means the proposal is valid.
+ */
+export function validateConstitutionRuleProposal(
+  proposal: ConstitutionRuleProposal,
+): string[] {
+  const problems: string[] = [];
+  if (!proposal.statement.trim()) problems.push("statement must be non-empty");
+  if (
+    proposal.scope !== undefined &&
+    proposal.scope !== "project" &&
+    proposal.scope !== "package"
+  )
+    problems.push(
+      `scope "${proposal.scope}" is not user-owned; only project or package rules can be proposed`,
+    );
+  if (proposal.enforcement === "deny" || proposal.enforcement === "approval") {
+    const anchor = proposal.appliesTo;
+    const anchored =
+      (anchor?.tools?.length ?? 0) > 0 ||
+      (anchor?.paths?.length ?? 0) > 0 ||
+      Boolean(anchor?.commandPattern?.trim());
+    if (!anchored)
+      problems.push(
+        `${proposal.enforcement} rules require a non-empty appliesTo (tools, paths or commandPattern)`,
+      );
+  }
+  return problems;
+}
+
+/**
+ * Builds a `constitution.rule_added` event for a user-approved model proposal
+ * (EI §3.8 P-1.c): `source: "agent_proposed"` + the user's approval is the
+ * provenance; the rule is permanent (no once/session semantics — a one-time
+ * exemption is `override_granted`'s job).
+ */
+export function buildProposedConstitutionRule(input: {
+  id: string;
+  ruleID: string;
+  proposal: ConstitutionRuleProposal;
+  priority?: "critical" | "high" | "medium" | "low";
+}): Extract<RuntimeEvent, { type: "constitution.rule_added" }> {
+  return {
+    type: "constitution.rule_added",
+    id: input.id,
+    ruleID: input.ruleID,
+    statement: input.proposal.statement,
+    scope: input.proposal.scope === "package" ? "package" : "project",
+    priority: input.proposal.priority ?? "high",
+    source: "agent_proposed",
+    enforcement: input.proposal.enforcement,
+    overridePolicy: "user_explicit",
+    ...(input.proposal.appliesTo
+      ? { appliesTo: input.proposal.appliesTo }
+      : {}),
+  };
+}
+
+/**
+ * Builds a `constitution.rule_updated` event that disables (or re-enables) a
+ * rule (EI §3.8 P-1.c): a disable is reversible and keeps the rule in the
+ * journal; only `rule_removed` is the durable tombstone.
+ */
+export function buildConstitutionRuleEnabledChange(input: {
+  id: string;
+  ruleID: string;
+  enabled: boolean;
+  statement?: string;
+  priority?: "critical" | "high" | "medium" | "low";
+  enforcement?: "deny" | "approval" | "warn";
+}): Extract<RuntimeEvent, { type: "constitution.rule_updated" }> {
+  return {
+    type: "constitution.rule_updated",
+    id: input.id,
+    ruleID: input.ruleID,
+    enabled: input.enabled,
+    ...(input.statement ? { statement: input.statement } : {}),
+    ...(input.priority ? { priority: input.priority } : {}),
+    ...(input.enforcement ? { enforcement: input.enforcement } : {}),
+  };
+}
+
+/**
+ * Builds the append-only `constitution.rule_removed` tombstone (EI §3.8
+ * P-1.c): the journal keeps the full history of the rule's life, the
+ * projection only drops it from the effective set. `removedBy` is always a
+ * user — a model never deletes or weakens an existing rule.
+ */
+export function buildConstitutionRuleRemoved(input: {
+  id: string;
+  ruleID: string;
+  removedAt: string;
+}): Extract<RuntimeEvent, { type: "constitution.rule_removed" }> {
+  return {
+    type: "constitution.rule_removed",
+    id: input.id,
+    ruleID: input.ruleID,
+    removedAt: input.removedAt,
+    removedBy: "user",
+  };
+}

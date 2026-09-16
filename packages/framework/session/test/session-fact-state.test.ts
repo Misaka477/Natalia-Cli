@@ -25,6 +25,7 @@ import {
   sessionFactNiaChatMessages,
   sessionFactCollaborationEvents,
   sessionFactStateFromEvents,
+  sessionFactWorkContracts,
   sessionIntelligenceFactsFromEvents,
 } from "../src";
 
@@ -655,5 +656,127 @@ test("the collaboration slice feeds collab, plan and mailbox projections", () =>
   );
   expect(projectedMailboxMessages(slice)).toEqual(
     projectedMailboxMessages(events),
+  );
+});
+
+test("work contracts fold to the current / draft three-state view with staleness", () => {
+  const state = sessionFactStateFromEvents([
+    {
+      type: "work_contract.drafted",
+      id: "wc:plan:1:1",
+      planID: "plan:1",
+      planVersion: 1,
+      scope: ["packages/a"],
+      draftedAt: "2026-09-16T00:00:00.000Z",
+      source: "model",
+    },
+    {
+      type: "plan.doc.updated",
+      id: "plan:1:updated",
+      planID: "plan:1",
+      updatedAt: "2026-09-16T01:00:00.000Z",
+    },
+    {
+      type: "work_contract.accepted",
+      id: "wc:plan:2:accepted",
+      planID: "plan:2",
+      planVersion: 4,
+      verification: ["bun test packages/framework/runtime"],
+      acceptedBy: "user",
+      acceptedAt: "2026-09-16T02:00:00.000Z",
+    },
+  ]);
+  expect(sessionFactWorkContracts(state)).toEqual([
+    {
+      planID: "plan:1",
+      version: 1,
+      scope: ["packages/a"],
+      status: "draft",
+      stale: true,
+    },
+    {
+      planID: "plan:2",
+      version: 4,
+      verification: ["bun test packages/framework/runtime"],
+      status: "current",
+      acceptedBy: "user",
+      acceptedAt: "2026-09-16T02:00:00.000Z",
+    },
+  ]);
+});
+
+test("constitution disable and tombstone fold keep history complete", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "constitution.rule_added",
+      id: "rule:1",
+      ruleID: "P-001",
+      statement: "no new runtime dependencies",
+      scope: "project",
+      priority: "high",
+      source: "agent_proposed",
+      enforcement: "deny",
+      overridePolicy: "user_explicit",
+      appliesTo: { paths: ["packages/framework/runtime/src"] },
+    },
+    {
+      type: "constitution.rule_updated",
+      id: "rule:1-disable",
+      ruleID: "P-001",
+      enabled: false,
+    },
+  ];
+  // A disabled rule drops out of the effective set.
+  expect(
+    sessionFactConstitutionRules(sessionFactStateFromEvents(events)),
+  ).toEqual([]);
+  // Re-enabling restores it with its original fields.
+  events.push({
+    type: "constitution.rule_updated",
+    id: "rule:1-enable",
+    ruleID: "P-001",
+    enabled: true,
+  });
+  expect(
+    sessionFactConstitutionRules(sessionFactStateFromEvents(events)),
+  ).toMatchObject([
+    {
+      ruleID: "P-001",
+      statement: "no new runtime dependencies",
+      appliesTo: { paths: ["packages/framework/runtime/src"] },
+    },
+  ]);
+  // The tombstone removes the rule from the effective set; the journal keeps
+  // the full history of its life.
+  events.push({
+    type: "constitution.rule_removed",
+    id: "rule:1-removed",
+    ruleID: "P-001",
+    removedAt: "2026-09-16T03:00:00.000Z",
+    removedBy: "user",
+  });
+  expect(
+    sessionFactConstitutionRules(sessionFactStateFromEvents(events)),
+  ).toEqual([]);
+  // A later rule_added for the same ruleID re-adds it (recovery after removal).
+  events.push({
+    type: "constitution.rule_added",
+    id: "rule:1-readd",
+    ruleID: "P-001",
+    statement: "no new runtime dependencies",
+    scope: "project",
+    priority: "high",
+    source: "user",
+    enforcement: "deny",
+    overridePolicy: "user_explicit",
+  });
+  expect(
+    sessionFactConstitutionRules(sessionFactStateFromEvents(events)),
+  ).toMatchObject([{ ruleID: "P-001", source: "user" }]);
+  // The full-journal projection and the incremental fold agree.
+  const incremental = emptySessionFactState();
+  for (const event of events) applySessionFactEvent(incremental, event);
+  expect(sessionFactConstitutionRules(incremental)).toEqual(
+    projectedConstitutionRules(events),
   );
 });

@@ -236,6 +236,7 @@ export function createIntelligenceSurface(
         source: r.source,
         enforcement: r.enforcement,
         overridePolicy: r.overridePolicy,
+        ...(r.appliesTo ? { appliesTo: r.appliesTo } : {}),
       }));
     },
     async decisionRecords(sessionID?: string) {
