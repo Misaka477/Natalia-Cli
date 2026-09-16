@@ -14,6 +14,7 @@ import {
   projectedCompletions,
   projectedConstitutionRules,
   projectedRuntimeNotices,
+  projectedWorkContracts,
   projectedDecisionRecords,
   projectedDriftFindings,
   projectedEvidenceRecords,
@@ -537,6 +538,12 @@ export function createIntelligenceSurface(
       if (!exec?.session) return { opened: 0 as const };
       if (!input.objective.trim() || !input.currentActivity.trim())
         return { opened: 0 as const };
+      // EI §8.6: the R is the accepted WorkContract. The evaluator judges
+      // against it when one exists; without it (no contract or a stale
+      // draft) it produces at most the advisory unverifiable finding.
+      const contract = projectedWorkContracts(exec.session.events).find(
+        (candidate) => candidate.status === "current",
+      );
       const findings = requireWorkLedger().evaluateDrift({
         sessionID: exec.session.id,
         turnID: exec.activeTurnID,
@@ -545,19 +552,39 @@ export function createIntelligenceSurface(
         applicableConstraints: input.applicableConstraints ?? [],
         changes: input.changes ?? [],
         evidenceRefs: input.evidenceRefs ?? [],
+        ...(contract
+          ? {
+              contract: {
+                planID: contract.planID,
+                ...(contract.scope ? { scope: contract.scope } : {}),
+                ...(contract.verification
+                  ? { verification: contract.verification }
+                  : {}),
+                ...(contract.constraints
+                  ? { constraints: contract.constraints }
+                  : {}),
+              },
+            }
+          : {}),
       });
       for (const finding of findings)
         ctx.ports.publishForSession(exec, finding);
       return { opened: findings.length };
     },
     /**
-     * Acknowledge a drift finding (P7 D3): the Main Agent explains it, the user
-     * dismisses it, or the work corrects it. Only an open finding can transition.
+     * Acknowledge a drift finding (P7 D3 / EI §8.6): the Main Agent explains
+     * it, disputes it, or declares a sanctioned detour; the user dismisses it
+     * or the work corrects it. Only an open finding can transition.
      */
     async acknowledgeDriftFinding(
       input: {
         findingID: string;
-        status: "explained" | "dismissed" | "corrected";
+        status:
+          | "explained"
+          | "disputed"
+          | "dismissed"
+          | "corrected"
+          | "detour_declared";
         rationale?: string;
       },
       sessionID?: string,

@@ -602,8 +602,20 @@ export type ProjectedDriftFinding = {
   currentActivity: string;
   evidence: string[];
   applicableConstraints: string[];
-  status: "open" | "explained" | "dismissed" | "corrected";
+  status:
+    | "open"
+    | "explained"
+    | "disputed"
+    | "dismissed"
+    | "corrected"
+    | "detour_declared";
   rationale?: string;
+  /** The evaluation contract version the finding was judged under (EI §8.6). */
+  contractVersion: number;
+  /** Which rules fired with their confidences (EI §8.6 judgment matrix). */
+  ruleHits: Array<{ rule: string; confidence: number }>;
+  /** The accepted contract's planID, when the finding was judged against one. */
+  planID?: string;
 };
 
 export function projectedDriftFindings(
@@ -1567,6 +1579,9 @@ export function applySessionDriftFact(
       evidence: event.evidence,
       applicableConstraints: event.applicableConstraints,
       status: "open",
+      contractVersion: event.contractVersion,
+      ruleHits: event.ruleHits ?? [],
+      ...(event.planID ? { planID: event.planID } : {}),
     });
     return;
   }

@@ -1,8 +1,9 @@
 export {
+  DRIFT_CONTRACT_VERSION,
+  DRIFT_FINDING_WRITER_OWNER,
   buildDriftFinding,
   buildDriftFindingUpdate,
   createDriftEvaluator,
-  DRIFT_FINDING_WRITER_OWNER,
   type DriftFindingInput,
   type DriftFindingStatus,
   type DriftSignal,

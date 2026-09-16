@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   buildDriftFindingUpdate,
   createDriftEvaluator,
+  DRIFT_CONTRACT_VERSION,
   DRIFT_FINDING_WRITER_OWNER,
 } from "../src";
 
@@ -25,6 +26,12 @@ test("no drift when activity overlaps the objective", () => {
       { action: "modified", path: "src/http.ts", summary: "typed client" },
     ],
     evidenceRefs: ["validated"],
+    contract: {
+      planID: "plan:1",
+      scope: [],
+      verification: [],
+      constraints: [],
+    },
   });
   expect(findings).toEqual([]);
 });
@@ -39,6 +46,12 @@ test("objective/activity mismatch opens an advisory finding", () => {
     applicableConstraints: [],
     changes: [{ action: "modified", path: "src/theme.css" }],
     evidenceRefs: [],
+    contract: {
+      planID: "plan:1",
+      scope: [],
+      verification: [],
+      constraints: [],
+    },
   });
   expect(findings).toHaveLength(1);
   const finding = findings[0]!;
@@ -172,6 +185,12 @@ test("a dependency change when the objective is about dependencies opens nothing
     applicableConstraints: [],
     changes: [{ action: "modified", path: "bun.lock" }],
     evidenceRefs: [],
+    contract: {
+      planID: "plan:1",
+      scope: [],
+      verification: [],
+      constraints: [],
+    },
   });
   expect(findings).toEqual([]);
 });
@@ -186,6 +205,12 @@ test("a change outside the objective's named target opens a target_drift advisor
     applicableConstraints: [],
     changes: [{ action: "modified", path: "dist/out.js" }],
     evidenceRefs: [],
+    contract: {
+      planID: "plan:1",
+      scope: [],
+      verification: [],
+      constraints: [],
+    },
   });
   const drift = findings.find((f) => f.findingID.includes("target_drift"));
   expect(drift).toBeDefined();
@@ -226,4 +251,134 @@ test("minimumConfidence tuning suppresses weak signals", () => {
     evidenceRefs: [],
   });
   expect(findings).toEqual([]);
+});
+
+test("CJK objectives score overlap instead of reading as zero (EI §8.6)", () => {
+  // The old word-only metric split Chinese into zero tokens, so every CJK
+  // objective looked like total mismatch — the largest false-positive source.
+  const { evaluate } = createDriftEvaluator({
+    openFindingIDs: () => new Set(),
+  });
+  const findings = evaluate({
+    objective: "把运行时提示词改成静态加运行时上下文",
+    currentActivity: "把运行时提示词改成静态加运行时上下文的改动",
+    applicableConstraints: [],
+    changes: [{ path: "packages/framework/runtime/src", action: "edit" }],
+    evidenceRefs: [],
+    contract: {
+      planID: "plan:1",
+      scope: [],
+      verification: [],
+      constraints: [],
+    },
+  });
+  // The activity shares CJK bigrams with the objective, so no mismatch finding.
+  expect(
+    findings.some((f) =>
+      f.ruleHits?.some((h) => h.rule === "objective_activity_mismatch"),
+    ),
+  ).toBe(false);
+});
+
+test("an accepted contract is the R: scope matches are not drift and its constraints bind", () => {
+  const { evaluate } = createDriftEvaluator({
+    openFindingIDs: () => new Set(),
+  });
+  // The activity matches the committed scope even though the objective
+  // sentence does not — no mismatch finding.
+  const scopeFindings = evaluate({
+    objective: "rewrite the entire runtime",
+    currentActivity: "edit:packages/framework/runtime/src",
+    applicableConstraints: [],
+    changes: [
+      { path: "packages/framework/runtime/src/provider.ts", action: "edit" },
+    ],
+    evidenceRefs: [],
+    contract: {
+      planID: "plan:1",
+      scope: ["packages/framework/runtime/src"],
+      verification: [],
+      constraints: ["never commit directly"],
+    },
+  });
+  expect(
+    scopeFindings.some((f) =>
+      f.ruleHits?.some((h) => h.rule === "objective_activity_mismatch"),
+    ),
+  ).toBe(false);
+  // The contract's own constraint is as binding as a seeded rule.
+  const constraintFindings = evaluate({
+    objective: "ship the change",
+    currentActivity: "git commit the change",
+    applicableConstraints: [],
+    changes: [{ path: "src", action: "edit" }],
+    evidenceRefs: [],
+    contract: {
+      planID: "plan:1",
+      scope: [],
+      verification: [],
+      constraints: ["never commit directly"],
+    },
+  });
+  const constraintFinding = constraintFindings.find(
+    (f) =>
+      f.severity === "high" &&
+      f.ruleHits?.some((h) => h.rule === "constraint_violation_signal"),
+  );
+  expect(constraintFinding).toBeDefined();
+  // The contract's own constraint is the evidence — the session's
+  // applicableConstraints stays empty because the rule fired on the R.
+  expect(constraintFinding!.evidence.join("\n")).toContain(
+    "never commit directly",
+  );
+  expect(constraintFinding!.planID).toBe("plan:1");
+});
+
+test("changes without a contract produce only the advisory unverifiable finding (EI §3.8 P-1.b)", () => {
+  const { evaluate } = createDriftEvaluator({
+    openFindingIDs: () => new Set(),
+  });
+  const findings = evaluate({
+    objective: "edit the app",
+    currentActivity: "edit the app:src/app.ts",
+    applicableConstraints: [],
+    changes: [{ path: "src/app.ts", action: "edit" }],
+    evidenceRefs: [],
+  });
+  expect(findings).toHaveLength(1);
+  expect(findings[0]).toMatchObject({
+    severity: "advisory",
+  });
+  expect(findings[0]!.planID).toBeUndefined();
+  expect(findings[0]!.ruleHits).toEqual([
+    { rule: "unverifiable_no_contract", confidence: 0.5 },
+  ]);
+  expect(findings[0]!.evidence).toContain("reference:no_accepted_contract");
+});
+
+test("every finding carries contractVersion and ruleHits (EI §8.6)", () => {
+  const { evaluate } = createDriftEvaluator({
+    openFindingIDs: () => new Set(),
+  });
+  const findings = evaluate({
+    objective: "verify the parser",
+    currentActivity: "edit:12 actions without parser files",
+    applicableConstraints: [],
+    changes: [{ path: "packages/x/src", action: "edit" }],
+    evidenceRefs: [],
+    contract: {
+      planID: "plan:1",
+      scope: [],
+      verification: [],
+      constraints: [],
+    },
+  });
+  const evidenceGap = findings.find((finding) =>
+    finding.ruleHits?.some((hit) => hit.rule === "evidence_gap"),
+  );
+  expect(evidenceGap).toBeDefined();
+  expect(evidenceGap!.contractVersion).toBe(DRIFT_CONTRACT_VERSION);
+  expect(
+    evidenceGap!.ruleHits!.some((hit) => hit.rule === "evidence_gap"),
+  ).toBe(true);
 });

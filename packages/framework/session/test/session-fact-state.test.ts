@@ -120,6 +120,7 @@ function fixture(): RuntimeEvent[] {
       currentActivity: "Auth config",
       evidence: ["12 actions without parser files"],
       applicableConstraints: [],
+      contractVersion: 2,
     },
     {
       type: "drift.finding_updated",

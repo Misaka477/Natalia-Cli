@@ -11,6 +11,7 @@ import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
 } from "@natalia/runtime-services";
+import { projectedDriftFindings } from "@natalia/session";
 import type { GovernanceLedgerController } from "./context";
 import { redactToolOutput } from "./engineering-intelligence/redaction";
 import { runValidationCommand } from "./engineering-intelligence/validation";
@@ -26,6 +27,14 @@ function resolveExec(
         .get(sessionID as import("@natalia/contracts").SessionID)
     : undefined;
   return exec ?? ctx.ports.getActiveExec();
+}
+
+function requireWorkLedger(
+  ctx: RuntimeContext,
+): import("./context").WorkLedgerController | undefined {
+  return ctx.ports.resolveService<import("./context").WorkLedgerController>(
+    WORK_LEDGER_CONTROLLER_SERVICE,
+  );
 }
 
 function requireGovernanceLedger(
@@ -339,6 +348,76 @@ export function createRecordDecisionTool(
         }),
       );
       return JSON.stringify({ recorded: true });
+    },
+  };
+}
+
+/**
+ * `drift_acknowledge` — the model's side of the status matrix (EI §8.6): the
+ * Main Agent acknowledges an open drift finding with a rationale (explained),
+ * disputes it (disputed), or declares a sanctioned detour
+ * (detour_declared). Only an open finding can transition; the rationale is
+ * safe prose, redacted before the journal.
+ */
+export function createDriftAcknowledgeTool(
+  ctx: RuntimeContext,
+): import("@natalia/tools").RuntimeTool {
+  return {
+    name: "drift_acknowledge",
+    description:
+      "Acknowledge an open drift finding: explain it with a rationale (explained), disagree with the finding (disputed), or declare a sanctioned detour the user should know about (detour_declared). Use it when a drift finding fires and you have a real answer — a finding left open keeps escalating.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        findingID: {
+          type: "string",
+          description: "The exact findingID from the drift finding.",
+        },
+        status: {
+          type: "string",
+          enum: ["explained", "disputed", "detour_declared"],
+          description:
+            "explained: the finding is understood and addressed; disputed: you disagree; detour_declared: a sanctioned detour.",
+        },
+        rationale: {
+          type: "string",
+          description: "Why — safe prose, never content or commands.",
+        },
+      },
+      required: ["findingID", "status"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      const args = parsed as {
+        findingID?: string;
+        status?: "explained" | "disputed" | "detour_declared";
+        rationale?: string;
+      };
+      const exec = resolveExec(ctx, context.sessionID);
+      if (!exec) return "no session";
+      if (!args.findingID?.trim() || !args.status)
+        return "drift_acknowledge requires findingID and status";
+      const governanceLedger = requireGovernanceLedger(ctx);
+      if (!governanceLedger) return "governance ledger unavailable";
+      // Only an open finding transitions; the projection is the authority.
+      const openFindings = projectedDriftFindings(exec.session.events).filter(
+        (finding) => finding.findingID === args.findingID!.trim(),
+      );
+      const finding = openFindings.at(-1);
+      if (!finding) return `no open drift finding ${args.findingID}`;
+      if (finding.status !== "open")
+        return `drift finding ${args.findingID} is ${finding.status}, not open`;
+      ctx.ports.publishForSession(
+        exec,
+        requireWorkLedger(ctx)!.buildDriftFindingUpdate({
+          id: `drift:${Date.now().toString(36)}:${args.findingID}`,
+          findingID: args.findingID,
+          status: args.status,
+          rationale: args.rationale,
+        }),
+      );
+      return JSON.stringify({ acknowledged: true, status: args.status });
     },
   };
 }

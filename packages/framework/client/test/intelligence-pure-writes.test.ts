@@ -131,6 +131,7 @@ test("acknowledgeDriftFinding reads a complete hot state without a full load", a
     currentActivity: "activity",
     evidence: [],
     applicableConstraints: [],
+    contractVersion: 2,
   };
   const exec = {
     // A tail-only base: folding the journal here would miss the finding.

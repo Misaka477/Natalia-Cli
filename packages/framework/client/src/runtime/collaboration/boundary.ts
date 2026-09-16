@@ -25,6 +25,7 @@ import { activePlanForExec } from "./plan-doc-runtime";
 import {
   projectedConstitutionRules,
   projectedEvidenceRecords,
+  projectedWorkContracts,
 } from "@natalia/session";
 
 /**
@@ -250,6 +251,11 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
             ),
           )
           .map((rule) => rule.ruleID);
+        // EI §8.6: the R is the accepted WorkContract — the evaluator judges
+        // against the user-tier commitment when one exists.
+        const contract = projectedWorkContracts(target.session.events).find(
+          (candidate) => candidate.status === "current",
+        );
         const findings = workLedgerController.evaluateDrift({
           sessionID: target.session.id,
           turnID: target.activeTurnID,
@@ -263,6 +269,20 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
             action: change.operation,
           })),
           evidenceRefs,
+          ...(contract
+            ? {
+                contract: {
+                  planID: contract.planID,
+                  ...(contract.scope ? { scope: contract.scope } : {}),
+                  ...(contract.verification
+                    ? { verification: contract.verification }
+                    : {}),
+                  ...(contract.constraints
+                    ? { constraints: contract.constraints }
+                    : {}),
+                },
+              }
+            : {}),
         });
         for (const finding of findings) publishForSession(target, finding);
       }

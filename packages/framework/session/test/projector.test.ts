@@ -927,6 +927,7 @@ test("projectedDriftFindings tracks findings and status updates", () => {
     currentActivity: "Auth config",
     evidence: ["12 actions without parser files"],
     applicableConstraints: [],
+    contractVersion: 2,
   });
   const opened = projectedDriftFindings(session.events);
   expect(opened).toHaveLength(1);
@@ -1071,10 +1072,9 @@ test("namespaced chat tool projections keep durable event ids", () => {
       at: "t2",
     },
   ];
-  expect(projectedNaviChatMessages(events).map((row) => row.tool?.eventID)).toEqual([
-    "chat:tool:1",
-    "chat:tool:2",
-  ]);
+  expect(
+    projectedNaviChatMessages(events).map((row) => row.tool?.eventID),
+  ).toEqual(["chat:tool:1", "chat:tool:2"]);
 });
 
 test("chat replay preserves user attachment metadata", () => {

@@ -999,12 +999,37 @@ type RuntimeEventData =
       currentActivity: string;
       evidence: string[];
       applicableConstraints: string[];
+      /**
+       * The evaluation contract version (EI §8.6): the judgment-matrix rule
+       * set that produced this finding. Bumped when the rules change so a
+       * finding is always judge-able against the contract that opened it.
+       */
+      contractVersion: number;
+      /**
+       * Which rules fired, each with its confidence (EI §8.6): the explainable
+       * judgment matrix behind the finding.
+       */
+      ruleHits?: Array<{ rule: string; confidence: number }>;
+      /** The planID of the accepted contract judged against, when any. */
+      planID?: string;
     }
   | {
       type: "drift.finding_updated";
       id: string;
       findingID: string;
-      status: "open" | "explained" | "dismissed" | "corrected";
+      /**
+       * The finding status transition (EI §8.6): open (detected), explained
+       * (the agent acknowledged with a rationale), disputed (the agent
+       * disagrees), dismissed (the user closed it), corrected (the work
+       * realigned), detour_declared (the agent declared a sanctioned detour).
+       */
+      status:
+        | "open"
+        | "explained"
+        | "disputed"
+        | "dismissed"
+        | "corrected"
+        | "detour_declared";
       rationale?: string;
     }
   | {
@@ -3744,13 +3769,19 @@ export type RuntimeClient = {
     sessionID?: string,
   ): Promise<{ opened: number }>;
   /**
-   * Acknowledge a drift finding (P7 D3): the Main Agent explains it, the user
-   * dismisses it, or the work corrects it. Only an open finding can transition.
+   * Acknowledge a drift finding (P7 D3 / EI §8.6): the Main Agent explains it,
+   * disputes it, or declares a sanctioned detour; the user dismisses it or the
+   * work corrects it. Only an open finding can transition.
    */
   acknowledgeDriftFinding?(
     input: {
       findingID: string;
-      status: "explained" | "dismissed" | "corrected";
+      status:
+        | "explained"
+        | "disputed"
+        | "dismissed"
+        | "corrected"
+        | "detour_declared";
       rationale?: string;
     },
     sessionID?: string,
