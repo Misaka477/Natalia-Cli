@@ -183,3 +183,129 @@ export function buildWorkContractAccepted(input: {
     ...(input.unverifiable ? { unverifiable: true } : {}),
   };
 }
+
+/**
+ * Task-type heuristics and the minimum-evidence matrix (EI §8.8).
+ *
+ * "Done" is only judge-able when the evidence matches the task's kind: a
+ * dependency bump needs a lockfile check, a parser change needs parser tests,
+ * a docs-only change needs none. The heuristic classifies the objective (and
+ * the committed scope) into a task kind; the matrix then states the minimum
+ * validation evidence each kind requires. The completion card consumes it to
+ * answer "is it really done, what evidence is missing".
+ */
+export type TaskKind =
+  | "dependency"
+  | "parser"
+  | "test"
+  | "docs"
+  | "config"
+  | "code";
+
+/**
+ * The minimum evidence matrix (EI §8.8): which validation evidence each task
+ * kind needs before a completion claim is judge-able. `patterns` are matched
+ * against the objective and committed scope; `requires` names the evidence
+ * classes the completion card must show.
+ */
+export const MINIMUM_EVIDENCE_MATRIX: Record<
+  TaskKind,
+  {
+    patterns: RegExp;
+    requires: string[];
+    note: string;
+  }
+> = {
+  dependency: {
+    patterns:
+      /\bdependen\w*|install\w*|upgrade|bump|lockfile|manifest\w*|package\.json|bun\.lock|cargo|pyproject|requirements\b/iu,
+    requires: ["validation:install", "validation:typecheck"],
+    note: "a dependency change must show the install and typecheck evidence",
+  },
+  parser: {
+    patterns: /\bparser|parsing|tokeniz\w*|lexer|grammar|AST\b/iu,
+    requires: ["validation:parser"],
+    note: "a parser change must show parser test evidence",
+  },
+  test: {
+    patterns: /\btest|spec|coverage|assertion/iu,
+    requires: ["validation:test"],
+    note: "a test change must show the test-run evidence",
+  },
+  docs: {
+    patterns:
+      /\bdocs?\b|readme|documentation|comment\w*|constitution\.md|agents\.md/iu,
+    requires: [],
+    note: "a docs-only change needs no runtime validation",
+  },
+  config: {
+    patterns: /\bconfig|settings?|\.env|tsconfig|permissionMode/iu,
+    requires: ["validation:typecheck"],
+    note: "a config change must show a typecheck or load check",
+  },
+  code: {
+    patterns: /.*/u,
+    requires: ["validation:test"],
+    note: "a code change must show a test or equivalent validation",
+  },
+};
+
+/** Classifies an objective (+ optional committed scope) into a task kind. */
+export function classifyTaskKind(
+  objective: string,
+  scope: string[] = [],
+): TaskKind {
+  const haystack = `${objective} ${scope.join(" ")}`.toLowerCase();
+  const kinds: TaskKind[] = ["dependency", "parser", "test", "docs", "config"];
+  for (const kind of kinds)
+    if (MINIMUM_EVIDENCE_MATRIX[kind].patterns.test(haystack)) return kind;
+  return "code";
+}
+
+/**
+ * The completion card's judgment (EI §8.8): given the task kind and the
+ * evidence actually recorded, which required evidence classes are still
+ * missing. An empty `missing` list means the completion claim is judge-able;
+ * a docs-only task is always judge-able.
+ */
+export function evaluateCompletionCard(input: {
+  objective: string;
+  scope?: string[];
+  evidenceRefs: string[];
+  validations?: Array<{
+    command?: string;
+    result?: string;
+    safeSummary?: string;
+  }>;
+}): {
+  kind: TaskKind;
+  requires: string[];
+  missing: string[];
+  judgeable: boolean;
+  note: string;
+} {
+  const kind = classifyTaskKind(input.objective, input.scope ?? []);
+  const matrix = MINIMUM_EVIDENCE_MATRIX[kind];
+  const present = new Set<string>();
+  for (const reference of input.evidenceRefs) present.add(reference);
+  for (const validation of input.validations ?? []) {
+    const command = validation.command?.toLowerCase() ?? "";
+    if (validation.result !== "passed") continue;
+    if (/bun install|npm install|pnpm install|yarn install/iu.test(command))
+      present.add("validation:install");
+    if (/tsc|typecheck/iu.test(command)) present.add("validation:typecheck");
+    if (/bun test|vitest|jest|pytest|go test|cargo test/iu.test(command)) {
+      present.add("validation:test");
+      if (/parser|tokeniz|lexer|grammar/iu.test(command))
+        present.add("validation:parser");
+    }
+  }
+  const missing = matrix.requires.filter((entry) => !present.has(entry));
+  return {
+    kind,
+    requires: matrix.requires,
+    missing,
+    judgeable: missing.length === 0,
+    note: matrix.note,
+  };
+}

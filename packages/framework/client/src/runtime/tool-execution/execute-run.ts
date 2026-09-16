@@ -29,6 +29,7 @@ import { buildToolExecutionContext } from "./execute-context";
 import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
 import type { RuntimeContext } from "../context";
+import { activePlanForExec } from "../collaboration/plan-doc-runtime";
 
 export type ExecuteStageInput = {
   exec: SessionExecutionState | undefined;
@@ -265,7 +266,7 @@ export async function runExecuteStage(
         const checkpointController =
           await ctx.ports.initializeCheckpointController(exec);
         if (checkpointController?.isEnabled()) {
-          await checkpointController.createCheckpoint({
+          const created = await checkpointController.createCheckpoint({
             reason: "pre_tool",
             context: exec.context,
             step: exec.context.journalStatus().messageCount,
@@ -274,6 +275,27 @@ export async function runExecuteStage(
             model: exec.provider?.model,
             status: tool.name,
           });
+          // B7: the checkpoint carries its plan provenance so the Work Graph
+          // can answer "which plan's commitment does this rollback point
+          // belong to". Best-effort — a failed node never blocks the side
+          // effect.
+          try {
+            const workLedger = ctx.ports.resolveService<
+              import("../context").WorkLedgerController
+            >(WORK_LEDGER_CONTROLLER_SERVICE);
+            const activePlan = activePlanForExec(ctx, exec);
+            if (workLedger && created && activePlan)
+              ctx.ports.publishForSession(
+                exec,
+                workLedger.checkpointNode({
+                  checkpointID: created.id,
+                  planID: activePlan.planID,
+                  sessionID: exec.session.id,
+                  turnID,
+                  reason: "pre_tool",
+                }),
+              );
+          } catch {}
         }
       }
     } catch (error) {

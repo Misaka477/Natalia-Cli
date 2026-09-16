@@ -265,7 +265,26 @@ export function createRecordCompletionTool(
               completionID,
             }),
           );
-      return JSON.stringify({ recorded: true, completionID });
+      // EI §8.8: the completion card judges the claim against the task-kind
+      // evidence matrix — the missing-evidence answer travels back with the
+      // record so the model can close the gaps instead of claiming done.
+      const card = requireWorkLedger(ctx)!.evaluateCompletionCard({
+        objective: args.objective.trim(),
+        ...(args.changePaths?.length ? { scope: args.changePaths } : {}),
+        evidenceIDs: args.evidenceIDs ?? [],
+        validations: args.validations ?? [],
+      });
+      return JSON.stringify({
+        recorded: true,
+        completionID,
+        card,
+        ...(card.missing.length
+          ? {
+              missingEvidence: card.missing,
+              hint: `${card.note}; record the missing validation with record_validation before claiming done`,
+            }
+          : {}),
+      });
     },
   };
 }

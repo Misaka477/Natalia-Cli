@@ -12,6 +12,7 @@ import {
 import {
   buildWorkContractAccepted,
   buildWorkContractDrafted,
+  evaluateCompletionCard,
   validateWorkContractFields,
 } from "./work-contract";
 import {
@@ -47,6 +48,7 @@ export function createWorkLedgerController(
     buildWorkContractDrafted,
     buildWorkContractAccepted,
     validateWorkContractFields,
+    evaluateCompletionCard,
     agentActionNode,
     approvalEdge,
     approvalNode,

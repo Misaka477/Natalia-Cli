@@ -95,6 +95,8 @@ export const workGraphNodeSchema = z.object({
   sessionID: z.string().optional(),
   turnID: z.string().optional(),
   stepID: z.string().optional(),
+  /** The plan this node belongs to (B7 provenance: which plan's commitment). */
+  planID: z.string().optional(),
 });
 
 export const sessionIntelligenceSnapshotSchema = z.object({

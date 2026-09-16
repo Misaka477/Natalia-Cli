@@ -8,6 +8,8 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import {
   buildWorkContractAccepted,
   buildWorkContractDrafted,
+  classifyTaskKind,
+  evaluateCompletionCard,
   isPlaceholderContractValue,
   isUnverifiableContract,
   validateWorkContractFields,
@@ -283,4 +285,66 @@ test("contracts for different plans stay independent", () => {
   expect(
     contracts.find((contract) => contract.planID === "plan:2")?.status,
   ).toBe("current");
+});
+
+test("task-type heuristics classify objectives into kinds (EI §8.8)", () => {
+  expect(classifyTaskKind("bump the runtime dependencies")).toBe("dependency");
+  expect(classifyTaskKind("rewrite the bash command parser")).toBe("parser");
+  expect(classifyTaskKind("add unit tests for the parser")).toBe("parser");
+  expect(classifyTaskKind("update the README")).toBe("docs");
+  expect(classifyTaskKind("add a typed HTTP client")).toBe("code");
+  // The committed scope participates in the classification.
+  expect(classifyTaskKind("ship it", ["packages/x/package.json"])).toBe(
+    "dependency",
+  );
+});
+
+test("the minimum-evidence matrix judges completion claims (EI §8.8)", () => {
+  // A dependency change with no install/typecheck evidence is not judge-able.
+  const depGap = evaluateCompletionCard({
+    objective: "bump the runtime dependencies",
+    evidenceRefs: [],
+  });
+  expect(depGap.kind).toBe("dependency");
+  expect(depGap.judgeable).toBe(false);
+  expect(depGap.missing).toContain("validation:install");
+
+  // The right evidence closes the gaps.
+  const depDone = evaluateCompletionCard({
+    objective: "bump the runtime dependencies",
+    evidenceRefs: [],
+    validations: [
+      { command: "bun install", result: "passed" },
+      { command: "bun run typecheck", result: "passed" },
+    ],
+  });
+  expect(depDone.judgeable).toBe(true);
+  expect(depDone.missing).toEqual([]);
+
+  // A failed validation never counts.
+  const depFailed = evaluateCompletionCard({
+    objective: "bump the runtime dependencies",
+    evidenceRefs: [],
+    validations: [{ command: "bun install", result: "failed" }],
+  });
+  expect(depFailed.judgeable).toBe(false);
+
+  // A docs-only change needs no runtime validation.
+  const docs = evaluateCompletionCard({
+    objective: "update the README",
+    evidenceRefs: [],
+  });
+  expect(docs.kind).toBe("docs");
+  expect(docs.judgeable).toBe(true);
+
+  // A parser change needs parser evidence specifically.
+  const parser = evaluateCompletionCard({
+    objective: "rewrite the bash command parser",
+    evidenceRefs: [],
+    validations: [
+      { command: "bun test packages/framework/runtime", result: "passed" },
+    ],
+  });
+  expect(parser.kind).toBe("parser");
+  expect(parser.missing).toContain("validation:parser");
 });

@@ -57,6 +57,17 @@ export function createWorkGraphQueryTool(
           type: "number",
           description: `Maximum nodes per page (default ${WORK_GRAPH_PAGE_LIMIT}).`,
         },
+        direction: {
+          type: "string",
+          enum: ["out", "in", "both"],
+          description:
+            "Which edge direction to traverse from the matched nodes (default both).",
+        },
+        depth: {
+          type: "number",
+          description:
+            "How many edge hops to expand from the matched nodes (default 1, 0 = no traversal).",
+        },
       },
       additionalProperties: false,
     },
@@ -66,6 +77,8 @@ export function createWorkGraphQueryTool(
         path?: string;
         cursor?: string;
         limit?: number;
+        direction?: "out" | "in" | "both";
+        depth?: number;
       };
       const exec = resolveExec(ctx, context.sessionID);
       if (!exec) return "no session";
@@ -85,9 +98,13 @@ export function createWorkGraphQueryTool(
       }
       const nodes = projectedWorkGraphNodes(exec.session.events);
       const edges = projectedWorkGraphEdges(exec.session.events);
+      // B7: exact planID provenance when the node carries it; the summary/
+      // target substring match stays for nodes whose provenance is only
+      // implicit (the graph predates planID tracking).
       const filtered = planID
         ? nodes.filter(
             (node) =>
+              node.planID === planID ||
               node.target === planID ||
               node.target?.includes(planID) === true ||
               node.summary.includes(planID),
@@ -100,16 +117,54 @@ export function createWorkGraphQueryTool(
       const offset = Number(args.cursor ?? "0");
       if (!Number.isFinite(offset) || offset < 0)
         return "invalid cursor; pass the exact cursor from a previous result";
-      const page = filtered.slice(offset, offset + limit);
+      // B7: optional edge traversal (direction + depth) expands the matched
+      // set through the graph before pagination, so "what does this plan
+      // touch" can reach the checkpoints, validations and changes behind it.
+      const direction = args.direction ?? "both";
+      const depth = Math.max(Math.min(args.depth ?? 1, 5), 0);
+      let expanded = filtered;
+      if (depth > 0) {
+        const adjacency = new Map<
+          string,
+          Array<{ to: string; kind: string }>
+        >();
+        for (const edge of edges) {
+          if (direction !== "in")
+            (
+              adjacency.get(edge.sourceID) ??
+              adjacency.set(edge.sourceID, []).get(edge.sourceID)!
+            ).push({ to: edge.targetID, kind: edge.kind });
+          if (direction !== "out")
+            (
+              adjacency.get(edge.targetID) ??
+              adjacency.set(edge.targetID, []).get(edge.targetID)!
+            ).push({ to: edge.sourceID, kind: edge.kind });
+        }
+        const reached = new Set(filtered.map((node) => node.id));
+        let frontier = [...reached];
+        for (let hop = 0; hop < depth; hop += 1) {
+          const next: string[] = [];
+          for (const id of frontier)
+            for (const link of adjacency.get(id) ?? [])
+              if (!reached.has(link.to)) {
+                reached.add(link.to);
+                next.push(link.to);
+              }
+          if (!next.length) break;
+          frontier = next;
+        }
+        expanded = nodes.filter((node) => reached.has(node.id));
+      }
+      const page = expanded.slice(offset, offset + limit);
       const nodeIDs = new Set(page.map((node) => node.id));
       const pageEdges = edges.filter(
         (edge) => nodeIDs.has(edge.sourceID) && nodeIDs.has(edge.targetID),
       );
       const nextCursor =
-        offset + limit < filtered.length ? String(offset + limit) : undefined;
+        offset + limit < expanded.length ? String(offset + limit) : undefined;
       return JSON.stringify({
         ...(planID ? { planID } : {}),
-        total: filtered.length,
+        total: expanded.length,
         nodes: page,
         edges: pageEdges,
         ...(nextCursor ? { nextCursor } : {}),

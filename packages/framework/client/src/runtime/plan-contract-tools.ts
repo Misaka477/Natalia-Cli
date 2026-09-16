@@ -144,6 +144,10 @@ export function createPlanProposeTool(ctx: RuntimeContext): RuntimeTool {
         `verification: ${(fields.verification ?? []).join("; ") || "(unverifiable)"}`,
         `constraints: ${(fields.constraints ?? []).join("; ") || "(unverifiable)"}`,
       ];
+      // R3 (EI §8.8): the gate is always available for a mid-run contract
+      // extension — an already-accepted plan can add committed verification
+      // through the same single user confirmation, producing a new accepted
+      // contract rather than silently replacing the current one.
       const response = await interactive.requirePlanAcceptance({
         approvalID: `work_contract:${planID}:${ctx.ports.nextPlanSequence()}`,
         planID,

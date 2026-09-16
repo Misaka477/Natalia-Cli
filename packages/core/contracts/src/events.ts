@@ -1077,6 +1077,8 @@ type RuntimeEventData =
       target?: string;
       sessionID?: string;
       turnID?: string;
+      /** The plan this node belongs to (B7 provenance). */
+      planID?: string;
     }
   | {
       type: "workgraph.edge_added";

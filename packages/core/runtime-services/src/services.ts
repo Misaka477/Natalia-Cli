@@ -929,6 +929,7 @@ export interface WorkLedgerController {
   buildWorkContractDrafted: ServiceOperation;
   buildWorkContractAccepted: ServiceOperation;
   validateWorkContractFields: ServiceOperation;
+  evaluateCompletionCard: ServiceOperation;
   agentActionNode: ServiceOperation;
   approvalEdge: ServiceOperation;
   approvalNode: ServiceOperation;

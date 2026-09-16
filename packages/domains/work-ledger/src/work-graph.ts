@@ -234,6 +234,11 @@ export function checkpointNode(input: {
   reason: string;
   sessionID: SessionID;
   turnID?: string;
+  /**
+   * The plan this checkpoint was taken under (B7 provenance): the Work Graph
+   * answers "which plan's commitment does this rollback point belong to".
+   */
+  planID?: string;
 }): WorkGraphNodeEvent {
   const nodeID = `wg:checkpoint:${input.sessionID}:${input.checkpointID}`;
   return {
@@ -246,6 +251,7 @@ export function checkpointNode(input: {
     target: input.checkpointID,
     sessionID: input.sessionID,
     turnID: input.turnID,
+    ...(input.planID ? { planID: input.planID } : {}),
   };
 }
 

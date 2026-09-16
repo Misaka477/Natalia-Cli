@@ -23,9 +23,13 @@ export { createWorkLedgerController } from "./work-ledger-controller";
 export {
   buildWorkContractAccepted,
   buildWorkContractDrafted,
+  classifyTaskKind,
+  evaluateCompletionCard,
   isPlaceholderContractValue,
   isUnverifiableContract,
   validateWorkContractFields,
+  MINIMUM_EVIDENCE_MATRIX,
+  type TaskKind,
   type WorkContractAcceptedEvent,
   type WorkContractDraftedEvent,
   type WorkContractFields,
