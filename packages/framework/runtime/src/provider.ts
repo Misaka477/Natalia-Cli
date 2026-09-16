@@ -152,7 +152,14 @@ export type ProviderStreamChunk =
     }
   | { type: "tool_call"; calls: ProviderToolCall[] }
   | { type: "tool_protocol_violation"; text: string }
-  | { type: "usage"; inputTokens: number; outputTokens: number }
+  | {
+      type: "usage";
+      inputTokens: number;
+      outputTokens: number;
+      /** Anthropic cache metrics (ADR E): cache_creation = prefix written, cache_read = prefix reused. */
+      cacheCreationInputTokens?: number;
+      cacheReadInputTokens?: number;
+    }
   | {
       type: "done";
       finishReason?: ProviderFinishReason;
@@ -953,6 +960,30 @@ export class AnthropicProvider implements StreamingProvider {
           maxTokens,
         )
       : undefined;
+    // ADR D1/E: the static per-role system prompt and the tool schemas are
+    // the stable prefix the provider caches. Emit Anthropic cache_control
+    // breakpoints so the prefix is reused across turns instead of re-billed:
+    // one on the system block and one on the last tool schema.
+    const systemMessages = request.messages
+      .filter((message) => message.role === "system")
+      .map((message) => message.content);
+    const anthropicTools =
+      request.toolChoice === "none"
+        ? undefined
+        : request.tools?.map((tool, index, all) =>
+            index === all.length - 1
+              ? {
+                  name: tool.name,
+                  description: tool.description,
+                  input_schema: tool.parameters,
+                  cache_control: { type: "ephemeral" },
+                }
+              : {
+                  name: tool.name,
+                  description: tool.description,
+                  input_schema: tool.parameters,
+                },
+          );
     const response = await this.fetchImpl(messagesURL(this.baseURL), {
       method: "POST",
       headers: {
@@ -965,18 +996,16 @@ export class AnthropicProvider implements StreamingProvider {
         messages: request.messages
           .filter((message) => message.role !== "system")
           .map(toAnthropicMessage),
-        system: request.messages
-          .filter((message) => message.role === "system")
-          .map((message) => message.content)
-          .join("\n\n"),
-        tools:
-          request.toolChoice === "none"
-            ? undefined
-            : request.tools?.map((tool) => ({
-                name: tool.name,
-                description: tool.description,
-                input_schema: tool.parameters,
-              })),
+        system: systemMessages.length
+          ? [
+              {
+                type: "text",
+                text: systemMessages.join("\n\n"),
+                cache_control: { type: "ephemeral" },
+              },
+            ]
+          : undefined,
+        tools: anthropicTools,
         tool_choice:
           request.toolChoice === "required"
             ? { type: "any" }
@@ -1607,8 +1636,20 @@ type AnthropicStreamChunk = {
   choices?: Array<{
     delta?: { reasoning_content?: string; content?: string };
   }>;
-  usage?: { input_tokens?: number; output_tokens?: number };
-  message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
+  message?: {
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
+  };
 };
 
 type GeminiStreamChunk = {
@@ -1862,6 +1903,12 @@ function parseAnthropicSSEPart(
         type: "usage",
         inputTokens: usage.input_tokens ?? 0,
         outputTokens: usage.output_tokens ?? 0,
+        ...(usage.cache_creation_input_tokens !== undefined
+          ? { cacheCreationInputTokens: usage.cache_creation_input_tokens }
+          : {}),
+        ...(usage.cache_read_input_tokens !== undefined
+          ? { cacheReadInputTokens: usage.cache_read_input_tokens }
+          : {}),
       });
   }
   return chunks;

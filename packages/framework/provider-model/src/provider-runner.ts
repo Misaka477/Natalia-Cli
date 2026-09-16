@@ -806,6 +806,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               result.usage = {
                 inputTokens: chunk.inputTokens,
                 outputTokens: chunk.outputTokens,
+                ...(chunk.cacheCreationInputTokens !== undefined
+                  ? { cacheCreationInputTokens: chunk.cacheCreationInputTokens }
+                  : {}),
+                ...(chunk.cacheReadInputTokens !== undefined
+                  ? { cacheReadInputTokens: chunk.cacheReadInputTokens }
+                  : {}),
               };
           }
           if (thinkingBlocks.size)
@@ -823,6 +829,29 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         signal: input.activeAbort()?.signal,
       },
     );
+    if (
+      output.usage &&
+      (output.usage.cacheReadInputTokens !== undefined ||
+        output.usage.cacheCreationInputTokens !== undefined)
+    ) {
+      // ADR E metric: how much of the stable prefix the provider reused this
+      // request. A near-zero read against a large creation means the prefix is
+      // being re-billed every turn — the regression this pipe exists to catch.
+      const read = output.usage.cacheReadInputTokens ?? 0;
+      const created = output.usage.cacheCreationInputTokens ?? 0;
+      const total = output.usage.inputTokens;
+      const hitRate = total > 0 ? Math.round((read / total) * 100) : 0;
+      memoryTrace("provider.cache", {
+        read,
+        created,
+        inputTokens: total,
+        hitRate,
+      });
+      if (process.env.NATALIA_DEBUG_PROVIDER === "1")
+        console.debug(
+          `[provider] cache read=${read} created=${created} hit=${hitRate}%`,
+        );
+    }
     if (output.usage) {
       // This is the provider sample for *this* request, not a turn total.
       // Summing it across the steps of a multi-step turn used to make the
@@ -832,6 +861,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       input.setLastProviderUsage({
         inputTokens: output.usage.inputTokens,
         outputTokens: output.usage.outputTokens,
+        ...(output.usage.cacheCreationInputTokens !== undefined
+          ? { cacheCreationInputTokens: output.usage.cacheCreationInputTokens }
+          : {}),
+        ...(output.usage.cacheReadInputTokens !== undefined
+          ? { cacheReadInputTokens: output.usage.cacheReadInputTokens }
+          : {}),
       });
     }
     if (

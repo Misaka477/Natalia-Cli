@@ -355,7 +355,13 @@ export interface TeamBehaviorService {
   sandboxedSubagentSystemPrompt(domain?: string[]): string;
 }
 
-export type ProviderUsage = { inputTokens: number; outputTokens: number };
+export type ProviderUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  /** Anthropic cache metrics (ADR E): prefix written / prefix reused. */
+  cacheCreationInputTokens?: number;
+  cacheReadInputTokens?: number;
+};
 export type ProviderRunnerInput = {
   provider(): StreamingProvider | undefined;
   session(): SessionRecord | undefined;

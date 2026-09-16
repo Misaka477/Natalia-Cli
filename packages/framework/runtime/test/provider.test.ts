@@ -2427,9 +2427,14 @@ test("Anthropic provider streams text usage and tool calls", async () => {
     tools: [{ name: "read_file", description: "read", parameters: {} }],
   }))
     chunks.push(chunk);
-  expect(body?.["tools"]).toEqual([
-    { name: "read_file", description: "read", input_schema: {} },
-  ]);
+  // ADR E: only the LAST tool schema carries a cache breakpoint.
+  const anthropicTools = body?.["tools"] as Array<{
+    name: string;
+    cache_control?: unknown;
+  }>;
+  expect(anthropicTools).toHaveLength(1);
+  // A single tool is the last tool, so it carries the prefix breakpoint.
+  expect(anthropicTools[0]!.cache_control).toEqual({ type: "ephemeral" });
   expect(chunks).toEqual(
     expect.arrayContaining([
       { type: "content", text: "hello" },
@@ -2816,4 +2821,87 @@ test("contextEntriesToProviderMessages collapses duplicate ledger call pairs", (
   expect(messages.flatMap((message) => message.toolCalls ?? [])[0]?.id).toBe(
     "call_x",
   );
+});
+
+test("Anthropic requests emit cache_control breakpoints on the stable prefix (ADR E)", async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const provider = new AnthropicProvider({
+    apiKey: "key",
+    model: "model",
+    maxTokens: 1024,
+    fetch: Object.assign(
+      async (_input: URL | RequestInfo, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response("event: message_stop\ndata: {}\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+      { preconnect: fetch.preconnect },
+    ) as typeof fetch,
+  });
+  for await (const _chunk of provider.stream({
+    messages: [
+      { role: "system", content: "static persona" },
+      { role: "user", content: "hello" },
+    ],
+    tools: [
+      {
+        name: "read_file",
+        description: "read",
+        parameters: { type: "object", properties: {} },
+      },
+      {
+        name: "run_shell",
+        description: "run",
+        parameters: { type: "object", properties: {} },
+      },
+    ],
+  })) {
+    // Drain to force the request.
+  }
+  const body = bodies[0]!;
+  // The system prompt is a cacheable text block.
+  const system = body.system as Array<{
+    type: string;
+    text: string;
+    cache_control?: { type: string };
+  }>;
+  expect(system).toHaveLength(1);
+  expect(system[0]!.text).toBe("static persona");
+  expect(system[0]!.cache_control).toEqual({ type: "ephemeral" });
+  // Only the LAST tool schema carries a breakpoint (the prefix ends there).
+  const tools = body.tools as Array<{ name: string; cache_control?: unknown }>;
+  expect(tools).toHaveLength(2);
+  expect(tools[0]!.cache_control).toBeUndefined();
+  expect(tools[1]!.cache_control).toEqual({ type: "ephemeral" });
+});
+
+test("Anthropic usage chunks carry the cache metrics (ADR E)", async () => {
+  const provider = new AnthropicProvider({
+    apiKey: "key",
+    model: "model",
+    maxTokens: 1024,
+    fetch: Object.assign(
+      async () =>
+        new Response(
+          "event: message_start\n" +
+            'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0,"cache_creation_input_tokens":80,"cache_read_input_tokens":20}}}\n\n' +
+            "event: message_stop\n\n",
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+      { preconnect: fetch.preconnect },
+    ) as typeof fetch,
+  });
+  const usages: Array<Record<string, unknown>> = [];
+  for await (const chunk of provider.stream({
+    messages: [{ role: "user", content: "hi" }],
+  }))
+    if (chunk.type === "usage")
+      usages.push(chunk as unknown as Record<string, unknown>);
+  expect(usages).toHaveLength(1);
+  expect(usages[0]).toMatchObject({
+    inputTokens: 100,
+    cacheCreationInputTokens: 80,
+    cacheReadInputTokens: 20,
+  });
 });

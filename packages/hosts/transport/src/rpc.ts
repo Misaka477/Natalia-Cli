@@ -226,6 +226,7 @@ export const RPC_ROUTE_MEMBERS = {
   "nativeTerminal.write": "nativeTerminalWrite",
   "nativeTerminal.resize": "nativeTerminalResize",
   "constitution.rules": "constitutionRules",
+  "context.notices": "notices",
   "decision.records": "decisionRecords",
   "decision.record": "recordDecision",
   "evidence.records": "evidenceRecords",
@@ -2042,6 +2043,16 @@ export async function handleRPCMessage(
         ),
       };
     }
+    if (body.method === "context.notices") {
+      optionsGuard(client, "notices");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.notices?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
     if (body.method === "decision.records") {
       optionsGuard(client, "decisionRecords");
       return {
@@ -2103,7 +2114,9 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.evidenceRecords?.(
-          optionalStringParam(body.params, "sessionID"),
+          body.params as
+            | { sessionID?: string; limit?: number; cursor?: string }
+            | undefined,
         ),
       };
     }
@@ -2151,7 +2164,9 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.completions?.(
-          optionalStringParam(body.params, "sessionID"),
+          body.params as
+            | { sessionID?: string; limit?: number; cursor?: string }
+            | undefined,
         ),
       };
     }
@@ -2223,7 +2238,9 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.driftFindings?.(
-          optionalStringParam(body.params, "sessionID"),
+          body.params as
+            | { sessionID?: string; limit?: number; cursor?: string }
+            | undefined,
         ),
       };
     }
