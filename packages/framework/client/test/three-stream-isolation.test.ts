@@ -88,6 +88,11 @@ function providerForChat(
       if (request.signal?.aborted)
         throw request.signal.reason ?? new Error("aborted");
       yield { type: "content" as const, text: `${channel}:${prompt}` };
+      yield {
+        type: "usage" as const,
+        inputTokens: 11,
+        outputTokens: 7,
+      };
       yield { type: "done" as const };
     },
   };
@@ -165,6 +170,28 @@ test("Navi and Nia run concurrently with independent event and thinking namespac
     ).toBe(true);
   } finally {
     releaseAll(gates);
+    await client.dispose?.();
+  }
+});
+
+test("Navi and Nia provider usage feeds the session usage dashboard", async () => {
+  const requests: ChatRequest[] = [];
+  const { client } = await makeClient("usage", requests, new Map());
+  const events: RuntimeEvent[] = [];
+  client.start((event) => events.push(event));
+  try {
+    await client.chatSubmit!({ channel: "navi", text: "navi usage" });
+    await client.chatSubmit!({ channel: "nia", text: "nia usage" });
+    const usage = events.filter(
+      (
+        event,
+      ): event is Extract<RuntimeEvent, { type: "runtime.step_usage" }> =>
+        event.type === "runtime.step_usage",
+    );
+    expect(usage).toHaveLength(2);
+    expect(usage.map((event) => event.inputTokens)).toEqual([11, 11]);
+    expect(usage.map((event) => event.outputTokens)).toEqual([7, 7]);
+  } finally {
     await client.dispose?.();
   }
 });

@@ -349,7 +349,12 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           messages.splice(0, messages.length, ...compactedMessages);
         publishTokenSnapshot();
         let providerUsage:
-          | { inputTokens: number; outputTokens: number }
+          | {
+              inputTokens: number;
+              outputTokens: number;
+              cacheCreationInputTokens?: number;
+              cacheReadInputTokens?: number;
+            }
           | undefined;
         const raw = activeProvider.stream({
           messages: finalOnly
@@ -405,9 +410,33 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
             providerUsage = {
               inputTokens: chunk.inputTokens,
               outputTokens: chunk.outputTokens,
+              ...(chunk.cacheCreationInputTokens === undefined
+                ? {}
+                : { cacheCreationInputTokens: chunk.cacheCreationInputTokens }),
+              ...(chunk.cacheReadInputTokens === undefined
+                ? {}
+                : { cacheReadInputTokens: chunk.cacheReadInputTokens }),
             };
         }
         if (providerUsage) {
+          // The main provider runner emits one `runtime.step_usage` per step.
+          // Chat turns call the provider directly, so mirror it here or the
+          // session usage dashboard silently excludes Navi/Nia.
+          publishForSession(input.exec, {
+            type: "runtime.step_usage",
+            id: `${input.responseMessageID}:usage:${nextChatSequence()}`,
+            inputTokens: providerUsage.inputTokens,
+            outputTokens: providerUsage.outputTokens,
+            ...(providerUsage.cacheCreationInputTokens === undefined
+              ? {}
+              : {
+                  cacheCreationInputTokens:
+                    providerUsage.cacheCreationInputTokens,
+                }),
+            ...(providerUsage.cacheReadInputTokens === undefined
+              ? {}
+              : { cacheReadInputTokens: providerUsage.cacheReadInputTokens }),
+          });
           const scope = "chat:navi";
           const system =
             messages[0]?.role === "system" ? messages[0].content : undefined;
