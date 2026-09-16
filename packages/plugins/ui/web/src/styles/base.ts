@@ -4658,6 +4658,31 @@ button.neu-settings-item.neu-settings-item-button:active {
   opacity: 0.7;
   margin-bottom: 2px;
 }
+.plan-contract-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 3px 8px;
+  margin: 0 0 6px;
+  border-radius: 6px;
+  background: rgba(120, 160, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(120, 160, 255, 0.2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.plan-contract-seg {
+  white-space: nowrap;
+}
+.plan-contract-seg[data-status="current"] {
+  color: #8fd48f;
+}
+.plan-contract-seg[data-status="draft"] {
+  opacity: 0.75;
+}
+.plan-contract-seg[data-status="stale"] {
+  color: #e6b45a;
+}
 .neu-goal-action {
   display: inline-flex;
   align-items: center;

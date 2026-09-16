@@ -108,6 +108,7 @@ export {
   type PlanDocView,
   type SessionUsageStats,
   type SessionUsageView,
+  type WorkContractView,
 } from "./state";
 export {
   applyActivityEvent,

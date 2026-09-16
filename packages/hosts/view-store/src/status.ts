@@ -46,6 +46,37 @@ export function applyStatusEvent(
       usage.decodeMs += event.decodeMs ?? 0;
       return true;
     }
+    case "work_contract.drafted":
+      state.workContracts[event.planID] = {
+        planID: event.planID,
+        version: event.planVersion,
+        ...(event.scope ? { scope: event.scope } : {}),
+        ...(event.verification ? { verification: event.verification } : {}),
+        ...(event.constraints ? { constraints: event.constraints } : {}),
+        status: "draft",
+      };
+      return true;
+    case "work_contract.accepted":
+      state.workContracts[event.planID] = {
+        planID: event.planID,
+        version: event.planVersion,
+        ...(event.scope ? { scope: event.scope } : {}),
+        ...(event.verification ? { verification: event.verification } : {}),
+        ...(event.constraints ? { constraints: event.constraints } : {}),
+        status: "current",
+        acceptedBy: event.acceptedBy,
+        acceptedAt: event.acceptedAt,
+        ...(event.unverifiable ? { unverifiable: true } : {}),
+      };
+      return true;
+    case "plan.doc.updated": {
+      // A plan document edit invalidates a draft extracted from the older
+      // version (EI §8.2); an accepted contract is the user's commitment and
+      // survives until a new one is approved.
+      const contract = state.workContracts[event.planID];
+      if (contract && contract.status === "draft") contract.stale = true;
+      return true;
+    }
     case "status.update":
       state.status = event.status;
       state.footer = [event.status, event.detail].filter(Boolean).join(" - ");

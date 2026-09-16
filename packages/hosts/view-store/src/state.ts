@@ -180,6 +180,27 @@ export type SessionUsageView = SessionUsageStats & {
   /** Output tokens per second of decode time; 0 when no decode time. */
   tokensPerSecond: number;
 };
+
+/**
+ * A projected WorkContract per plan (EI §8.2), folded into the view-store so
+ * any UI (e.g. the plan tab's contract summary bar) reads it without rescanning
+ * the journal. `current` is the user-approved R; `draft` is the latest
+ * unapproved proposal; `stale` marks a draft whose plan document changed after
+ * it was extracted. Mirrors the session projection, kept self-contained so
+ * view-store stays independent of @natalia/session.
+ */
+export type WorkContractView = {
+  planID: string;
+  version: number;
+  scope?: string[];
+  verification?: string[];
+  constraints?: string[];
+  status: "current" | "draft";
+  stale?: boolean;
+  unverifiable?: boolean;
+  acceptedBy?: "user";
+  acceptedAt?: string;
+};
 export type WorkGraphNodeView = Extract<
   RuntimeEvent,
   { type: "workgraph.node_added" }
@@ -358,6 +379,11 @@ export type AppState = {
    * throughput, average first-token latency).
    */
   sessionUsage: SessionUsageStats;
+  /**
+   * Projected WorkContracts per plan (EI §8.2), consumed by the plan tab's
+   * contract summary bar. Session-scoped like the rest of the state.
+   */
+  workContracts: Record<string, WorkContractView>;
   selectedTaskID?: string;
   selectedEvidenceID?: string;
   /** Recent policy outcomes, so a UI can explain why a tool did not run. */
@@ -515,6 +541,7 @@ export function initialState(): AppState {
       ttftSteps: 0,
       decodeMs: 0,
     },
+    workContracts: {},
   };
 }
 
@@ -581,6 +608,7 @@ export function cloneState(state: AppState): AppState {
     plans: mapRecord(state.plans, (value) => ({ ...value })),
     runtimeNotices: state.runtimeNotices.map((notice) => ({ ...notice })),
     sessionUsage: { ...state.sessionUsage },
+    workContracts: mapRecord(state.workContracts, (value) => ({ ...value })),
     ...(state.goal
       ? {
           goal: {

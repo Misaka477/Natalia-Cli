@@ -350,6 +350,47 @@ export function PlanPanel(props: {
                   </Show>
                 </div>
               </div>
+              <Show
+                when={
+                  selected() && props.state.workContracts[selected()!.planID]
+                }
+              >
+                {(contract) => (
+                  <div class="plan-contract-bar">
+                    <span class="plan-contract-seg">
+                      WorkContract v{contract().version}
+                    </span>
+                    <span
+                      class="plan-contract-seg"
+                      data-status={contract().status}
+                    >
+                      {contract().status === "current"
+                        ? `已批准 (${contract().acceptedBy})`
+                        : "草案 · 待批准"}
+                    </span>
+                    <Show when={contract().scope?.length}>
+                      <span class="plan-contract-seg">
+                        scope ×{contract().scope!.length}
+                      </span>
+                    </Show>
+                    <Show when={contract().verification?.length}>
+                      <span class="plan-contract-seg">
+                        验证 ×{contract().verification!.length}
+                      </span>
+                    </Show>
+                    <Show when={contract().stale}>
+                      <span class="plan-contract-seg" data-status="stale">
+                        计划已变更 · 需重新提案
+                      </span>
+                    </Show>
+                    <Show when={contract().unverifiable}>
+                      <span class="plan-contract-seg" data-status="stale">
+                        unverifiable
+                      </span>
+                    </Show>
+                  </div>
+                )}
+              </Show>
               <div class="plan-panel-doc-buttons">
                 <button
                   type="button"
