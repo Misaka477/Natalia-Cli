@@ -2643,3 +2643,31 @@ test("an older session (tool.update + turn.finished only) still rebuilds the cau
   // No per-step token data exists for an old session — honest zeros, not guesses.
   expect(state.sessionUsage.inputTokens).toBe(0);
 });
+
+test("context.instructions interleave into the transcript as system bubbles at their sequence position (ADR Phase C)", () => {
+  const sessionID = "ses_notice";
+  const events = [
+    { type: "turn.submitted", id: "t1", text: "first", sessionID },
+    {
+      type: "context.instructions",
+      id: "ctx:1",
+      kind: "config_reload",
+      at: "2026-09-16T01:00:00.000Z",
+      revision: 1,
+      summary: "runtime config reloaded",
+      sessionID,
+    },
+    { type: "turn.submitted", id: "t2", text: "second", sessionID },
+  ] as unknown as RuntimeEvent[];
+
+  const state = projectEvents(events);
+  const ids = state.natalia.messages.map((message) => message.id);
+  // The notice bubble lands between the two turns (its fold position), not at
+  // the top or the very end.
+  const noticeIndex = ids.indexOf("notice:ctx:1");
+  expect(noticeIndex).toBeGreaterThan(ids.indexOf("t1:user"));
+  expect(noticeIndex).toBeLessThan(ids.indexOf("t2:user"));
+  const notice = state.natalia.messages[noticeIndex]!;
+  expect(notice.role).toBe("system");
+  expect(notice.text).toBe("config_reload: runtime config reloaded");
+});

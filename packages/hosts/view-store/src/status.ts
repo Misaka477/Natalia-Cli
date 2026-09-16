@@ -7,7 +7,7 @@
  * nothing about the runtime.
  */
 import type { RuntimeEvent } from "@natalia/contracts";
-import { resetStreamsForRetry } from "./conversation";
+import { resetStreamsForRetry, upsertInto } from "./conversation";
 import {
   appendBounded,
   completionLimit,
@@ -220,6 +220,16 @@ export function applyStatusEvent(
         ...state.runtimeNotices.filter((n) => n.kind !== event.kind),
         notice,
       ].sort((left, right) => left.at.localeCompare(right.at));
+      // ADR Phase C: interleave the notice into the transcript at its sequence
+      // position as a system bubble (fold order = event order, so upserting
+      // here lands it between the turns it actually separates), never stacked
+      // at the top. A replay and a live stream converge on the same rows.
+      upsertInto(
+        state.natalia.messages,
+        `notice:${event.id}`,
+        "system",
+        `${event.kind}: ${event.summary}`,
+      );
       return true;
     }
     case "model.selection":
