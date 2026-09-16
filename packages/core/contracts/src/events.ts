@@ -3512,6 +3512,12 @@ export type RuntimeClient = {
   planDocMark?(input: {
     path: string;
     title?: string;
+    /**
+     * Who marked the plan (EI §8.1): `user` for a direct user mark, `live_chat`
+     * when Navi marks the plan the user directed her to draft, `main_agent`
+     * when the main agent marks it. Defaults to `user`.
+     */
+    createdBy?: "user" | "live_chat" | "main_agent";
     sessionID?: string;
   }): Promise<{ marked: boolean; planID: string }>;
   /** Deletes a plan registry record (does not delete the Markdown file). */

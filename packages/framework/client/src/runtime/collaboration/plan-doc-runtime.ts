@@ -63,6 +63,8 @@ export type PlanDocRuntime = {
   planDocMark(input: {
     path: string;
     title?: string;
+    /** Who marked the plan (EI §8.1); defaults to `user`. */
+    createdBy?: "user" | "live_chat" | "main_agent";
     sessionID?: string;
   }): Promise<{ marked: boolean; planID: string }>;
   planDocDelete(
@@ -239,7 +241,8 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     const store = ctx.ports.resolveService<SessionStoreController>(
       SESSION_STORE_CONTROLLER_SERVICE,
     );
-    if (!store) throw new Error("session store unavailable (natalia-session-store)");
+    if (!store)
+      throw new Error("session store unavailable (natalia-session-store)");
     const metadata = { ...exec.session.metadata };
     if (planID) metadata.activePlanID = planID;
     else delete metadata.activePlanID;
@@ -318,7 +321,10 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
         title: input.title?.trim() || planID,
         documentPath: relativePlanPath(ctx, targetPath),
         status: "marked",
-        createdBy: "user",
+        // EI §8.1: the source that marked the plan, not a hardcoded user —
+        // a plan drafted by Navi through the Live Work Chat is createdBy
+        // live_chat, and one drafted by the main agent is main_agent.
+        createdBy: input.createdBy ?? "user",
         createdAt: now,
         updatedAt: now,
         markedAt: now,
@@ -395,15 +401,12 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
         );
       const planID = exec?.session?.metadata?.activePlanID;
       return {
-        ...(typeof planID === "string" && planID.length
-          ? { planID }
-          : {}),
+        ...(typeof planID === "string" && planID.length ? { planID } : {}),
       };
     },
 
     async planDocActivate(planID, sessionID?) {
-      if (!planID || !readIndexSync(ctx)[planID])
-        return { updated: false };
+      if (!planID || !readIndexSync(ctx)[planID]) return { updated: false };
       return await updateActivePlanID(planID, sessionID);
     },
 

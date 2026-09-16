@@ -514,6 +514,17 @@ export function projectedConstitutionRules(events: RuntimeEvent[]) {
   return sessionConstitutionRulesFrom(state);
 }
 
+/**
+ * Projects the work contracts from the journal (EI §8.2): the latest accepted
+ * contract or draft per plan. Used by the handoff gate, which refuses to hand
+ * off a plan the user has not committed to.
+ */
+export function projectedWorkContracts(events: RuntimeEvent[]) {
+  const state = emptySessionWorkContractFactState();
+  for (const event of events) applySessionWorkContractFact(state, event);
+  return sessionWorkContractsFrom(state);
+}
+
 export function projectedConstitutionOverrides(
   events: RuntimeEvent[],
   now = Date.now(),

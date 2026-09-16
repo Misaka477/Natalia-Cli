@@ -327,6 +327,7 @@ export {
   projectSessionMessages,
   projectedConstitutionRules,
   projectedConstitutionOverrides,
+  projectedWorkContracts,
   projectedDecisionRecords,
   latestSessionSnapshot,
   projectedCanonicalTools,

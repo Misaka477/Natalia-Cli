@@ -34,6 +34,11 @@ import {
   createPlanDocReadTool,
 } from "../plan-doc-tools";
 import {
+  createPlanProposeTool,
+  createWorkContractReadTool,
+} from "../plan-contract-tools";
+import { createWorkGraphQueryTool } from "../work-graph-tools";
+import {
   createMutationRegistry,
   createWorkspaceFilesController,
   createWorkspaceWriteLock,
@@ -213,8 +218,15 @@ export async function wireFrameworkServices(
 
   // ADR D4/B3: the main agent reads the plan document itself — the plan正文
   // is never injected into any prompt. Register the plan read tools so the
-  // main agent has the same plan-document access Navi and Nia have.
-  for (const tool of [createPlanDocListTool(ctx), createPlanDocReadTool(ctx)]) {
+  // main agent has the same plan-document access Navi and Nia have, plus the
+  // WorkContract proposal/read tools (EI §8.4).
+  for (const tool of [
+    createPlanDocListTool(ctx),
+    createPlanDocReadTool(ctx),
+    createPlanProposeTool(ctx),
+    createWorkContractReadTool(ctx),
+    createWorkGraphQueryTool(ctx),
+  ]) {
     if (ctx.state.tools.get(tool.name))
       throw new Error(`framework tool already registered: ${tool.name}`);
     ctx.state.tools.set(tool.name, tool);

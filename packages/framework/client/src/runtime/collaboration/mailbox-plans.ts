@@ -6,7 +6,10 @@
  * and the plan draft writer. Reads live state through `RuntimeContext` at call
  * time.
  */
-import { sessionRunCoordinator } from "@natalia/session";
+import {
+  sessionRunCoordinator,
+  projectedWorkContracts,
+} from "@natalia/session";
 import {
   buildMailboxQueued,
   buildMailboxStatus,
@@ -200,6 +203,22 @@ export function createMailboxPlans(ctx: RuntimeContext) {
         return {
           queued: false as const,
           reason: `plan ${planID} is already completed`,
+        };
+      // EI §8.1: the handoff is the user-tier promise — the R drift is judged
+      // against. Refuse to hand off a plan the user has not committed to; the
+      // proposer must draft the contract (plan_propose) and wait for the
+      // user's approval first. (ensureSessionFullEvents above guarantees the
+      // full journal is present for the projection.)
+      const acceptedContract = projectedWorkContracts(
+        owner.session.events,
+      ).find(
+        (contract) =>
+          contract.planID === planID && contract.status === "current",
+      );
+      if (!acceptedContract)
+        return {
+          queued: false as const,
+          reason: `plan ${planID} has no accepted work contract; propose one with plan_propose and wait for the user's approval before handing off`,
         };
     }
     const fingerprint = mailboxFingerprint(
