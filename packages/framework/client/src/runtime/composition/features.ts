@@ -90,8 +90,10 @@ export function wireFeatures(
     return mailboxPlans.enqueueMailboxMessage(input, exec);
   };
   ports.planDocRuntime = createPlanDocRuntime(ctx);
-  ports.naviChatSystemPrompt = chatPrompt.naviChatSystemPrompt;
-  ports.niaChatSystemPrompt = chatPrompt.niaChatSystemPrompt;
+  ports.naviChatPersona = chatPrompt.naviChatPersona;
+  ports.naviChatLiveContext = chatPrompt.naviChatLiveContext;
+  ports.niaChatPersona = chatPrompt.niaChatPersona;
+  ports.niaChatLiveContext = chatPrompt.niaChatLiveContext;
   ports.naviChatTools = chatTools.naviChatTools;
   ports.niaChatTools = chatTools.niaChatTools;
   ports.chatToolSummary = chatTools.chatToolSummary;

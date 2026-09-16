@@ -89,8 +89,10 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
         events.push(event);
       },
       nextChatSequence: () => sequence++,
-      naviChatSystemPrompt: () => "Navi only",
-      niaChatSystemPrompt: () => "Nia only",
+      naviChatPersona: () => "Navi only",
+      naviChatLiveContext: () => "",
+      niaChatPersona: () => "Nia only",
+      niaChatLiveContext: () => "",
       naviChatTools: () => [],
       niaChatTools: () => [],
       effectiveMaxSteps: () => 1,

@@ -11,6 +11,27 @@ import type {
   SubagentsService,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
+import { activePlanForExec } from "../collaboration/plan-doc-runtime";
+
+/**
+ * The active plan pointer for a subagent (ADR D4/B2): planID + documentPath +
+ * version only. The plan正文 is never injected into the subagent's context;
+ * the subagent reads the plan file itself with read_file.
+ */
+function subagentPlanPointer(ctx: RuntimeContext, exec: SessionExecutionState) {
+  const plan = activePlanForExec(ctx, exec);
+  if (!plan) return undefined;
+  return {
+    planID: plan.planID,
+    // documentPath is relative to the plan dir; the subagent reads the file
+    // through the workspace root, so the pointer carries the full
+    // workspace-relative path.
+    documentPath: `.natalia/plans/${plan.documentPath}`,
+    // The plan document has no persisted version counter; the pointer only
+    // needs a stable, honest value, and the plan file read carries the truth.
+    version: 1,
+  };
+}
 
 export async function installSubagents(
   ctx: RuntimeContext,
@@ -102,6 +123,7 @@ export async function installSubagents(
       scope.teamBehavior()?.sandboxedSubagentSystemPrompt(writePaths) ??
         "You are a focused Natalia TS/Bun subagent. Use the provided native tools to inspect, edit, and validate the workspace. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
       task,
+      subagentPlanPointer(ctx, exec),
     );
     const repeatedCalls = new Map<string, number[]>();
     const maxSubagentSteps = scope.effectiveMaxSteps(exec);
@@ -195,6 +217,7 @@ export async function installSubagents(
       const ledger = createSubagentContext(
         "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. When a tool is needed, call it through the provider's native structured tool-calling interface; never write XML, JSON, Markdown, or prose that imitates a tool call in assistant content. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
         task,
+        subagentPlanPointer(ctx, exec),
       );
       const repeatedCalls = new Map<string, number[]>();
       runner.log(`accepted: ${task}`);

@@ -97,6 +97,13 @@ test("Nia and Navi prompts see workspace plans but only the session active plan"
     navi: [],
     nia: [],
   };
+  // The static system prompt per channel, collected separately from the live
+  // context so the ADR D1 split can be asserted.
+  const personas: { main: string[]; navi: string[]; nia: string[] } = {
+    main: [],
+    navi: [],
+    nia: [],
+  };
   const providerWithPrompts: StreamingProvider = {
     provider: "plan-active-prompt",
     model: "plan-active-prompt-model",
@@ -110,14 +117,23 @@ test("Nia and Navi prompts see workspace plans but only the session active plan"
         : prompt.includes("<navi_chat_persona>")
           ? "navi"
           : "main";
+      personas[channel].push(prompt);
       // ADR D1: the main agent's plan handoff is dynamic runtime context
       // appended as a user message, not static system prompt content; the
-      // Navi/Nia prompts still carry their live context in the system prompt.
-      prompts[channel].push(
+      // Navi/Nia live work context likewise arrives as a `<runtime_context>`
+      // user message. Collect everything the model actually sees.
+      const seen =
         channel === "main"
           ? request.messages.map((message) => message.content).join("\n")
-          : prompt,
-      );
+          : `${prompt}\n${request.messages
+              .filter(
+                (message) =>
+                  message.role === "user" &&
+                  message.content.includes("<runtime_context"),
+              )
+              .map((message) => message.content)
+              .join("\n")}`;
+      prompts[channel].push(seen);
       yield { type: "content" as const, text: "ok" };
       yield { type: "done" as const };
     },
@@ -177,6 +193,18 @@ test("Nia and Navi prompts see workspace plans but only the session active plan"
     const niaPromptAfterDeactivate = prompts.nia.at(-1) ?? "";
     expect(niaPromptAfterDeactivate).toContain("Active plan: none");
     expect(niaPromptAfterDeactivate).toContain(marked.planID);
+
+    // ADR D1: the Navi/Nia system prompt is the static persona only —
+    // byte-identical across sessions and workspace state. Live plans, mailbox
+    // and collaboration messages arrive as `<runtime_context>` user messages.
+    expect(new Set(personas.navi).size).toBe(1);
+    expect(new Set(personas.nia).size).toBe(1);
+    expect(personas.nia[0]).toContain("<nia_chat_persona>");
+    expect(personas.nia[0]).not.toContain("Active plan");
+    expect(personas.nia[0]).not.toContain("Known plan documents");
+    expect(personas.navi[0]).toContain("<navi_chat_persona>");
+    expect(personas.navi[0]).not.toContain("Active plan");
+    expect(personas.navi[0]).not.toContain("Known plan documents");
   } finally {
     await client.dispose?.();
   }

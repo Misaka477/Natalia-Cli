@@ -141,10 +141,24 @@ export async function createSubagentSupport(
     scope.turnSession.delete(id);
     scope.turnAgent.delete(id);
   }
-  function createSubagentContext(system: string, task: string) {
+  function createSubagentContext(
+    system: string,
+    task: string,
+    planPointer?: { planID: string; documentPath: string; version: number },
+  ) {
     const ledger = resolvedContextLedgerFactory.create();
     ledger.add({ id: "system", role: "system", content: system });
     ledger.add({ id: "task", role: "user", content: task });
+    // ADR D4/B2: the plan正文 is never injected — the subagent reads the plan
+    // file itself with read_file. Only the low-churn pointer (planID + path +
+    // version) travels as a `<runtime_context source="plan_ptr">` user
+    // message, so the subagent can find and read the current plan.
+    if (planPointer)
+      ledger.add({
+        id: "plan_ptr",
+        role: "dynamic",
+        content: `<runtime_context source="plan_ptr" trust="runtime" revision="1">\nThe session has an active plan you must follow:\nplanID: ${planPointer.planID} · version: ${planPointer.version}\npath: ${planPointer.documentPath}\nRead the plan file with read_file before acting on it. If the path is missing or the read fails, say so instead of guessing the plan.\n</runtime_context>`,
+      });
     return ledger;
   }
   const tokenMeters = new WeakMap<RuntimeContextLedger, TokenMeter>();
@@ -333,12 +347,7 @@ export async function createSubagentSupport(
       // Drop the pre-compaction provider anchor before re-measuring.
       tokenMeterFor(ledger).clear(`subagent:${runner.agentId}`);
       // Publish the compacted projection before the provider request starts.
-      measureSubagentRequest(
-        ledger,
-        runner,
-        visibleTools,
-        activeContextConfig,
-      );
+      measureSubagentRequest(ledger, runner, visibleTools, activeContextConfig);
       result = await resolvedCompactionService.runWithContextLimitRecovery({
         id,
         step,

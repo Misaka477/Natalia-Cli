@@ -11859,13 +11859,25 @@ test("chat submit runs a live work chat turn and persists the conversation", asy
     }),
   ]);
   await client.chatSubmit!({ text: "and now" });
-  expect(
-    requests.at(-1)?.filter((message) => message.role !== "system"),
-  ).toEqual([
+  // ADR D2: the live work context is an appended `<runtime_context>` user
+  // message directly before the turn's request; the conversation history
+  // itself is unchanged.
+  const secondRequest = requests.at(-1) ?? [];
+  expect(secondRequest.filter((message) => message.role !== "system")).toEqual([
     { role: "user", content: "what is the agent doing" },
     { role: "assistant", content: "the main agent is running step 2" },
+    expect.objectContaining({
+      role: "user",
+      content: expect.stringContaining(
+        '<runtime_context source="collab" trust="untrusted" revision="1"',
+      ),
+    }),
     { role: "user", content: "and now" },
   ]);
+  // The static system prompt never carries the live context (ADR D1).
+  const system = secondRequest.find((message) => message.role === "system");
+  expect(system?.content).toContain("<navi_chat_persona>");
+  expect(system?.content).not.toContain("<live_work_context>");
   await client.dispose?.();
 });
 
@@ -12121,10 +12133,11 @@ test("the chat context includes the main agent's recent activity", async () => {
           yield { type: "done" as const };
           return;
         }
-        chatSystemPrompt = String(
-          (request as { messages: Array<{ role: string; content: string }> })
-            .messages[0]?.content ?? "",
-        );
+        chatSystemPrompt = (
+          request as { messages: Array<{ role: string; content: string }> }
+        ).messages
+          .map((message) => message.content)
+          .join("\n");
         yield {
           type: "content" as const,
           text: "the main agent said it replaced the wrapper",
@@ -12171,12 +12184,15 @@ test("chat answers with live main context while the main turn is still running",
       provider: "test",
       model: "test",
       async *stream(request) {
-        const system = String(
-          (request as { messages: Array<{ role: string; content: string }> })
-            .messages[0]?.content ?? "",
-        );
-        if (system.includes("<natalia_collaborations>")) {
-          chatSystemPrompt = system;
+        // ADR D1/D2: the Navi turn's live context arrives as an appended
+        // `<runtime_context>` user message, not the static system prompt.
+        const allMessages = (
+          request as { messages: Array<{ role: string; content: string }> }
+        ).messages
+          .map((message) => message.content)
+          .join("\n");
+        if (allMessages.includes("<natalia_collaborations>")) {
+          chatSystemPrompt = allMessages;
           yield { type: "content" as const, text: "she is still working" };
           yield { type: "done" as const };
           return;
@@ -12415,16 +12431,22 @@ test("the collaboration channel round-robins between Navi and the main agent", a
       provider: "test",
       model: "test",
       async *stream(request) {
-        const system = String(
-          (request as { messages: Array<{ role: string; content: string }> })
-            .messages[0]?.content ?? "",
-        );
+        const messages = (
+          request as { messages: Array<{ role: string; content: string }> }
+        ).messages;
+        // ADR D1/D2: the Navi turn's live context arrives as an appended
+        // `<runtime_context>` user message, not the static system prompt.
         // Chat turns carry her sister's questions/outcomes block; main-agent
         // turns never do, so the source of a stream call is content, not a
         // call counter (the wake runs concurrently).
-        const naviTurn = system.includes("<natalia_collaborations>");
+        const allMessages = messages
+          .map((message) => message.content)
+          .join("\n");
+        const naviTurn = allMessages.includes("<natalia_collaborations>");
         if (!naviTurn) {
-          mainPrompt = system;
+          // ADR D1/D2: the main agent's collaboration state is runtime context
+          // appended as a user message, not system prompt content.
+          mainPrompt = allMessages;
           mainStreamCount++;
           if (mainStreamCount === 1) {
             yield { type: "content" as const, text: "I will use that." };
@@ -12463,7 +12485,7 @@ test("the collaboration channel round-robins between Navi and the main agent", a
           yield { type: "done" as const };
           return;
         }
-        chatPrompt2 = system;
+        chatPrompt2 = allMessages;
         if (!naviSuggested) {
           // Navi's first turn: send the suggestion.
           naviSuggested = true;
@@ -12589,8 +12611,10 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
           return;
         }
         if (naviStreamCount === 2) {
+          // ADR D2: the pending questionID arrives in the `<runtime_context>`
+          // user message, not the static persona system prompt.
           const match = /questionID: (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
-            system,
+            allMessages,
           );
           yield {
             type: "tool_call" as const,
@@ -12630,6 +12654,12 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
   expect(
     firstNaviMessages.filter((message) => message.role !== "system"),
   ).toEqual([
+    // ADR D2: the live work context is an appended `<runtime_context>` user
+    // message; the internal advisor request is the trailing user message.
+    expect.objectContaining({
+      role: "user",
+      content: expect.stringContaining('<runtime_context source="collab"'),
+    }),
     expect.objectContaining({
       role: "user",
       content: expect.stringContaining(
@@ -12686,7 +12716,12 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
         const inboxTurn = messages.some(
           (message) => message.role === "user" && message.content === "check",
         );
-        const naviTurn = system.includes("<natalia_collaborations>");
+        // ADR D1/D2: the Navi turn's live context arrives as an appended
+        // `<runtime_context>` user message, not the static system prompt.
+        const allMessages = messages
+          .map((message) => message.content)
+          .join("\n");
+        const naviTurn = allMessages.includes("<natalia_collaborations>");
         if (!naviTurn) {
           if (!mainAsked) {
             mainAsked = true;
@@ -12716,7 +12751,7 @@ test("collab_inbox lets the main agent read Navi's answer on demand", async () =
           return;
         }
         const match = /questionID: (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
-          system,
+          allMessages,
         );
         if (match && !naviAnswered) {
           naviAnswered = true;
@@ -12773,11 +12808,14 @@ test("collab_answer rejects a truncated question id", async () => {
       model: "test",
       async *stream(request) {
         streamCalls++;
-        const system = String(
-          (request as { messages: Array<{ role: string; content: string }> })
-            .messages[0]?.content ?? "",
-        );
-        const naviTurn = system.includes("<natalia_collaborations>");
+        // ADR D1/D2: the Navi turn's live context arrives as an appended
+        // `<runtime_context>` user message, not the static system prompt.
+        const allMessages = (
+          request as { messages: Array<{ role: string; content: string }> }
+        ).messages
+          .map((message) => message.content)
+          .join("\n");
+        const naviTurn = allMessages.includes("<natalia_collaborations>");
         if (!naviTurn) {
           if (streamCalls === 1) {
             yield {
@@ -12799,7 +12837,7 @@ test("collab_answer rejects a truncated question id", async () => {
         naviStreamCount++;
         if (naviStreamCount === 1) {
           const match = /questionID: (collab:question:[a-z0-9]+:[0-9]+)/u.exec(
-            system,
+            allMessages,
           );
           // The model truncates the id to its tail, dropping the prefix.
           const truncated = (match?.[1] ?? "").replace(
@@ -12871,7 +12909,7 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
         const systemContext = messages
           .map((message) => message.content)
           .join("\n");
-        const naviTurn = system.includes("<natalia_collaborations>");
+        const naviTurn = systemContext.includes("<natalia_collaborations>");
         const toolResult = messages
           .filter((message) => message.role === "tool")
           .at(-1)?.content;
@@ -13093,14 +13131,18 @@ test("collab_chat honors a configured one-round automatic limit", async () => {
         const messages = (
           request as { messages: Array<{ role: string; content: string }> }
         ).messages;
-        const system = String(messages[0]?.content ?? "");
-        const naviTurn = system.includes("<natalia_collaborations>");
+        // ADR D1/D2: the Navi turn's live context arrives as an appended
+        // `<runtime_context>` user message, not the static system prompt.
+        const allMessages = messages
+          .map((message) => message.content)
+          .join("\n");
+        const naviTurn = allMessages.includes("<natalia_collaborations>");
         const toolResult = messages
           .filter((message) => message.role === "tool")
           .at(-1)?.content;
         const pendingID =
           /messageID: (collab:chat:[^\s·]+)[^\n]*REPLY_REQUIRED/u.exec(
-            system,
+            allMessages,
           )?.[1];
         if (!naviTurn && !started) {
           started = true;
@@ -13900,5 +13942,181 @@ test("a tool-issued generic interactive reaches projection, ui-model, and settle
       result: "answer: red",
     }),
   );
+  await client.dispose?.();
+}, 30_000);
+
+function subagentPlanPointerProvider(): StreamingProvider {
+  return {
+    provider: "scripted-subagent-plan",
+    model: "scripted-subagent-plan-model",
+    async *stream(request: ProviderStreamRequest) {
+      const isChild = request.messages.some(
+        (message) => message.content === "child plan task",
+      );
+      if (isChild) {
+        const planPointer = request.messages.find(
+          (message) =>
+            message.role === "user" &&
+            message.content.includes('<runtime_context source="plan_ptr"'),
+        );
+        if (!planPointer)
+          throw new Error(
+            "subagent request is missing the plan_ptr runtime context",
+          );
+        const planRead = request.messages.find(
+          (message) =>
+            message.role === "tool" && message.toolCallID === "call_child_plan",
+        );
+        if (!planRead) {
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_child_plan",
+                name: "read_file",
+                arguments: JSON.stringify({
+                  path: ".natalia/plans/plans/child-plan.md",
+                }),
+              },
+            ],
+          };
+          yield { type: "done" };
+          return;
+        }
+        expect(planRead.content).toContain("Child plan steps");
+        yield {
+          type: "content",
+          text: "read the plan document from the pointer",
+        };
+        yield { type: "done" };
+        return;
+      }
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_subagent_plan",
+              name: "agent_spawn",
+              arguments: JSON.stringify({ task: "child plan task" }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      yield { type: "content", text: "parent complete" };
+      yield { type: "done" };
+    },
+  };
+}
+
+let MAIN_PLAN_ID = "";
+
+test("a subagent receives the active plan pointer and reads the plan file itself (ADR D4/B2)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-subagent-plan-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_subagent_plan",
+    provider: subagentPlanPointerProvider(),
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.sessionAttach!("ses_subagent_plan" as SessionID);
+  await client.planDocWrite!({
+    path: "plans/child-plan.md",
+    content: "# Child plan\n\n- Child plan steps\n",
+    title: "Child plan",
+  });
+  const marked = await client.planDocMark!({
+    path: "plans/child-plan.md",
+    title: "Child plan",
+  });
+  await client.planDocActivate!(marked.planID);
+  await client.submitAndWait!("delegate a plan task");
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "subagent.update" && event.status === "completed",
+    ),
+  );
+  await client.dispose?.();
+}, 30_000);
+
+test("the main agent reads the plan document with plan_doc_read instead of an injected handoff body (ADR B3)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-main-plan-read-"));
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_main_plan_read",
+    provider: {
+      provider: "scripted-main-plan-read",
+      model: "scripted-main-plan-read-model",
+      async *stream(request: ProviderStreamRequest) {
+        requests.push(request);
+        if (request.tools?.some((tool) => tool.name === "plan_doc_read")) {
+          const planRead = request.messages.find(
+            (message) =>
+              message.role === "tool" &&
+              message.toolCallID === "call_main_plan",
+          );
+          if (!planRead) {
+            yield {
+              type: "tool_call",
+              calls: [
+                {
+                  id: "call_main_plan",
+                  name: "plan_doc_read",
+                  arguments: JSON.stringify({ planID: MAIN_PLAN_ID }),
+                },
+              ],
+            };
+            yield { type: "done" };
+            return;
+          }
+          expect(planRead.content).toContain("Main plan steps");
+        }
+        yield { type: "content", text: "read the plan" };
+        yield { type: "done" };
+      },
+    },
+    permissionMode: "auto",
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!("ses_main_plan_read" as SessionID);
+  await client.planDocWrite!({
+    path: "plans/main-plan.md",
+    content: "# Main plan\n\n- Main plan steps\n",
+    title: "Main plan",
+  });
+  const marked = await client.planDocMark!({
+    path: "plans/main-plan.md",
+    title: "Main plan",
+  });
+  MAIN_PLAN_ID = marked.planID;
+  await client.planDocActivate!(marked.planID);
+  await client.submitAndWait!("follow the plan");
+  expect(
+    requests.some((request) =>
+      request.tools?.some((tool) => tool.name === "plan_doc_read"),
+    ),
+  ).toBe(true);
+  expect(
+    requests.some((request) =>
+      request.tools?.some((tool) => tool.name === "plan_doc_list"),
+    ),
+  ).toBe(true);
+  // The plan正文 is never in the system prompt — only the pointer is in the
+  // runtime context.
+  const system = requests
+    .map((request) =>
+      request.messages.find((message) => message.role === "system"),
+    )
+    .map((message) =>
+      typeof message?.content === "string" ? message.content : "",
+    )
+    .join("\n");
+  expect(system).not.toContain("Main plan steps");
   await client.dispose?.();
 }, 30_000);

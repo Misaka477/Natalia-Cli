@@ -151,7 +151,11 @@ export type SubagentSupport = {
     runner: SubagentRunnerContext,
     reason: "done" | "cancelled" | "error",
   ): void;
-  createSubagentContext(system: string, task: string): RuntimeContextLedger;
+  createSubagentContext(
+    system: string,
+    task: string,
+    planPointer?: { planID: string; documentPath: string; version: number },
+  ): RuntimeContextLedger;
   runSubagentProviderStep(
     ledger: RuntimeContextLedger,
     tools: RuntimeTool[],

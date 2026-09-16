@@ -222,7 +222,10 @@ export type RuntimePorts = {
    * Cancels the session's active/pending turn through the standard cancel path.
    * Used by the goal pause control so "pause" actually stops the running round.
    */
-  cancelTurn?: (reason: string, sessionID?: SessionID) => void | Promise<unknown>;
+  cancelTurn?: (
+    reason: string,
+    sessionID?: SessionID,
+  ) => void | Promise<unknown>;
   /** Re-seed and re-publish the live goal status on attach / reconnect. */
   syncGoalStatus?: (sessionID: SessionID) => Promise<void>;
   /** Flush in-flight streaming text into its durable partial batch. */
@@ -241,8 +244,21 @@ export type RuntimePorts = {
     exec: SessionExecutionState,
     input: import("@natalia/contracts").SubmitInput,
   ) => void;
-  naviChatSystemPrompt: (exec?: SessionExecutionState) => string;
-  niaChatSystemPrompt: (exec?: SessionExecutionState) => string;
+  /**
+   * Navi's static system prompt (ADR D1): persona, policies and tool-usage
+   * rules only — byte-identical across sessions and workspaces.
+   */
+  naviChatPersona: () => string;
+  /**
+   * Navi's dynamic runtime context (main agent status, plans, mailbox, collab
+   * messages). Appended as a `<runtime_context>` user message by the chat
+   * turn, never in the static system prompt (ADR D2).
+   */
+  naviChatLiveContext: (exec?: SessionExecutionState) => string;
+  /** Nia's static system prompt (ADR D1). */
+  niaChatPersona: () => string;
+  /** Nia's dynamic runtime context (ADR D2). */
+  niaChatLiveContext: (exec?: SessionExecutionState) => string;
   naviChatTools: (
     exec?: SessionExecutionState,
   ) => import("@natalia/tools").RuntimeTool[];

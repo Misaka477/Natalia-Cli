@@ -90,7 +90,8 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     const {
       publishForSession,
       nextChatSequence,
-      niaChatSystemPrompt,
+      niaChatPersona,
+      niaChatLiveContext,
       niaChatTools,
       effectiveMaxSteps,
       chatToolSummary,
@@ -124,8 +125,32 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     };
     const history = niaChatHistory(input.exec, input.responseMessageID);
     const consumedMessageIDs = history.messageIDs;
+    // ADR D1/D2: the system message is the static persona only; the live work
+    // context is an appended `<runtime_context>` user message with a
+    // turn-local revision, placed directly before the turn's request so the
+    // model reads "current context → request" (D6).
+    let runtimeContextRevision = 0;
+    const liveContextMessage = () => {
+      runtimeContextRevision += 1;
+      const context = niaChatLiveContext(input.exec);
+      if (!context.trim()) return undefined;
+      return {
+        role: "user" as const,
+        content: `<runtime_context source="collab" trust="untrusted" revision="${runtimeContextRevision}">\n${context}\n</runtime_context>`,
+      };
+    };
+    const applyLiveContext = (target: ProviderMessage[]) => {
+      const message = liveContextMessage();
+      if (!message) return;
+      // Insert before the trailing user request; when the request is not the
+      // last message (mid-turn refresh), append after the conversation so the
+      // fresh snapshot still precedes the new step messages pushed next.
+      const insertAt =
+        target.at(-1)?.role === "user" ? target.length - 1 : target.length;
+      target.splice(insertAt, 0, message);
+    };
     const messages: ProviderMessage[] = [
-      { role: "system", content: niaChatSystemPrompt(input.exec) },
+      { role: "system", content: niaChatPersona() },
       ...history.messages,
     ];
     if (input.internal)
@@ -134,6 +159,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         content:
           "Your audit wake request has arrived. Read the active plan and shared context, perform the audit, then call audit_report with planID and verdict passed or gaps. Use collab_chat to send concrete findings to Natalia. If Natalia claims fixes after a re-audit, verify the actual workspace and plan before passing. Be concise and exact.",
       });
+    applyLiveContext(messages);
     await applyChatHistoryAttachments(ctx, {
       messages: history.messages,
       attachments: history.attachments,
@@ -235,6 +261,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
       ) {
         signal.throwIfAborted();
         const pending = input.exec.niaPendingQueue.splice(0);
+        const pendingStart = messages.length;
         for (const incoming of pending)
           if (!consumedMessageIDs.has(incoming.messageID)) {
             const message: ProviderMessage = {
@@ -252,14 +279,11 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
             });
           }
         if (pending.length) {
-          const systemIndex = messages.findIndex(
-            (message) => message.role === "system",
-          );
-          if (systemIndex >= 0)
-            messages[systemIndex] = {
-              role: "system",
-              content: niaChatSystemPrompt(input.exec),
-            };
+          // ADR D3/D6: append a fresh live-context snapshot (higher revision)
+          // before the new messages instead of mutating the system prompt —
+          // mutating an earlier message would reset the cacheable prefix.
+          const context = liveContextMessage();
+          if (context) messages.splice(pendingStart, 0, context);
         }
         const requiredReply = requiredNataliaReply();
         const finalOnly =

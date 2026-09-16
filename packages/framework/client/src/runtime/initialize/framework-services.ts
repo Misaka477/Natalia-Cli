@@ -30,6 +30,10 @@ import {
 import { findWorkspaceFiles, searchWorkspaceFiles } from "@natalia/platform";
 import { createSessionHistoryTool } from "../session-history-tool";
 import {
+  createPlanDocListTool,
+  createPlanDocReadTool,
+} from "../plan-doc-tools";
+import {
   createMutationRegistry,
   createWorkspaceFilesController,
   createWorkspaceWriteLock,
@@ -206,6 +210,15 @@ export async function wireFrameworkServices(
       `framework tool already registered: ${sessionHistoryTool.name}`,
     );
   ctx.state.tools.set(sessionHistoryTool.name, sessionHistoryTool);
+
+  // ADR D4/B3: the main agent reads the plan document itself — the plan正文
+  // is never injected into any prompt. Register the plan read tools so the
+  // main agent has the same plan-document access Navi and Nia have.
+  for (const tool of [createPlanDocListTool(ctx), createPlanDocReadTool(ctx)]) {
+    if (ctx.state.tools.get(tool.name))
+      throw new Error(`framework tool already registered: ${tool.name}`);
+    ctx.state.tools.set(tool.name, tool);
+  }
 
   const checkpointOwner = registry.registerOwner({
     id: "natalia-checkpoint",
