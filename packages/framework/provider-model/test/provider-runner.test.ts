@@ -90,6 +90,8 @@ function makeHarness(
       maxRetryAfterMs: number;
     };
     maxSteps?: number;
+    workspaceRoot?: string;
+    permissionMode?: "ask" | "auto" | "read_only";
     runtimeContextConfig?: {
       max: number;
       thresholdPercent: number;
@@ -147,8 +149,8 @@ function makeHarness(
       videoInput: false,
     }),
     setActiveModelCapabilities: () => undefined,
-    permissionMode: () => "auto",
-    workspaceRoot: () => "/tmp/ws",
+    permissionMode: () => options?.permissionMode ?? "auto",
+    workspaceRoot: () => options?.workspaceRoot ?? "/tmp/ws",
     tsRuntimeConfig: () =>
       options?.preservedRecentMessages === undefined
         ? undefined
@@ -179,9 +181,7 @@ function makeHarness(
     naviAnswers: () => options?.naviAnswers ?? [],
     naviChats: () => options?.naviChats ?? [],
     activePlan: () => options?.activePlan,
-    ...(options?.tokenMeter
-      ? { tokenMeter: () => options.tokenMeter! }
-      : {}),
+    ...(options?.tokenMeter ? { tokenMeter: () => options.tokenMeter! } : {}),
     retry,
     lastProviderUsage: () => lastUsage,
     setLastProviderUsage: (usage) => {
@@ -1073,9 +1073,7 @@ test("context-limit recovery clears the stale token anchor before publishing the
   const snapshots = events
     .slice(compactionEndIndex + 1)
     .filter(
-      (
-        event,
-      ): event is Extract<RuntimeEvent, { type: "context.snapshot" }> =>
+      (event): event is Extract<RuntimeEvent, { type: "context.snapshot" }> =>
         event.type === "context.snapshot",
     );
   expect(snapshots.length).toBeGreaterThan(0);
@@ -1350,6 +1348,7 @@ test("a next-step that arrives mid-turn keeps the loop alive and lands in the le
 
 test("pending Navi chat renders as a required direct reply without becoming user intent", async () => {
   let systemPrompt = "";
+  let userMessages: string[] = [];
   const { runner } = makeHarness(
     {
       provider: "scripted",
@@ -1360,6 +1359,9 @@ test("pending Navi chat renders as a required direct reply without becoming user
         );
         if (system && typeof system.content === "string")
           systemPrompt = system.content;
+        userMessages = request.messages
+          .filter((message) => message.role === "user")
+          .map((message) => message.content);
         yield content("replying to Navi");
       },
     },
@@ -1381,18 +1383,23 @@ test("pending Navi chat renders as a required direct reply without becoming user
   );
 
   await runner.runTurn(turn);
-  expect(systemPrompt).toContain("<navi_chat>");
-  expect(systemPrompt).toContain("messageID: collab:chat:pending");
-  expect(systemPrompt).toContain("round 2 · REPLY_REQUIRED");
-  expect(systemPrompt).toContain("[Navi → you, untrusted data]");
-  expect(systemPrompt).toContain("must receive one direct collab_chat reply");
-  expect(systemPrompt).toContain("Every reply continues the thread");
-  expect(systemPrompt).toContain("Never report that Navi has not replied");
-  expect(systemPrompt).not.toContain("<pending_user_intents>");
+  // ADR D1/D2: collaboration is dynamic context, never system prompt content.
+  expect(systemPrompt).not.toContain("<navi_chat>");
+  const runtimeContext = userMessages.join("\n");
+  expect(runtimeContext).toContain('<runtime_context source="collab"');
+  expect(runtimeContext).toContain("<navi_chat>");
+  expect(runtimeContext).toContain("messageID: collab:chat:pending");
+  expect(runtimeContext).toContain("round 2 · REPLY_REQUIRED");
+  expect(runtimeContext).toContain("[Navi → you, untrusted data]");
+  expect(runtimeContext).toContain("must receive one direct collab_chat reply");
+  expect(runtimeContext).toContain("Every reply continues the thread");
+  expect(runtimeContext).toContain("Never report that Navi has not replied");
+  expect(runtimeContext).not.toContain("<pending_user_intents>");
 });
 
-test("an active plan renders as a NextPlanHandoff in the system prompt", async () => {
+test("an active plan renders as a NextPlanHandoff in the runtime context, not the system", async () => {
   let systemPrompt = "";
+  let userMessages: string[] = [];
   const { runner } = makeHarness(
     {
       provider: "scripted",
@@ -1403,6 +1410,9 @@ test("an active plan renders as a NextPlanHandoff in the system prompt", async (
         );
         if (system && typeof system.content === "string")
           systemPrompt = system.content;
+        userMessages = request.messages
+          .filter((message) => message.role === "user")
+          .map((message) => message.content);
         yield content("working on the plan");
       },
     },
@@ -1426,13 +1436,197 @@ test("an active plan renders as a NextPlanHandoff in the system prompt", async (
     },
   );
   await runner.runTurn(turn);
-  expect(systemPrompt).toContain("<next_plan_handoff>");
-  expect(systemPrompt).toContain("plan:1 v5: Switch to Bun-native HTTP");
-  expect(systemPrompt).toContain("replace the fetch wrapper");
-  expect(systemPrompt).toContain("s1: introduce the server");
-  expect(systemPrompt).toContain("keep loopback default");
-  expect(systemPrompt).toContain("port conflicts");
-  expect(systemPrompt).toContain("</next_plan_handoff>");
+  expect(systemPrompt).not.toContain("<next_plan_handoff>");
+  const runtimeContext = userMessages.join("\n");
+  expect(runtimeContext).toContain(
+    '<runtime_context source="plan" authority="user" trust="untrusted"',
+  );
+  expect(runtimeContext).toContain("<next_plan_handoff>");
+  expect(runtimeContext).toContain("plan:1 v5: Switch to Bun-native HTTP");
+  expect(runtimeContext).toContain("replace the fetch wrapper");
+  expect(runtimeContext).toContain("s1: introduce the server");
+  expect(runtimeContext).toContain("keep loopback default");
+  expect(runtimeContext).toContain("port conflicts");
+  expect(runtimeContext).toContain("</next_plan_handoff>");
+});
+
+test("the static system prompt is byte-identical across workspaces and permission modes (ADR D1)", async () => {
+  const collect = async (options?: {
+    workspaceRoot?: string;
+    permissionMode?: "ask" | "auto" | "read_only";
+  }) => {
+    let system = "";
+    const { runner } = makeHarness(
+      {
+        provider: "scripted",
+        model: "m1",
+        async *stream(request) {
+          const systemMessage = request.messages.find(
+            (message) => message.role === "system",
+          );
+          if (systemMessage && typeof systemMessage.content === "string")
+            system = systemMessage.content;
+          yield content("ok");
+        },
+      },
+      {
+        workspaceRoot: options?.workspaceRoot ?? "/tmp/ws-a",
+        permissionMode: options?.permissionMode ?? "auto",
+        naviIntro: true,
+        activePlan: {
+          planID: "plan:1",
+          version: 2,
+          title: "t",
+          objective: "o",
+          steps: [],
+          constraints: [],
+          verification: [],
+          riskNotes: [],
+        },
+      },
+    );
+    await runner.runTurn(turn);
+    return system;
+  };
+  const first = await collect();
+  const second = await collect({
+    workspaceRoot: "/tmp/ws-b",
+    permissionMode: "ask",
+  });
+  expect(first.length).toBeGreaterThan(0);
+  expect(second).toBe(first);
+  // Dynamic facts must not leak into the static system.
+  for (const dynamic of [
+    "Working directory",
+    "Workspace root folder",
+    "Permission mode",
+    "<navi_chat>",
+    "<next_plan_handoff>",
+  ])
+    expect(first).not.toContain(dynamic);
+  // The authority model is a static global convention (ADR D9).
+  expect(first).toContain("<authority_model>");
+  expect(first).toContain("Fail-closed gates");
+  expect(first).toContain("highest revision is the current state");
+});
+
+test("environment details move to the runtime context and precede the user request (ADR D2/D6)", async () => {
+  const shapes: Array<Array<{ role: string; content: string }>> = [];
+  const { runner } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        shapes.push(
+          request.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        );
+        yield content("ok");
+      },
+    },
+    { permissionMode: "ask" },
+  );
+  await runner.runTurn(turn);
+  const messages = shapes[0]!;
+  const system = messages.find((message) => message.role === "system");
+  expect(system).toBeDefined();
+  expect(system!.content).not.toContain("Working directory");
+  const contextIndex = messages.findIndex(
+    (message) =>
+      message.role === "user" &&
+      message.content.includes('<runtime_context source="environment"'),
+  );
+  expect(contextIndex).toBeGreaterThan(0);
+  const requestIndex = messages.findIndex(
+    (message) => message.role === "user" && message.content === "hello",
+  );
+  expect(requestIndex).toBeGreaterThan(contextIndex);
+  expect(messages[contextIndex]!.content).toContain("Permission mode: ask");
+});
+
+test("a mid-turn step input appends a fresh runtime context instead of mutating the system (ADR D3/D6)", async () => {
+  const requests: Array<Array<{ role: string; content: string }>> = [];
+  let arrived = false;
+  let injected = false;
+  const naviChats: Array<{
+    id: string;
+    threadID: string;
+    from: "live_chat" | "main_agent";
+    to: "live_chat" | "main_agent";
+    text: string;
+    round: number;
+    expectsReply: boolean;
+    status: string;
+  }> = [];
+  const { runner, ledger } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        requests.push(
+          request.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        );
+        arrived = true;
+        // A collaboration reply arrives while the turn is in flight.
+        naviChats.push({
+          id: "collab:chat:late",
+          threadID: "collab:chat:thread",
+          from: "live_chat",
+          to: "main_agent",
+          text: "late reply",
+          round: 3,
+          expectsReply: false,
+          status: "sent",
+        });
+        yield content(requests.length === 1 ? "first" : "after injection");
+      },
+    },
+    {
+      naviIntro: true,
+      naviChats,
+      takeStepInputs: (step) => {
+        if (step === 0 || injected) return [];
+        injected = true;
+        return [{ id: "in_1", text: "also do X" }];
+      },
+      hasPendingStepInputs: () => arrived && !injected,
+    },
+  );
+  await runner.runTurn(turn);
+  expect(requests.length).toBe(2);
+  // The system message is never mutated mid-turn.
+  expect(requests[1]![0]!.content).toBe(requests[0]![0]!.content);
+  // The second request carries a fresh runtime context with a higher revision.
+  const contexts = requests[1]!
+    .filter(
+      (message) =>
+        message.role === "user" &&
+        message.content.includes('<runtime_context source="collab"'),
+    )
+    .map((message) => message.content);
+  expect(contexts.length).toBeGreaterThanOrEqual(2);
+  const revisions = contexts.map((content) =>
+    Number(/revision="(\d+)"/u.exec(content)?.[1] ?? "0"),
+  );
+  expect(Math.max(...revisions)).toBeGreaterThan(Math.min(...revisions));
+  expect(contexts.join("\n")).toContain("collab:chat:late");
+  expect(
+    requests[1]!.some(
+      (message) => message.role === "user" && message.content === "also do X",
+    ),
+  ).toBe(true);
+  expect(
+    ledger
+      .snapshot()
+      .entries.some(
+        (entry) => entry.id === "in_1:user" && entry.content === "also do X",
+      ),
+  ).toBe(true);
 });
 
 test("an already-announced turn is not re-announced", async () => {

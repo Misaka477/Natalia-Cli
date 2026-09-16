@@ -45,7 +45,10 @@ test("plan documents are workspace-wide while activation is session-scoped", asy
     // The plan is visible from the first session and has no active pointer yet.
     expect(await client.planDocList!()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ planID: marked.planID, status: "audit_gaps" }),
+        expect.objectContaining({
+          planID: marked.planID,
+          status: "audit_gaps",
+        }),
       ]),
     );
     expect(await client.planDocActive!()).toEqual({});
@@ -67,7 +70,10 @@ test("plan documents are workspace-wide while activation is session-scoped", asy
     await client.sessionAttach!(second.sessionID);
     expect(await client.planDocList!()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ planID: marked.planID, status: "audit_gaps" }),
+        expect.objectContaining({
+          planID: marked.planID,
+          status: "audit_gaps",
+        }),
       ]),
     );
     expect(await client.planDocActive!()).toEqual({});
@@ -83,7 +89,6 @@ test("plan documents are workspace-wide while activation is session-scoped", asy
     await client.dispose?.();
   }
 });
-
 
 test("Nia and Navi prompts see workspace plans but only the session active plan", async () => {
   const root = await officialPluginWorkspace("plan-active-prompt");
@@ -105,7 +110,14 @@ test("Nia and Navi prompts see workspace plans but only the session active plan"
         : prompt.includes("<navi_chat_persona>")
           ? "navi"
           : "main";
-      prompts[channel].push(prompt);
+      // ADR D1: the main agent's plan handoff is dynamic runtime context
+      // appended as a user message, not static system prompt content; the
+      // Navi/Nia prompts still carry their live context in the system prompt.
+      prompts[channel].push(
+        channel === "main"
+          ? request.messages.map((message) => message.content).join("\n")
+          : prompt,
+      );
       yield { type: "content" as const, text: "ok" };
       yield { type: "done" as const };
     },
@@ -169,7 +181,6 @@ test("Nia and Navi prompts see workspace plans but only the session active plan"
     await client.dispose?.();
   }
 });
-
 
 test("Nia can update the Markdown plan document without gaining project write access", async () => {
   const root = await officialPluginWorkspace("nia-plan-write");

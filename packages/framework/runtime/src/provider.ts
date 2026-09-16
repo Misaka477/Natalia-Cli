@@ -1324,8 +1324,14 @@ function contextEntryToProviderMessage(
         : {}),
       ...(entry.textSignature ? { textSignature: entry.textSignature } : {}),
     };
-  if (entry.role === "summary")
-    return { role: "system", content: entry.content };
+  // ADR D7: a compaction summary is an appended user message, not a system
+  // message — mapping it to system would hoist it back to the top of the
+  // Anthropic request and reset the stable prefix on every request.
+  // ADR D2: `dynamic` entries are runtime context delivered as user messages
+  // (providers hoist all system messages to the top, so dynamic state must
+  // never travel as system).
+  if (entry.role === "summary" || entry.role === "dynamic")
+    return { role: "user", content: entry.content };
   return undefined;
 }
 

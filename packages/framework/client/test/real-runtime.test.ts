@@ -2707,10 +2707,19 @@ test("configured agent selection supplies the provider system prompt and tool po
   expect(request).toBeDefined();
   expect(request!.messages[0]?.role).toBe("system");
   const systemPrompt = String(request!.messages[0]?.content);
+  const runtimeContext = request!.messages
+    .filter((message) => message.role === "user")
+    .map((message) => message.content)
+    .join("\n");
   expect(systemPrompt).toContain(
     "You are Natalia, a local software engineering agent",
   );
-  expect(systemPrompt).toContain("Working directory: " + root);
+  // ADR D1: the workspace root is per-workspace dynamic context, not static
+  // system prompt content.
+  expect(systemPrompt).not.toContain("Working directory: " + root);
+  expect(runtimeContext).toContain("Working directory: " + root);
+  // The configured agent instructions stay in the static system (per-role,
+  // per-config, stable across sessions and workspaces).
   expect(systemPrompt).toContain("Review only with evidence.");
   expect(request!.tools?.map((tool) => tool.name)).toEqual(["read_file"]);
 });
@@ -2732,29 +2741,31 @@ test("runtime sends a baseline system prompt without configured agent instructio
   });
   client.start(() => undefined);
   await client.submitAndWait!("who are you?");
+  const systemPrompt = String(requests[0]?.messages[0]?.content);
+  const runtimeContext = (requests[0]?.messages ?? [])
+    .filter((message) => message.role === "user")
+    .map((message) => message.content)
+    .join("\n");
   expect(requests[0]?.messages[0]).toMatchObject({ role: "system" });
-  expect(String(requests[0]?.messages[0]?.content)).toContain(
+  expect(systemPrompt).toContain(
     "You are Natalia, a local software engineering agent",
   );
-  expect(String(requests[0]?.messages[0]?.content)).toContain(
-    "<natalia_cli_persona>",
-  );
-  expect(String(requests[0]?.messages[0]?.content)).toContain(
+  expect(systemPrompt).toContain("<natalia_cli_persona>");
+  expect(systemPrompt).toContain(
     "Be warm, perceptive, and recognizably yourself",
   );
-  expect(String(requests[0]?.messages[0]?.content)).toContain(
+  expect(systemPrompt).toContain(
     "Natalia is a gentle, cute, and thoughtful girl",
   );
-  expect(String(requests[0]?.messages[0]?.content)).toContain("娜塔莉娅");
-  expect(String(requests[0]?.messages[0]?.content)).toContain(
+  expect(systemPrompt).toContain("娜塔莉娅");
+  expect(systemPrompt).toContain(
     "Do not turn a simple personal question into a detached disclaimer",
   );
-  expect(String(requests[0]?.messages[0]?.content)).toContain(
-    `Working directory: ${root}`,
-  );
-  expect(String(requests[0]?.messages[0]?.content)).toContain(
-    "Permission mode: ask",
-  );
+  // ADR D1: per-workspace environment facts are runtime context, not static
+  // system prompt content.
+  expect(systemPrompt).not.toContain(`Working directory: ${root}`);
+  expect(runtimeContext).toContain(`Working directory: ${root}`);
+  expect(runtimeContext).toContain("Permission mode: ask");
   await client.dispose?.();
 });
 
@@ -4907,7 +4918,12 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
       role: string;
       content: unknown;
     }>;
-    const user = messages.find((message) => message.role === "user");
+    // ADR D2: the runtime context block is an earlier user message; the
+    // lowered image lives on the turn's request (the message with part
+    // content), not on a plain-text request.
+    const user = messages.findLast(
+      (message) => message.role === "user" && Array.isArray(message.content),
+    );
     expect(user?.content).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -4932,8 +4948,11 @@ test("workspace image attachment is stored privately and lowered for OpenAI-comp
       role: string;
       content: unknown;
     }>;
+    // The earlier turn's attachment is re-lowered into the replayed history.
     expect(
-      followUpMessages.find((message) => message.role === "user")?.content,
+      followUpMessages.findLast(
+        (message) => message.role === "user" && Array.isArray(message.content),
+      )?.content,
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -5151,8 +5170,10 @@ test("runtime injects a UTF-8 text attachment into the active provider turn", as
       role: string;
       content: string;
     }>;
+    // ADR D2: the turn's request is the trailing user message; the runtime
+    // context block is an earlier user message.
     expect(
-      messages.find((message) => message.role === "user")?.content,
+      messages.findLast((message) => message.role === "user")?.content,
     ).toContain("[Attachment: notes.md]\nevidence");
   } finally {
     server.stop(true);
@@ -5678,7 +5699,9 @@ test("ordinary tools settle as failed when their execution timeout expires", asy
 });
 
 test("a tool can extend its timeout through a bounded per-call argument", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-ts7-tool-timeout-override-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "natalia-ts7-tool-timeout-override-"),
+  );
   const tools = createToolRegistry([]);
   tools.set("wait_briefly", {
     name: "wait_briefly",
@@ -9672,7 +9695,12 @@ test("the system prompt enumerates installed skills dynamically", async () => {
     client.start(() => undefined);
     await client.submitAndWait!("hi");
     await client.dispose?.();
-    return String(requests[0]?.messages[0]?.content ?? "");
+    // ADR D1: dynamic content (skills) is no longer in the static system
+    // message; it arrives as `<runtime_context>` user messages. Assert on
+    // everything the model actually sees.
+    return (requests[0]?.messages ?? [])
+      .map((message) => message.content)
+      .join("\n");
   };
 
   // Nothing installed: the section must be absent rather than empty, so a
@@ -12510,15 +12538,26 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
       model: "test",
       async *stream(request) {
         streamCalls++;
+        // ADR D1/D2: the main agent's collaboration state arrives as appended
+        // `<runtime_context>` user messages, so assert on the whole request.
+        const allMessages = String(
+          (
+            request as {
+              messages: Array<{ role: string; content: string }>;
+            }
+          ).messages
+            .map((message) => message.content)
+            .join("\n"),
+        );
         const system = String(
           (request as { messages: Array<{ role: string; content: string }> })
             .messages[0]?.content ?? "",
         );
         // The Navi wake turn's context carries her sister's pending questions;
         // the main agent's context never does.
-        const naviTurn = system.includes("<natalia_collaborations>");
+        const naviTurn = allMessages.includes("<natalia_collaborations>");
         if (!naviTurn) {
-          mainPrompts.push(system);
+          mainPrompts.push(allMessages);
           if (streamCalls === 1) {
             yield {
               type: "tool_call" as const,
@@ -12826,8 +12865,10 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
           request as { messages: Array<{ role: string; content: string }> }
         ).messages;
         const system = String(messages[0]?.content ?? "");
+        // ADR D2: the main agent's collaboration context is appended as
+        // `<runtime_context>` user messages while the Navi turn still carries
+        // its prompt as the system message; search every message.
         const systemContext = messages
-          .filter((message) => message.role === "system")
           .map((message) => message.content)
           .join("\n");
         const naviTurn = system.includes("<natalia_collaborations>");

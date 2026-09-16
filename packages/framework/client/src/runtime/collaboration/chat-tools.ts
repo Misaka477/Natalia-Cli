@@ -65,6 +65,15 @@ export const DIFF_FORMATS = ["unified", "summary", "files"] as const;
 const MAILBOX_PAGE_LIMIT = 8;
 const MAILBOX_BYTE_BUDGET = 40 * 1024;
 
+/**
+ * ADR D8: the tool set and its order are part of the cacheable provider
+ * prefix. Sorting by name keeps the order deterministic across turns even when
+ * the underlying registry's insertion order shifts (plugin load/unload).
+ */
+function stableToolOrder(tools: RuntimeTool[]): RuntimeTool[] {
+  return [...tools].sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function mailboxPage(
   messages: ProjectedMailboxMessage[],
   parsed: unknown,
@@ -659,7 +668,10 @@ export function createChatTools(ctx: RuntimeContext) {
         },
       });
     }
-    return visible;
+    // ADR D8: tool schemas and order are part of the cacheable prefix. The set
+    // is already fixed, but registry insertion order can shift with plugin
+    // load/unload; sort by name so the set and order stay stable across turns.
+    return stableToolOrder(visible);
   }
 
   function withNiaShellPolicy(tool: RuntimeTool): RuntimeTool {
@@ -1015,6 +1027,7 @@ export function createChatTools(ctx: RuntimeContext) {
         }
       },
     });
-    return visible;
+    // ADR D8: stable order across turns (see naviChatTools).
+    return stableToolOrder(visible);
   }
 }
