@@ -22,6 +22,36 @@ import {
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { activePlanForExec } from "./plan-doc-runtime";
+import {
+  projectedConstitutionRules,
+  projectedEvidenceRecords,
+} from "@natalia/session";
+
+/**
+ * Minimal constitution-rule path matching (EI §8.1 a/p/c wiring): a rule
+ * applies when any of its `appliesTo.paths` patterns matches the changed
+ * path. `*` matches within a segment, `**` matches across segments; a bare
+ * directory pattern matches everything under it. The B5 evaluator rewrite
+ * carries the matcher forward.
+ */
+function globPathMatch(pattern: string, path: string): boolean {
+  const normalizedPattern = pattern.replace(/\\/gu, "/").replace(/^\.\//u, "");
+  const normalizedPath = path.replace(/\\/gu, "/").replace(/^\.\//u, "");
+  // Escape regex metacharacters, then expand `**/`, `**` and `*`.
+  const GLOBSTAR = "\u0000";
+  const source = normalizedPattern
+    .replace(/[.+^${}()|[\]\\]/gu, "\\$&")
+    .replace(/\*\*\//gu, GLOBSTAR)
+    .replace(/\*\*/gu, ".*")
+    .replace(/\*/gu, "[^/]*");
+  const regex = new RegExp(`^${source.split(GLOBSTAR).join("(?:.*/)?")}$`, "u");
+  if (regex.test(normalizedPath)) return true;
+  // A directory pattern ("src/") also matches everything under it.
+  return (
+    normalizedPattern.endsWith("/") &&
+    normalizedPath.startsWith(normalizedPattern)
+  );
+}
 
 export function createCollaborationBoundary(ctx: RuntimeContext) {
   function mailboxMessagesFor(exec?: SessionExecutionState) {
@@ -204,24 +234,37 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
       if (confirmed.length) {
         const activePlan = activePlanForExec(ctx, target);
         const objective = activePlan?.title ?? "";
-        const applicableConstraints: string[] = [];
-        if (objective || applicableConstraints.length) {
-          const findings = workLedgerController.evaluateDrift({
-            sessionID: target.session.id,
-            turnID: target.activeTurnID,
-            objective,
-            currentActivity: confirmed
-              .map((change) => `${change.operation}:${change.path}`)
-              .join(", "),
-            applicableConstraints,
-            changes: confirmed.map((change) => ({
-              path: change.path,
-              action: change.operation,
-            })),
-            evidenceRefs: [],
-          });
-          for (const finding of findings) publishForSession(target, finding);
-        }
+        // EI §8.1: the evaluator needs the R's evidence and constraint keys
+        // (a/p/c — attribution/plan/constitution) so validated work is not
+        // judged as drift. Wire the session's recorded evidence and the
+        // constitution rules that apply to the changed paths.
+        const evidenceRefs = projectedEvidenceRecords(
+          target.session.events,
+        ).map((record) => record.id);
+        const applicableConstraints = projectedConstitutionRules(
+          target.session.events,
+        )
+          .filter((rule) =>
+            rule.appliesTo?.paths?.some((pattern) =>
+              confirmed.some((change) => globPathMatch(pattern, change.path)),
+            ),
+          )
+          .map((rule) => rule.ruleID);
+        const findings = workLedgerController.evaluateDrift({
+          sessionID: target.session.id,
+          turnID: target.activeTurnID,
+          objective,
+          currentActivity: confirmed
+            .map((change) => `${change.operation}:${change.path}`)
+            .join(", "),
+          applicableConstraints,
+          changes: confirmed.map((change) => ({
+            path: change.path,
+            action: change.operation,
+          })),
+          evidenceRefs,
+        });
+        for (const finding of findings) publishForSession(target, finding);
       }
       return confirmed;
     })();

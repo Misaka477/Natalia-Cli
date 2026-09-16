@@ -1,0 +1,344 @@
+/**
+ * Model-facing journal record tools — runtime/record-tools.ts.
+ *
+ * EI §8.4: thin model-facing wrappers around the existing intelligence
+ * surface writes (`record_decision`, `record_validation`, `record_completion`).
+ * They exist so the model can put durable facts into the journal through the
+ * same pure builders the surfaces use — the event vocabulary stays the
+ * journal-face one and no prompt ever carries the正文.
+ */
+import {
+  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+} from "@natalia/runtime-services";
+import type { GovernanceLedgerController } from "./context";
+import { redactToolOutput } from "./engineering-intelligence/redaction";
+import { runValidationCommand } from "./engineering-intelligence/validation";
+import type { RuntimeContext, SessionExecutionState } from "./context";
+
+function resolveExec(
+  ctx: RuntimeContext,
+  sessionID?: string,
+): SessionExecutionState | undefined {
+  const exec = sessionID
+    ? ctx.ports
+        .getExecutionBySession()
+        .get(sessionID as import("@natalia/contracts").SessionID)
+    : undefined;
+  return exec ?? ctx.ports.getActiveExec();
+}
+
+function requireGovernanceLedger(
+  ctx: RuntimeContext,
+): GovernanceLedgerController | undefined {
+  return ctx.ports.resolveService<GovernanceLedgerController>(
+    GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+  );
+}
+
+/**
+ * `record_validation` — runs a validation command in the workspace and writes
+ * an `evidence.recorded` event (EI §3.5: validation is a first-class, cheap,
+ * recordable action; evidence is how a claim earns judge-ability).
+ */
+export function createRecordValidationTool(
+  ctx: RuntimeContext,
+): import("@natalia/tools").RuntimeTool {
+  return {
+    name: "record_validation",
+    description:
+      "Run a validation command (test runner, typechecker, linter) in the workspace and record the result as durable evidence. Use it after implementing a step so the work has evidence, not claims. Returns passed/failed and a bounded safe summary.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        taskID: {
+          type: "string",
+          description: "The task or plan step this validation covers.",
+        },
+        objective: {
+          type: "string",
+          description: "What the validation is meant to establish.",
+        },
+        command: {
+          type: "string",
+          description:
+            "The command to run in the workspace (for example `bun test packages/framework/runtime`).",
+        },
+        knownGaps: {
+          type: "array",
+          items: { type: "string" },
+          description: "Known gaps or caveats about this validation.",
+        },
+      },
+      required: ["taskID", "objective", "command"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      const args = parsed as {
+        taskID?: string;
+        objective?: string;
+        command?: string;
+        knownGaps?: string[];
+      };
+      const exec = resolveExec(ctx, context.sessionID);
+      const ledger = requireGovernanceLedger(ctx);
+      if (!exec) return "no session";
+      if (!ledger) return "governance ledger unavailable";
+      if (
+        !args.taskID?.trim() ||
+        !args.objective?.trim() ||
+        !args.command?.trim()
+      )
+        return "record_validation requires taskID, objective and command";
+      const startedAt = performance.now();
+      let result: "passed" | "failed" | "skipped" = "failed";
+      let safeSummary = "validation command did not run";
+      try {
+        const run = await runValidationCommand(
+          args.command,
+          ctx.ports.getWorkspaceRoot(),
+          120,
+        );
+        result = run.exitCode === 0 ? "passed" : "failed";
+        safeSummary = run.safeSummary;
+      } catch (error) {
+        safeSummary = `validation runner failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
+      const outcome = ledger.boundValidationOutcome({
+        command: redactToolOutput(args.command, true),
+        result,
+        safeSummary,
+        durationMs: performance.now() - startedAt,
+      });
+      ctx.ports.publishForSession(
+        exec,
+        ledger.buildEvidenceRecorded({
+          id: `evidence:${Date.now().toString(36)}:${ctx.ports.nextEvidenceSequence()}`,
+          taskID: args.taskID.trim(),
+          objective: args.objective.trim(),
+          status: result === "passed" ? "validated" : "failed",
+          validations: [outcome],
+          ...(args.knownGaps ? { knownGaps: args.knownGaps } : {}),
+        }),
+      );
+      return JSON.stringify({
+        recorded: true,
+        result,
+        safeSummary: outcome.safeSummary,
+      });
+    },
+  };
+}
+
+/**
+ * `record_completion` — writes the completion card (EI P2 E4): the fixed
+ * report structure that answers "is it really done, what evidence is
+ * missing". Safe prose only — never a diff or file content.
+ */
+export function createRecordCompletionTool(
+  ctx: RuntimeContext,
+): import("@natalia/tools").RuntimeTool {
+  return {
+    name: "record_completion",
+    description:
+      "Record a completion card for a finished task: what changed (a summary, never a diff), behavior impact, the validations that back it, known gaps, rollback state, and the evidence IDs it relies on. Use it when a task is done and the claim needs a judge-able record.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        taskID: { type: "string" },
+        objective: { type: "string" },
+        changeSummary: {
+          type: "string",
+          description:
+            "A summary of what changed (never a diff or file content).",
+        },
+        behaviorImpact: { type: "string" },
+        validations: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              command: { type: "string" },
+              result: {
+                type: "string",
+                enum: ["passed", "failed", "skipped"],
+              },
+              safeSummary: { type: "string" },
+            },
+            required: ["command", "result", "safeSummary"],
+            additionalProperties: false,
+          },
+        },
+        humanValidation: { type: "string" },
+        knownGaps: { type: "array", items: { type: "string" } },
+        externalSideEffects: { type: "array", items: { type: "string" } },
+        rollbackState: {
+          type: "string",
+          enum: ["clean", "available", "none", "needs_promotion"],
+        },
+        evidenceIDs: { type: "array", items: { type: "string" } },
+        changePaths: { type: "array", items: { type: "string" } },
+      },
+      required: ["taskID", "objective", "changeSummary"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      const args = parsed as {
+        taskID?: string;
+        objective?: string;
+        changeSummary?: string;
+        behaviorImpact?: string;
+        validations?: Array<{
+          command: string;
+          result: "passed" | "failed" | "skipped";
+          safeSummary: string;
+        }>;
+        humanValidation?: string;
+        knownGaps?: string[];
+        externalSideEffects?: string[];
+        rollbackState?: "clean" | "available" | "none" | "needs_promotion";
+        evidenceIDs?: string[];
+        changePaths?: string[];
+      };
+      const exec = resolveExec(ctx, context.sessionID);
+      const ledger = requireGovernanceLedger(ctx);
+      if (!exec) return "no session";
+      if (!ledger) return "governance ledger unavailable";
+      if (
+        !args.taskID?.trim() ||
+        !args.objective?.trim() ||
+        !args.changeSummary?.trim()
+      )
+        return "record_completion requires taskID, objective and changeSummary";
+      const recordedAt = new Date().toISOString();
+      const completionID = `completion:${Date.now().toString(36)}:${ctx.ports.nextCompletionSequence()}`;
+      ctx.ports.publishForSession(
+        exec,
+        ledger.buildCompletionRecorded({
+          id: completionID,
+          taskID: args.taskID.trim(),
+          objective: args.objective.trim(),
+          changeSummary: redactToolOutput(args.changeSummary, true),
+          ...(args.behaviorImpact
+            ? { behaviorImpact: redactToolOutput(args.behaviorImpact, true) }
+            : {}),
+          validations: (args.validations ?? []).map((validation) =>
+            ledger.boundValidationOutcome({
+              command: redactToolOutput(validation.command, true),
+              result: validation.result,
+              safeSummary: validation.safeSummary,
+            }),
+          ),
+          ...(args.humanValidation
+            ? { humanValidation: redactToolOutput(args.humanValidation, true) }
+            : {}),
+          ...(args.knownGaps ? { knownGaps: args.knownGaps } : {}),
+          ...(args.externalSideEffects
+            ? { externalSideEffects: args.externalSideEffects }
+            : {}),
+          ...(args.rollbackState ? { rollbackState: args.rollbackState } : {}),
+          ...(args.evidenceIDs ? { evidenceIDs: args.evidenceIDs } : {}),
+          recordedAt,
+        }),
+      );
+      const workLedger = ctx.ports.resolveService<
+        import("./context").WorkLedgerController
+      >(WORK_LEDGER_CONTROLLER_SERVICE);
+      for (const path of args.changePaths ?? [])
+        if (workLedger)
+          ctx.ports.publishForSession(
+            exec,
+            workLedger.completionValidationEdge({
+              changeID: args.taskID.trim(),
+              path,
+              completionID,
+            }),
+          );
+      return JSON.stringify({ recorded: true, completionID });
+    },
+  };
+}
+
+/**
+ * `record_decision` — writes a `decision.recorded` event: the durable fact of
+ * a choice with its rationale, alternatives and consequences. Safe prose only;
+ * never tool output, file content or secrets.
+ */
+export function createRecordDecisionTool(
+  ctx: RuntimeContext,
+): import("@natalia/tools").RuntimeTool {
+  return {
+    name: "record_decision",
+    description:
+      "Record a durable engineering decision: the choice, why it was made, what alternatives were rejected and why, and the consequences. Use it when the session made (or should remember) a non-obvious choice — future drift judgment and audits read this record.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        decision: { type: "string" },
+        rationale: { type: "array", items: { type: "string" } },
+        alternatives: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              option: { type: "string" },
+              rejectedReason: { type: "string" },
+            },
+            required: ["option"],
+            additionalProperties: false,
+          },
+        },
+        consequences: { type: "array", items: { type: "string" } },
+        linkedPlans: { type: "array", items: { type: "string" } },
+        linkedConstraints: { type: "array", items: { type: "string" } },
+      },
+      required: ["decision"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      const args = parsed as {
+        decision?: string;
+        rationale?: string[];
+        alternatives?: { option: string; rejectedReason?: string }[];
+        consequences?: string[];
+        linkedPlans?: string[];
+        linkedConstraints?: string[];
+      };
+      const exec = resolveExec(ctx, context.sessionID);
+      const ledger = requireGovernanceLedger(ctx);
+      if (!exec) return "no session";
+      if (!ledger) return "governance ledger unavailable";
+      if (!args.decision?.trim()) return "record_decision requires decision";
+      ctx.ports.publishForSession(
+        exec,
+        ledger.recordDecision({
+          id: `decision:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
+          decision: redactToolOutput(args.decision, true),
+          ...(args.rationale
+            ? {
+                rationale: args.rationale.map((entry) =>
+                  redactToolOutput(entry, true),
+                ),
+              }
+            : {}),
+          ...(args.alternatives ? { alternatives: args.alternatives } : {}),
+          ...(args.consequences
+            ? {
+                consequences: args.consequences.map((entry) =>
+                  redactToolOutput(entry, true),
+                ),
+              }
+            : {}),
+          ...(args.linkedPlans ? { linkedPlans: args.linkedPlans } : {}),
+          ...(args.linkedConstraints
+            ? { linkedConstraints: args.linkedConstraints }
+            : {}),
+        }),
+      );
+      return JSON.stringify({ recorded: true });
+    },
+  };
+}

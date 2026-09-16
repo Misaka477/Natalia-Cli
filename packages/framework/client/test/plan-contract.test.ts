@@ -16,9 +16,7 @@ function proposeProvider(
     verification?: string[];
     constraints?: string[];
   } | null,
-  settle: (
-    result: string,
-  ) => Array<
+  settle: (result: string) => Array<
     | {
         type: "tool_call";
         calls: Array<{ id: string; name: string; arguments: string }>;
@@ -562,5 +560,216 @@ test("work_graph_query resolves a plan path and paginates the graph", async () =
   // honestly returns zero matches with the planID echoed.
   expect(second.planID.startsWith("plan_graph-plan")).toBe(true);
   expect(second.total).toBe(0);
+  await client.dispose?.();
+}, 30_000);
+
+test("record_validation runs a command and writes evidence", async () => {
+  const root = await officialPluginWorkspace("plan-contract-validation");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_contract_validation",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        const toolResult = (
+          request as {
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
+          }
+        ).messages.find(
+          (message) =>
+            message.role === "tool" && message.toolCallID === "call_validate",
+        );
+        if (toolResult) {
+          yield { type: "content" as const, text: "validated" };
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_validate",
+              name: "record_validation",
+              arguments: JSON.stringify({
+                taskID: "plan:1:s1",
+                objective: "the runtime package typechecks",
+                command: "true",
+              }),
+            },
+          ],
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.sessionAttach!("ses_plan_contract_validation" as SessionID);
+  await client.submitAndWait!("validate");
+  const evidence = events.filter((event) => event.type === "evidence.recorded");
+  expect(evidence).toHaveLength(1);
+  expect(evidence[0]).toMatchObject({
+    type: "evidence.recorded",
+    taskID: "plan:1:s1",
+    objective: "the runtime package typechecks",
+    status: "validated",
+  });
+  await client.dispose?.();
+}, 30_000);
+
+test("record_completion and record_decision write durable journal facts", async () => {
+  const root = await officialPluginWorkspace("plan-contract-records");
+  const events: RuntimeEvent[] = [];
+  let toolResults = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_contract_records",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        const toolResult = (
+          request as {
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
+          }
+        ).messages
+          .filter((message) => message.role === "tool")
+          .at(-1);
+        if (toolResult) toolResults += 1;
+        if (toolResults < 2) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: `call_record_${toolResults + 1}`,
+                name:
+                  toolResults === 0 ? "record_completion" : "record_decision",
+                arguments: JSON.stringify(
+                  toolResults === 0
+                    ? {
+                        taskID: "plan:1:s1",
+                        objective: "split the system prompt",
+                        changeSummary:
+                          "static persona and dynamic runtime context",
+                      }
+                    : {
+                        decision: "runtime context is appended, not injected",
+                        rationale: ["keeps the cacheable prefix stable"],
+                      },
+                ),
+              },
+            ],
+          };
+          yield { type: "done" as const };
+          return;
+        }
+        yield { type: "content" as const, text: "recorded" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.sessionAttach!("ses_plan_contract_records" as SessionID);
+  await client.submitAndWait!("record it");
+  expect(
+    events.filter((event) => event.type === "completion.recorded"),
+  ).toHaveLength(1);
+  expect(
+    events.filter((event) => event.type === "decision.recorded"),
+  ).toHaveLength(1);
+  const completion = events.find(
+    (event) => event.type === "completion.recorded",
+  );
+  expect(completion).toMatchObject({
+    type: "completion.recorded",
+    taskID: "plan:1:s1",
+    changeSummary: "static persona and dynamic runtime context",
+  });
+  await client.dispose?.();
+}, 30_000);
+
+test("audit_report writes an evidence record for every round (EI §8.1)", async () => {
+  const root = await officialPluginWorkspace("plan-contract-audit-evidence");
+  const events: RuntimeEvent[] = [];
+  let planID = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_contract_audit",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream() {
+        const toolResult =
+          // The Nia turn's messages carry the audit_report tool result.
+          (
+            arguments[0] as {
+              messages: Array<{
+                role: string;
+                content: string;
+                toolCallID?: string;
+              }>;
+            }
+          ).messages.find(
+            (message) =>
+              message.role === "tool" && message.toolCallID === "call_audit",
+          );
+        if (toolResult) {
+          yield { type: "content" as const, text: "audit reported" };
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_audit",
+              name: "audit_report",
+              arguments: JSON.stringify({ planID, verdict: "passed" }),
+            },
+          ],
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => events.push(event));
+  await client.sessionAttach!("ses_plan_contract_audit" as SessionID);
+  await client.planDocWrite!({
+    path: "plans/audit-plan.md",
+    content: "# Audit plan\n",
+    title: "Audit plan",
+  });
+  const marked = await client.planDocMark!({
+    path: "plans/audit-plan.md",
+    title: "Audit plan",
+  });
+  planID = marked.planID;
+  await client.planDocActivate!(marked.planID);
+  await client.chatSubmit!({ channel: "nia", text: "audit the plan" });
+  const evidence = events.filter((event) => event.type === "evidence.recorded");
+  expect(evidence).toHaveLength(1);
+  expect(evidence[0]).toMatchObject({
+    type: "evidence.recorded",
+    taskID: planID,
+    status: "validated",
+  });
+  const auditEvidence = evidence[0] as {
+    objective: string;
+    validations: Array<{ command: string; result: string }>;
+  };
+  expect(auditEvidence.objective).toContain("Nia audit round 1");
+  expect(auditEvidence.validations[0]).toMatchObject({ result: "passed" });
   await client.dispose?.();
 }, 30_000);

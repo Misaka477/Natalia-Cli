@@ -20,6 +20,7 @@ import {
 } from "@natalia/tools";
 import { niaShellPolicyDenial } from "./nia-shell-policy";
 import type { SessionID } from "@natalia/contracts";
+import { GOVERNANCE_LEDGER_CONTROLLER_SERVICE } from "@natalia/runtime-services";
 import {
   COLLABORATION_SERVICE,
   type CollaborationService,
@@ -859,6 +860,7 @@ export function createChatTools(ctx: RuntimeContext) {
 
           let round = 0;
           let roundCheckpointID: string | undefined;
+          let evidenceID: string | undefined;
           try {
             const sessionID = (context as { sessionID?: string } | undefined)
               ?.sessionID as import("@natalia/contracts").SessionID | undefined;
@@ -884,6 +886,45 @@ export function createChatTools(ctx: RuntimeContext) {
                   turnID: (context as { turnID?: string } | undefined)?.turnID,
                 });
               roundCheckpointID = record?.id;
+              // EI §8.1: every audit round is evidence — the drift R and the
+              // completion card read it. A passed round is a validated audit;
+              // a gaps round records the open gaps as its known gaps.
+              const governanceLedger = ctx.ports.resolveService<{
+                buildEvidenceRecorded: (input: {
+                  id: string;
+                  taskID: string;
+                  objective: string;
+                  status: string;
+                  validations?: unknown[];
+                  knownGaps?: string[];
+                  recordedAt: string;
+                }) => import("@natalia/contracts").RuntimeEvent;
+              }>(GOVERNANCE_LEDGER_CONTROLLER_SERVICE);
+              if (governanceLedger) {
+                const now = new Date().toISOString();
+                evidenceID = `evidence:${Date.now().toString(36)}:${ctx.ports.nextEvidenceSequence()}`;
+                ctx.ports.publishForSession(
+                  owner,
+                  governanceLedger.buildEvidenceRecorded({
+                    id: evidenceID,
+                    taskID: args.planID,
+                    objective: `Nia audit round ${round} of plan ${args.planID}`,
+                    status: args.verdict === "passed" ? "validated" : "failed",
+                    validations: [
+                      {
+                        command: `audit round ${round}`,
+                        result: args.verdict === "passed" ? "passed" : "failed",
+                        safeSummary:
+                          args.verdict === "passed"
+                            ? `Nia audit round ${round} passed`
+                            : `Nia audit round ${round} found ${(args.gaps ?? []).length} gap(s)`,
+                      },
+                    ],
+                    ...(args.gaps?.length ? { knownGaps: args.gaps } : {}),
+                    recordedAt: now,
+                  }),
+                );
+              }
             }
           } catch (error) {
             console.warn("[nia-audit-report] round checkpoint failed", {
@@ -901,6 +942,7 @@ export function createChatTools(ctx: RuntimeContext) {
             updated: result.updated,
             ...(round ? { round } : {}),
             ...(roundCheckpointID ? { roundCheckpointID } : {}),
+            ...(evidenceID ? { evidenceID } : {}),
             ...(args.verdict === "passed" ? { noWakeNatalia: true } : {}),
           });
         },

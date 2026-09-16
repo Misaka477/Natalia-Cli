@@ -39,6 +39,11 @@ import {
 } from "../plan-contract-tools";
 import { createWorkGraphQueryTool } from "../work-graph-tools";
 import {
+  createRecordCompletionTool,
+  createRecordDecisionTool,
+  createRecordValidationTool,
+} from "../record-tools";
+import {
   createMutationRegistry,
   createWorkspaceFilesController,
   createWorkspaceWriteLock,
@@ -226,6 +231,10 @@ export async function wireFrameworkServices(
     createPlanProposeTool(ctx),
     createWorkContractReadTool(ctx),
     createWorkGraphQueryTool(ctx),
+    // EI §8.4: model-facing journal record tools.
+    createRecordValidationTool(ctx),
+    createRecordCompletionTool(ctx),
+    createRecordDecisionTool(ctx),
   ]) {
     if (ctx.state.tools.get(tool.name))
       throw new Error(`framework tool already registered: ${tool.name}`);
