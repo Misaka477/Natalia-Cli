@@ -4,3 +4,7 @@ export * from "./mailbox-ledger";
 export * from "./mailbox-tool";
 export * from "./tool-security";
 export * from "./perf-log";
+export type {
+  LoadedProjectDocument,
+  ProjectDocumentSnapshot,
+} from "./project-documents";

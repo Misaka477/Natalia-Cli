@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   ProviderStreamRequest,
@@ -830,5 +832,197 @@ test("a config reload emits a context.instructions notice with a monotonic revis
       summary: second[1]!.summary,
     },
   ]);
+  await client.dispose?.();
+}, 30_000);
+
+test("the project documents inject as a user-tier runtime context block (ADR D2 / EI §8.5)", async () => {
+  const root = await officialPluginWorkspace("plan-contract-project-docs");
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_contract_docs",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        requests.push(request);
+        yield { type: "content" as const, text: "ok" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!("ses_plan_contract_docs" as SessionID);
+  await writeFile(
+    join(root, "AGENTS.md"),
+    "# Agents\n\n- run bun test before finishing\n",
+  );
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "constitution.md"),
+    "# Constitution\n\n- never commit secrets\n",
+  );
+  await client.submitAndWait!("follow the project instructions");
+  const seen = (requests[0]?.messages ?? [])
+    .map((message) => message.content)
+    .join("\n");
+  // The project documents arrive as a user-tier runtime context block, never
+  // in the static system prompt.
+  expect(seen).toContain('<runtime_context source="project" authority="user"');
+  expect(seen).toContain("run bun test before finishing");
+  expect(seen).toContain("never commit secrets");
+  const system = requests[0]?.messages.find(
+    (message) => message.role === "system",
+  );
+  // The document正文 never enters the static system prompt (the authority
+  // model only names AGENTS.md as a tier, it does not carry its content).
+  expect(system?.content).not.toContain("run bun test before finishing");
+  expect(system?.content).not.toContain("never commit secrets");
+  await client.dispose?.();
+}, 30_000);
+
+test("a project document edit changes the block hash and re-injects (EI §8.5)", async () => {
+  const root = await officialPluginWorkspace("plan-contract-doc-change");
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_contract_doc_change",
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        requests.push(request);
+        yield { type: "content" as const, text: "ok" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!("ses_plan_contract_doc_change" as SessionID);
+  await writeFile(join(root, "AGENTS.md"), "- original rule\n");
+  await client.submitAndWait!("first");
+  const firstHash = /hash="([^"]+)"/u.exec(
+    (requests[0]?.messages ?? []).map((message) => message.content).join("\n"),
+  )?.[1];
+  expect(firstHash).toBeTruthy();
+  expect(
+    (requests[0]?.messages ?? []).map((m) => m.content).join("\n"),
+  ).toContain("original rule");
+  // The document edit is detected by hash; the new block carries the new
+  // content and a new hash — appended, never mutating the earlier message.
+  await writeFile(join(root, "AGENTS.md"), "- updated rule\n");
+  await client.submitAndWait!("second");
+  const secondSeen = (requests[1]?.messages ?? [])
+    .map((message) => message.content)
+    .join("\n");
+  expect(secondSeen).toContain("updated rule");
+  const secondHash = /hash="([^"]+)"/u.exec(secondSeen)?.[1];
+  expect(secondHash).not.toBe(firstHash);
+  await client.dispose?.();
+}, 30_000);
+
+test("constitution_propose_rule validates and gates on the user (EI §3.8 P-1.c)", async () => {
+  const root = await officialPluginWorkspace("plan-contract-rule-propose");
+  const events: RuntimeEvent[] = [];
+  let streamCalls = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_contract_rule",
+    permissionMode: "ask",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        streamCalls += 1;
+        const toolResult = (
+          request as {
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
+          }
+        ).messages
+          .filter(
+            (message) =>
+              message.role === "tool" &&
+              String(message.toolCallID ?? "").startsWith("call_rule"),
+          )
+          .at(-1);
+        if (toolResult) {
+          if (streamCalls === 2) {
+            // The first (unanchored deny) proposal was refused before the
+            // gate; re-propose with a structured anchor.
+            yield {
+              type: "tool_call" as const,
+              calls: [
+                {
+                  id: "call_rule",
+                  name: "constitution_propose_rule",
+                  arguments: JSON.stringify({
+                    statement: "never force push",
+                    enforcement: "deny",
+                    appliesTo: {
+                      tools: ["run_shell"],
+                      commandPattern: "git push.*--force",
+                    },
+                    scope: "project",
+                  }),
+                },
+              ],
+            };
+            yield { type: "done" as const };
+            return;
+          }
+          yield { type: "content" as const, text: "rule proposed" };
+          yield { type: "done" as const };
+          return;
+        }
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_rule",
+              name: "constitution_propose_rule",
+              arguments: JSON.stringify({
+                statement: "never force push",
+                enforcement: "deny",
+              }),
+            },
+          ],
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    events.push(event);
+    if (
+      event.type === "approval.request" &&
+      event.scope === "constitution_rule"
+    )
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.sessionAttach!("ses_plan_contract_rule" as SessionID);
+  await client.submitAndWait!("propose a rule");
+  const added = events.filter(
+    (event) =>
+      event.type === "constitution.rule_added" &&
+      (event as { source?: string }).source === "agent_proposed",
+  );
+  // Only the approved proposal lands; the seeded rules are not agent-proposed.
+  expect(added).toHaveLength(1);
+  expect(added[0]).toMatchObject({
+    type: "constitution.rule_added",
+    source: "agent_proposed",
+    enforcement: "deny",
+    scope: "project",
+  });
+  expect(
+    (added[0] as { appliesTo?: { commandPattern?: string } }).appliesTo
+      ?.commandPattern,
+  ).toBe("git push.*--force");
   await client.dispose?.();
 }, 30_000);

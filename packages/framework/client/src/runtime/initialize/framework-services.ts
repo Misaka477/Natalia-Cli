@@ -34,6 +34,7 @@ import {
   createPlanDocReadTool,
 } from "../plan-doc-tools";
 import {
+  createConstitutionProposeTool,
   createPlanProposeTool,
   createWorkContractReadTool,
 } from "../plan-contract-tools";
@@ -235,6 +236,7 @@ export async function wireFrameworkServices(
     createRecordValidationTool(ctx),
     createRecordCompletionTool(ctx),
     createRecordDecisionTool(ctx),
+    createConstitutionProposeTool(ctx),
   ]) {
     if (ctx.state.tools.get(tool.name))
       throw new Error(`framework tool already registered: ${tool.name}`);

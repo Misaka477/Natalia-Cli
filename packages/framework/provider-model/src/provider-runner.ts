@@ -326,6 +326,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         niaChats: input.niaChats?.() ?? [],
         niaIntro: input.niaIntro?.() ?? false,
         activePlan: input.activePlan(),
+        projectDocuments: input.projectDocuments?.(),
       });
       // ADR D1: the system message is the static per-role prompt only — no
       // environment, skills, collaboration or plan. Those arrive as appended
@@ -1408,6 +1409,21 @@ type RuntimeContextBlockInput = {
     verification: string[];
     riskNotes: string[];
   };
+  /**
+   * The workspace project documents (AGENTS.md / .natalia/constitution.md)
+   * injected as a `<runtime_context source="project" authority="user">`
+   * block (ADR D2 / EI §8.5) — the highest user-tier input, never in the
+   * static system prompt.
+   */
+  projectDocuments?: {
+    documents: Array<{
+      source: "constitution" | "agents";
+      path: string;
+      content: string;
+      hash: string;
+    }>;
+    hash: string;
+  };
 };
 
 /**
@@ -1488,6 +1504,26 @@ function runtimeContextBlocks(
     trust: "untrusted" | "runtime";
     lines: Array<string | undefined>;
   }> = [];
+  // ADR §5.3 / EI §8.5: the user's project instructions outrank everything
+  // except the current message, so the project block renders first. The
+  // document hash rides along so a document edit changes the block (append on
+  // change, never mutate — D3/D5).
+  const projectDocs = input.projectDocuments?.documents ?? [];
+  if (projectDocs.length) {
+    blocks.push({
+      source: "project",
+      authority: "user",
+      trust: "runtime",
+      lines: [
+        ...projectDocs.map(
+          (document) =>
+            `<${document.source === "constitution" ? "constitution" : "agents"} path="${document.path}" hash="${document.hash}">` +
+            `\n${document.content}\n` +
+            `</${document.source === "constitution" ? "constitution" : "agents"}>`,
+        ),
+      ],
+    });
+  }
   blocks.push({
     source: "environment",
     trust: "runtime",

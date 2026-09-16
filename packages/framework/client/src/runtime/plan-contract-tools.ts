@@ -13,8 +13,13 @@
  * document change raises on an unapproved draft.
  */
 import { projectedWorkContracts } from "@natalia/session";
-import { WORK_LEDGER_CONTROLLER_SERVICE } from "@natalia/runtime-services";
-import type { RuntimeTool, WorkLedgerController } from "./context";
+import {
+  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+  WORK_LEDGER_CONTROLLER_SERVICE,
+  type GovernanceLedgerController,
+  type WorkLedgerController,
+} from "@natalia/runtime-services";
+import type { RuntimeTool } from "./context";
 import type { RuntimeContext, SessionExecutionState } from "./context";
 
 function resolveExec(
@@ -222,6 +227,131 @@ export function createWorkContractReadTool(ctx: RuntimeContext): RuntimeTool {
         ...(contract.unverifiable ? { unverifiable: true } : {}),
         ...(contract.acceptedAt ? { acceptedAt: contract.acceptedAt } : {}),
       });
+    },
+  };
+}
+
+/**
+ * `constitution_propose_rule` (EI §3.8 P-1.c / §8.5): the model proposes a
+ * rule that tightens itself. The proposal is validated (deny/approval require
+ * a non-empty appliesTo anchor; release scope is rejected — runtime
+ * self-protection is not a model's to touch), and the user approves it once
+ * through the gate before it lands as `constitution.rule_added(source:
+ * "agent_proposed")`. A model never edits, disables or deletes an existing
+ * rule — those are user actions.
+ */
+export function createConstitutionProposeTool(
+  ctx: RuntimeContext,
+): import("@natalia/tools").RuntimeTool {
+  return {
+    name: "constitution_propose_rule",
+    description:
+      "Propose a new constitution rule that tightens the runtime for this workspace. deny/approval rules require a structured appliesTo anchor (tools, paths or commandPattern); release scope cannot be proposed. The proposal waits for the user's approval; on Allow it lands as an agent_proposed rule, on Reject you get the feedback and can re-propose.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        statement: {
+          type: "string",
+          description: "The rule statement (what must always/never happen).",
+        },
+        enforcement: {
+          type: "string",
+          enum: ["deny", "approval", "warn"],
+          description: "deny blocks, approval gates, warn records.",
+        },
+        appliesTo: {
+          type: "object",
+          properties: {
+            tools: { type: "array", items: { type: "string" } },
+            paths: { type: "array", items: { type: "string" } },
+            commandPattern: { type: "string" },
+          },
+          additionalProperties: false,
+          description:
+            "Required for deny/approval — the structured anchor the matcher executes against.",
+        },
+        priority: {
+          type: "string",
+          enum: ["critical", "high", "medium", "low"],
+        },
+        scope: {
+          type: "string",
+          enum: ["project", "package"],
+          description: "Only project or package scope can be proposed.",
+        },
+      },
+      required: ["statement", "enforcement"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      const args = parsed as {
+        statement?: string;
+        enforcement?: "deny" | "approval" | "warn";
+        appliesTo?: {
+          tools?: string[];
+          paths?: string[];
+          commandPattern?: string;
+        };
+        priority?: "critical" | "high" | "medium" | "low";
+        scope?: string;
+      };
+      const exec = resolveExec(ctx, context.sessionID);
+      if (!exec) return "no session";
+      const governanceLedger =
+        ctx.ports.resolveService<GovernanceLedgerController>(
+          GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+        );
+      if (!governanceLedger) return "governance ledger unavailable";
+      if (!args.statement?.trim() || !args.enforcement)
+        return "constitution_propose_rule requires statement and enforcement";
+      const problems = governanceLedger.validateConstitutionRuleProposal({
+        statement: args.statement,
+        enforcement: args.enforcement,
+        ...(args.appliesTo ? { appliesTo: args.appliesTo } : {}),
+        ...(args.priority ? { priority: args.priority } : {}),
+        ...(args.scope ? { scope: args.scope } : {}),
+      });
+      if (problems.length)
+        return JSON.stringify({
+          proposed: false,
+          problems,
+          reason:
+            "the proposal failed validation; fix the problems and re-propose",
+        });
+      const interactive = ctx.ports.getInteractive();
+      const response = await interactive.requirePlanAcceptance({
+        approvalID: `constitution_rule:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
+        planID: "constitution_rule",
+        title: `Approve the proposed rule: ${args.statement.slice(0, 80)}`,
+        preview: `${args.enforcement} · ${JSON.stringify(args.appliesTo ?? {})}`,
+        detail: args.statement,
+        scope: "constitution_rule",
+        sessionID: exec.session.id,
+        signal: context.signal,
+      });
+      if (!response || response.decision === "reject")
+        return JSON.stringify({
+          proposed: false,
+          reason: `rejected${response?.feedback ? `: ${response.feedback}` : ""}`,
+          feedback: response?.feedback,
+        });
+      const ruleID = `P-AGENT-${Date.now().toString(36)}`;
+      ctx.ports.publishForSession(
+        exec,
+        governanceLedger.buildProposedConstitutionRule({
+          id: `constitution:rule:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
+          ruleID,
+          proposal: {
+            statement: args.statement,
+            enforcement: args.enforcement,
+            ...(args.appliesTo ? { appliesTo: args.appliesTo } : {}),
+            ...(args.scope ? { scope: args.scope } : {}),
+          },
+          ...(args.priority ? { priority: args.priority } : {}),
+        }),
+      );
+      return JSON.stringify({ proposed: true, ruleID });
     },
   };
 }

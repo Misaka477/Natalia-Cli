@@ -40,6 +40,7 @@ import type {
   StoredContextEpoch,
   AdmittedSessionInput,
 } from "@natalia/session";
+import type { ProjectDocumentSnapshot } from "./project-documents";
 import type {
   RuntimeTool,
   SandboxToolService,
@@ -391,6 +392,13 @@ export type ProviderRunnerInput = {
   activeSkill(): SkillMetadata | undefined;
   skillsList(): SkillMetadata[];
   skillService?(): SkillService | undefined;
+  /**
+   * The project documents (AGENTS.md / .natalia/constitution.md) loaded for
+   * the workspace, or undefined when none are present. Injected as a
+   * `<runtime_context source="project">` block (ADR D2 / EI §8.5) — user-tier
+   * authority, never in the static system prompt.
+   */
+  projectDocuments?(): ProjectDocumentSnapshot | undefined;
   naviSuggestions(): Array<{
     id: string;
     suggestion: string;

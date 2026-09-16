@@ -29,6 +29,7 @@ import {
 } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "./context";
 import { activePlanForExec } from "./collaboration/plan-doc-runtime";
+import { loadProjectDocumentsSync } from "./project-docs";
 import type { RealRuntimeClientOptions } from "./options";
 
 function collabMessagesForExec(
@@ -234,6 +235,14 @@ export function createTurnRunner(
           verification: [],
           riskNotes: [],
         };
+      },
+      // ADR D2 / EI §8.5: the project documents (AGENTS.md and
+      // .natalia/constitution.md) load per turn and carry a content hash; a
+      // document edit changes the hash, the rendered block changes, and the
+      // runtime re-appends on change instead of mutating earlier messages.
+      projectDocuments: () => {
+        const snapshot = loadProjectDocumentsSync(getWorkspaceRoot());
+        return snapshot?.documents.length ? snapshot : undefined;
       },
       retry: retryService,
       lastProviderUsage: () => exec.lastProviderUsage,
