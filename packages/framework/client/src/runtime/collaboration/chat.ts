@@ -102,6 +102,10 @@ function redactToolOutput(output: string) {
 }
 
 async function streamExec(ctx: RuntimeContext, sessionID?: string) {
+  // `start()` only kicks initialization off in the background. Chat read
+  // surfaces may be the first routed call on a workspace proxy, so wait for
+  // the composition root before `ensureExecution` touches runtime services.
+  await ctx.ports.getReady();
   if (sessionID)
     return (
       ctx.ports.getExecutionBySession().get(sessionID as SessionID) ??

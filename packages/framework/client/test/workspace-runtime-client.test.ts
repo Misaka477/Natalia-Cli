@@ -180,6 +180,58 @@ for (const useSqliteStore of [false, true]) {
   });
 }
 
+test("workspace proxy chat messages await lazy runtime initialization", async () => {
+  const root = await officialPluginWorkspace("workspace-chat-ready");
+  const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
+  process.env.NATALIA_WORKSPACES_FILE = join(root, "workspaces.json");
+  const options = {
+    pluginStoreRoot: officialPluginStoreRoot(root),
+    globalConfigPath: join(root, "global-config.json"),
+  };
+  const manager = createWorkspaceManager(options);
+  try {
+    const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
+    const session = createSessionRecord("ses_chat_ready", "Chat ready");
+    session.events.push(
+      {
+        type: "navi.chat.message.added",
+        id: "navi_ready",
+        messageID: "navi_ready_msg",
+        role: "chat",
+        text: "Navi ready",
+        at: "2026-08-01T00:00:00Z",
+      },
+      {
+        type: "nia.chat.message.added",
+        id: "nia_ready",
+        messageID: "nia_ready_msg",
+        role: "chat",
+        text: "Nia ready",
+        at: "2026-08-01T00:00:00Z",
+      },
+    );
+    await store.save(session);
+    await manager.add({ path: root });
+    const client = createWorkspaceRuntimeClient(manager);
+    // This is the first routed call on a freshly added workspace: start() has
+    // only kicked initialization off in the background, so chatMessages must
+    // wait for ready instead of racing `ensureExecution`.
+    expect(
+      (await client.chatMessages?.("navi", session.id))?.map(
+        (row) => row.text,
+      ),
+    ).toEqual(["Navi ready"]);
+    expect(
+      (await client.chatMessages?.("nia", session.id))?.map((row) => row.text),
+    ).toEqual(["Nia ready"]);
+  } finally {
+    await manager.dispose();
+    if (previousRegistry === undefined)
+      delete process.env.NATALIA_WORKSPACES_FILE;
+    else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
+  }
+});
+
 test("session-scoped runtime calls route to the owning workspace", async () => {
   const calls: string[] = [];
   const firstClient = {
