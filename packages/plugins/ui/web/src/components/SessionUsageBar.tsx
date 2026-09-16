@@ -23,57 +23,54 @@ function formatMs(ms: number): string {
  * intentionally absent (the user computes it).
  */
 export function SessionUsageBar(props: { state: AppState }) {
-  const view = createMemo<SessionUsageView | undefined>(() => {
-    const stats = props.state.sessionUsage;
-    if (stats.steps === 0) return undefined;
-    return viewStore.deriveSessionUsageView(stats);
-  });
+  // Always present: a usage meter is a standing readout, not a popup. With no
+  // steps yet the figures are all zero, which is the honest "nothing spent
+  // yet" state — the bar still shows so the slot never flickers in and out.
+  const view = createMemo<SessionUsageView>(() =>
+    viewStore.deriveSessionUsageView(props.state.sessionUsage),
+  );
 
   return (
-    <Show when={view()}>
-      {(current) => (
-        <div class="session-usage-bar">
-          <span class="session-usage-seg" title="Provider steps this session">
-            {current().steps} 步
-          </span>
-          <span class="session-usage-sep">·</span>
-          <span
-            class="session-usage-seg"
-            title={`Input ${current().inputTokens} · cache read ${current().cacheReadInputTokens} · cache write ${current().cacheCreationInputTokens}`}
-          >
-            In {formatCount(current().inputTokens)} · Out{" "}
-            {formatCount(current().outputTokens)}
-          </span>
-          <span class="session-usage-sep">·</span>
-          <span
-            class="session-usage-seg"
-            title={`Cache read ${current().cacheReadInputTokens} · write ${current().cacheCreationInputTokens}`}
-          >
-            Cache R {formatCount(current().cacheReadInputTokens)} · W{" "}
-            {formatCount(current().cacheCreationInputTokens)}
-          </span>
-          <span class="session-usage-sep">·</span>
-          <span class="session-usage-seg" title="Cache read / total input">
-            命中 {(current().cacheHitRate * 100).toFixed(1)}%
-          </span>
-          <span class="session-usage-sep">·</span>
-          <span class="session-usage-seg" title="Model / tool wall time">
-            LLM {formatMs(current().llmMs)} · 工具 {formatMs(current().toolMs)}
-          </span>
-          <Show when={current().ttftSteps > 0}>
-            <span class="session-usage-sep">·</span>
-            <span class="session-usage-seg" title="Average first-token latency">
-              首 token {formatMs(current().avgTtftMs)}
-            </span>
-          </Show>
-          <Show when={current().tokensPerSecond > 0}>
-            <span class="session-usage-sep">·</span>
-            <span class="session-usage-seg" title="Decode throughput">
-              {current().tokensPerSecond.toFixed(0)} tok/s
-            </span>
-          </Show>
-        </div>
-      )}
-    </Show>
+    <div class="session-usage-bar">
+      <span class="session-usage-seg" title="Provider steps this session">
+        {view().steps} 步
+      </span>
+      <span class="session-usage-sep">·</span>
+      <span
+        class="session-usage-seg"
+        title={`Input ${view().inputTokens} · cache read ${view().cacheReadInputTokens} · cache write ${view().cacheCreationInputTokens}`}
+      >
+        In {formatCount(view().inputTokens)} · Out{" "}
+        {formatCount(view().outputTokens)}
+      </span>
+      <span class="session-usage-sep">·</span>
+      <span
+        class="session-usage-seg"
+        title={`Cache read ${view().cacheReadInputTokens} · write ${view().cacheCreationInputTokens}`}
+      >
+        Cache R {formatCount(view().cacheReadInputTokens)} · W{" "}
+        {formatCount(view().cacheCreationInputTokens)}
+      </span>
+      <span class="session-usage-sep">·</span>
+      <span class="session-usage-seg" title="Cache read / total input">
+        命中 {(view().cacheHitRate * 100).toFixed(1)}%
+      </span>
+      <span class="session-usage-sep">·</span>
+      <span class="session-usage-seg" title="Model / tool wall time">
+        LLM {formatMs(view().llmMs)} · 工具 {formatMs(view().toolMs)}
+      </span>
+      <Show when={view().ttftSteps > 0}>
+        <span class="session-usage-sep">·</span>
+        <span class="session-usage-seg" title="Average first-token latency">
+          首 token {formatMs(view().avgTtftMs)}
+        </span>
+      </Show>
+      <Show when={view().tokensPerSecond > 0}>
+        <span class="session-usage-sep">·</span>
+        <span class="session-usage-seg" title="Decode throughput">
+          {view().tokensPerSecond.toFixed(0)} tok/s
+        </span>
+      </Show>
+    </div>
   );
 }
