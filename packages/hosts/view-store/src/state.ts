@@ -153,6 +153,8 @@ export type PolicyDecisionView = Extract<
 export type SessionUsageStats = {
   /** Provider steps counted (each emits one `runtime.step_usage`). */
   steps: number;
+  /** Turns counted (each emits one durable `turn.finished`). */
+  turns: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens: number;
@@ -531,6 +533,7 @@ export function initialState(): AppState {
     runtimeNotices: [],
     sessionUsage: {
       steps: 0,
+      turns: 0,
       inputTokens: 0,
       outputTokens: 0,
       cacheReadInputTokens: 0,

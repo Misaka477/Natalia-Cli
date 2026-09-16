@@ -140,6 +140,56 @@ export function turnIDForTool(event: { id: string; callID?: string }): string {
     : event.id;
 }
 
+/**
+ * Projects the Work Graph backbone from a durable tool.update event (EI): the
+ * agent_action root and the tool_call child it caused. The runtime also emits
+ * dedicated workgraph.node_added events for live turns, but a replayed or older
+ * session's journal carries the tool.update events without those graph events —
+ * this projection reconstructs the same causal chain from the tool events alone,
+ * so the forest is never empty for a session that ran tools. Node/edge ids match
+ * the runtime's builders, so the two sources are idempotent (same id overwrites).
+ */
+function projectWorkGraphFromTool(
+  state: import("./state").AppState,
+  turnID: string,
+  event: Extract<
+    import("@natalia/contracts").RuntimeEvent,
+    { type: "tool.update" }
+  >,
+) {
+  const callID = event.callID ?? event.name;
+  const actionID = `wg:action:${turnID}`;
+  const toolID = `wg:tool:${turnID}:${callID}`;
+  if (!state.workGraphNodes[actionID])
+    state.workGraphNodes[actionID] = {
+      type: "workgraph.node_added",
+      id: actionID,
+      nodeID: actionID,
+      kind: "agent_action",
+      summary: "agent acted",
+      turnID,
+    };
+  if (!state.workGraphNodes[toolID])
+    state.workGraphNodes[toolID] = {
+      type: "workgraph.node_added",
+      id: toolID,
+      nodeID: toolID,
+      kind: "tool_call",
+      summary: `${event.name} ${event.status}`,
+      target: event.name,
+      turnID,
+    };
+  const edgeID = `wg:edge:caused:${toolID}`;
+  if (!state.workGraphEdges[edgeID])
+    state.workGraphEdges[edgeID] = {
+      type: "workgraph.edge_added",
+      id: edgeID,
+      sourceID: actionID,
+      targetID: toolID,
+      kind: "caused",
+    };
+}
+
 export function toolStateID(event: {
   id: string;
   name: string;
@@ -361,6 +411,7 @@ export function applyConversationEvent(
       beginPostToolSegment(state, turnID);
       delete state.streamPhases[turnID];
       upsertTool(state, event);
+      projectWorkGraphFromTool(state, turnID, event);
       return true;
     }
     case "approval.request":
@@ -419,6 +470,14 @@ export function applyConversationEvent(
       return true;
     case "turn.finished":
       markTurnStarted(state, event.id);
+      // Durable per-turn usage (available for every session, historical turns
+      // included): count the turn and add its wall time. Input/output tokens
+      // are not summed here — turn.finished carries only the final step's
+      // provider sample, not the turn total; the per-step runtime.step_usage is
+      // the token authority for turns that ran under it.
+      state.sessionUsage.turns += 1;
+      if (event.durationMs !== undefined)
+        state.sessionUsage.llmMs += event.durationMs;
       flushStream(state, streamID(event.id, "thinking"));
       flushStream(state, streamID(event.id, "assistant"));
       // A turn that has finished has finished reasoning, whether or not the

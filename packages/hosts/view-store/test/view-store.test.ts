@@ -2584,3 +2584,62 @@ test("a real tool-call causal chain folds into the work-graph forest and step us
     toolMs: 400,
   });
 });
+
+test("an older session (tool.update + turn.finished only) still rebuilds the causal forest and usage (historical replay)", () => {
+  const sessionID = "ses_old";
+  const turnID = "turn_old";
+  // A pre-workgraph-event session: the journal has durable tool.update and
+  // turn.finished events but none of the runtime.step_usage / workgraph.*
+  // events newer code emits.
+  const events = [
+    { type: "turn.submitted", id: turnID, text: "do the thing", sessionID },
+    {
+      type: "tool.update",
+      id: `${turnID}:call_a`,
+      name: "run_shell",
+      callID: "call_a",
+      status: "succeeded",
+      summary: "ran tests",
+      sessionID,
+    },
+    {
+      type: "tool.update",
+      id: `${turnID}:call_b`,
+      name: "apply_edits",
+      callID: "call_b",
+      status: "succeeded",
+      summary: "edited files",
+      sessionID,
+    },
+    {
+      type: "turn.finished",
+      id: turnID,
+      stopReason: "done",
+      durationMs: 4200,
+      sessionID,
+    },
+  ] as unknown as RuntimeEvent[];
+
+  const state = projectEvents(events);
+  const actionID = `wg:action:${turnID}`;
+
+  // The causal backbone is reconstructed from the tool events alone.
+  expect(state.workGraphNodes[actionID]).toMatchObject({
+    kind: "agent_action",
+  });
+  expect(state.workGraphNodes[`wg:tool:${turnID}:call_a`]).toMatchObject({
+    kind: "tool_call",
+  });
+  const forest = buildWorkGraphForest(state);
+  expect(forest).toHaveLength(1);
+  expect(forest[0]!.node.nodeID).toBe(actionID);
+  // Both tool calls hang off the action via the caused edge.
+  expect(forest[0]!.children.map((child) => child.node.nodeID).sort()).toEqual(
+    [`wg:tool:${turnID}:call_a`, `wg:tool:${turnID}:call_b`].sort(),
+  );
+
+  // Turn count and wall time come from the durable turn.finished.
+  expect(state.sessionUsage).toMatchObject({ turns: 1, llmMs: 4200 });
+  // No per-step token data exists for an old session — honest zeros, not guesses.
+  expect(state.sessionUsage.inputTokens).toBe(0);
+});

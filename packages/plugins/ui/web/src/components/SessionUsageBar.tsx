@@ -32,8 +32,11 @@ export function SessionUsageBar(props: { state: AppState }) {
 
   return (
     <div class="session-usage-bar">
-      <span class="session-usage-seg" title="Provider steps this session">
-        {view().steps} 步
+      <span
+        class="session-usage-seg"
+        title="Turns / provider steps this session"
+      >
+        {view().turns} 轮 · {view().steps} 步
       </span>
       <span class="session-usage-sep">·</span>
       <span
