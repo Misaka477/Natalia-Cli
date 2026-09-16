@@ -4683,6 +4683,66 @@ button.neu-settings-item.neu-settings-item-button:active {
 .plan-contract-seg[data-status="stale"] {
   color: #e6b45a;
 }
+.drift-card {
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  font-size: 12px;
+}
+.drift-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.drift-card-status {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 10px;
+  opacity: 0.8;
+}
+.drift-card-status[data-status="explained"] {
+  color: #8fd48f;
+}
+.drift-card-status[data-status="disputed"] {
+  color: #e6b45a;
+}
+.drift-card-goal,
+.drift-card-current {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drift-card-rationale {
+  margin-top: 3px;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255, 255, 255, 0.15);
+  opacity: 0.75;
+  font-style: italic;
+}
+.drift-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+}
+.drift-card-btn {
+  padding: 2px 10px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+}
+.drift-card-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.drift-card-btn[data-kind="dispute"] {
+  background: rgba(230, 180, 90, 0.18);
+}
 .neu-goal-action {
   display: inline-flex;
   align-items: center;

@@ -64,6 +64,23 @@ export function GovernancePane(props: {
     void load();
   });
 
+  // EI §3.5: acknowledge a drift finding — the Main Agent explains it or
+  // disputes it as a false positive (with a user-supplied rationale). Only an
+  // open finding transitions; reload to reflect the new status.
+  async function acknowledgeFinding(
+    findingID: string,
+    status: "explained" | "disputed",
+    rationale?: string,
+  ) {
+    try {
+      await props.runtime?.acknowledgeDriftFinding?.(
+        { findingID, status, ...(rationale ? { rationale } : {}) },
+        props.sessionID,
+      );
+      await load();
+    } catch {}
+  }
+
   return (
     <div class="governance-pane">
       <div class="review-subtabs">
@@ -118,21 +135,56 @@ export function GovernancePane(props: {
       </div>
       <div class="neu-governance-content">
         <Show when={tab() === "drift"}>
-          <For each={liveDrift().length ? liveDrift() : []}>
+          <For each={liveDrift()}>
             {(finding) => (
-              <div class="neu-gov-row">
-                <span class="neu-gov-title" data-priority={finding.severity}>
-                  {finding.severity} · {Math.round(finding.confidence * 100)}%
-                </span>
-                <span class="neu-gov-text">
+              <div class="drift-card">
+                <div class="drift-card-head">
+                  <span class="neu-gov-title" data-priority={finding.severity}>
+                    {finding.severity} · {Math.round(finding.confidence * 100)}%
+                  </span>
+                  <span class="drift-card-status" data-status={finding.status}>
+                    {finding.status}
+                  </span>
+                </div>
+                <div class="drift-card-goal">
                   Goal: {finding.originalObjective}
-                </span>
-                <span class="neu-gov-meta">
+                </div>
+                <div class="drift-card-current">
                   Current: {finding.currentActivity}
-                  {finding.status && finding.status !== "open"
-                    ? ` · ${finding.status}`
-                    : ""}
-                </span>
+                </div>
+                <Show when={finding.rationale}>
+                  <div class="drift-card-rationale">{finding.rationale}</div>
+                </Show>
+                <Show when={finding.status === "open"}>
+                  <div class="drift-card-actions">
+                    <button
+                      type="button"
+                      class="drift-card-btn"
+                      onClick={() =>
+                        void acknowledgeFinding(finding.findingID, "explained")
+                      }
+                    >
+                      解释
+                    </button>
+                    <button
+                      type="button"
+                      class="drift-card-btn"
+                      data-kind="dispute"
+                      onClick={() => {
+                        const reason =
+                          window.prompt("声明这是误报，给出理由：");
+                        if (reason?.trim())
+                          void acknowledgeFinding(
+                            finding.findingID,
+                            "disputed",
+                            reason.trim(),
+                          );
+                      }}
+                    >
+                      误报
+                    </button>
+                  </div>
+                </Show>
               </div>
             )}
           </For>
