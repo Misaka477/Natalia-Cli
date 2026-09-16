@@ -232,6 +232,52 @@ test("workspace proxy chat messages await lazy runtime initialization", async ()
   }
 });
 
+test("chat history survives after the newest event window", async () => {
+  const root = await officialPluginWorkspace("workspace-chat-tail");
+  const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
+  process.env.NATALIA_WORKSPACES_FILE = join(root, "workspaces.json");
+  const options = {
+    pluginStoreRoot: officialPluginStoreRoot(root),
+    globalConfigPath: join(root, "global-config.json"),
+  };
+  const manager = createWorkspaceManager(options);
+  try {
+    const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
+    const session = createSessionRecord("ses_chat_tail", "Chat tail");
+    session.events.push({
+      type: "navi.chat.message.added",
+      id: "navi_old",
+      messageID: "navi_old_msg",
+      role: "chat",
+      text: "old navi",
+      at: "2026-08-01T00:00:00Z",
+    });
+    // The shared window keeps only the newest 2000 events. Put the chat row
+    // behind that page so a window-only projection silently drops it.
+    for (let index = 0; index < 2_100; index += 1)
+      session.events.push({
+        type: "tool.update",
+        id: `fill:${index}`,
+        name: "noop",
+        status: "succeeded",
+        summary: "noop",
+      });
+    await store.save(session);
+    await manager.add({ path: root });
+    const client = createWorkspaceRuntimeClient(manager);
+    expect(
+      (await client.chatMessages?.("navi", session.id))?.map(
+        (row) => row.text,
+      ),
+    ).toEqual(["old navi"]);
+  } finally {
+    await manager.dispose();
+    if (previousRegistry === undefined)
+      delete process.env.NATALIA_WORKSPACES_FILE;
+    else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
+  }
+});
+
 test("session-scoped runtime calls route to the owning workspace", async () => {
   const calls: string[] = [];
   const firstClient = {

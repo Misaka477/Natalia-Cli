@@ -20,11 +20,7 @@ import {
 } from "@natalia/session";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
-import {
-  ensureSessionEventWindow,
-  scanSessionWindowNewestFirst,
-  sessionWindowEvents,
-} from "../session-event-window";
+import { scanSessionWindowNewestFirst } from "../session-event-window";
 
 /**
  * Find `toMessageID` from the newest event backwards across the shared window
@@ -145,13 +141,11 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
     async messages(sessionID) {
       const exec = await streamExec(ctx, sessionID);
       if (!exec) return [];
-      // Keep the secondary chat surfaces on the shared event window. Full
-      // history is an explicit escape hatch (rollback/search), not startup.
-      const window = await ensureSessionEventWindow(ctx, exec);
-      const events = window
-        ? sessionWindowEvents(exec, window)
-        : exec.session.events;
-      return projectedNaviChatMessages(events).map((message) => ({
+      // Chat has no paging UI yet, so project the complete durable log. The
+      // shared event window only holds the newest page and can silently drop
+      // older chat once the session tail is tool/turn traffic.
+      await ensureSessionFullEvents(ctx, exec);
+      return projectedNaviChatMessages(exec.session.events).map((message) => ({
         messageID: message.messageID,
         role: message.role,
         text: message.text,
@@ -283,13 +277,11 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
     async messages(sessionID) {
       const exec = await streamExec(ctx, sessionID);
       if (!exec) return [];
-      // Keep the secondary chat surfaces on the shared event window. Full
-      // history is an explicit escape hatch (rollback/search), not startup.
-      const window = await ensureSessionEventWindow(ctx, exec);
-      const events = window
-        ? sessionWindowEvents(exec, window)
-        : exec.session.events;
-      return projectedNiaChatMessages(events).map((message) => ({
+      // Chat has no paging UI yet, so project the complete durable log. The
+      // shared event window only holds the newest page and can silently drop
+      // older chat once the session tail is tool/turn traffic.
+      await ensureSessionFullEvents(ctx, exec);
+      return projectedNiaChatMessages(exec.session.events).map((message) => ({
         messageID: message.messageID,
         role: message.role,
         text: message.text,
