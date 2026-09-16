@@ -139,10 +139,15 @@ export {
   applyConversationEvent,
 } from "./conversation";
 export {
+  buildWorkGraphForest,
+  buildWorkGraphNavigation,
+  selectWorkGraphByPlan,
   selectUnattributedWorkGraphNodes,
   selectWorkGraphNeighborhood,
-  type WorkGraphSlice,
   deriveSessionUsageView,
+  type WorkGraphSlice,
+  type WorkGraphTreeNode,
+  type WorkGraphNavigation,
 } from "./graph";
 
 /**

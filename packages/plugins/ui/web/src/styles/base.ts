@@ -4579,6 +4579,85 @@ button.neu-settings-item.neu-settings-item-button:active {
 .session-usage-sep {
   opacity: 0.4;
 }
+.wg-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12px;
+}
+.wg-node {
+  display: flex;
+  flex-direction: column;
+}
+.wg-node-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: default;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.wg-node-row[data-depth]:not([data-depth="0"]) {
+  cursor: pointer;
+}
+.wg-node-row[data-depth="0"] {
+  cursor: pointer;
+}
+.wg-node-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.wg-twisty {
+  flex: none;
+  width: 12px;
+  opacity: 0.6;
+  font-size: 10px;
+}
+.wg-kind {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  opacity: 0.85;
+}
+.wg-summary {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wg-via {
+  flex: none;
+  opacity: 0.5;
+  font-size: 10px;
+}
+.wg-children {
+  margin-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  padding-left: 4px;
+}
+.wg-unattributed {
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(230, 180, 90, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(230, 180, 90, 0.22);
+}
+.wg-section-title {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin-bottom: 2px;
+}
 .neu-goal-action {
   display: inline-flex;
   align-items: center;

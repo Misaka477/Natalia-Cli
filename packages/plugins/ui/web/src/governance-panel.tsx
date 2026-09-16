@@ -1,6 +1,7 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
 import type { RuntimeClient } from "@natalia/contracts";
 import type { AppState } from "@natalia/view-store";
+import { WorkGraphTree } from "./components/WorkGraphTree";
 
 type Tab =
   | "constitution"
@@ -28,8 +29,6 @@ export function GovernancePane(props: {
   const [liveDecisions, setLiveDecisions] = createSignal<any[]>([]);
   const [liveEvidence, setLiveEvidence] = createSignal<any[]>([]);
   const [liveDrift, setLiveDrift] = createSignal<any[]>([]);
-  const [liveNodes, setLiveNodes] = createSignal<any[]>([]);
-  const [liveEdges, setLiveEdges] = createSignal<any[]>([]);
   // ADR Phase C: the projected runtime notices (dual ingestion — the live
   // event stream and the server-projected contract converge here).
   const [liveNotices, setLiveNotices] = createSignal<any[]>([]);
@@ -53,16 +52,6 @@ export function GovernancePane(props: {
     } catch {}
     try {
       setLiveDrift((await props.runtime?.driftFindings?.({ sessionID })) ?? []);
-    } catch {}
-    try {
-      setLiveNodes(
-        (await props.runtime?.workGraphNodes?.({ sessionID })) ?? [],
-      );
-    } catch {}
-    try {
-      setLiveEdges(
-        (await props.runtime?.workGraphEdges?.({ sessionID })) ?? [],
-      );
     } catch {}
     try {
       setLiveNotices((await props.runtime?.notices?.(sessionID)) ?? []);
@@ -218,41 +207,7 @@ export function GovernancePane(props: {
           </For>
         </Show>
         <Show when={tab() === "workgraph"}>
-          <For
-            each={
-              liveNodes().length
-                ? liveNodes()
-                : Object.values(props.state.workGraphNodes ?? {})
-            }
-          >
-            {(node) => (
-              <div class="neu-gov-row">
-                <span class="neu-gov-title">{node.kind}</span>
-                <span class="neu-gov-text">{node.summary}</span>
-                <span class="neu-gov-meta">
-                  {node.nodeID}
-                  {node.actor ? ` · ${node.actor}` : ""}
-                </span>
-              </div>
-            )}
-          </For>
-          <div class="neu-gov-section-title">Relations</div>
-          <For
-            each={
-              liveEdges().length
-                ? liveEdges()
-                : Object.values(props.state.workGraphEdges ?? {})
-            }
-          >
-            {(edge) => (
-              <div class="neu-gov-row">
-                <span class="neu-gov-title">{edge.kind}</span>
-                <span class="neu-gov-text">
-                  {edge.sourceID} → {edge.targetID}
-                </span>
-              </div>
-            )}
-          </For>
+          <WorkGraphTree state={props.state} />
         </Show>
         <Show when={tab() === "notices"}>
           <div class="neu-gov-section-title">Runtime Notices</div>
