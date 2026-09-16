@@ -16,6 +16,7 @@ import {
   createSignal,
   createEffect,
   createMemo,
+  createResource,
   onCleanup,
   onMount,
   batch,
@@ -56,7 +57,7 @@ import { SearchPanel } from "./search-panel";
 import { HelpPanel } from "./help-panel";
 import { StashPanel } from "./stash-panel";
 import { SandboxPanel } from "./sandbox-panel";
-import { GovernancePanel } from "./governance-panel";
+import { GovernancePane } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 import { parseGoalRoundPrompt } from "./goal-round";
@@ -902,7 +903,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [stashOpen, setStashOpen] = createSignal(false);
   const [sandboxOpen, setSandboxOpen] = createSignal(false);
-  const [governanceOpen, setGovernanceOpen] = createSignal(false);
   const [topbarPanel, setTopbarPanel] = createSignal<{
     pluginId: string;
     panelId: string;
@@ -2527,6 +2527,23 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     () => state().pendingApprovals.length + state().pendingQuestions.length,
   );
 
+  // Open/disputed drift findings — the治理 tab's PendingBadge (EI Phase 2).
+  const [openDriftCount] = createResource(
+    () => selectedSessionID() || state().sessionID,
+    async (sessionID) => {
+      try {
+        const findings =
+          (await props.ctx.runtime.driftFindings?.({ sessionID })) ?? [];
+        return findings.filter(
+          (finding) =>
+            finding.status === "open" || finding.status === "disputed",
+        ).length;
+      } catch {
+        return 0;
+      }
+    },
+  );
+
   const mainMessageCache = new Map<
     string,
     { signature: RowSignature; value: Message }
@@ -2899,6 +2916,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const tabs: { id: RightTab; label: string }[] = [
       { id: "diff", label: "审阅 / Diff" },
       { id: "plan", label: "计划" },
+      { id: "governance", label: "治理" },
       { id: "nia", label: "Nia" },
       { id: "agent", label: "协同" },
       ...sidePanels().map((item) => ({
@@ -3158,16 +3176,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               }}
             >
               沙箱
-            </button>
-            <button
-              type="button"
-              class="neu-topbar-more-item"
-              onClick={() => {
-                setGovernanceOpen(true);
-                setMoreOpen(false);
-              }}
-            >
-              治理
             </button>
             <button
               type="button"
@@ -4152,6 +4160,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                       <Show when={tab.id === "pending"}>
                         <PendingBadge count={pendingCount()} />
                       </Show>
+                      <Show when={tab.id === "governance"}>
+                        <PendingBadge count={openDriftCount() ?? 0} />
+                      </Show>
                     </button>
                   )}
                 </For>
@@ -4183,6 +4194,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     sessionID={selectedSessionID() || state().sessionID}
                     runtime={props.ctx.runtime}
                     events={props.ctx.events}
+                  />
+                </Show>
+                <Show
+                  keyed
+                  when={
+                    rightTab() === "governance"
+                      ? rightPanelScopeKey()
+                      : undefined
+                  }
+                >
+                  <GovernancePane
+                    state={state()}
+                    runtime={props.ctx.runtime}
+                    sessionID={selectedSessionID() || state().sessionID}
                   />
                 </Show>
                 <Show
@@ -4310,12 +4335,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           })
         }
         onDelete={() => physicallyDeleteSelectedSession()}
-      />
-      <GovernancePanel
-        open={governanceOpen()}
-        onClose={() => setGovernanceOpen(false)}
-        state={state()}
-        runtime={props.ctx.runtime}
       />
       <SandboxPanel
         open={sandboxOpen()}
