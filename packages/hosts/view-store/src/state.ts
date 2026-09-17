@@ -30,6 +30,7 @@ export const checkpointLimit = 200;
 export const evidenceLimit = 200;
 export const completionLimit = 100;
 export const decisionLimit = 200;
+export const driftFindingLimit = 200;
 export const constitutionConflictLimit = 50;
 export const constitutionOverrideLimit = 100;
 /**
@@ -318,6 +319,26 @@ export type SubagentStreamState = {
 export type Banner = { text: string; kind: string };
 
 /** Rollback is a workspace-wide operation, so at most one is in flight. */
+/**
+ * A projected drift finding. Drift findings are journal facts like decisions
+ * and evidence; the view-store keeps them so any UI can render the complete
+ * finding list without re-querying the runtime on every render.
+ */
+export type DriftFindingView = Omit<
+  Extract<RuntimeEvent, { type: "drift.finding_opened" }>,
+  "type" | "id"
+> & {
+  status:
+    | "open"
+    | "explained"
+    | "disputed"
+    | "dismissed"
+    | "corrected"
+    | "detour_declared";
+  rationale?: string;
+  reopenedCount: number;
+};
+
 export type RollbackView = {
   checkpointID: string;
   safetyCheckpointID?: string;
@@ -429,6 +450,7 @@ export type AppState = {
   decisions: Array<Extract<RuntimeEvent, { type: "decision.recorded" }>>;
   evidence: Array<Extract<RuntimeEvent, { type: "evidence.recorded" }>>;
   completions: Array<Extract<RuntimeEvent, { type: "completion.recorded" }>>;
+  driftFindings: DriftFindingView[];
   mailbox: Record<string, MailboxMessageView>;
   plans: Record<string, PlanDocView>;
   /** Current same-session goal, folded from the journal for the status bar. */
@@ -550,6 +572,7 @@ export function initialState(): AppState {
     decisions: [],
     evidence: [],
     completions: [],
+    driftFindings: [],
     mailbox: {},
     plans: {},
     runtimeNotices: [],
@@ -629,6 +652,12 @@ export function cloneState(state: AppState): AppState {
     decisions: [...state.decisions],
     evidence: [...state.evidence],
     completions: [...state.completions],
+    driftFindings: state.driftFindings.map((finding) => ({
+      ...finding,
+      ...(finding.ruleHits
+        ? { ruleHits: finding.ruleHits.map((hit) => ({ ...hit })) }
+        : {}),
+    })),
     mailbox: mapRecord(state.mailbox, (value) => ({ ...value })),
     plans: mapRecord(state.plans, (value) => ({ ...value })),
     runtimeNotices: state.runtimeNotices.map((notice) => ({ ...notice })),

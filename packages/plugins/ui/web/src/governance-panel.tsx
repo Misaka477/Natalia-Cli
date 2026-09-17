@@ -47,6 +47,118 @@ function ruleHitsFor(finding: {
 }
 
 /**
+ * The per-tab data bundle the governance pane renders. Kept outside the
+ * component so a headless host can verify data, empty and failure states
+ * without a DOM.
+ */
+export type GovernanceSliceBundle = {
+  constitution: any[];
+  decisions: any[];
+  evidence: any[];
+  completions: any[];
+  drift: any[];
+  notices: any[];
+  errors: string[];
+};
+
+/**
+ * Load every governance read surface independently: one unavailable tab must
+ * not blank the others, and the failed label is preserved for the UI.
+ */
+export async function loadGovernanceSlices(
+  runtime: RuntimeClient | undefined,
+  sessionID?: string,
+): Promise<GovernanceSliceBundle> {
+  const errors: string[] = [];
+  const loadSlice = async <T,>(
+    label: string,
+    load: () => Promise<T[] | undefined>,
+  ): Promise<T[]> => {
+    try {
+      return (await load()) ?? [];
+    } catch (error) {
+      errors.push(
+        `${label}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
+  };
+  const [constitution, decisions, evidence, completions, drift, notices] =
+    await Promise.all([
+      loadSlice(
+        "Constitution",
+        () => runtime?.constitutionRules?.(sessionID) ?? Promise.resolve([]),
+      ),
+      loadSlice(
+        "Decisions",
+        () => runtime?.decisionRecords?.(sessionID) ?? Promise.resolve([]),
+      ),
+      loadSlice(
+        "Evidence",
+        () => runtime?.evidenceRecords?.({ sessionID }) ?? Promise.resolve([]),
+      ),
+      loadSlice(
+        "Completions",
+        () => runtime?.completions?.({ sessionID }) ?? Promise.resolve([]),
+      ),
+      loadSlice(
+        "Drift",
+        () => runtime?.driftFindings?.({ sessionID }) ?? Promise.resolve([]),
+      ),
+      loadSlice(
+        "Notices",
+        () => runtime?.notices?.(sessionID) ?? Promise.resolve([]),
+      ),
+    ]);
+  return {
+    constitution,
+    decisions,
+    evidence,
+    completions,
+    drift,
+    notices,
+    errors,
+  };
+}
+
+/**
+ * The RPC action behind the drift card buttons. A headless test can call the
+ * same function a click invokes and then re-read through loadGovernanceSlices,
+ * proving the journal-backed read surface changed.
+ */
+export async function acknowledgeDriftFindingViaRpc(
+  runtime: RuntimeClient | undefined,
+  sessionID: string | undefined,
+  findingID: string,
+  status: "explained" | "disputed",
+  rationale?: string,
+) {
+  return runtime?.acknowledgeDriftFinding?.(
+    { findingID, status, ...(rationale ? { rationale } : {}) },
+    sessionID,
+  );
+}
+
+/** The RPC action behind a constitution rule disable/re-enable click. */
+export async function updateConstitutionRuleViaRpc(
+  runtime: RuntimeClient | undefined,
+  sessionID: string | undefined,
+  ruleID: string,
+  enabled: boolean,
+) {
+  return runtime?.updateConstitutionRule?.({ ruleID, enabled }, sessionID);
+}
+
+/** The RPC action behind a constitution rule tombstone click. */
+export async function removeConstitutionRuleViaRpc(
+  runtime: RuntimeClient | undefined,
+  sessionID: string | undefined,
+  ruleID: string,
+) {
+  return runtime?.removeConstitutionRule?.({ ruleID }, sessionID);
+}
+
+/**
  * The governance pane content (EI Phase 2): the six governance sub-tabs and
  * their rows, reading the live RPC surfaces with the view-store projection as
  * the fallback. Extracted from the modal so the same content mounts both in
@@ -58,8 +170,10 @@ export function GovernancePane(props: {
   state: AppState;
   runtime?: RuntimeClient;
   sessionID?: string;
+  /** Optional deep-link target; defaults to the drift review view. */
+  initialTab?: Tab;
 }) {
-  const [tab, setTab] = createSignal<Tab>("drift");
+  const [tab, setTab] = createSignal<Tab>(props.initialTab ?? "drift");
   const [liveConstitution, setLiveConstitution] = createSignal<any[]>([]);
   const [liveDecisions, setLiveDecisions] = createSignal<any[]>([]);
   const [liveEvidence, setLiveEvidence] = createSignal<any[]>([]);
@@ -74,54 +188,14 @@ export function GovernancePane(props: {
   const { confirm, dialog } = useConfirmDialog();
 
   const load = async () => {
-    const sessionID = props.sessionID;
-    const errors: string[] = [];
-    const loadSlice = async <T,>(
-      label: string,
-      load: () => Promise<T[] | undefined>,
-      apply: (items: T[]) => void,
-    ) => {
-      try {
-        apply((await load()) ?? []);
-      } catch (error) {
-        errors.push(
-          `${label}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    };
-    await Promise.all([
-      loadSlice(
-        "Constitution",
-        () => props.runtime?.constitutionRules?.(sessionID) ?? Promise.resolve([]),
-        (items) => setLiveConstitution(items as any[]),
-      ),
-      loadSlice(
-        "Decisions",
-        () => props.runtime?.decisionRecords?.(sessionID) ?? Promise.resolve([]),
-        (items) => setLiveDecisions(items as any[]),
-      ),
-      loadSlice(
-        "Evidence",
-        () => props.runtime?.evidenceRecords?.({ sessionID }) ?? Promise.resolve([]),
-        (items) => setLiveEvidence(items as any[]),
-      ),
-      loadSlice(
-        "Completions",
-        () => props.runtime?.completions?.({ sessionID }) ?? Promise.resolve([]),
-        (items) => setLiveCompletions(items as any[]),
-      ),
-      loadSlice(
-        "Drift",
-        () => props.runtime?.driftFindings?.({ sessionID }) ?? Promise.resolve([]),
-        (items) => setLiveDrift(items as any[]),
-      ),
-      loadSlice(
-        "Notices",
-        () => props.runtime?.notices?.(sessionID) ?? Promise.resolve([]),
-        (items) => setLiveNotices(items as any[]),
-      ),
-    ]);
-    setLoadErrors(errors);
+    const bundle = await loadGovernanceSlices(props.runtime, props.sessionID);
+    setLiveConstitution(bundle.constitution);
+    setLiveDecisions(bundle.decisions);
+    setLiveEvidence(bundle.evidence);
+    setLiveCompletions(bundle.completions);
+    setLiveDrift(bundle.drift);
+    setLiveNotices(bundle.notices);
+    setLoadErrors(bundle.errors);
   };
 
   // Reload when the active session changes so the pane follows the session.
@@ -145,9 +219,12 @@ export function GovernancePane(props: {
     setActionBusy(true);
     setActionNotice(undefined);
     try {
-      const result = await props.runtime?.acknowledgeDriftFinding?.(
-        { findingID, status, ...(rationale ? { rationale } : {}) },
+      const result = await acknowledgeDriftFindingViaRpc(
+        props.runtime,
         props.sessionID,
+        findingID,
+        status,
+        rationale,
       );
       setActionNotice(
         result?.acknowledged
@@ -234,7 +311,13 @@ export function GovernancePane(props: {
           <div class="neu-gov-action-note">{actionNotice()}</div>
         </Show>
         <Show when={tab() === "drift"}>
-          <For each={liveDrift()}>
+          <For
+            each={
+              liveDrift().length
+                ? liveDrift()
+                : (props.state.driftFindings ?? [])
+            }
+          >
             {(finding) => (
               <div class="drift-card">
                 <div class="drift-card-head">
@@ -364,8 +447,15 @@ export function GovernancePane(props: {
               </div>
             )}
           </For>
-          <Show when={!liveDrift().length}>
-            <div class="neu-gov-empty">No open drift findings.</div>
+          <Show
+            when={
+              !liveDrift().length && !(props.state.driftFindings ?? []).length
+            }
+          >
+            <div class="neu-gov-empty">
+              No drift findings yet. The evaluator opens them from accepted
+              contracts, constitution hits or behaviour signals.
+            </div>
           </Show>
         </Show>
         <Show when={tab() === "constitution"}>
@@ -393,12 +483,12 @@ export function GovernancePane(props: {
                       type="button"
                       class="constitution-btn"
                       onClick={() =>
-                        void props.runtime
-                          ?.updateConstitutionRule?.(
-                            { ruleID: rule.ruleID, enabled: false },
-                            props.sessionID,
-                          )
-                          .then(() => load())
+                        void updateConstitutionRuleViaRpc(
+                          props.runtime,
+                          props.sessionID,
+                          rule.ruleID,
+                          false,
+                        ).then(() => load())
                       }
                     >
                       停用
@@ -416,12 +506,11 @@ export function GovernancePane(props: {
                             danger: true,
                           });
                           if (ok)
-                            await props.runtime
-                              ?.removeConstitutionRule?.(
-                                { ruleID: rule.ruleID },
-                                props.sessionID,
-                              )
-                              .then(() => load());
+                            await removeConstitutionRuleViaRpc(
+                              props.runtime,
+                              props.sessionID,
+                              rule.ruleID,
+                            ).then(() => load());
                         })()
                       }
                     >

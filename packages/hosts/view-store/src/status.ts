@@ -14,6 +14,7 @@ import {
   constitutionConflictLimit,
   constitutionOverrideLimit,
   decisionLimit,
+  driftFindingLimit,
   evidenceLimit,
   policyDecisionLimit,
   upsertBlock,
@@ -242,6 +243,42 @@ export function applyStatusEvent(
       state.selectedTaskID = event.taskID;
       state.selectedEvidenceID = event.evidenceID;
       return true;
+    case "drift.finding_opened": {
+      if (
+        state.driftFindings.some(
+          (finding) => finding.findingID === event.findingID,
+        )
+      )
+        return true;
+      state.driftFindings = appendBounded(
+        state.driftFindings,
+        { ...event, status: "open", reopenedCount: 0 },
+        driftFindingLimit,
+      );
+      return true;
+    }
+    case "drift.finding_updated": {
+      const index = state.driftFindings.findIndex(
+        (finding) => finding.findingID === event.findingID,
+      );
+      if (index < 0) return true;
+      const existing = state.driftFindings[index]!;
+      const reopenedCount =
+        event.status === "open" && existing.status !== "open"
+          ? existing.reopenedCount + 1
+          : existing.reopenedCount;
+      state.driftFindings = state.driftFindings.map((finding, current) =>
+        current === index
+          ? {
+              ...finding,
+              status: event.status,
+              ...(event.rationale ? { rationale: event.rationale } : {}),
+              reopenedCount,
+            }
+          : finding,
+      );
+      return true;
+    }
     case "evidence.recorded":
       state.evidence = appendBounded(state.evidence, event, evidenceLimit);
       upsertBlock(
