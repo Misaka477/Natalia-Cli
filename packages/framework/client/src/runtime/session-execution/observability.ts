@@ -10,6 +10,8 @@ type Surface = Pick<
   "runtimeStatus" | "diagnostics" | "sessionSnapshot"
 >;
 async function observabilityExec(ctx: RuntimeContext, sessionID?: string) {
+  // Session snapshots may be the first routed call on a workspace proxy.
+  await ctx.ports.ensureReady();
   if (sessionID)
     return (
       ctx.ports
