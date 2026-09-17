@@ -33,7 +33,7 @@
  *     live list in `facts`; constitution/decision/evidence/plan/mailbox/workgraph
  *     now have production writers and project here for any host.
  */
-import { subagentHistoryLimit, type ToolBlock } from "./state";
+import { subagentHistoryRowKey, type ToolBlock } from "./state";
 import type {
   ChatMessageRow,
   RuntimeEvent,
@@ -609,16 +609,54 @@ export function hydrateSubagents(
   return true;
 }
 
+export type HydrateSubagentHistoryOptions = {
+  direction?: "older" | "newer";
+  replace?: boolean;
+  subagentID?: string;
+};
+
 export function hydrateSubagentHistory(
   state: AppState,
   history: RuntimeSubagentView[],
+  options?: HydrateSubagentHistoryOptions,
 ): boolean {
-  if (!history.length) return false;
-  for (const event of history) {
-    const id = event.id;
-    const list = state.subagentHistory[id] ?? [];
-    if (!list.some((item) => item.id === event.id)) list.push(event);
-    state.subagentHistory[id] = list.slice(-subagentHistoryLimit);
+  if (!history.length) {
+    if (options?.replace && options.subagentID) {
+      state.subagentHistory = {
+        ...state.subagentHistory,
+        [options.subagentID]: [],
+      };
+      return true;
+    }
+    return false;
   }
-  return true;
+  const groups = new Map<string, RuntimeSubagentView[]>();
+  for (const event of history) {
+    const key = subagentHistoryRowKey(event);
+    const rows = groups.get(event.id) ?? [];
+    if (!rows.some((row) => subagentHistoryRowKey(row) === key))
+      rows.push(event);
+    groups.set(event.id, rows);
+  }
+  let changed = false;
+  for (const [id, incoming] of groups) {
+    const existing = options?.replace
+      ? []
+      : (state.subagentHistory[id] ?? []);
+    const ordered =
+      options?.direction === "older"
+        ? [...incoming, ...existing]
+        : [...existing, ...incoming];
+    const keyed = new Map<string, RuntimeSubagentView>();
+    for (const row of ordered) {
+      const key = subagentHistoryRowKey(row);
+      if (!keyed.has(key)) keyed.set(key, row);
+    }
+    state.subagentHistory = {
+      ...state.subagentHistory,
+      [id]: [...keyed.values()],
+    };
+    changed = true;
+  }
+  return changed;
 }

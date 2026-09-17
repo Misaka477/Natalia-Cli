@@ -5,6 +5,7 @@ import type {
   RuntimeEvent,
   RuntimeModelCatalogEntry,
   RuntimeModelSelection,
+  RuntimeProjectedMessage,
   RuntimeSessionSummary,
   ChatModelProfile,
   ConfigV3,
@@ -782,9 +783,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let workspacesRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   let sessionsRefreshInFlight: Promise<void> | undefined;
   let workspacesRefreshInFlight: Promise<void> | undefined;
-  let historyCursor: string | undefined;
-  let newerHistoryCursor: string | undefined;
-  let loadingOlderHistory = false;
   const naviPager = new PagedTranscriptController<ChatMessageRow>({
     pageSize: 100,
     onPage: (page, direction) => {
@@ -854,11 +852,39 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     setState(cloneState(props.ctx.projection.getState()));
   }
 
+  function mainTranscriptPageSource(
+    sessionID: string | undefined,
+    input: { cursor?: string; limit: number },
+  ) {
+    if (!sessionID || !props.ctx.runtime.messages)
+      return Promise.resolve({ data: [], cursor: {} });
+    return props.ctx.runtime.messages({
+      sessionID,
+      limit: input.limit,
+      ...(input.cursor ? { cursor: input.cursor } : {}),
+    });
+  }
+
+  const mainPager = new PagedTranscriptController<RuntimeProjectedMessage>({
+    pageSize: 100,
+    onPage: (page, direction) => {
+      props.ctx.projection.hydrateMessages?.(
+        [...page.data].reverse(),
+        direction === "initial" ? "newer" : direction,
+        { replace: direction === "initial" },
+      );
+    },
+  });
+  const [mainPaging, setMainPaging] = createSignal<PagedTranscriptState>(
+    mainPager.snapshot(),
+  );
+  onCleanup(mainPager.subscribe(() => setMainPaging(mainPager.snapshot())));
+  onCleanup(() => mainPager.dispose());
+
   onCleanup(niaPager.subscribe(() => setNiaPaging(niaPager.snapshot())));
   onCleanup(() => naviPager.dispose());
   onCleanup(() => niaPager.dispose());
 
-  let loadingNewerHistory = false;
   const [statusOpen, setStatusOpen] = createSignal(false);
   const [turnElapsedMs, setTurnElapsedMs] = createSignal(0);
   const [showJumpToBottom, setShowJumpToBottom] = createSignal(false);
@@ -1658,59 +1684,22 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     options?: { replace?: boolean },
   ) {
     const hydrateStart = performance.now();
-    const page = sessionID
-      ? await props.ctx.runtime.messages?.({ limit: 100, sessionID })
-      : await props.ctx.runtime.messages?.({ limit: 100 });
-    console.log(
-      "[hydrate] page",
-      JSON.stringify({
-        sessionID,
-        current: isCurrent(),
-        turns: page?.data.length ?? -1,
-        rows:
-          page?.data.reduce((count, turn) => count + turn.rows.length, 0) ?? -1,
-        ms: Math.round(performance.now() - hydrateStart),
-      }),
+    setTranscriptHistoryLoading(true);
+    mainPager.setSource((input) =>
+      mainTranscriptPageSource(sessionID, input),
     );
+    try {
+      await mainPager.loadInitial();
+    } catch (error) {
+      setTranscriptHistoryLoading(false);
+      throw error;
+    }
     // A superseded/expired load must still release the transcript's initial
-    // loading gate, otherwise the tail state machine waits forever. The
-    // current load keeps the gate closed until the page is installed so the
-    // transcript cannot flash its oldest row before the first tail scroll.
+    // loading gate, otherwise the tail state machine waits forever.
     if (!isCurrent()) {
       setTranscriptHistoryLoading(false);
       return;
     }
-    perfLog(
-      `[perf] messages rpc ${(performance.now() - hydrateStart).toFixed(1)}ms`,
-    );
-    if (!page?.data.length) {
-      props.ctx.projection.hydrateMessages?.([], "newer", options);
-      console.log(
-        "[hydrate] applied",
-        JSON.stringify({
-          sessionID,
-          emptyPage: true,
-          messages: props.ctx.projection.getState().natalia.messages.length,
-        }),
-      );
-      historyCursor = undefined;
-      newerHistoryCursor = undefined;
-      setTranscriptHistoryLoading(false);
-      return;
-    }
-    // The first page is the newest baseline. `"newer"` keeps the newest end
-    // when the row budget forces eviction; `"older"` is only for paging older
-    // history in front of the current transcript.
-    props.ctx.projection.hydrateMessages?.(
-      [...page.data].reverse(),
-      "newer",
-      options,
-    );
-    // Do not rely on the projection notification: when the page returns while
-    // the replay guard is still set the notification is dropped, and by the
-    // time the guard clears the flag may already read false, so neither the
-    // subscription nor a replaying check re-syncs the UI. Compare the applied
-    // projection with the UI signal and copy it across directly.
     const hydrated = props.ctx.projection.getState();
     if (
       options?.replace ||
@@ -1726,8 +1715,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         uiMessages: state().natalia.messages.length,
       }),
     );
-    historyCursor = page.cursor.next;
-    newerHistoryCursor = undefined;
     setTranscriptHistoryLoading(false);
     perfLog(
       `[perf] messages hydrate total ${(performance.now() - hydrateStart).toFixed(1)}ms`,
@@ -1925,10 +1912,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       // A stale in-flight load must not block the same session from being
       // retried after the reset.
       hydratingSessionID = undefined;
-      historyCursor = undefined;
-      newerHistoryCursor = undefined;
-      loadingOlderHistory = false;
-      loadingNewerHistory = false;
+      mainPager.reset();
       toolOutputCache.clear();
       setShowJumpToBottom(false);
       setChatShowJumpToBottom(false);
@@ -2148,14 +2132,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           );
           if (subagents && isCurrentLoad())
             props.ctx.projection.hydrateSubagents?.(subagents);
-          const subagentHistoryStart = performance.now();
-          const subagentHistory =
-            await props.ctx.runtime.subagentHistory?.(sessionID);
-          perfLog(
-            `[perf] background subagentHistory ${(performance.now() - subagentHistoryStart).toFixed(1)}ms`,
-          );
-          if (subagentHistory && isCurrentLoad())
-            props.ctx.projection.hydrateSubagentHistory?.(subagentHistory);
         });
       })();
     };
@@ -2475,51 +2451,34 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   async function loadOlderHistory(): Promise<boolean> {
-    if (!historyCursor || loadingOlderHistory || !historyReplayDone)
+    if (
+      !historyReplayDone ||
+      !mainPaging().hasOlder ||
+      mainPaging().loadingOlder
+    )
       return false;
-    loadingOlderHistory = true;
     setTranscriptOlderLoading(true);
     const before = props.ctx.projection.getState().natalia.messages.length;
     try {
-      const page = await props.ctx.runtime.messages?.({
-        cursor: historyCursor,
-        limit: 100,
-        sessionID: selectedSessionID() || state().sessionID,
-      });
-      if (!page) return false;
-      const evicted = props.ctx.projection.hydrateMessages?.(
-        [...page.data].reverse(),
-        "older",
-      );
-      if (evicted) newerHistoryCursor = page.cursor.previous;
-      historyCursor = page.cursor.next;
-      return props.ctx.projection.getState().natalia.messages.length > before;
+      await mainPager.loadOlder();
+    } catch {
+      return false;
     } finally {
-      loadingOlderHistory = false;
       setTranscriptOlderLoading(false);
     }
+    setState(cloneState(props.ctx.projection.getState()));
+    return props.ctx.projection.getState().natalia.messages.length > before;
   }
 
   async function loadNewerHistory() {
-    if (!newerHistoryCursor || loadingNewerHistory || !historyReplayDone)
+    if (
+      !historyReplayDone ||
+      !mainPaging().hasNewer ||
+      mainPaging().loadingNewer
+    )
       return;
-    loadingNewerHistory = true;
-    try {
-      const page = await props.ctx.runtime.messages?.({
-        cursor: newerHistoryCursor,
-        limit: 100,
-        sessionID: selectedSessionID() || state().sessionID,
-      });
-      if (!page) return;
-      const evicted = props.ctx.projection.hydrateMessages?.(
-        [...page.data].reverse(),
-        "newer",
-      );
-      if (evicted) historyCursor = page.cursor.next;
-      newerHistoryCursor = page.cursor.previous;
-    } finally {
-      loadingNewerHistory = false;
-    }
+    await mainPager.loadNewer();
+    setState(cloneState(props.ctx.projection.getState()));
   }
 
   function jumpToBottom() {
@@ -4326,7 +4285,15 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                   <AgentPanel
                     state={state()}
                     runtime={props.ctx.runtime}
+                    sessionID={selectedSessionID() || state().sessionID}
                     onOpenTerminal={() => setRightTab("terminal")}
+                    onHydrateSubagentHistory={(history, options) => {
+                      props.ctx.projection.hydrateSubagentHistory?.(
+                        history,
+                        options,
+                      );
+                      setState(cloneState(props.ctx.projection.getState()));
+                    }}
                   />
                 </Show>
                 <For each={sidePanels()}>

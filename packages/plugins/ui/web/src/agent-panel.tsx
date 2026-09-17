@@ -10,16 +10,15 @@ import {
 import type {
   RuntimeClient,
   RuntimeNativeTerminalSession,
+  RuntimeSubagentView,
   RuntimeTeamPR,
 } from "@natalia/contracts";
-import {
-  boundTranscript,
-  type AppState,
-  type SubagentView,
-} from "@natalia/view-store";
+import { type AppState, type SubagentView } from "@natalia/view-store";
 import {
   ContextMeter,
+  PagedTranscriptController,
   Transcript,
+  type PagedTranscriptState,
   type TranscriptHandle,
 } from "@natalia/ui-kit";
 import type { Message } from "./types";
@@ -49,12 +48,74 @@ function subagentToolCallsFromText(
 export function AgentPanel(props: {
   state: AppState;
   runtime?: RuntimeClient;
+  sessionID?: string;
   onOpenTerminal?: (terminalID: string) => void;
+  onHydrateSubagentHistory?: (
+    history: RuntimeSubagentView[],
+    options?: {
+      direction?: "older" | "newer";
+      replace?: boolean;
+      subagentID?: string;
+    },
+  ) => void;
 }) {
   const [subTab, setSubTab] = createSignal<"subagent" | "team">("subagent");
   const [selectedID, setSelectedID] = createSignal<string | undefined>(
     undefined,
   );
+  const subagentPager = new PagedTranscriptController<RuntimeSubagentView>({
+    pageSize: 100,
+    onPage: (page, direction) => {
+      const subagentID = selectedID();
+      if (!subagentID) return;
+      props.onHydrateSubagentHistory?.(page.data, {
+        subagentID,
+        ...(direction === "initial"
+          ? { replace: true }
+          : { direction }),
+      });
+    },
+  });
+  const [subagentPaging, setSubagentPaging] = createSignal<PagedTranscriptState>(
+    subagentPager.snapshot(),
+  );
+  onCleanup(
+    subagentPager.subscribe(() => setSubagentPaging(subagentPager.snapshot())),
+  );
+  onCleanup(() => subagentPager.dispose());
+
+  function subagentPageSource(input: { cursor?: string; limit: number }) {
+    const subagentID = selectedID();
+    if (!subagentID) return Promise.resolve({ data: [], cursor: {} });
+    if (props.runtime?.subagentHistoryPage)
+      return props.runtime.subagentHistoryPage({
+        subagentID,
+        sessionID: props.sessionID,
+        limit: input.limit,
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      });
+    return Promise.resolve(
+      props.runtime?.subagentHistory?.(props.sessionID),
+    ).then((rows) => ({
+      data: (rows ?? []).filter((row) => row.id === subagentID),
+      cursor: {},
+    }));
+  }
+
+  async function loadOlderSubagentHistory() {
+    await subagentPager.loadOlder();
+  }
+
+  createEffect(() => {
+    const subagentID = selectedID();
+    if (!subagentID) {
+      subagentPager.reset();
+      return;
+    }
+    subagentPager.setSource(subagentPageSource);
+    void subagentPager.loadInitial();
+  });
+
   const [teamAvailable, setTeamAvailable] = createSignal(false);
   const [teamPRs, setTeamPRs] = createSignal<RuntimeTeamPR[]>([]);
   const [teamConcurrency, setTeamConcurrency] = createSignal<
@@ -295,12 +356,9 @@ export function AgentPanel(props: {
 
   let subTranscriptApi: TranscriptHandle | undefined;
   const [subShowJumpToBottom, setSubShowJumpToBottom] = createSignal(false);
-  const renderedSubagentMessages = createMemo<Message[]>(() => {
-    const rows = subagentMessages();
-    return subShowJumpToBottom()
-      ? rows
-      : boundTranscript(rows, "newer").messages;
-  });
+  const renderedSubagentMessages = createMemo<Message[]>(() =>
+    subagentMessages(),
+  );
 
   createEffect(() => {
     const id = selectedID();
@@ -487,6 +545,9 @@ export function AgentPanel(props: {
                     onFollowChange={(following) =>
                       setSubShowJumpToBottom(!following)
                     }
+                    onNearTop={() => void loadOlderSubagentHistory()}
+                    historyLoading={!subagentPaging().initialized}
+                    olderHistoryLoading={subagentPaging().loadingOlder}
                   />
                   <Show when={selectedSubagent()?.status === "running"}>
                     <div class="neu-activity-bar" data-running={true}>

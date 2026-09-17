@@ -145,6 +145,28 @@ export type PolicyDecisionView = Extract<
 >;
 
 /**
+ * Stable identity for one subagent history row. `subagent.update.id` is the
+ * subagent id, not a unique event id, so using it directly collapses a whole
+ * history into one row. This key keeps every status/log event distinct while
+ * staying stable across replayed pages.
+ */
+export function subagentHistoryRowKey(
+  event: Extract<RuntimeEvent, { type: "subagent.update" }>,
+): string {
+  return JSON.stringify([
+    event.id,
+    event.event,
+    event.status,
+    event.phase ?? "",
+    event.continuation ?? "",
+    event.lastActivityAt ?? event.startedAt ?? "",
+    event.activityDetail ?? "",
+    event.text ?? "",
+    event.task ?? "",
+  ]);
+}
+
+/**
  * Accumulated session token / latency totals, folded from
  * `runtime.step_usage` events. Pure sums — the display figures (cache hit
  * rate, tokens/sec, average first-token latency) are derived by

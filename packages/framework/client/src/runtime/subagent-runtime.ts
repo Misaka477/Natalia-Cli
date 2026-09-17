@@ -120,7 +120,9 @@ export function createSubagentRuntime(
         );
       }
       return paginateTranscript(
-        result,
+        input.subagentID
+          ? result.filter((event) => event.id === input.subagentID)
+          : result,
         input.cursor,
         input.limit,
         "subagent",

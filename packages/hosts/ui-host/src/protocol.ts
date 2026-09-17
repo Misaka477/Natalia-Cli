@@ -118,7 +118,10 @@ export type UiProjection = {
   beginNaviHydration?(): void;
   beginNiaHydration?(): void;
   hydrateSubagents?(subagents: RuntimeSubagentView[]): boolean;
-  hydrateSubagentHistory?(history: RuntimeSubagentView[]): boolean;
+  hydrateSubagentHistory?(
+    history: RuntimeSubagentView[],
+    options?: import("@natalia/view-store").HydrateSubagentHistoryOptions,
+  ): boolean;
   /** Activates a cached workspace/session projection without discarding others. */
   activateSession?(sessionID: string, workspaceID?: string): void;
 };

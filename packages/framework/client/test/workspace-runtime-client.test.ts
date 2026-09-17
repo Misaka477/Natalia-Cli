@@ -7,7 +7,7 @@ import {
   SqliteSessionStore,
   createSessionRecord,
 } from "@natalia/session";
-import type { SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   createWorkspaceManager,
   createWorkspaceRuntimeClient,
@@ -301,6 +301,62 @@ test("chat history survives after the newest event window", async () => {
     else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
   }
 });
+
+test("subagent history pages are filtered per subagent", async () => {
+  const root = await officialPluginWorkspace("workspace-subagent-page");
+  const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
+  process.env.NATALIA_WORKSPACES_FILE = join(root, "workspaces.json");
+  const options = {
+    pluginStoreRoot: officialPluginStoreRoot(root),
+    globalConfigPath: join(root, "global-config.json"),
+  };
+  const manager = createWorkspaceManager(options);
+  try {
+    const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
+    const session = createSessionRecord("ses_subagent_page", "Subagent page");
+    for (let index = 0; index < 150; index += 1)
+      session.events.push({
+        type: "subagent.update",
+        id: "sub-1",
+        status: "running",
+        attached: false,
+        event: "status",
+        continuation: index,
+      } as RuntimeEvent);
+    session.events.push({
+      type: "subagent.update",
+      id: "sub-2",
+      status: "completed",
+      attached: false,
+      event: "done",
+    } as RuntimeEvent);
+    await store.save(session);
+    await manager.add({ path: root });
+    const client = createWorkspaceRuntimeClient(manager);
+    const latest = await client.subagentHistoryPage?.({
+      sessionID: session.id,
+      subagentID: "sub-1",
+      limit: 100,
+    });
+    expect(latest?.data).toHaveLength(100);
+    expect(latest?.data.every((event) => event.id === "sub-1")).toBe(true);
+    expect(latest?.cursor.previous).toBeDefined();
+    const older = await client.subagentHistoryPage?.({
+      sessionID: session.id,
+      subagentID: "sub-1",
+      cursor: latest?.cursor.previous,
+      limit: 100,
+    });
+    expect(older?.data).toHaveLength(50);
+    expect(older?.data.every((event) => event.id === "sub-1")).toBe(true);
+  } finally {
+    await manager.dispose();
+    if (previousRegistry === undefined)
+      delete process.env.NATALIA_WORKSPACES_FILE;
+    else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
+  }
+});
+
 
 test("session-scoped runtime calls route to the owning workspace", async () => {
   const calls: string[] = [];

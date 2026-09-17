@@ -3,11 +3,11 @@ import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   applyEvent,
   boundTranscript,
+  hydrateSubagentHistory,
   initialState,
   projectEvents,
   selectUnattributedWorkGraphNodes,
   selectWorkGraphNeighborhood,
-  subagentHistoryLimit,
   terminalTimelineLimit,
   terminalTranscriptChars,
   transcriptLimit,
@@ -147,21 +147,54 @@ test("a sandbox audit that requires approval is visible in the transcript", () =
   expect(block?.status).toBe("approval_required");
 });
 
-test("subagents keep a current state and a bounded history", () => {
+test("subagents keep a current state and full stable history", () => {
   const events: RuntimeEvent[] = [];
-  for (let index = 0; index < subagentHistoryLimit + 10; index += 1)
+  for (let index = 0; index < 110; index += 1)
     events.push({
       type: "subagent.update",
       id: "child",
-      status: index === subagentHistoryLimit + 9 ? "completed" : "running",
+      status: index === 109 ? "completed" : "running",
       attached: false,
       event: "status",
       continuation: index,
     } as RuntimeEvent);
   const state = projectEvents(events);
   expect(state.subagents.child).toMatchObject({ status: "completed" });
-  expect(state.subagentHistory.child).toHaveLength(subagentHistoryLimit);
+  expect(state.subagentHistory.child).toHaveLength(110);
 });
+
+test("subagent history pagination prepends older and appends newer", () => {
+  const state = initialState();
+  const event = (
+    continuation: number,
+  ): Extract<RuntimeEvent, { type: "subagent.update" }> => ({
+    type: "subagent.update",
+    id: "child",
+    status: "running",
+    attached: false,
+    event: "status",
+    continuation,
+  });
+  hydrateSubagentHistory(state, [event(1), event(2)], {
+    replace: true,
+    subagentID: "child",
+  });
+  hydrateSubagentHistory(state, [event(0)], {
+    direction: "older",
+    subagentID: "child",
+  });
+  expect(
+    state.subagentHistory.child?.map((row) => row.continuation),
+  ).toEqual([0, 1, 2]);
+  hydrateSubagentHistory(state, [event(3)], {
+    direction: "newer",
+    subagentID: "child",
+  });
+  expect(
+    state.subagentHistory.child?.map((row) => row.continuation),
+  ).toEqual([0, 1, 2, 3]);
+});
+
 
 test("checkpoints accumulate and rollback tracks one operation", () => {
   let state = projectEvents([

@@ -3967,6 +3967,7 @@ export type RuntimeClient = {
    * for callers that only need a bounded tail.
    */
   subagentHistoryPage?(input: {
+    subagentID?: string;
     sessionID?: string;
     cursor?: string;
     limit?: number;

@@ -13,7 +13,7 @@ import {
   terminalTranscriptChars,
   type TerminalTimelineEntry,
   type TerminalView,
-  subagentHistoryLimit,
+  subagentHistoryRowKey,
   terminalTimelineLimit,
   upsertBlock,
   type AppState,
@@ -211,17 +211,17 @@ export function applyResourceEvent(
         event.approvalRequired ? "approval_required" : undefined,
       );
       return true;
-    case "subagent.update":
+    case "subagent.update": {
       state.subagents = { ...state.subagents, [event.id]: event };
-      state.subagentHistory = {
-        ...state.subagentHistory,
-        [event.id]: appendBounded(
-          state.subagentHistory[event.id] ?? [],
-          event,
-          subagentHistoryLimit,
-        ),
-      };
+      const list = state.subagentHistory[event.id] ?? [];
+      const key = subagentHistoryRowKey(event);
+      if (!list.some((item) => subagentHistoryRowKey(item) === key))
+        state.subagentHistory = {
+          ...state.subagentHistory,
+          [event.id]: [...list, event],
+        };
       return true;
+    }
     case "checkpoint.created":
       state.checkpoints = appendBounded(
         state.checkpoints,
