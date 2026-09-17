@@ -3,6 +3,8 @@ import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import { applyEvent, initialState, type AppState } from "@natalia/view-store";
 import {
   acknowledgeDriftFindingViaRpc,
+  createConstitutionRuleViaRpc,
+  editConstitutionRuleViaRpc,
   loadGovernanceSlices,
   promoteConstitutionDocRuleViaRpc,
   removeConstitutionRuleViaRpc,
@@ -269,6 +271,57 @@ test("constitution actions call their RPCs and reload reflects update and tombst
   await removeConstitutionRuleViaRpc(runtime, "ses_action", "C-ACTION");
   expect((await loadGovernanceSlices(runtime, "ses_action")).constitution)
     .toHaveLength(0);
+});
+
+test("constitution rule add/edit call their RPCs and reload reflects the changes", async () => {
+  const journal: any[] = [];
+  const runtime = {
+    constitutionRules: async () => journal.map((rule) => ({ ...rule })),
+    createConstitutionRule: async (input: any) => {
+      const ruleID = "P-USER-1";
+      journal.push({
+        ruleID,
+        statement: input.statement,
+        enforcement: input.enforcement,
+        scope: "project",
+        source: "user",
+        appliesTo: input.appliesTo,
+      });
+      return { created: true, ruleID };
+    },
+    updateConstitutionRule: async (input: any) => {
+      const rule = journal.find((candidate) => candidate.ruleID === input.ruleID);
+      if (!rule) return { updated: false };
+      if (input.statement) rule.statement = input.statement;
+      if (input.enforcement) rule.enforcement = input.enforcement;
+      if (input.appliesTo) rule.appliesTo = input.appliesTo;
+      return { updated: true };
+    },
+  } as unknown as RuntimeClient;
+
+  const created = await createConstitutionRuleViaRpc(runtime, "ses_crud", {
+    statement: "no force push",
+    enforcement: "deny",
+    appliesTo: { commandPattern: "git push --force" },
+  });
+  expect(created).toMatchObject({ created: true, ruleID: "P-USER-1" });
+  expect((await loadGovernanceSlices(runtime, "ses_crud")).constitution).toEqual([
+    expect.objectContaining({
+      ruleID: "P-USER-1",
+      statement: "no force push",
+      enforcement: "deny",
+      source: "user",
+    }),
+  ]);
+
+  await editConstitutionRuleViaRpc(runtime, "ses_crud", {
+    ruleID: "P-USER-1",
+    statement: "never force-push",
+    enforcement: "approval",
+  });
+  expect(
+    (await loadGovernanceSlices(runtime, "ses_crud")).constitution[0],
+  ).toMatchObject({ statement: "never force-push", enforcement: "approval" });
 });
 
 test("constitution document rules load and promote into the journal rule set", async () => {

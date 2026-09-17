@@ -4968,6 +4968,40 @@ button.neu-settings-item.neu-settings-item-button:active {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.03);
 }
+.constitution-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+.constitution-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.constitution-editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.constitution-input {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font-size: 12px;
+}
+.constitution-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
 .constitution-row-main {
   display: flex;
   flex-direction: column;

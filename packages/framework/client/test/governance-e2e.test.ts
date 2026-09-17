@@ -504,8 +504,9 @@ test("Phase -1 E2E: a user can add, edit, disable and delete a constitution rule
   );
   expect(created.created).toBe(true);
   expect(created.ruleID).toStartWith("P-USER-");
+  const ruleID = created.ruleID!;
   let rules = await client.constitutionRules!(sessionID);
-  expect(rules.find((rule) => rule.ruleID === created.ruleID)).toMatchObject({
+  expect(rules.find((rule) => rule.ruleID === ruleID)).toMatchObject({
     statement: "never force-push to shared branches",
     enforcement: "deny",
     source: "user",
@@ -524,7 +525,7 @@ test("Phase -1 E2E: a user can add, edit, disable and delete a constitution rule
   // 3. Edit (tighten/enforce): change the statement + enforcement.
   const edited = await client.updateConstitutionRule!(
     {
-      ruleID: created.ruleID,
+      ruleID,
       statement: "never force-push, anywhere",
       enforcement: "approval",
       appliesTo: { commandPattern: "git push --force" },
@@ -533,22 +534,22 @@ test("Phase -1 E2E: a user can add, edit, disable and delete a constitution rule
   );
   expect(edited.updated).toBe(true);
   rules = await client.constitutionRules!(sessionID);
-  expect(rules.find((rule) => rule.ruleID === created.ruleID)).toMatchObject({
+  expect(rules.find((rule) => rule.ruleID === ruleID)).toMatchObject({
     statement: "never force-push, anywhere",
     enforcement: "approval",
   });
 
   // 4. Disable -> filtered from the effective set.
   await client.updateConstitutionRule!(
-    { ruleID: created.ruleID, enabled: false },
+    { ruleID, enabled: false },
     sessionID,
   );
   rules = await client.constitutionRules!(sessionID);
-  expect(rules.some((rule) => rule.ruleID === created.ruleID)).toBe(false);
+  expect(rules.some((rule) => rule.ruleID === ruleID)).toBe(false);
 
   // 5. Delete -> tombstone.
   const removed = await client.removeConstitutionRule!(
-    { ruleID: created.ruleID },
+    { ruleID },
     sessionID,
   );
   expect(removed.removed).toBe(true);

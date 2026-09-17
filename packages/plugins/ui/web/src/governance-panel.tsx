@@ -202,6 +202,44 @@ export async function promoteConstitutionDocRuleViaRpc(
   return runtime?.promoteConstitutionDocRule?.({ id }, sessionID);
 }
 
+/** The RPC action behind the [新增规则] button (user creates a rule). */
+export async function createConstitutionRuleViaRpc(
+  runtime: RuntimeClient | undefined,
+  sessionID: string | undefined,
+  input: {
+    statement: string;
+    enforcement: "deny" | "approval" | "warn";
+    scope?: "project" | "package";
+    appliesTo?: {
+      tools?: string[];
+      paths?: string[];
+      commandPattern?: string;
+    };
+    priority?: "critical" | "high" | "medium" | "low";
+  },
+) {
+  return runtime?.createConstitutionRule?.(input, sessionID);
+}
+
+/** The RPC action behind a constitution rule [编辑] (tighten/edit) click. */
+export async function editConstitutionRuleViaRpc(
+  runtime: RuntimeClient | undefined,
+  sessionID: string | undefined,
+  input: {
+    ruleID: string;
+    statement?: string;
+    enforcement?: "deny" | "approval" | "warn";
+    priority?: "critical" | "high" | "medium" | "low";
+    appliesTo?: {
+      tools?: string[];
+      paths?: string[];
+      commandPattern?: string;
+    };
+  },
+) {
+  return runtime?.updateConstitutionRule?.(input, sessionID);
+}
+
 /**
  * The governance pane content (EI Phase 2): the six governance sub-tabs and
  * their rows, reading the live RPC surfaces with the view-store projection as
@@ -233,6 +271,20 @@ export function GovernancePane(props: {
   const [loadErrors, setLoadErrors] = createSignal<string[]>([]);
   const [actionNotice, setActionNotice] = createSignal<string | undefined>();
   const [actionBusy, setActionBusy] = createSignal(false);
+  // The constitution rule editor (add / edit a hard rule): the user owns these
+  // rules, so the panel can create, tighten/edit and delete them.
+  const [ruleEditor, setRuleEditor] = createSignal<
+    | {
+        mode: "add" | "edit";
+        ruleID?: string;
+        statement: string;
+        enforcement: "deny" | "approval" | "warn";
+        tools: string;
+        paths: string;
+        commandPattern: string;
+      }
+    | undefined
+  >();
   const { confirm, dialog } = useConfirmDialog();
 
   const load = async () => {
@@ -287,6 +339,75 @@ export function GovernancePane(props: {
     } catch (error) {
       setActionNotice(
         `更新失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  function openRuleEditor(
+    mode: "add" | "edit",
+    rule?: { ruleID: string; statement: string; enforcement: string; appliesTo?: { tools?: string[]; paths?: string[]; commandPattern?: string } },
+  ) {
+    setActionNotice(undefined);
+    setRuleEditor({
+      mode,
+      ...(rule ? { ruleID: rule.ruleID } : {}),
+      statement: rule?.statement ?? "",
+      enforcement: (rule?.enforcement as "deny" | "approval" | "warn") ?? "warn",
+      tools: (rule?.appliesTo?.tools ?? []).join(", "),
+      paths: (rule?.appliesTo?.paths ?? []).join(", "),
+      commandPattern: rule?.appliesTo?.commandPattern ?? "",
+    });
+  }
+
+  async function saveRule() {
+    const editor = ruleEditor();
+    if (!editor) return;
+    setActionBusy(true);
+    setActionNotice(undefined);
+    try {
+      const list = (value: string) =>
+        value
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+      const appliesTo = {
+        ...(list(editor.tools).length ? { tools: list(editor.tools) } : {}),
+        ...(list(editor.paths).length ? { paths: list(editor.paths) } : {}),
+        ...(editor.commandPattern.trim()
+          ? { commandPattern: editor.commandPattern.trim() }
+          : {}),
+      };
+      const result =
+        editor.mode === "add"
+          ? await createConstitutionRuleViaRpc(props.runtime, props.sessionID, {
+              statement: editor.statement,
+              enforcement: editor.enforcement,
+              ...(Object.keys(appliesTo).length ? { appliesTo } : {}),
+            })
+          : await editConstitutionRuleViaRpc(props.runtime, props.sessionID, {
+              ruleID: editor.ruleID!,
+              statement: editor.statement,
+              enforcement: editor.enforcement,
+              ...(Object.keys(appliesTo).length ? { appliesTo } : {}),
+            });
+      const outcome = result as
+        | { created?: boolean; updated?: boolean; reason?: string }
+        | undefined;
+      const ok = editor.mode === "add" ? outcome?.created : outcome?.updated;
+      setActionNotice(
+        ok
+          ? editor.mode === "add"
+            ? "已新增规则"
+            : "已更新规则"
+          : `失败：${outcome?.reason ?? "未知原因"}`,
+      );
+      if (ok) setRuleEditor(undefined);
+      await load();
+    } catch (error) {
+      setActionNotice(
+        `失败：${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
       setActionBusy(false);
@@ -569,6 +690,102 @@ export function GovernancePane(props: {
           </Show>
         </Show>
         <Show when={tab() === "constitution"}>
+          <div class="constitution-toolbar">
+            <button
+              type="button"
+              class="constitution-btn"
+              disabled={actionBusy()}
+              onClick={() => openRuleEditor("add")}
+            >
+              新增规则
+            </button>
+          </div>
+          <Show when={ruleEditor()}>
+            {(editor) => (
+              <div class="constitution-editor">
+                <input
+                  class="constitution-input"
+                  placeholder="规则内容（statement）"
+                  value={editor().statement}
+                  onInput={(event) =>
+                    setRuleEditor({
+                      ...editor(),
+                      statement: event.currentTarget.value,
+                    })
+                  }
+                />
+                <div class="constitution-editor-row">
+                  <select
+                    class="constitution-input"
+                    value={editor().enforcement}
+                    onChange={(event) =>
+                      setRuleEditor({
+                        ...editor(),
+                        enforcement: event.currentTarget.value as
+                          | "deny"
+                          | "approval"
+                          | "warn",
+                      })
+                    }
+                  >
+                    <option value="warn">warn</option>
+                    <option value="approval">approval</option>
+                    <option value="deny">deny</option>
+                  </select>
+                  <input
+                    class="constitution-input"
+                    placeholder="tools（逗号分隔）"
+                    value={editor().tools}
+                    onInput={(event) =>
+                      setRuleEditor({
+                        ...editor(),
+                        tools: event.currentTarget.value,
+                      })
+                    }
+                  />
+                  <input
+                    class="constitution-input"
+                    placeholder="paths（逗号分隔）"
+                    value={editor().paths}
+                    onInput={(event) =>
+                      setRuleEditor({
+                        ...editor(),
+                        paths: event.currentTarget.value,
+                      })
+                    }
+                  />
+                  <input
+                    class="constitution-input"
+                    placeholder="commandPattern"
+                    value={editor().commandPattern}
+                    onInput={(event) =>
+                      setRuleEditor({
+                        ...editor(),
+                        commandPattern: event.currentTarget.value,
+                      })
+                    }
+                  />
+                </div>
+                <div class="constitution-editor-actions">
+                  <button
+                    type="button"
+                    class="constitution-btn"
+                    disabled={actionBusy()}
+                    onClick={() => void saveRule()}
+                  >
+                    {editor().mode === "add" ? "新增" : "保存"}
+                  </button>
+                  <button
+                    type="button"
+                    class="constitution-btn"
+                    onClick={() => setRuleEditor(undefined)}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+          </Show>
           <For
             each={
               liveConstitution().length
@@ -589,6 +806,14 @@ export function GovernancePane(props: {
                 </div>
                 <Show when={rule.scope !== "release"}>
                   <div class="constitution-row-actions">
+                    <button
+                      type="button"
+                      class="constitution-btn"
+                      disabled={actionBusy()}
+                      onClick={() => openRuleEditor("edit", rule)}
+                    >
+                      编辑
+                    </button>
                     <button
                       type="button"
                       class="constitution-btn"
