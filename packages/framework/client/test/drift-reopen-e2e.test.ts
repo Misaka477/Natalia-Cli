@@ -312,3 +312,97 @@ test("Phase 2 E2E: a warning/high finding reaches the main agent's next provider
   expect(firstRequest).toContain("drift_acknowledge");
   await client.dispose?.();
 }, 30_000);
+
+test("Phase 2 E2E: the main agent's drift_acknowledge moves an open finding to explained (B3 close)", async () => {
+  const root = await officialPluginWorkspace("drift-e2e-acknowledge");
+  const events: RuntimeEvent[] = [];
+  // The findingID is minted by the evaluator, so it is captured after
+  // evaluateDrift and closed over by the scripted tool call below.
+  let openFindingID: string | undefined;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [
+        {
+          // The Main Agent answers the injected finding by acknowledging it as
+          // explained with a rationale — the model's side of the B3 loop, the
+          // step no E2E had proven before (the tool was registered and the
+          // injection told the model to call it, but nothing exercised the
+          // call -> status transition end to end).
+          tool: () => ({
+            name: "drift_acknowledge",
+            arguments: {
+              findingID: openFindingID!,
+              status: "explained",
+              rationale:
+                "the deletions were within the approved cleanup scope",
+            },
+          }),
+        },
+        { text: "acknowledged the drift finding" },
+      ],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.sessionAttach!(SESSION);
+
+  // A high finding (constraint_violation_signal) opens and is auto-injected.
+  const high = await client.evaluateDrift!(
+    {
+      objective: "clean up the workspace",
+      currentActivity: "delete the old build artifacts",
+      applicableConstraints: ["never delete files without approval"],
+    },
+    SESSION,
+  );
+  expect(high.opened).toBeGreaterThan(0);
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "drift.finding_opened" && event.severity === "high",
+      ),
+    { timeoutMs: 10_000 },
+  );
+  const highFinding = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "drift.finding_opened" }> =>
+      event.type === "drift.finding_opened" && event.severity === "high",
+  );
+  expect(highFinding).toBeDefined();
+  openFindingID = highFinding!.findingID;
+
+  // The next turn delivers the injected finding; the scripted Main Agent calls
+  // drift_acknowledge(explained) in response — closing the B3 loop.
+  await client.submitAndWait!("respond to the drift finding");
+
+  // The acknowledgement is recorded as a drift.finding_updated(explained): the
+  // tool executed and transitioned the finding, not just returned text.
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "drift.finding_updated" &&
+          event.findingID === highFinding!.findingID &&
+          event.status === "explained",
+      ),
+    { timeoutMs: 10_000 },
+  );
+
+  // And the read surface the panel consumes agrees the finding is no longer open.
+  const findings = (await client.driftFindings!({ sessionID: SESSION })) as Array<{
+    findingID: string;
+    status: string;
+  }>;
+  const updated = findings.find((f) => f.findingID === highFinding!.findingID);
+  expect(updated?.status).toBe("explained");
+
+  await client.dispose?.();
+}, 30_000);
