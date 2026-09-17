@@ -270,6 +270,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "approveOverride",
     "updateConstitutionRule",
     "removeConstitutionRule",
+    "createConstitutionRule",
     "constitutionDocRules",
     "promoteConstitutionDocRule",
     "notices",

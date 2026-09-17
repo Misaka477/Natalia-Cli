@@ -84,6 +84,7 @@ type Surface = Pick<
   | "approveOverride"
   | "updateConstitutionRule"
   | "removeConstitutionRule"
+  | "createConstitutionRule"
   | "constitutionDocRules"
   | "promoteConstitutionDocRule"
   | "planTaskStates"
@@ -996,7 +997,18 @@ export function createIntelligenceSurface(
      * durable tombstone is removeConstitutionRule.
      */
     async updateConstitutionRule(
-      input: { ruleID: string; enabled?: boolean },
+      input: {
+        ruleID: string;
+        enabled?: boolean;
+        statement?: string;
+        enforcement?: "deny" | "approval" | "warn";
+        priority?: "critical" | "high" | "medium" | "low";
+        appliesTo?: {
+          tools?: string[];
+          paths?: string[];
+          commandPattern?: string;
+        };
+      },
       sessionID?: string,
     ) {
       const exec = await intelligenceExecWindow(sessionID);
@@ -1008,12 +1020,33 @@ export function createIntelligenceSurface(
         return { updated: false as const };
       const governanceLedger = requireGovernanceLedger();
       if (!governanceLedger) return { updated: false as const };
+      // A deny/approval rule must keep a non-empty structured anchor so the
+      // runtime matcher has something to execute against (EI §3.8 P-1.c).
+      const enforcement = input.enforcement;
+      const anchor = input.appliesTo;
+      if (
+        (enforcement === "deny" || enforcement === "approval") &&
+        !(
+          anchor &&
+          (anchor.tools?.length ||
+            anchor.paths?.length ||
+            anchor.commandPattern)
+        )
+      )
+        return {
+          updated: false as const,
+          reason: `${enforcement} requires a non-empty appliesTo anchor`,
+        };
       ctx.ports.publishForSession(
         exec,
-        governanceLedger.buildConstitutionRuleEnabledChange({
+        governanceLedger.buildConstitutionRuleUpdate({
           id: `constitution:update:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
           ruleID: input.ruleID,
           ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+          ...(input.statement ? { statement: input.statement } : {}),
+          ...(enforcement ? { enforcement } : {}),
+          ...(input.priority ? { priority: input.priority } : {}),
+          ...(anchor ? { appliesTo: anchor } : {}),
         }),
       );
       return { updated: true as const };
@@ -1044,6 +1077,62 @@ export function createIntelligenceSurface(
         }),
       );
       return { removed: true as const };
+    },
+    /**
+     * Add a user-owned constitution rule (EI §3.8 P-1.c): the user creates a
+     * rule directly from the Constitution tab (no model proposal, no gate).
+     * Provenance is `source: "user"`. Release scope is rejected — the runtime's
+     * self-protection rules are not the user's to add. A deny/approval rule
+     * requires a non-empty appliesTo anchor so the matcher can execute it.
+     */
+    async createConstitutionRule(
+      input: {
+        statement: string;
+        enforcement: "deny" | "approval" | "warn";
+        scope?: "project" | "package";
+        appliesTo?: {
+          tools?: string[];
+          paths?: string[];
+          commandPattern?: string;
+        };
+        priority?: "critical" | "high" | "medium" | "low";
+      },
+      sessionID?: string,
+    ) {
+      const exec = await intelligenceExecWindow(sessionID);
+      if (!exec?.session || !input.statement?.trim())
+        return { created: false as const, reason: "a rule requires a statement" };
+      const anchor = input.appliesTo;
+      if (
+        (input.enforcement === "deny" || input.enforcement === "approval") &&
+        !(
+          anchor &&
+          (anchor.tools?.length ||
+            anchor.paths?.length ||
+            anchor.commandPattern)
+        )
+      )
+        return {
+          created: false as const,
+          reason: `${input.enforcement} requires a non-empty appliesTo anchor`,
+        };
+      const governanceLedger = requireGovernanceLedger();
+      if (!governanceLedger)
+        return { created: false as const, reason: "governance ledger unavailable" };
+      const ruleID = `P-USER-${Date.now().toString(36).toUpperCase()}`;
+      ctx.ports.publishForSession(
+        exec,
+        governanceLedger.buildUserConstitutionRule({
+          id: `constitution:created:${ruleID}:${ctx.ports.nextDecisionSequence()}`,
+          ruleID,
+          statement: input.statement,
+          enforcement: input.enforcement,
+          ...(input.scope ? { scope: input.scope } : {}),
+          ...(anchor ? { appliesTo: anchor } : {}),
+          ...(input.priority ? { priority: input.priority } : {}),
+        }),
+      );
+      return { created: true as const, ruleID };
     },
     /**
      * The constitution/AGENTS document rules (EI §3.8 P-1.c): the sections

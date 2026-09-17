@@ -145,6 +145,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   nativeTerminalResize: "nativeTerminal.resize",
   constitutionRules: "constitution.rules",
   updateConstitutionRule: "constitution.rule.update",
+  createConstitutionRule: "constitution.rule.create",
   removeConstitutionRule: "constitution.rule.remove",
   constitutionDocRules: "constitution.docRules",
   promoteConstitutionDocRule: "constitution.docRule.promote",
@@ -791,6 +792,27 @@ export function createWebRuntimeClient(
     },
     async recordDecision(input, sessionID?) {
       return (await call("decision.record", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    // The constitution actions take an object + a sessionID; without an
+    // explicit override the positional RPC_PARAM_NAMES map would put the whole
+    // object into `params.ruleID` and drop the sessionID.
+    async updateConstitutionRule(input, sessionID?) {
+      return (await call("constitution.rule.update", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    async removeConstitutionRule(input, sessionID?) {
+      return (await call("constitution.rule.remove", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    async createConstitutionRule(input, sessionID?) {
+      return (await call("constitution.rule.create", {
         ...(input as Record<string, unknown>),
         ...(sessionID ? { sessionID } : {}),
       })) as never;

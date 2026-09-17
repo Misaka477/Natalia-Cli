@@ -227,6 +227,7 @@ export const RPC_ROUTE_MEMBERS = {
   "nativeTerminal.resize": "nativeTerminalResize",
   "constitution.rules": "constitutionRules",
   "constitution.rule.update": "updateConstitutionRule",
+  "constitution.rule.create": "createConstitutionRule",
   "constitution.rule.remove": "removeConstitutionRule",
   "constitution.docRules": "constitutionDocRules",
   "constitution.docRule.promote": "promoteConstitutionDocRule",
@@ -2073,6 +2074,76 @@ export async function handleRPCMessage(
             ruleID: params.ruleID,
             ...(typeof params.enabled === "boolean"
               ? { enabled: params.enabled }
+              : {}),
+            ...(typeof params.statement === "string"
+              ? { statement: params.statement }
+              : {}),
+            ...(params.enforcement === "deny" ||
+            params.enforcement === "approval" ||
+            params.enforcement === "warn"
+              ? { enforcement: params.enforcement }
+              : {}),
+            ...(params.priority === "critical" ||
+            params.priority === "high" ||
+            params.priority === "medium" ||
+            params.priority === "low"
+              ? { priority: params.priority }
+              : {}),
+            ...(params.appliesTo &&
+            typeof params.appliesTo === "object" &&
+            !Array.isArray(params.appliesTo)
+              ? {
+                  appliesTo: params.appliesTo as {
+                    tools?: string[];
+                    paths?: string[];
+                    commandPattern?: string;
+                  },
+                }
+              : {}),
+          },
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "constitution.rule.create") {
+      optionsGuard(client, "createConstitutionRule");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (!params || typeof params.statement !== "string" || !params.statement.trim())
+        throw invalidParams("constitution.rule.create requires a statement string");
+      if (
+        params.enforcement !== "deny" &&
+        params.enforcement !== "approval" &&
+        params.enforcement !== "warn"
+      )
+        throw invalidParams(
+          "constitution.rule.create requires enforcement deny|approval|warn",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.createConstitutionRule?.(
+          {
+            statement: params.statement,
+            enforcement: params.enforcement,
+            ...(params.scope === "project" || params.scope === "package"
+              ? { scope: params.scope }
+              : {}),
+            ...(params.appliesTo &&
+            typeof params.appliesTo === "object" &&
+            !Array.isArray(params.appliesTo)
+              ? {
+                  appliesTo: params.appliesTo as {
+                    tools?: string[];
+                    paths?: string[];
+                    commandPattern?: string;
+                  },
+                }
+              : {}),
+            ...(params.priority === "critical" ||
+            params.priority === "high" ||
+            params.priority === "medium" ||
+            params.priority === "low"
+              ? { priority: params.priority }
               : {}),
           },
           optionalStringParam(body.params, "sessionID"),

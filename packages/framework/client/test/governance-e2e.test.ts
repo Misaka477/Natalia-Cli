@@ -475,3 +475,82 @@ test("Phase -1 E2E: constitution doc rules are read and promoted into journal ru
   expect(promotedWarnRule!.appliesTo).toBeUndefined();
   await client.dispose?.();
 }, 30_000);
+
+
+test("Phase -1 E2E: a user can add, edit, disable and delete a constitution rule", async () => {
+  const root = await officialPluginWorkspace("governance-e2e-constitution-crud");
+  const sessionID = "ses_e2e_constitution_crud" as SessionID;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [{ text: "standby" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!(sessionID);
+
+  // 1. Add a user rule (a deny rule needs an appliesTo anchor).
+  const created = await client.createConstitutionRule!(
+    {
+      statement: "never force-push to shared branches",
+      enforcement: "deny",
+      appliesTo: { commandPattern: "git push --force" },
+    },
+    sessionID,
+  );
+  expect(created.created).toBe(true);
+  expect(created.ruleID).toStartWith("P-USER-");
+  let rules = await client.constitutionRules!(sessionID);
+  expect(rules.find((rule) => rule.ruleID === created.ruleID)).toMatchObject({
+    statement: "never force-push to shared branches",
+    enforcement: "deny",
+    source: "user",
+    scope: "project",
+    appliesTo: { commandPattern: "git push --force" },
+  });
+
+  // 2. An anchor-less deny rule is refused.
+  const refused = await client.createConstitutionRule!(
+    { statement: "no rm", enforcement: "deny" },
+    sessionID,
+  );
+  expect(refused.created).toBe(false);
+  expect(refused.reason).toContain("appliesTo");
+
+  // 3. Edit (tighten/enforce): change the statement + enforcement.
+  const edited = await client.updateConstitutionRule!(
+    {
+      ruleID: created.ruleID,
+      statement: "never force-push, anywhere",
+      enforcement: "approval",
+      appliesTo: { commandPattern: "git push --force" },
+    },
+    sessionID,
+  );
+  expect(edited.updated).toBe(true);
+  rules = await client.constitutionRules!(sessionID);
+  expect(rules.find((rule) => rule.ruleID === created.ruleID)).toMatchObject({
+    statement: "never force-push, anywhere",
+    enforcement: "approval",
+  });
+
+  // 4. Disable -> filtered from the effective set.
+  await client.updateConstitutionRule!(
+    { ruleID: created.ruleID, enabled: false },
+    sessionID,
+  );
+  rules = await client.constitutionRules!(sessionID);
+  expect(rules.some((rule) => rule.ruleID === created.ruleID)).toBe(false);
+
+  // 5. Delete -> tombstone.
+  const removed = await client.removeConstitutionRule!(
+    { ruleID: created.ruleID },
+    sessionID,
+  );
+  expect(removed.removed).toBe(true);
+  await client.dispose?.();
+}, 30_000);

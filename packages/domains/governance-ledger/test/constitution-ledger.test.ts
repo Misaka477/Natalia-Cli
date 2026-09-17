@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   SELF_PROTECTION_RULES,
-  buildConstitutionRuleEnabledChange,
+  buildConstitutionRuleUpdate,
   buildConstitutionRuleRemoved,
   buildProposedConstitutionRule,
   recordDecision,
@@ -198,7 +198,7 @@ test("an approved model proposal lands as agent_proposed provenance", () => {
 });
 
 test("a disable is reversible and a removal is a durable tombstone", () => {
-  const disabled = buildConstitutionRuleEnabledChange({
+  const disabled = buildConstitutionRuleUpdate({
     id: "constitution:update:prompt-1",
     ruleID: "P-TEST-001",
     enabled: false,

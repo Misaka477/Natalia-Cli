@@ -928,7 +928,8 @@ export interface GovernanceLedgerController {
   validateConstitutionRuleProposal: ServiceOperation;
   buildProposedConstitutionRule: ServiceOperation;
   buildPromotedConstitutionRule: ServiceOperation;
-  buildConstitutionRuleEnabledChange: ServiceOperation;
+  buildConstitutionRuleUpdate: ServiceOperation;
+  buildUserConstitutionRule: ServiceOperation;
   buildConstitutionRuleRemoved: ServiceOperation;
 }
 export interface WorkLedgerController {

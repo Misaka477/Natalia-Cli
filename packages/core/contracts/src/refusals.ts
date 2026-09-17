@@ -641,6 +641,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "removed",
     note: "records the append-only tombstone for a removed constitution rule (user-owned, confirmed)",
   },
+  createConstitutionRule: {
+    refusal: "value",
+    expressedBy: "created",
+    note: "adds a user-owned constitution rule (release scope rejected; a deny/approval rule needs an appliesTo anchor)",
+  },
   constitutionDocRules: { refusal: "none", note: "pure read" },
   promoteConstitutionDocRule: {
     refusal: "value",

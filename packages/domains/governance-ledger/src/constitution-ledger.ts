@@ -308,26 +308,72 @@ export function buildPromotedConstitutionRule(input: {
 }
 
 /**
- * Builds a `constitution.rule_updated` event that disables (or re-enables) a
- * rule (EI §3.8 P-1.c): a disable is reversible and keeps the rule in the
- * journal; only `rule_removed` is the durable tombstone.
+ * Builds a `constitution.rule_added` event for a user-created rule (EI §3.8
+ * P-1.c, user-owned): the user adds a rule directly from the UI (no model
+ * proposal, no gate), so provenance is `source: "user"`. A deny/approval rule
+ * requires a non-empty appliesTo anchor — the caller validates first.
  */
-export function buildConstitutionRuleEnabledChange(input: {
+export function buildUserConstitutionRule(input: {
   id: string;
   ruleID: string;
-  enabled: boolean;
+  statement: string;
+  enforcement: "deny" | "approval" | "warn";
+  scope?: "project" | "package";
+  appliesTo?: {
+    tools?: string[];
+    paths?: string[];
+    commandPattern?: string;
+  };
+  priority?: "critical" | "high" | "medium" | "low";
+}): Extract<RuntimeEvent, { type: "constitution.rule_added" }> {
+  return {
+    type: "constitution.rule_added",
+    id: input.id,
+    ruleID: input.ruleID,
+    statement: input.statement,
+    scope: input.scope === "package" ? "package" : "project",
+    priority: input.priority ?? "medium",
+    source: "user",
+    enforcement: input.enforcement,
+    overridePolicy: "user_explicit",
+    ...(input.appliesTo ? { appliesTo: input.appliesTo } : {}),
+  };
+}
+
+/**
+ * Builds a `constitution.rule_updated` event (EI §3.8 P-1.c): any subset of the
+ * rule's fields may change — `enabled` disables/re-enables it, `statement` /
+ * `enforcement` / `priority` / `appliesTo` tighten or edit it. All fields are
+ * optional. A disable is reversible and keeps the rule in the journal; only
+ * `rule_removed` is the durable tombstone.
+ */
+export function buildConstitutionRuleUpdate(input: {
+  id: string;
+  ruleID: string;
+  enabled?: boolean;
   statement?: string;
   priority?: "critical" | "high" | "medium" | "low";
   enforcement?: "deny" | "approval" | "warn";
+  appliesTo?: {
+    tools?: string[];
+    paths?: string[];
+    commandPattern?: string;
+  };
 }): Extract<RuntimeEvent, { type: "constitution.rule_updated" }> {
+  const nonEmpty = <T extends { tools?: string[]; paths?: string[]; commandPattern?: string }>(
+    anchor: T | undefined,
+  ) =>
+    anchor &&
+    (anchor.tools?.length || anchor.paths?.length || anchor.commandPattern);
   return {
     type: "constitution.rule_updated",
     id: input.id,
     ruleID: input.ruleID,
-    enabled: input.enabled,
+    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.statement ? { statement: input.statement } : {}),
     ...(input.priority ? { priority: input.priority } : {}),
     ...(input.enforcement ? { enforcement: input.enforcement } : {}),
+    ...(nonEmpty(input.appliesTo) ? { appliesTo: input.appliesTo } : {}),
   };
 }
 

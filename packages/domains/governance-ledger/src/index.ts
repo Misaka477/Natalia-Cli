@@ -6,7 +6,8 @@ export {
 } from "./instance-store";
 export {
   SELF_PROTECTION_RULES,
-  buildConstitutionRuleEnabledChange,
+  buildConstitutionRuleUpdate,
+  buildUserConstitutionRule,
   buildConstitutionRuleRemoved,
   buildPromotedConstitutionRule,
   buildProposedConstitutionRule,

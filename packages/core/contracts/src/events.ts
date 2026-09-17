@@ -4027,9 +4027,20 @@ export type RuntimeClient = {
    * never disables or weakens an existing one.
    */
   updateConstitutionRule?(
-    input: { ruleID: string; enabled?: boolean },
+    input: {
+      ruleID: string;
+      enabled?: boolean;
+      statement?: string;
+      enforcement?: "deny" | "approval" | "warn";
+      priority?: "critical" | "high" | "medium" | "low";
+      appliesTo?: {
+        tools?: string[];
+        paths?: string[];
+        commandPattern?: string;
+      };
+    },
     sessionID?: string,
-  ): Promise<{ updated: boolean }>;
+  ): Promise<{ updated: boolean; reason?: string }>;
   /**
    * Remove a constitution rule (EI §3.8 P-1.c, user-owned): an append-only
    * tombstone — the journal keeps the rule's full history, the effective set
@@ -4039,6 +4050,26 @@ export type RuntimeClient = {
     input: { ruleID: string },
     sessionID?: string,
   ): Promise<{ removed: boolean }>;
+  /**
+   * Add a user-owned constitution rule (EI §3.8 P-1.c, user-owned): the user
+   * creates a rule directly from the Constitution tab. Provenance is
+   * `source: "user"`. Release scope is rejected; a deny/approval rule requires
+   * a non-empty appliesTo anchor.
+   */
+  createConstitutionRule?(
+    input: {
+      statement: string;
+      enforcement: "deny" | "approval" | "warn";
+      scope?: "project" | "package";
+      appliesTo?: {
+        tools?: string[];
+        paths?: string[];
+        commandPattern?: string;
+      };
+      priority?: "critical" | "high" | "medium" | "low";
+    },
+    sessionID?: string,
+  ): Promise<{ created: boolean; ruleID?: string; reason?: string }>;
   /**
    * The constitution/AGENTS document rules (EI §3.8 P-1.c): the sections parsed
    * from the workspace documents, each tagged with its enforcement (prose →
