@@ -4167,6 +4167,25 @@ button.neu-settings-item.neu-settings-item-button:active {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
   font-size: 12px;
 }
+.gov-scope-switch {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.gov-scope-btn {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: var(--neu-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+.gov-scope-btn[data-active="true"] {
+  color: var(--neu-text);
+  border-color: rgba(140, 180, 255, 0.65);
+  background: rgba(140, 180, 255, 0.14);
+}
 .gov-completion-card {
   border-left: 3px solid rgba(120, 200, 150, 0.7);
 }

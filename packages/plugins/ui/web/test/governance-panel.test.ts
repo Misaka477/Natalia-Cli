@@ -207,3 +207,20 @@ test("constitution actions call their RPCs and reload reflects update and tombst
   expect((await loadGovernanceSlices(runtime, "ses_action")).constitution)
     .toHaveLength(0);
 });
+
+test("the Decisions read requests session scope by default and workspace scope on demand", async () => {
+  const calls: Array<unknown> = [];
+  const runtime = {
+    decisionRecords: async (input: unknown) => {
+      calls.push(input);
+      return [];
+    },
+  } as unknown as RuntimeClient;
+
+  await loadGovernanceSlices(runtime, "ses_scope", { decisionScope: "session" });
+  expect(calls[0]).toEqual({ sessionID: "ses_scope", scope: "session" });
+  await loadGovernanceSlices(runtime, "ses_scope", {
+    decisionScope: "workspace",
+  });
+  expect(calls[1]).toEqual({ sessionID: "ses_scope", scope: "workspace" });
+});

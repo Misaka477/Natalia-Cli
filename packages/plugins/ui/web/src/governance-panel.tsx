@@ -69,6 +69,9 @@ export type GovernanceSliceBundle = {
 export async function loadGovernanceSlices(
   runtime: RuntimeClient | undefined,
   sessionID?: string,
+  options: {
+    decisionScope?: "session" | "workspace" | "all";
+  } = {},
 ): Promise<GovernanceSliceBundle> {
   const errors: string[] = [];
   const loadSlice = async <T,>(
@@ -95,7 +98,7 @@ export async function loadGovernanceSlices(
         () =>
           runtime?.decisionRecords?.({
             ...(sessionID ? { sessionID } : {}),
-            scope: "session",
+            scope: options.decisionScope ?? "session",
           }) ?? Promise.resolve([]),
       ),
       loadSlice(
@@ -181,6 +184,9 @@ export function GovernancePane(props: {
   const [tab, setTab] = createSignal<Tab>(props.initialTab ?? "drift");
   const [liveConstitution, setLiveConstitution] = createSignal<any[]>([]);
   const [liveDecisions, setLiveDecisions] = createSignal<any[]>([]);
+  const [decisionScope, setDecisionScope] = createSignal<
+    "session" | "workspace" | "all"
+  >("session");
   const [liveEvidence, setLiveEvidence] = createSignal<any[]>([]);
   const [liveCompletions, setLiveCompletions] = createSignal<any[]>([]);
   const [liveDrift, setLiveDrift] = createSignal<any[]>([]);
@@ -193,7 +199,9 @@ export function GovernancePane(props: {
   const { confirm, dialog } = useConfirmDialog();
 
   const load = async () => {
-    const bundle = await loadGovernanceSlices(props.runtime, props.sessionID);
+    const bundle = await loadGovernanceSlices(props.runtime, props.sessionID, {
+      decisionScope: decisionScope(),
+    });
     setLiveConstitution(bundle.constitution);
     setLiveDecisions(bundle.decisions);
     setLiveEvidence(bundle.evidence);
@@ -206,6 +214,7 @@ export function GovernancePane(props: {
   // Reload when the active session changes so the pane follows the session.
   createEffect(() => {
     void props.state.sessionID;
+    void decisionScope();
     void load();
   });
 
@@ -540,6 +549,24 @@ export function GovernancePane(props: {
           {dialog}
         </Show>
         <Show when={tab() === "decisions"}>
+          <div class="gov-scope-switch">
+            <button
+              type="button"
+              class="gov-scope-btn"
+              data-active={decisionScope() === "session"}
+              onClick={() => setDecisionScope("session")}
+            >
+              This session
+            </button>
+            <button
+              type="button"
+              class="gov-scope-btn"
+              data-active={decisionScope() === "workspace"}
+              onClick={() => setDecisionScope("workspace")}
+            >
+              Workspace
+            </button>
+          </div>
           <For
             each={
               liveDecisions().length
@@ -599,9 +626,9 @@ export function GovernancePane(props: {
             }
           >
             <div class="neu-gov-empty">
-              No decision.recorded for this session yet. Decisions appear when
-              the model calls record_decision for an architecture or trade-off
-              choice.
+              No decision.recorded for this {decisionScope()} scope yet.
+              Session decisions appear when the model calls record_decision;
+              workspace decisions come from an explicit workspace promotion.
             </div>
           </Show>
         </Show>
