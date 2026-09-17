@@ -3624,6 +3624,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                           setShowJumpToBottom(!following)
                         }
                         onNearTop={() => void loadOlderHistory()}
+                        hasOlder={mainPaging().hasOlder}
                         historyLoading={transcriptHistoryLoading()}
                         olderHistoryLoading={transcriptOlderLoading()}
                         loadAttachmentUrl={loadAttachmentUrl}
@@ -4039,6 +4040,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                           setChatShowJumpToBottom(!following)
                         }
                         onNearTop={() => void loadOlderNaviChat()}
+                        hasOlder={naviPaging().hasOlder}
                         historyLoading={!naviPaging().initialized}
                         olderHistoryLoading={naviPaging().loadingOlder}
                         loadAttachmentUrl={loadAttachmentUrl}

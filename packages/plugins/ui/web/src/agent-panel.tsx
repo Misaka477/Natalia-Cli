@@ -547,6 +547,7 @@ export function AgentPanel(props: {
                       setSubShowJumpToBottom(!following)
                     }
                     onNearTop={() => void loadOlderSubagentHistory()}
+                    hasOlder={subagentPaging().hasOlder}
                     historyLoading={!subagentPaging().initialized}
                     olderHistoryLoading={subagentPaging().loadingOlder}
                   />

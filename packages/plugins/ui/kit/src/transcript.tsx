@@ -89,6 +89,8 @@ export interface TranscriptProps {
   historyLoading?: boolean;
   /** True while an older-history page is in flight. */
   olderHistoryLoading?: boolean;
+  /** Whether an older-history page exists (enables short-content auto-fill). */
+  hasOlder?: boolean;
   /** Exposes scroll/measure methods so hosts do not write scrollTop directly. */
   apiRef?: (handle: TranscriptHandle | undefined) => void;
 }
@@ -196,6 +198,46 @@ export function Transcript(props: TranscriptProps) {
   // deepseek-harness TrajectoryTable state machine (pure, tested in
   // tail-scroll-machine.test.ts).
   let tailState: TailScrollState = initialTailScrollState();
+  /**
+   * The same near-top notification used by native scroll, exposed so a short
+   * transcript with older pages can fill itself without a manual button.
+   */
+  const notifyNearTop = () => {
+    if (
+      props.onNearTop === undefined ||
+      !tailState.initialized ||
+      props.olderHistoryLoading === true
+    )
+      return;
+    const el = scrollEl();
+    if (el !== undefined) {
+      const firstVirtual = liveVirtualItems()[0]?.index ?? 0;
+      const visibleIndex =
+        virtualize() && liveVirtualItems().length > 0 ? firstVirtual : 0;
+      const visibleKey = props.messages[visibleIndex]?.id ?? null;
+      const visibleRow =
+        visibleKey === null
+          ? null
+          : el.querySelector<HTMLElement>(
+              `[data-message-id="${CSS.escape(visibleKey)}"]`,
+            );
+      const containerRect = el.getBoundingClientRect();
+      tailState = {
+        ...tailState,
+        olderAnchor: {
+          startKey: tailState.lastStartKey,
+          scrollHeight: el.scrollHeight,
+          scrollTop: el.scrollTop,
+          visibleKey,
+          visibleTop:
+            visibleRow === null
+              ? 0
+              : visibleRow.getBoundingClientRect().top - containerRect.top,
+        },
+      };
+    }
+    props.onNearTop(el?.scrollTop ?? 0);
+  };
   let frozenVirtualItems: ReturnType<typeof virtualizer.getVirtualItems> = [];
   let frozenTotalSize = 0;
   createEffect(() => {
@@ -291,39 +333,8 @@ export function Transcript(props: TranscriptProps) {
     nearTopThreshold: 80,
     isPaused: () => props.suspendVirtualization === true,
     onFollowChange: (following) => props.onFollowChange?.(following),
-    onNearTop: (scrollTop) => {
-      if (props.onNearTop === undefined) return;
-      if (!tailState.initialized) return;
-      if (props.olderHistoryLoading === true) return;
-      const el = scrollEl();
-      if (el !== undefined) {
-        const firstVirtual = liveVirtualItems()[0]?.index ?? 0;
-        const visibleIndex =
-          virtualize() && liveVirtualItems().length > 0 ? firstVirtual : 0;
-        const visibleKey = props.messages[visibleIndex]?.id ?? null;
-        const visibleRow =
-          visibleKey === null
-            ? null
-            : el.querySelector<HTMLElement>(
-                `[data-message-id="${CSS.escape(visibleKey)}"]`,
-              );
-        const containerRect = el.getBoundingClientRect();
-        tailState = {
-          ...tailState,
-          olderAnchor: {
-            startKey: tailState.lastStartKey,
-            scrollHeight: el.scrollHeight,
-            scrollTop: el.scrollTop,
-            visibleKey,
-            visibleTop:
-              visibleRow === null
-                ? 0
-                : visibleRow.getBoundingClientRect().top - containerRect.top,
-          },
-        };
-      }
-      props.onNearTop(scrollTop);
-    },
+    onNearTop: () => notifyNearTop(),
+
   });
 
   const scrollToBottom = (options?: { behavior?: ScrollBehavior }) => {
@@ -409,6 +420,27 @@ export function Transcript(props: TranscriptProps) {
     requestAnimationFrame(() => {
       controller?.scrollToBottom({ behavior: "auto" });
     });
+  });
+
+  createEffect(() => {
+    const el = scrollEl();
+    if (el === undefined) return;
+    // Short transcripts never fire a scroll event, so a manual button used to
+    // be the only path to older history. Match Natalia's scroll path and
+    // auto-fill one page when the pane is not yet scrollable.
+    void scrollReady();
+    if (
+      props.hasOlder !== true ||
+      props.olderHistoryLoading === true ||
+      !scrollReady() ||
+      !tailState.initialized
+    )
+      return;
+    const count = props.messages.length;
+    if (count === 0) return;
+    if (el.scrollHeight <= el.clientHeight + 80) {
+      requestAnimationFrame(() => notifyNearTop());
+    }
   });
 
   onMount(() => {

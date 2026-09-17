@@ -328,6 +328,7 @@ export function NiaPanel(props: {
             }}
             onFollowChange={(following) => setNiaShowJumpToBottom(!following)}
             onNearTop={() => props.onLoadOlder?.()}
+            hasOlder={props.paging?.hasOlder ?? false}
             historyLoading={!props.paging?.initialized}
             olderHistoryLoading={props.paging?.loadingOlder}
             loadAttachmentUrl={props.loadAttachmentUrl}
