@@ -229,6 +229,13 @@ type Rule = {
  * states how many were dropped, so the card is bounded but never lies about
  * what it shows.
  */
+/**
+ * How many activity refs a finding keeps. High enough that a normal turn's
+ * change set is stored whole (so the card can offer "view all"), with a safety
+ * net for a pathological turn; beyond it the dropped count is stated.
+ */
+const MAX_ACTIVITY_REFS = 500;
+
 function boundActivity(text: string, maxItems: number): string {
   const items = text
     .split(",")
@@ -261,7 +268,7 @@ function objectiveActivityRule(): Rule {
             `${change.action ?? "change"}:${change.path ?? change.target ?? change.summary ?? "unknown"}`,
         )
         .filter(Boolean);
-      const shownRefs = activityRefs.slice(0, 30);
+      const shownRefs = activityRefs.slice(0, MAX_ACTIVITY_REFS);
       const moreRefs = activityRefs.length - shownRefs.length;
       return {
         confidence: Math.max(0.4, 1 - score),
@@ -270,7 +277,12 @@ function objectiveActivityRule(): Rule {
           `activity_count:${activityRefs.length || 1}`,
           ...(shownRefs.length
             ? shownRefs.map((ref) => `activity:${ref}`)
-            : [`activity:${boundActivity(signal.currentActivity, 30)}`]),
+            : [
+                `activity:${boundActivity(
+                  signal.currentActivity,
+                  MAX_ACTIVITY_REFS,
+                )}`,
+              ]),
           ...(moreRefs > 0 ? [`activity_more:${moreRefs}`] : []),
         ],
       };
@@ -484,7 +496,10 @@ export function createDriftEvaluator(input: {
           severity: rule.severity,
           confidence: result.confidence,
           originalObjective: signal.objective.slice(0, 200),
-          currentActivity: boundActivity(signal.currentActivity, 30),
+          currentActivity: boundActivity(
+            signal.currentActivity,
+            MAX_ACTIVITY_REFS,
+          ),
           evidence: result.evidence,
           applicableConstraints: signal.applicableConstraints,
           contractVersion: DRIFT_CONTRACT_VERSION,

@@ -4958,6 +4958,21 @@ button.neu-settings-item.neu-settings-item-button:active {
   color: #8fd48f;
   font-size: 10px;
 }
+.drift-card-expand {
+  margin-left: 6px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--neu-accent);
+  cursor: pointer;
+  font-size: 10px;
+  opacity: 0.85;
+}
+.drift-card-expand:hover {
+  background: rgba(255, 255, 255, 0.16);
+  opacity: 1;
+}
 .constitution-row {
   display: flex;
   align-items: flex-start;

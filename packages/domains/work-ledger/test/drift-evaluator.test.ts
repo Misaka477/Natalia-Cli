@@ -67,27 +67,47 @@ test("objective/activity mismatch opens an advisory finding", () => {
 
 test("a long activity list is bounded by item, never mid-item", () => {
   const evaluator = makeEvaluator();
-  const items = Array.from(
+  // A normal turn's change set is stored whole — the finding keeps every ref so
+  // the card can offer "view all" with nothing lost at the data layer.
+  const normal = Array.from(
     { length: 40 },
     (_, index) => `deleted:packages/kernel/src/file_${index}.rs`,
   );
-  const findings = evaluator.evaluate({
+  const whole = evaluator.evaluate({
     sessionID: "ses_1",
     turnID: "t_items",
     objective: "implement user authentication",
-    currentActivity: items.join(", "),
+    currentActivity: normal.join(", "),
     applicableConstraints: [],
     changes: [],
     evidenceRefs: [],
   });
-  expect(findings).toHaveLength(1);
-  const finding = findings[0]!;
-  // The first 30 items are kept whole; the rest is stated as a count — never a
-  // mid-item cut ("deleted:" -> "dele").
-  expect(finding.currentActivity).toContain("file_29.rs");
-  expect(finding.currentActivity).not.toContain("file_30.rs");
-  expect(finding.currentActivity).toContain("\u2026+10 more");
-  expect(finding.evidence.some((entry) => entry.includes("\u2026+10 more"))).toBe(
+  expect(whole).toHaveLength(1);
+  expect(whole[0]!.currentActivity).toContain("file_39.rs");
+  expect(whole[0]!.currentActivity).not.toContain("more");
+
+  // A pathological turn past the cap is bounded by ITEM (never mid-item), with
+  // the dropped count stated — so the card is bounded but never cuts a ref in
+  // half ("deleted:" -> "dele") and never lies about what it dropped.
+  const pathological = Array.from(
+    { length: 600 },
+    (_, index) => `deleted:packages/kernel/src/file_${index}.rs`,
+  );
+  const bounded = evaluator.evaluate({
+    sessionID: "ses_1",
+    turnID: "t_items_cap",
+    objective: "implement user authentication",
+    currentActivity: pathological.join(", "),
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+  });
+  expect(bounded).toHaveLength(1);
+  const finding = bounded[0]!;
+  expect(finding.currentActivity).toContain("file_499.rs");
+  expect(finding.currentActivity).not.toContain("file_500.rs");
+  expect(finding.currentActivity).toContain("\u2026+100 more");
+  expect(finding.evidence.some((entry) => entry.includes("\u2026+100 more"))).toBe(
     true,
   );
 });

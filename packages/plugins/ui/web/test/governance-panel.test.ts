@@ -3,12 +3,15 @@ import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
 import { applyEvent, initialState, type AppState } from "@natalia/view-store";
 import {
   acknowledgeDriftFindingViaRpc,
+  collapseList,
   createConstitutionRuleViaRpc,
+  DRIFT_COLLAPSE_LIMIT,
   editConstitutionRuleViaRpc,
   loadGovernanceSlices,
   promoteConstitutionDocRuleViaRpc,
   removeConstitutionRuleViaRpc,
   reopenDriftFindingViaRpc,
+  splitActivityRefs,
   updateConstitutionRuleViaRpc,
 } from "../src/governance-panel";
 
@@ -388,4 +391,45 @@ test("the Decisions read requests session scope by default and workspace scope o
     decisionScope: "workspace",
   });
   expect(calls[1]).toEqual({ sessionID: "ses_scope", scope: "workspace" });
+});
+
+test("splitActivityRefs trims and drops empty entries from a comma list", () => {
+  expect(splitActivityRefs("deleted:a.rs, modified: b.ts ,, ")).toEqual([
+    "deleted:a.rs",
+    "modified: b.ts",
+  ]);
+  expect(splitActivityRefs("")).toEqual([]);
+  expect(splitActivityRefs("single ref")).toEqual(["single ref"]);
+});
+
+test("collapseList keeps a short list whole with nothing hidden", () => {
+  const items = ["a", "b", "c"];
+  const collapsed = collapseList(items, false);
+  expect(collapsed.shown).toEqual(items);
+  expect(collapsed.hiddenCount).toBe(0);
+});
+
+test("collapseList bounds a long list to the limit and reports the hidden count", () => {
+  const items = Array.from({ length: 20 }, (_, i) => `ref_${i}`);
+  const collapsed = collapseList(items, false);
+  expect(collapsed.shown).toHaveLength(DRIFT_COLLAPSE_LIMIT);
+  expect(collapsed.shown[0]).toBe("ref_0");
+  expect(collapsed.hiddenCount).toBe(20 - DRIFT_COLLAPSE_LIMIT);
+});
+
+test("collapseList reveals the whole list when expanded (the 'view all' path)", () => {
+  const items = Array.from({ length: 20 }, (_, i) => `ref_${i}`);
+  const expanded = collapseList(items, true);
+  expect(expanded.shown).toHaveLength(20);
+  expect(expanded.hiddenCount).toBe(0);
+});
+
+test("collapseList honours an explicit limit and the exact-boundary case", () => {
+  const items = ["a", "b", "c"];
+  // Exactly at the limit still fits whole — no toggle, nothing hidden.
+  expect(collapseList(items, false, 3).hiddenCount).toBe(0);
+  // One past the limit hides exactly one.
+  const over = collapseList(items, false, 2);
+  expect(over.shown).toEqual(["a", "b"]);
+  expect(over.hiddenCount).toBe(1);
 });

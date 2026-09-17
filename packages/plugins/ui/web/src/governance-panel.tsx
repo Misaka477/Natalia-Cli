@@ -48,6 +48,40 @@ function ruleHitsFor(finding: {
 }
 
 /**
+ * How many activity refs / evidence lines a drift card shows before it offers a
+ * "view all" toggle. The truncation here is presentation-only and always paired
+ * with a reveal path: the evaluator keeps the full list (see its activity cap),
+ * so "view all" always has everything to show. Truncation without a reveal path
+ * is not allowed.
+ */
+export const DRIFT_COLLAPSE_LIMIT = 6;
+
+/** Split a comma-joined activity string into trimmed, non-empty refs. */
+export function splitActivityRefs(text: string): string[] {
+  return text
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+/**
+ * Collapse a long list to its first `limit` entries, reporting how many are
+ * hidden so the card can render a "view all (+N)" toggle. A list that already
+ * fits (or an expanded one) is returned whole with hiddenCount 0. Pure so the
+ * collapse contract is unit-testable without a DOM; the caller owns the flag.
+ */
+export function collapseList<T>(
+  items: readonly T[],
+  expanded: boolean,
+  limit: number = DRIFT_COLLAPSE_LIMIT,
+): { shown: readonly T[]; hiddenCount: number } {
+  if (expanded || items.length <= limit) {
+    return { shown: items, hiddenCount: 0 };
+  }
+  return { shown: items.slice(0, limit), hiddenCount: items.length - limit };
+}
+
+/**
  * The per-tab data bundle the governance pane renders. Kept outside the
  * component so a headless host can verify data, empty and failure states
  * without a DOM.
@@ -238,6 +272,206 @@ export async function editConstitutionRuleViaRpc(
   },
 ) {
   return runtime?.updateConstitutionRule?.(input, sessionID);
+}
+
+/**
+ * One drift finding card (EI Phase 2 / §3.5). A finding is a suspicion, not a
+ * verdict — the card is a read-only audit view (finding + rationale + status
+ * transitions) with the minimal user exits. The two long lists it can carry
+ * (the Current activity refs and the Evidence lines) collapse to a few entries
+ * with a "view all" toggle: the data layer keeps them whole, so the reveal path
+ * always has everything to show. Extracted as its own component so each card
+ * owns its expand state locally (no per-card bookkeeping in the pane).
+ */
+function DriftCard(props: {
+  finding: any;
+  resolveContract: (planID?: string) => any;
+  actionBusy: () => boolean;
+  onAcknowledge: (
+    findingID: string,
+    status: "explained" | "disputed" | "dismissed",
+    rationale?: string,
+  ) => void;
+  onReopen: (findingID: string) => void;
+}) {
+  const [activityExpanded, setActivityExpanded] = createSignal(false);
+  const [evidenceExpanded, setEvidenceExpanded] = createSignal(false);
+  const finding = () => props.finding;
+
+  const activityRefs = () => splitActivityRefs(finding().currentActivity ?? "");
+  const activityView = () => collapseList(activityRefs(), activityExpanded());
+  const evidenceItems = (): any[] => finding().evidence ?? [];
+  const evidenceView = () => collapseList(evidenceItems(), evidenceExpanded());
+
+  return (
+    <div class="drift-card">
+      <div class="drift-card-head">
+        <span class="neu-gov-title" data-priority={finding().severity}>
+          {finding().severity} · {Math.round(finding().confidence * 100)}%
+        </span>
+        <span class="drift-card-status" data-status={finding().status}>
+          {finding().status}
+        </span>
+        <Show when={(finding().reopenedCount ?? 0) > 0}>
+          <span class="drift-card-reopened">
+            已翻案 {finding().reopenedCount} 次
+          </span>
+        </Show>
+      </div>
+      <div class="drift-card-goal">Goal: {finding().originalObjective}</div>
+      <Show when={finding().planID}>
+        <div class="drift-card-meta">Plan: {finding().planID}</div>
+      </Show>
+      <Show when={props.resolveContract(finding().planID)}>
+        {(contract) => (
+          <div class="drift-card-section">
+            <div class="drift-card-section-title">Reference frame</div>
+            <Show when={contract().scope?.length}>
+              <div class="drift-card-evidence">
+                scope: {contract().scope!.join(", ")}
+              </div>
+            </Show>
+            <Show when={contract().verification?.length}>
+              <div class="drift-card-evidence">
+                verification: {contract().verification!.join(", ")}
+              </div>
+            </Show>
+            <Show when={contract().constraints?.length}>
+              <div class="drift-card-evidence">
+                constraints: {contract().constraints!.join(", ")}
+              </div>
+            </Show>
+            <div class="drift-card-meta">
+              contract {contract().status} v{contract().version}
+            </div>
+          </div>
+        )}
+      </Show>
+      <div class="drift-card-current">
+        Current: {activityView().shown.join(", ")}
+        <Show when={activityView().hiddenCount > 0 || activityExpanded()}>
+          <button
+            type="button"
+            class="drift-card-expand"
+            onClick={() => setActivityExpanded(!activityExpanded())}
+          >
+            {activityExpanded()
+              ? "收起"
+              : `展开全部 (+${activityView().hiddenCount})`}
+          </button>
+        </Show>
+      </div>
+      <Show
+        when={
+          ruleHitsFor(finding()).length ||
+          finding().contractVersion !== undefined
+        }
+      >
+        <div class="drift-card-section">
+          <div class="drift-card-section-title">Why this fired</div>
+          <Show when={finding().contractVersion !== undefined}>
+            <div class="drift-card-meta">
+              contract v{finding().contractVersion}
+            </div>
+          </Show>
+          <For each={ruleHitsFor(finding())}>
+            {(hit) => (
+              <div class="drift-card-rule">
+                {hit.rule} · {Math.round(hit.confidence * 100)}%
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={evidenceItems().length}>
+        <div class="drift-card-section">
+          <div class="drift-card-section-title">Evidence</div>
+          <For each={evidenceView().shown}>
+            {(item) => <div class="drift-card-evidence">{item}</div>}
+          </For>
+          <Show when={evidenceView().hiddenCount > 0 || evidenceExpanded()}>
+            <button
+              type="button"
+              class="drift-card-expand"
+              onClick={() => setEvidenceExpanded(!evidenceExpanded())}
+            >
+              {evidenceExpanded()
+                ? "收起"
+                : `展开全部 evidence (+${evidenceView().hiddenCount})`}
+            </button>
+          </Show>
+        </div>
+      </Show>
+      <Show when={finding().applicableConstraints?.length}>
+        <div class="drift-card-section">
+          <div class="drift-card-section-title">Constraints</div>
+          <For each={finding().applicableConstraints}>
+            {(item) => <div class="drift-card-evidence">{item}</div>}
+          </For>
+        </div>
+      </Show>
+      <Show when={finding().rationale}>
+        <div class="drift-card-rationale">{finding().rationale}</div>
+      </Show>
+      <Show when={finding().status === "open"}>
+        <div class="drift-card-actions">
+          <button
+            type="button"
+            class="drift-card-btn"
+            disabled={props.actionBusy()}
+            onClick={() => props.onAcknowledge(finding().findingID, "explained")}
+          >
+            解释
+          </button>
+          <button
+            type="button"
+            class="drift-card-btn"
+            data-kind="dispute"
+            disabled={props.actionBusy()}
+            onClick={() => {
+              const reason = window.prompt("声明这是误报，给出理由：");
+              if (reason?.trim())
+                props.onAcknowledge(
+                  finding().findingID,
+                  "disputed",
+                  reason.trim(),
+                );
+            }}
+          >
+            误报
+          </button>
+          <button
+            type="button"
+            class="drift-card-btn"
+            data-kind="dismiss"
+            disabled={props.actionBusy()}
+            onClick={() =>
+              props.onAcknowledge(finding().findingID, "dismissed")
+            }
+          >
+            忽略
+          </button>
+        </div>
+      </Show>
+      <Show
+        when={
+          finding().status === "dismissed" || finding().status === "explained"
+        }
+      >
+        <div class="drift-card-actions">
+          <button
+            type="button"
+            class="drift-card-btn"
+            data-kind="reopen"
+            disabled={props.actionBusy()}
+            onClick={() => props.onReopen(finding().findingID)}
+          >
+            重新打开
+          </button>
+        </div>
+      </Show>
+    </div>
+  );
 }
 
 /**
@@ -516,166 +750,13 @@ export function GovernancePane(props: {
             }
           >
             {(finding) => (
-              <div class="drift-card">
-                <div class="drift-card-head">
-                  <span class="neu-gov-title" data-priority={finding.severity}>
-                    {finding.severity} · {Math.round(finding.confidence * 100)}%
-                  </span>
-                  <span class="drift-card-status" data-status={finding.status}>
-                    {finding.status}
-                  </span>
-                  <Show when={(finding.reopenedCount ?? 0) > 0}>
-                    <span class="drift-card-reopened">
-                      已翻案 {finding.reopenedCount} 次
-                    </span>
-                  </Show>
-                </div>
-                <div class="drift-card-goal">
-                  Goal: {finding.originalObjective}
-                </div>
-                <Show when={finding.planID}>
-                  <div class="drift-card-meta">Plan: {finding.planID}</div>
-                </Show>
-                <Show when={contractFor(finding.planID)}>
-                  {(contract) => (
-                    <div class="drift-card-section">
-                      <div class="drift-card-section-title">
-                        Reference frame
-                      </div>
-                      <Show when={contract().scope?.length}>
-                        <div class="drift-card-evidence">
-                          scope: {contract().scope!.join(", ")}
-                        </div>
-                      </Show>
-                      <Show when={contract().verification?.length}>
-                        <div class="drift-card-evidence">
-                          verification:{" "}
-                          {contract().verification!.join(", ")}
-                        </div>
-                      </Show>
-                      <Show when={contract().constraints?.length}>
-                        <div class="drift-card-evidence">
-                          constraints: {contract().constraints!.join(", ")}
-                        </div>
-                      </Show>
-                      <div class="drift-card-meta">
-                        contract {contract().status} v{contract().version}
-                      </div>
-                    </div>
-                  )}
-                </Show>
-                <div class="drift-card-current">
-                  Current: {finding.currentActivity}
-                </div>
-                <Show
-                  when={
-                    ruleHitsFor(finding).length ||
-                    finding.contractVersion !== undefined
-                  }
-                >
-                  <div class="drift-card-section">
-                    <div class="drift-card-section-title">
-                      Why this fired
-                    </div>
-                    <Show when={finding.contractVersion !== undefined}>
-                      <div class="drift-card-meta">
-                        contract v{finding.contractVersion}
-                      </div>
-                    </Show>
-                    <For each={ruleHitsFor(finding)}>
-                      {(hit) => (
-                        <div class="drift-card-rule">
-                          {hit.rule} · {Math.round(hit.confidence * 100)}%
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={finding.evidence?.length}>
-                  <div class="drift-card-section">
-                    <div class="drift-card-section-title">Evidence</div>
-                    <For each={finding.evidence}>
-                      {(item) => (
-                        <div class="drift-card-evidence">{item}</div>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={finding.applicableConstraints?.length}>
-                  <div class="drift-card-section">
-                    <div class="drift-card-section-title">Constraints</div>
-                    <For each={finding.applicableConstraints}>
-                      {(item) => (
-                        <div class="drift-card-evidence">{item}</div>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={finding.rationale}>
-                  <div class="drift-card-rationale">{finding.rationale}</div>
-                </Show>
-                <Show when={finding.status === "open"}>
-                  <div class="drift-card-actions">
-                    <button
-                      type="button"
-                      class="drift-card-btn"
-                      disabled={actionBusy()}
-                      onClick={() =>
-                        void acknowledgeFinding(finding.findingID, "explained")
-                      }
-                    >
-                      解释
-                    </button>
-                    <button
-                      type="button"
-                      class="drift-card-btn"
-                      data-kind="dispute"
-                      disabled={actionBusy()}
-                      onClick={() => {
-                        const reason =
-                          window.prompt("声明这是误报，给出理由：");
-                        if (reason?.trim())
-                          void acknowledgeFinding(
-                            finding.findingID,
-                            "disputed",
-                            reason.trim(),
-                          );
-                      }}
-                    >
-                      误报
-                    </button>
-                    <button
-                      type="button"
-                      class="drift-card-btn"
-                      data-kind="dismiss"
-                      disabled={actionBusy()}
-                      onClick={() =>
-                        void acknowledgeFinding(finding.findingID, "dismissed")
-                      }
-                    >
-                      忽略
-                    </button>
-                  </div>
-                </Show>
-                <Show
-                  when={
-                    finding.status === "dismissed" ||
-                    finding.status === "explained"
-                  }
-                >
-                  <div class="drift-card-actions">
-                    <button
-                      type="button"
-                      class="drift-card-btn"
-                      data-kind="reopen"
-                      disabled={actionBusy()}
-                      onClick={() => void reopenFinding(finding.findingID)}
-                    >
-                      重新打开
-                    </button>
-                  </div>
-                </Show>
-              </div>
+              <DriftCard
+                finding={finding}
+                resolveContract={contractFor}
+                actionBusy={actionBusy}
+                onAcknowledge={acknowledgeFinding}
+                onReopen={reopenFinding}
+              />
             )}
           </For>
           <Show
