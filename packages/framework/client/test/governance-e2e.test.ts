@@ -455,5 +455,23 @@ test("Phase -1 E2E: constitution doc rules are read and promoted into journal ru
     scope: "project",
     appliesTo: { commandPattern: "git push --force" },
   });
+
+  // 5. The soft -> hard promote of a prose (warn) rule also lands as a journal
+  // rule — warn needs no appliesTo anchor.
+  const promotedWarn = await client.promoteConstitutionDocRule!(
+    { id: smallPRs!.id },
+    sessionID,
+  );
+  expect(promotedWarn.promoted).toBe(true);
+  const rulesAfterWarn = await client.constitutionRules!(sessionID);
+  const promotedWarnRule = rulesAfterWarn.find(
+    (rule) => rule.ruleID === promotedWarn.ruleID,
+  );
+  expect(promotedWarnRule).toMatchObject({
+    source: "user",
+    enforcement: "warn",
+    scope: "project",
+  });
+  expect(promotedWarnRule!.appliesTo).toBeUndefined();
   await client.dispose?.();
 }, 30_000);
