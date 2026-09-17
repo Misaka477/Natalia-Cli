@@ -3910,6 +3910,17 @@ export type RuntimeClient = {
     },
     sessionID?: string,
   ): Promise<{ acknowledged: boolean }>;
+  /**
+   * Reopen a terminal drift finding (翻案, EI §3.5) — a user-only action that
+   * lifts a dismissed/explained finding back to open. The findingID is
+   * unchanged; the reopen is a new `drift.finding_updated(status:"open")` and
+   * the projection counts it as `reopenedCount`. A corrected finding is not
+   * reopenable (its premise is gone). The Main Agent cannot reopen.
+   */
+  reopenDriftFinding?(
+    input: { findingID: string },
+    sessionID?: string,
+  ): Promise<{ reopened: boolean; reason?: string }>;
   requestOverride?(
     input: {
       ruleID: string;

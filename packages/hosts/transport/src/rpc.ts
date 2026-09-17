@@ -228,6 +228,8 @@ export const RPC_ROUTE_MEMBERS = {
   "constitution.rules": "constitutionRules",
   "constitution.rule.update": "updateConstitutionRule",
   "constitution.rule.remove": "removeConstitutionRule",
+  "constitution.docRules": "constitutionDocRules",
+  "constitution.docRule.promote": "promoteConstitutionDocRule",
   "context.notices": "notices",
   "decision.records": "decisionRecords",
   "decision.record": "recordDecision",
@@ -238,6 +240,7 @@ export const RPC_ROUTE_MEMBERS = {
   "drift.findings": "driftFindings",
   "drift.evaluate": "evaluateDrift",
   "drift.acknowledge": "acknowledgeDriftFinding",
+  "drift.reopen": "reopenDriftFinding",
   "observation.confirmed": "confirmedWorkspaceChanges",
   "workspace.diff": "workspaceDiff",
   "workspace.git.diff": "workspaceGitDiff",
@@ -2087,6 +2090,32 @@ export async function handleRPCMessage(
         ),
       };
     }
+    if (body.method === "constitution.docRules") {
+      optionsGuard(client, "constitutionDocRules");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.constitutionDocRules?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "constitution.docRule.promote") {
+      optionsGuard(client, "promoteConstitutionDocRule");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (!params || typeof params.id !== "string" || !params.id.trim())
+        throw invalidParams(
+          "constitution.docRule.promote requires an id string",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.promoteConstitutionDocRule?.(
+          { id: params.id },
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
     if (body.method === "context.notices") {
       optionsGuard(client, "notices");
       return {
@@ -2372,6 +2401,24 @@ export async function handleRPCMessage(
               ? { rationale: params.rationale }
               : {}),
           },
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "drift.reopen") {
+      optionsGuard(client, "reopenDriftFinding");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.findingID !== "string" ||
+        !params.findingID.trim()
+      )
+        throw invalidParams("drift.reopen requires a findingID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.reopenDriftFinding?.(
+          { findingID: params.findingID },
           optionalStringParam(body.params, "sessionID"),
         ),
       };

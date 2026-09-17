@@ -6,6 +6,7 @@ import {
   loadGovernanceSlices,
   promoteConstitutionDocRuleViaRpc,
   removeConstitutionRuleViaRpc,
+  reopenDriftFindingViaRpc,
   updateConstitutionRuleViaRpc,
 } from "../src/governance-panel";
 
@@ -166,6 +167,64 @@ test("drift click action calls RPC, updates the journal, and reload observes the
     rationale: "the package was added to the accepted scope",
   });
   expect(after.errors).toEqual([]);
+});
+
+test("drift dismiss then reopen (翻案) round-trips through the RPC and counts reopens", async () => {
+  const journal: any[] = [
+    {
+      findingID: "DF-REOPEN",
+      severity: "warning" as const,
+      confidence: 0.7,
+      originalObjective: "stay on scope",
+      currentActivity: "testing another package",
+      evidence: [],
+      applicableConstraints: [],
+      status: "open" as const,
+      reopenedCount: 0,
+      contractVersion: 1,
+      ruleHits: [],
+    },
+  ];
+  const runtime = {
+    driftFindings: async () => journal.map((finding) => ({ ...finding })),
+    acknowledgeDriftFinding: async (input: {
+      findingID: string;
+      status: string;
+    }) => {
+      const finding = journal.find(
+        (candidate) => candidate.findingID === input.findingID,
+      );
+      if (!finding || finding.status !== "open")
+        return { acknowledged: false };
+      finding.status = input.status;
+      return { acknowledged: true };
+    },
+    reopenDriftFinding: async (input: { findingID: string }) => {
+      const finding = journal.find(
+        (candidate) => candidate.findingID === input.findingID,
+      );
+      if (!finding) return { reopened: false, reason: "unknown finding" };
+      if (finding.status !== "dismissed" && finding.status !== "explained")
+        return { reopened: false, reason: `only dismissed/explained (${finding.status})` };
+      finding.status = "open";
+      finding.reopenedCount = (finding.reopenedCount ?? 0) + 1;
+      return { reopened: true };
+    },
+  } as unknown as RuntimeClient;
+
+  // Dismiss, then reopen.
+  await acknowledgeDriftFindingViaRpc(runtime, "ses_reopen", "DF-REOPEN", "dismissed");
+  expect((await loadGovernanceSlices(runtime, "ses_reopen")).drift[0]).toMatchObject({
+    status: "dismissed",
+  });
+  const reopened = await reopenDriftFindingViaRpc(runtime, "ses_reopen", "DF-REOPEN");
+  expect(reopened).toMatchObject({ reopened: true });
+  const after = await loadGovernanceSlices(runtime, "ses_reopen");
+  expect(after.drift[0]).toMatchObject({ status: "open", reopenedCount: 1 });
+
+  // A second reopen is refused: the finding is open again.
+  const second = await reopenDriftFindingViaRpc(runtime, "ses_reopen", "DF-REOPEN");
+  expect(second).toMatchObject({ reopened: false });
 });
 
 test("constitution actions call their RPCs and reload reflects update and tombstone", async () => {

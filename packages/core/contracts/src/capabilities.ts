@@ -260,6 +260,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "driftFindings",
     "evaluateDrift",
     "acknowledgeDriftFinding",
+    "reopenDriftFinding",
     "confirmedWorkspaceChanges",
     "registeredTools",
     "requestOverride",

@@ -568,6 +568,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "acknowledged",
     note: "acknowledges an open drift finding; the rationale is safe prose, never a command, content or secret",
   },
+  reopenDriftFinding: {
+    refusal: "value",
+    expressedBy: "reopened",
+    note: "reopens a dismissed/explained drift finding (user-only 翻案); a corrected finding is not reopenable",
+  },
   confirmedWorkspaceChanges: {
     refusal: "none",
     note: "reconciles watcher hints and returns the confirmed changes; not written to the Work Graph (Phase 4)",

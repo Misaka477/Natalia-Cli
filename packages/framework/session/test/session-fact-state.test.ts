@@ -709,6 +709,32 @@ test("work contracts fold to the current / draft three-state view with staleness
   ]);
 });
 
+test("a drift finding reopened from a terminal state counts each reopen", () => {
+  const state = sessionFactStateFromEvents([
+    {
+      type: "drift.finding_opened",
+      id: "drift:1",
+      findingID: "DF-001",
+      severity: "warning",
+      confidence: 0.75,
+      originalObjective: "Fix parser",
+      currentActivity: "Auth config",
+      evidence: ["12 actions without parser files"],
+      applicableConstraints: [],
+      contractVersion: 2,
+    },
+    { type: "drift.finding_updated", id: "u1", findingID: "DF-001", status: "dismissed" },
+    // First reopen (翻案): dismissed -> open.
+    { type: "drift.finding_updated", id: "u2", findingID: "DF-001", status: "open" },
+    // An open->open update is not a reopen.
+    { type: "drift.finding_updated", id: "u3", findingID: "DF-001", status: "explained" },
+    { type: "drift.finding_updated", id: "u4", findingID: "DF-001", status: "open" },
+  ]);
+  const findings = sessionFactDriftFindings(state);
+  expect(findings).toHaveLength(1);
+  expect(findings[0]).toMatchObject({ findingID: "DF-001", status: "open", reopenedCount: 2 });
+});
+
 test("constitution disable and tombstone fold keep history complete", () => {
   const events: RuntimeEvent[] = [
     {

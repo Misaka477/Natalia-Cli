@@ -4945,6 +4945,19 @@ button.neu-settings-item.neu-settings-item-button:active {
 .drift-card-btn[data-kind="dispute"] {
   background: rgba(230, 180, 90, 0.18);
 }
+.drift-card-btn[data-kind="dismiss"] {
+  background: rgba(255, 255, 255, 0.06);
+}
+.drift-card-btn[data-kind="reopen"] {
+  background: rgba(143, 212, 143, 0.16);
+}
+.drift-card-reopened {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(143, 212, 143, 0.14);
+  color: #8fd48f;
+  font-size: 10px;
+}
 .constitution-row {
   display: flex;
   align-items: flex-start;

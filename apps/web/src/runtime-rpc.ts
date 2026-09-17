@@ -157,6 +157,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   driftFindings: "drift.findings",
   evaluateDrift: "drift.evaluate",
   acknowledgeDriftFinding: "drift.acknowledge",
+  reopenDriftFinding: "drift.reopen",
   confirmedWorkspaceChanges: "observation.confirmed",
   workspaceDiff: "workspace.diff",
   workspaceGitDiff: "workspace.git.diff",
@@ -283,6 +284,7 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   recordCompletion: ["completion"],
   evaluateDrift: ["findingID"],
   acknowledgeDriftFinding: ["findingID"],
+  reopenDriftFinding: ["findingID"],
   requestOverride: ["request"],
   approveOverride: ["approval"],
   mailboxSend: ["message"],
@@ -810,6 +812,12 @@ export function createWebRuntimeClient(
     },
     async acknowledgeDriftFinding(input, sessionID?) {
       return (await call("drift.acknowledge", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    async reopenDriftFinding(input, sessionID?) {
+      return (await call("drift.reopen", {
         ...(input as Record<string, unknown>),
         ...(sessionID ? { sessionID } : {}),
       })) as never;

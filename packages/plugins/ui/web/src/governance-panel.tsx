@@ -152,13 +152,26 @@ export async function acknowledgeDriftFindingViaRpc(
   runtime: RuntimeClient | undefined,
   sessionID: string | undefined,
   findingID: string,
-  status: "explained" | "disputed",
+  status: "explained" | "disputed" | "dismissed",
   rationale?: string,
 ) {
   return runtime?.acknowledgeDriftFinding?.(
     { findingID, status, ...(rationale ? { rationale } : {}) },
     sessionID,
   );
+}
+
+/**
+ * The RPC action behind a drift card's [重新打开] (reopen / 翻案) button — a
+ * user-only lift of a dismissed/explained finding back to open. A headless
+ * test can call the same function a click invokes.
+ */
+export async function reopenDriftFindingViaRpc(
+  runtime: RuntimeClient | undefined,
+  sessionID: string | undefined,
+  findingID: string,
+) {
+  return runtime?.reopenDriftFinding?.({ findingID }, sessionID);
 }
 
 /** The RPC action behind a constitution rule disable/re-enable click. */
@@ -252,7 +265,7 @@ export function GovernancePane(props: {
 
   async function acknowledgeFinding(
     findingID: string,
-    status: "explained" | "disputed",
+    status: "explained" | "disputed" | "dismissed",
     rationale?: string,
   ) {
     setActionBusy(true);
@@ -274,6 +287,30 @@ export function GovernancePane(props: {
     } catch (error) {
       setActionNotice(
         `更新失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function reopenFinding(findingID: string) {
+    setActionBusy(true);
+    setActionNotice(undefined);
+    try {
+      const result = await reopenDriftFindingViaRpc(
+        props.runtime,
+        props.sessionID,
+        findingID,
+      );
+      setActionNotice(
+        result?.reopened
+          ? `已翻案：${findingID} → open`
+          : `无法翻案：${result?.reason ?? "未知原因"}`,
+      );
+      await load();
+    } catch (error) {
+      setActionNotice(
+        `翻案失败：${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
       setActionBusy(false);
@@ -366,6 +403,11 @@ export function GovernancePane(props: {
                   <span class="drift-card-status" data-status={finding.status}>
                     {finding.status}
                   </span>
+                  <Show when={(finding.reopenedCount ?? 0) > 0}>
+                    <span class="drift-card-reopened">
+                      已翻案 {finding.reopenedCount} 次
+                    </span>
+                  </Show>
                 </div>
                 <div class="drift-card-goal">
                   Goal: {finding.originalObjective}
@@ -480,6 +522,35 @@ export function GovernancePane(props: {
                       }}
                     >
                       误报
+                    </button>
+                    <button
+                      type="button"
+                      class="drift-card-btn"
+                      data-kind="dismiss"
+                      disabled={actionBusy()}
+                      onClick={() =>
+                        void acknowledgeFinding(finding.findingID, "dismissed")
+                      }
+                    >
+                      忽略
+                    </button>
+                  </div>
+                </Show>
+                <Show
+                  when={
+                    finding.status === "dismissed" ||
+                    finding.status === "explained"
+                  }
+                >
+                  <div class="drift-card-actions">
+                    <button
+                      type="button"
+                      class="drift-card-btn"
+                      data-kind="reopen"
+                      disabled={actionBusy()}
+                      onClick={() => void reopenFinding(finding.findingID)}
+                    >
+                      重新打开
                     </button>
                   </div>
                 </Show>

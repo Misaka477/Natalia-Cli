@@ -609,6 +609,12 @@ export type ProjectedDriftFinding = {
     | "dismissed"
     | "corrected"
     | "detour_declared";
+  /**
+   * How many times this finding was reopened (翻案, EI §3.5): a user lifted a
+   * terminal disposition (dismissed/explained) back to open. A rising count is a
+   * rule-tuning signal — the same suspicion keeps being reopened.
+   */
+  reopenedCount: number;
   rationale?: string;
   /** The evaluation contract version the finding was judged under (EI §8.6). */
   contractVersion: number;
@@ -1579,6 +1585,7 @@ export function applySessionDriftFact(
       evidence: event.evidence,
       applicableConstraints: event.applicableConstraints,
       status: "open",
+      reopenedCount: 0,
       contractVersion: event.contractVersion,
       ruleHits: event.ruleHits ?? [],
       ...(event.planID ? { planID: event.planID } : {}),
@@ -1590,9 +1597,16 @@ export function applySessionDriftFact(
     // An update carries no objective or evidence, so a finding that was never
     // opened cannot be reconstructed from it alone.
     if (!existing) return;
+    // A reopen (翻案) is a user lifting a terminal disposition back to open; count
+    // it so the card can show "reopened N times" as a rule-tuning signal.
+    const reopened =
+      existing.status !== "open" && event.status === "open"
+        ? existing.reopenedCount + 1
+        : existing.reopenedCount;
     state.findings.set(event.findingID, {
       ...existing,
       status: event.status,
+      reopenedCount: reopened,
       ...(event.rationale === undefined ? {} : { rationale: event.rationale }),
     });
   }

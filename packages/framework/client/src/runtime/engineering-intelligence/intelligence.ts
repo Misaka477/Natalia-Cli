@@ -70,6 +70,7 @@ type Surface = Pick<
   | "driftFindings"
   | "evaluateDrift"
   | "acknowledgeDriftFinding"
+  | "reopenDriftFinding"
   | "confirmedWorkspaceChanges"
   | "registeredTools"
   | "requestOverride"
@@ -660,6 +661,7 @@ export function createIntelligenceSurface(
           evidence: f.evidence,
           applicableConstraints: f.applicableConstraints,
           status: f.status,
+          reopenedCount: f.reopenedCount,
           contractVersion: f.contractVersion,
           ruleHits: f.ruleHits,
           ...(f.planID ? { planID: f.planID } : {}),
@@ -773,6 +775,46 @@ export function createIntelligenceSurface(
         }),
       );
       return { acknowledged: true as const };
+    },
+    /**
+     * Reopen a terminal drift finding (翻案, EI §3.5) — a user-only action that
+     * lifts a dismissed/explained finding back to open so it is reviewed again.
+     * The findingID is unchanged (it is the same suspicion, re-examined); the
+     * reopen is a new `drift.finding_updated(status:"open")` and the projection
+     * counts it as `reopenedCount`. A corrected finding is not reopenable — its
+     * premise (the contract revision) is gone. The Main Agent cannot reopen:
+     * self-correction goes through a fresh finding or the chat flow.
+     */
+    async reopenDriftFinding(
+      input: { findingID: string },
+      sessionID?: string,
+    ) {
+      const exec = await intelligenceExecWindow(sessionID);
+      if (!exec?.session || !input.findingID.trim())
+        return { reopened: false as const, reason: "no finding" };
+      await ensureCompleteSessionFactState(ctx, exec);
+      const findings =
+        exec.factStateComplete === true && exec.factState
+          ? sessionFactDriftFindings(exec.factState)
+          : projectedDriftFindings(exec.session.events);
+      const finding = findings.find(
+        (candidate) => candidate.findingID === input.findingID,
+      );
+      if (!finding) return { reopened: false as const, reason: "unknown finding" };
+      if (finding.status !== "dismissed" && finding.status !== "explained")
+        return {
+          reopened: false as const,
+          reason: `only a dismissed or explained finding can be reopened (this one is ${finding.status})`,
+        };
+      ctx.ports.publishForSession(
+        exec,
+        requireWorkLedger().buildDriftFindingUpdate({
+          id: `drift:reopen:${Date.now().toString(36)}:${input.findingID}`,
+          findingID: input.findingID,
+          status: "open",
+        }),
+      );
+      return { reopened: true as const };
     },
     async requestOverride(
       input: {
