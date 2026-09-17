@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { ProviderStreamRequest } from "@natalia/runtime";
 import { createRealRuntimeClient } from "../src";
 import { officialPluginWorkspace } from "./plugin-test-helpers";
 import { createScriptedProvider, waitFor } from "./e2e-harness";
@@ -263,5 +264,51 @@ test("Phase 2 E2E: reopening a warning/high finding re-injects it for re-review 
   expect(reinjection.text).toContain("do not repeat the rationale");
   expect(reinjection.id).not.toBe(`turn_drift_${finding.findingID}`);
 
+  await client.dispose?.();
+}, 30_000);
+
+
+test("Phase 2 E2E: a warning/high finding reaches the main agent's next provider request; advisory does not", async () => {
+  const root = await officialPluginWorkspace("drift-e2e-b3-nextrequest");
+  const requests: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        const messages = (
+          request as { messages: Array<{ role: string; content: string }> }
+        ).messages;
+        requests.push(
+          messages.map((message) => String(message.content ?? "")).join("\n"),
+        );
+        yield { type: "content" as const, text: "acknowledged" };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!(SESSION);
+
+  // evaluateDrift opens a high finding and injects it as a next-step input.
+  await client.evaluateDrift!(
+    {
+      objective: "clean up the workspace",
+      currentActivity: "delete the old build artifacts",
+      applicableConstraints: ["never delete files without approval"],
+    },
+    SESSION,
+  );
+
+  // The next turn's first provider request must carry the injected finding.
+  await client.submitAndWait!("respond to the drift finding");
+  expect(requests.length).toBeGreaterThanOrEqual(1);
+  const firstRequest = requests[0]!;
+  expect(firstRequest).toContain("internal drift finding");
+  expect(firstRequest).toContain("constraint_violation_signal");
+  expect(firstRequest).toContain("drift_acknowledge");
   await client.dispose?.();
 }, 30_000);
