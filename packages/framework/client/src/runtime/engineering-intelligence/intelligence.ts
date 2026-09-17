@@ -40,6 +40,7 @@ import {
 import type { RuntimeContext } from "../context";
 import { requestAuditAfterCompletion } from "../audit-request";
 import { ensureCompleteSessionFactState } from "../session-full-events";
+import { injectFindingIntoMainAgent } from "../drift-inject";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
@@ -726,8 +727,12 @@ export function createIntelligenceSurface(
             }
           : {}),
       });
-      for (const finding of findings)
+      for (const finding of findings) {
         ctx.ports.publishForSession(exec, finding);
+        // EI §3.5 / Phase 2 B3: a warning/high finding is auto-injected into
+        // the Main Agent's next step; advisory findings are not.
+        injectFindingIntoMainAgent(ctx, exec, finding);
+      }
       return { opened: findings.length };
     },
     /**

@@ -27,6 +27,7 @@ import {
   projectedEvidenceRecords,
   projectedWorkContracts,
 } from "@natalia/session";
+import { injectFindingIntoMainAgent } from "../drift-inject";
 
 /**
  * Minimal constitution-rule path matching (EI §8.1 a/p/c wiring): a rule
@@ -284,7 +285,16 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
               }
             : {}),
         });
-        for (const finding of findings) publishForSession(target, finding);
+        for (const finding of findings) {
+          publishForSession(target, finding);
+          // EI §3.5 / Phase 2 B3: a warning/high finding is auto-injected into
+          // the Main Agent's next step as an internal input, so the next
+          // provider request must drift_acknowledge (explain/dispute), correct
+          // the work, or detour_declare. advisory findings are noise-level and
+          // are NOT injected. The text carries only the findingID, severity and
+          // rule summary — never chain-of-thought.
+          injectFindingIntoMainAgent(ctx, target, finding);
+        }
       }
       return confirmed;
     })();

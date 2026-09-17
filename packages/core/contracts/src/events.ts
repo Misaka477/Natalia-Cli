@@ -3862,6 +3862,8 @@ export type RuntimeClient = {
         | "dismissed"
         | "corrected"
         | "detour_declared";
+      /** How many times this finding was reopened (翻案, EI §3.5). */
+      reopenedCount: number;
       rationale?: string;
       /** The evaluation contract version the finding was judged under (EI §8.6). */
       contractVersion: number;
