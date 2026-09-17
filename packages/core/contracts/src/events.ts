@@ -3845,6 +3845,24 @@ export type RuntimeClient = {
     }>
   >;
   /**
+   * The plan task state machine (EI §4 Phase 4): the plan document's markdown
+   * checkboxes (declaration source) projected against the session's recorded
+   * evidence (fact source), evidence-first. A checked box with no backing
+   * evidence is a `gap`, never `verified`; skipped stays visible.
+   */
+  planTaskStates?(
+    input?: { planID?: string },
+    sessionID?: string,
+  ): Promise<
+    Array<{
+      id: string;
+      text: string;
+      declaration: "open" | "done" | "skipped";
+      depth: number;
+      state: "pending" | "in_progress" | "verified" | "gap" | "skipped";
+    }>
+  >;
+  /**
    * Record a completion card: the fixed report structure that answers "is it
    * really done, what evidence is missing". changeSummary is safe prose — never
    * a diff or file content.

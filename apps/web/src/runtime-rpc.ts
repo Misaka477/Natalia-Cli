@@ -153,6 +153,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   evidenceRecords: "evidence.records",
   recordValidation: "evidence.record",
   completions: "completion.records",
+  planTaskStates: "plan.task.states",
   recordCompletion: "completion.record",
   driftFindings: "drift.findings",
   evaluateDrift: "drift.evaluate",

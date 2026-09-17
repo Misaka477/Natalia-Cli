@@ -40,6 +40,14 @@ export {
   type WorkContractFields,
 } from "./work-contract";
 export {
+  evaluatePlanTaskState,
+  parsePlanTasks,
+  projectPlanTaskStates,
+  type PlanTask,
+  type PlanTaskDeclaration,
+  type PlanTaskState,
+} from "./plan-task-state";
+export {
   agentActionNode,
   agentActionNodeID,
   approvalEdge,

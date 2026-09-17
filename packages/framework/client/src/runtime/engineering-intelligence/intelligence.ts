@@ -37,6 +37,10 @@ import {
   loadInstanceGovernance,
   resolveGovernanceRoot,
 } from "@natalia/governance-ledger";
+import {
+  parsePlanTasks,
+  projectPlanTaskStates,
+} from "@natalia/work-ledger";
 import type { RuntimeContext } from "../context";
 import { requestAuditAfterCompletion } from "../audit-request";
 import { ensureCompleteSessionFactState } from "../session-full-events";
@@ -80,6 +84,7 @@ type Surface = Pick<
   | "removeConstitutionRule"
   | "constitutionDocRules"
   | "promoteConstitutionDocRule"
+  | "planTaskStates"
   | "notices"
 >;
 async function projectedCanonicalToolsWithFallback(
@@ -498,6 +503,51 @@ export function createIntelligenceSurface(
         input?.limit,
         input?.cursor,
       );
+    },
+    /**
+     * The plan task state machine (EI §4 Phase 4): reads the plan document's
+     * markdown checkboxes (the declaration source) and projects each against
+     * the session's recorded evidence (the fact source), evidence-first. A
+     * checked box with no backing evidence is a `gap`, never `verified`; a
+     * skipped box stays visible. The planID defaults to the active plan.
+     */
+    async planTaskStates(
+      input?: { planID?: string },
+      sessionID?: string,
+    ) {
+      const resolvedSessionID = input?.planID ? sessionID : sessionID;
+      const exec = await completeIntelligenceExec(resolvedSessionID);
+      if (!exec?.session) return [];
+      const planID =
+        input?.planID?.trim() ||
+        (await ctx.ports.planDocRuntime.planDocActive(exec.session.id as never))
+          ?.planID;
+      if (!planID) return [];
+      let content: string;
+      try {
+        const doc = await ctx.ports.planDocRuntime.planDocRead({
+          planID,
+          sessionID: exec.session.id as never,
+        });
+        content = doc.content;
+      } catch {
+        return [];
+      }
+      const evidence = [
+        ...readFactSlice(exec, sessionFactEvidenceRecords, () =>
+          projectedEvidenceRecords(exec.session.events),
+        ).map((record) => ({
+          taskID: record.taskID,
+          objective: record.objective,
+        })),
+        ...readFactSlice(exec, sessionFactCompletions, () =>
+          projectedCompletions(exec.session.events),
+        ).map((record) => ({
+          taskID: record.taskID,
+          objective: record.objective,
+        })),
+      ];
+      return projectPlanTaskStates(parsePlanTasks(content), evidence);
     },
     /**
      * The `evidence.recorded` production writer (E2 起步): runs a validation

@@ -124,6 +124,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "mailbox.acknowledge": "mailboxAcknowledge",
   "drift.list": "driftFindings",
   completions: "completions",
+  "plan.task.states": "planTaskStates",
   "constitution.list": "constitutionRules",
   "decision.list": "decisionRecords",
   "evidence.list": "evidenceRecords",
@@ -257,6 +258,7 @@ type WorkerRequest = {
     | "mailbox.acknowledge"
     | "drift.list"
     | "completions"
+    | "plan.task.states"
     | "constitution.list"
     | "decision.list"
     | "evidence.list"
@@ -1555,6 +1557,10 @@ export async function handleWorkerRequest(
       request.value as
         | { sessionID?: string; limit?: number; cursor?: string }
         | undefined,
+    );
+  if (request.method === "plan.task.states")
+    return await client.planTaskStates?.(
+      request.value as { planID?: string } | undefined,
     );
   if (request.method === "constitution.list")
     return await client.constitutionRules?.(

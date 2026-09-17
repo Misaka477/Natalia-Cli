@@ -257,6 +257,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "recordValidation",
     "completions",
     "recordCompletion",
+    "planTaskStates",
     "driftFindings",
     "evaluateDrift",
     "acknowledgeDriftFinding",

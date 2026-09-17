@@ -547,6 +547,7 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   },
   evidenceRecords: { refusal: "none", note: "pure read" },
   completions: { refusal: "none", note: "pure read" },
+  planTaskStates: { refusal: "none", note: "pure read of the plan task state machine" },
   recordCompletion: {
     refusal: "value",
     expressedBy: "recorded",
