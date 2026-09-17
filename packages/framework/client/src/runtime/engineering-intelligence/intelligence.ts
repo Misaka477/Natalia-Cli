@@ -308,7 +308,7 @@ export function createIntelligenceSurface(
       const exec = await completeIntelligenceExec(sessionID);
       if (!exec?.session) return [];
       const instance = loadInstanceGovernance(
-        resolveGovernanceRoot(ctx.state.pluginStoreRoot),
+        resolveGovernanceRoot(ctx.ports.getWorkspaceRoot()),
       );
       const rules = (await runSessionProjectionWithFallback(
         "constitutionRules",
@@ -348,7 +348,7 @@ export function createIntelligenceSurface(
         .map((record) => decisionView(record, "session"));
       if (scope === "session") return sessionRecords;
       const instance = loadInstanceGovernance(
-        resolveGovernanceRoot(ctx.state.pluginStoreRoot),
+        resolveGovernanceRoot(ctx.ports.getWorkspaceRoot()),
       );
       // Instance records are workspace-tier. A legacy instance event without an
       // explicit scope is workspace-scoped by construction.
@@ -401,7 +401,7 @@ export function createIntelligenceSurface(
       // another session's governance panel.
       if (scope === "workspace" && event.status === "accepted")
         appendInstanceEvent(
-          resolveGovernanceRoot(ctx.state.pluginStoreRoot),
+          resolveGovernanceRoot(ctx.ports.getWorkspaceRoot()),
           "decisions.jsonl",
           event,
         );
@@ -821,7 +821,7 @@ export function createIntelligenceSurface(
         ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
       };
       appendInstanceEvent(
-        resolveGovernanceRoot(ctx.state.pluginStoreRoot),
+        resolveGovernanceRoot(ctx.ports.getWorkspaceRoot()),
         "decisions.jsonl",
         granted,
       );

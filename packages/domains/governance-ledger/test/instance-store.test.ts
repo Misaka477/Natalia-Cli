@@ -11,9 +11,18 @@ import {
 test("resolveGovernanceRoot prefers the test override", () => {
   const previous = process.env.NATALIA_TEST_GOVERNANCE_ROOT;
   process.env.NATALIA_TEST_GOVERNANCE_ROOT = "/tmp/gov-test";
-  expect(resolveGovernanceRoot("/unused/plugin-store")).toBe("/tmp/gov-test");
+  expect(resolveGovernanceRoot("/unused/workspace")).toBe("/tmp/gov-test");
   if (previous === undefined) delete process.env.NATALIA_TEST_GOVERNANCE_ROOT;
   else process.env.NATALIA_TEST_GOVERNANCE_ROOT = previous;
+});
+
+test("resolveGovernanceRoot is workspace-scoped, not plugin-store scoped", () => {
+  expect(resolveGovernanceRoot("/workspace/a")).toBe(
+    "/workspace/a/.natalia/governance",
+  );
+  expect(resolveGovernanceRoot("/workspace/b")).toBe(
+    "/workspace/b/.natalia/governance",
+  );
 });
 
 test("append and load round-trip constitution facts", async () => {

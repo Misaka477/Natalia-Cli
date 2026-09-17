@@ -119,7 +119,7 @@ export async function finalizeInitialize(
   mark("exec");
   scope.publish({ type: "session.ready", sessionID: scope.sessionID });
   mark("ready");
-  const governanceRoot = resolveGovernanceRoot(ctx.state.pluginStoreRoot);
+  const governanceRoot = resolveGovernanceRoot(ctx.ports.getWorkspaceRoot());
   const instance = loadInstanceGovernance(governanceRoot);
   if (instance.degraded)
     scope.publish({

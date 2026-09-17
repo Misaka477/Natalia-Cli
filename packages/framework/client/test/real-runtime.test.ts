@@ -3907,51 +3907,38 @@ test("forbidden override policy refuses requestOverride", async () => {
   await client.dispose?.();
 });
 
-test("instance governance decisions survive a new workspace session", async () => {
-  const store = await mkdtemp(join(tmpdir(), "natalia-gov-root-"));
-  const previous = process.env.NATALIA_TEST_GOVERNANCE_ROOT;
-  process.env.NATALIA_TEST_GOVERNANCE_ROOT = store;
-  try {
-    const firstRoot = await mkdtemp(join(tmpdir(), "natalia-gov-ws-a-"));
-    const first = createRealRuntimeClient({
-      workspaceRoot: firstRoot,
-      sessionID: "ses_gov_a",
-      pluginStoreRoot: join(store, "plugin-store"),
-      permissionMode: "auto",
-      provider: scriptedProvider("ready"),
-    });
-    first.start(() => undefined);
-    await first.submitAndWait!("hello");
-    await pollHistoryForFinished(first);
-    await first.recordDecision?.({
-      decision: "instance-scoped release rule",
-      scope: "workspace",
-    });
-    await first.dispose?.();
+test("workspace governance decisions do not leak across workspace roots", async () => {
+  const firstRoot = await mkdtemp(join(tmpdir(), "natalia-gov-ws-a-"));
+  const first = createRealRuntimeClient({
+    workspaceRoot: firstRoot,
+    sessionID: "ses_gov_a",
+    permissionMode: "auto",
+    provider: scriptedProvider("ready"),
+  });
+  first.start(() => undefined);
+  await first.submitAndWait!("hello");
+  await pollHistoryForFinished(first);
+  await first.recordDecision?.({
+    decision: "workspace A release rule",
+    scope: "workspace",
+  });
+  await first.dispose?.();
 
-    const secondRoot = await mkdtemp(join(tmpdir(), "natalia-gov-ws-b-"));
-    const second = createRealRuntimeClient({
-      workspaceRoot: secondRoot,
-      sessionID: "ses_gov_b",
-      pluginStoreRoot: join(store, "plugin-store"),
-      permissionMode: "auto",
-      provider: scriptedProvider("ready"),
-    });
-    second.start(() => undefined);
-    await second.submitAndWait!("hello again");
-    await pollHistoryForFinished(second);
-    const records = await second.decisionRecords!({ scope: "workspace" });
-    expect(records).toContainEqual(
-      expect.objectContaining({
-        decision: "instance-scoped release rule",
-        scope: "workspace",
-      }),
-    );
-    await second.dispose?.();
-  } finally {
-    if (previous === undefined) delete process.env.NATALIA_TEST_GOVERNANCE_ROOT;
-    else process.env.NATALIA_TEST_GOVERNANCE_ROOT = previous;
-  }
+  const secondRoot = await mkdtemp(join(tmpdir(), "natalia-gov-ws-b-"));
+  const second = createRealRuntimeClient({
+    workspaceRoot: secondRoot,
+    sessionID: "ses_gov_b",
+    permissionMode: "auto",
+    provider: scriptedProvider("ready"),
+  });
+  second.start(() => undefined);
+  await second.submitAndWait!("hello again");
+  await pollHistoryForFinished(second);
+  const records = await second.decisionRecords!({ scope: "workspace" });
+  expect(records).not.toContainEqual(
+    expect.objectContaining({ decision: "workspace A release rule" }),
+  );
+  await second.dispose?.();
 });
 
 test("truncated instance governance degrades without dropping C-TERM enforcement", async () => {

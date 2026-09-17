@@ -2,11 +2,14 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { RuntimeEvent } from "@natalia/contracts";
 
-export function resolveGovernanceRoot(pluginStoreRoot?: string) {
+export function resolveGovernanceRoot(workspaceRoot?: string) {
   if (process.env.NATALIA_TEST_GOVERNANCE_ROOT)
     return resolve(process.env.NATALIA_TEST_GOVERNANCE_ROOT);
-  if (!pluginStoreRoot) return undefined;
-  return resolve(pluginStoreRoot, "..", "governance");
+  if (!workspaceRoot) return undefined;
+  // Workspace-tier governance lives under the workspace it belongs to. The
+  // plugin store is process/instance infrastructure and must never be the
+  // shared bucket that leaks decisions or rules across workspaces.
+  return resolve(workspaceRoot, ".natalia", "governance");
 }
 
 function parseJsonl(path: string): RuntimeEvent[] {
