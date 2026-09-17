@@ -6,6 +6,7 @@ import type { RuntimeEvent, LocalAttachment } from "@natalia/contracts";
 import { defaultConfigV3 } from "@natalia/config";
 import {
   ContextLedger,
+  TokenMeter,
   type ProviderStreamRequest,
   type StreamingProvider,
 } from "@natalia/runtime";
@@ -100,6 +101,10 @@ async function makeHarness(
   const attachmentService = createAttachmentService(root);
   const exec = {
     session: { id: "ses_chat_attachment", events },
+    // This is an in-memory test event log, not a fast-attach tail: tell the
+    // fact-state completion path there is no store page left to fetch.
+    fullEventsLoaded: true,
+    tokenMeter: new TokenMeter(),
     naviChatLedger: new ContextLedger(),
     niaChatLedger: new ContextLedger(),
     naviPendingQueue: [],
@@ -109,6 +114,15 @@ async function makeHarness(
     state: {},
     ports: {
       getTsRuntimeConfig: () => config,
+      getContextWindowResolver: () => ({
+        resolve: async () => ({ contextWindow: 200_000, source: "test" }),
+      }),
+      resolveContextStatusConfig: async () => ({
+        max: 200_000,
+        thresholdPercent: 85,
+        reserved: 20_000,
+      }),
+      modelRefKeyForSelection: () => "local/chat",
       getChatDefaultProvider: () => provider,
       providerFromEnvironment: () => undefined,
       publishForSession: (_exec: unknown, event: RuntimeEvent) => {

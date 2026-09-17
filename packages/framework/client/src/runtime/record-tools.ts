@@ -57,8 +57,8 @@ export function createRecordValidationTool(
   return {
     name: "record_validation",
     description:
-      "Run a validation command (test runner, typechecker, linter) in the workspace and record the result as durable evidence. Use it after implementing a step so the work has evidence, not claims. Returns passed/failed and a bounded safe summary.",
-    requiresApproval: false,
+      "Run a validation command (test runner, typechecker, linter) in the workspace and record the result as durable evidence. Use it after implementing a step so the work has evidence, not claims. Returns passed/failed and a bounded safe summary. The command runs with the same approval boundary as run_shell.",
+    requiresApproval: true,
     parameters: {
       type: "object",
       properties: {
@@ -252,11 +252,21 @@ export function createRecordCompletionTool(
       });
       ctx.ports.publishForSession(exec, completionEvent);
       requestAuditAfterCompletion(ctx, exec, completionEvent);
-      const workLedger = ctx.ports.resolveService<
-        import("./context").WorkLedgerController
-      >(WORK_LEDGER_CONTROLLER_SERVICE);
-      for (const path of args.changePaths ?? [])
-        if (workLedger)
+      const workLedger = requireWorkLedger(ctx);
+      if (workLedger) {
+        // E4: the completion is itself a validation-class node; the
+        // validated_by edges connect the changed files to it. Without the
+        // node first, the edge would point at an absent graph target.
+        ctx.ports.publishForSession(
+          exec,
+          workLedger.completionNode({
+            completionID,
+            taskID: args.taskID.trim(),
+            sessionID: exec.session.id,
+            ...(exec.activeTurnID ? { turnID: exec.activeTurnID } : {}),
+          }),
+        );
+        for (const path of args.changePaths ?? [])
           ctx.ports.publishForSession(
             exec,
             workLedger.completionValidationEdge({
@@ -265,6 +275,7 @@ export function createRecordCompletionTool(
               completionID,
             }),
           );
+      }
       // EI §8.8: the completion card judges the claim against the task-kind
       // evidence matrix — the missing-evidence answer travels back with the
       // record so the model can close the gaps instead of claiming done.
@@ -340,32 +351,43 @@ export function createRecordDecisionTool(
       if (!exec) return "no session";
       if (!ledger) return "governance ledger unavailable";
       if (!args.decision?.trim()) return "record_decision requires decision";
-      ctx.ports.publishForSession(
-        exec,
-        ledger.recordDecision({
-          id: `decision:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
-          decision: redactToolOutput(args.decision, true),
-          ...(args.rationale
-            ? {
-                rationale: args.rationale.map((entry) =>
-                  redactToolOutput(entry, true),
-                ),
-              }
-            : {}),
-          ...(args.alternatives ? { alternatives: args.alternatives } : {}),
-          ...(args.consequences
-            ? {
-                consequences: args.consequences.map((entry) =>
-                  redactToolOutput(entry, true),
-                ),
-              }
-            : {}),
-          ...(args.linkedPlans ? { linkedPlans: args.linkedPlans } : {}),
-          ...(args.linkedConstraints
-            ? { linkedConstraints: args.linkedConstraints }
-            : {}),
-        }),
-      );
+      const decisionEvent = ledger.recordDecision({
+        id: `decision:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
+        decision: redactToolOutput(args.decision, true),
+        ...(args.rationale
+          ? {
+              rationale: args.rationale.map((entry) =>
+                redactToolOutput(entry, true),
+              ),
+            }
+          : {}),
+        ...(args.alternatives ? { alternatives: args.alternatives } : {}),
+        ...(args.consequences
+          ? {
+              consequences: args.consequences.map((entry) =>
+                redactToolOutput(entry, true),
+              ),
+            }
+          : {}),
+        ...(args.linkedPlans ? { linkedPlans: args.linkedPlans } : {}),
+        ...(args.linkedConstraints
+          ? { linkedConstraints: args.linkedConstraints }
+          : {}),
+      });
+      ctx.ports.publishForSession(exec, decisionEvent);
+      // CST4: a decision is a durable node in the Work Graph so
+      // `work_graph_query` can answer "why was this chosen" from the
+      // decision identity, not only from the journal row.
+      const workLedger = requireWorkLedger(ctx);
+      if (workLedger && decisionEvent.type === "decision.recorded")
+        ctx.ports.publishForSession(
+          exec,
+          workLedger.decisionNode({
+            decisionID: decisionEvent.id,
+            decision: decisionEvent.decision,
+            sessionID: exec.session.id,
+          }),
+        );
       return JSON.stringify({ recorded: true });
     },
   };

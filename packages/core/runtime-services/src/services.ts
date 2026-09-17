@@ -940,6 +940,7 @@ export interface WorkLedgerController {
   agentActionNode: ServiceOperation;
   approvalEdge: ServiceOperation;
   approvalNode: ServiceOperation;
+  completionNode: ServiceOperation;
   completionValidationEdge: ServiceOperation;
   checkpointNode: ServiceOperation;
   constitutionCheckEdge: ServiceOperation;

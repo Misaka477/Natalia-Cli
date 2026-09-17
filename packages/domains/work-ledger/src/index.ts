@@ -42,6 +42,7 @@ export {
   approvalNode,
   approvalNodeID,
   checkpointNode,
+  completionNode,
   completionValidationEdge,
   constitutionCheckEdge,
   constitutionRuleNode,

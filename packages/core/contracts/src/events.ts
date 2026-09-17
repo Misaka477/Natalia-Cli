@@ -3508,6 +3508,7 @@ export type RuntimeClient = {
   >;
   decisionRecords?(sessionID?: string): Promise<
     Array<{
+      id: string;
       decision: string;
       rationale: string[];
       alternatives: { option: string; rejectedReason?: string }[];

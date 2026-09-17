@@ -47,6 +47,16 @@ function harness() {
       changeSummary: "summary",
       validations: [],
     }),
+    buildAuditRequested: (input: { id: string; triggerEventID: string }) => ({
+      type: "audit.requested",
+      id: input.id,
+      triggerEventID: input.triggerEventID,
+      planID: "plan:1",
+      planVersion: 1,
+      round: 1,
+      scope: "completion_recorded",
+      at: "2026-01-01T00:00:00.000Z",
+    }),
     completionValidationEdge: () => ({
       type: "workgraph.edge_added",
       id: "wg:edge:1",
@@ -59,6 +69,7 @@ function harness() {
   const ctx = {
     state: { pluginStoreRoot: "/tmp/natalia-pure-writes" },
     ports: {
+      getReady: async () => undefined,
       getExecutionBySession: () => new Map([["ses_pure_writes", exec]]),
       getActiveExec: () => exec,
       resolveService: () => ledger,
@@ -67,6 +78,8 @@ function harness() {
       },
       nextDecisionSequence: () => (decisionSequence += 1),
       nextCompletionSequence: () => 1,
+      nextPlanSequence: () => 1,
+      requestNiaWake: () => undefined,
       getWorkspaceRoot: () => "/tmp",
     },
   } as unknown as RuntimeContext;
@@ -142,6 +155,7 @@ test("acknowledgeDriftFinding reads a complete hot state without a full load", a
   const ctx = {
     state: { pluginStoreRoot: "/tmp/natalia-hot-state" },
     ports: {
+      getReady: async () => undefined,
       getExecutionBySession: () => new Map([["ses_hot_state", exec]]),
       getActiveExec: () => exec,
       resolveService: () => ({

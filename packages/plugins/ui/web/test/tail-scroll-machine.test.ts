@@ -63,7 +63,7 @@ test("prepend restores the older anchor and leaves follow", () => {
   const result = evaluateTailScroll(state, input({ firstKey: "t0", count: 20 }));
   expect(result.effect).toEqual({
     type: "restore-anchor",
-    anchor: state.olderAnchor,
+    anchor: state.olderAnchor!,
   });
   expect(result.state.following).toBe(false);
   expect(result.state.olderAnchor).toBeNull();

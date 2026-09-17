@@ -4,7 +4,10 @@
   "compilerOptions": {
     "rootDir": "../../.."
   },
-  "include": ["src", "test"],
+  "include": [
+    "src",
+    "test"
+  ],
   "references": [
     {
       "path": "../../domains/goal"
@@ -101,6 +104,9 @@
     },
     {
       "path": "../diff"
+    },
+    {
+      "path": "../../hosts/view-store"
     }
   ]
 }

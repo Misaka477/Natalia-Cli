@@ -1,8 +1,11 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { defaultConfigV3 } from "@natalia/config";
-import { ContextLedger } from "@natalia/runtime";
-import type { ProviderChatTurnInput } from "@natalia/runtime-services";
+import { ContextLedger, TokenMeter } from "@natalia/runtime";
+import {
+  COMPACTION_SERVICE,
+  type ProviderChatTurnInput,
+} from "@natalia/runtime-services";
 import type {
   RuntimeContext,
   SessionExecutionState,
@@ -54,6 +57,9 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
   const events: RuntimeEvent[] = [];
   const exec = {
     session: { id: "ses_model_streams", events },
+    // This harness owns the complete live event array, not a tail.
+    fullEventsLoaded: true,
+    tokenMeter: new TokenMeter(),
     naviChatLedger: new ContextLedger(),
     niaChatLedger: new ContextLedger(),
     naviPendingQueue: [],
@@ -83,6 +89,15 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
   const ctx = {
     ports: {
       getTsRuntimeConfig: () => config,
+      getContextWindowResolver: () => ({
+        resolve: async () => ({ contextWindow: 32768, source: "test" }),
+      }),
+      resolveContextStatusConfig: async () => ({
+        max: 32768,
+        thresholdPercent: 85,
+        reserved: 8_000,
+      }),
+      modelRefKeyForSelection: () => undefined,
       getChatDefaultProvider: () => undefined,
       providerFromEnvironment: () => undefined,
       publishForSession: (_: unknown, event: RuntimeEvent) => {
@@ -103,22 +118,26 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
   const navi = createNaviChatTurn(ctx);
   const nia = createNiaChatTurn(ctx);
   const wakeInputs: ProviderChatTurnInput[] = [];
-  ctx.ports.resolveService = (() => ({
-    runNaviChatTurn: async (input: ProviderChatTurnInput) => {
-      wakeInputs.push(input);
-      await navi.runNaviChatTurn(
-        { ...input, exec },
-        new AbortController().signal,
-      );
-    },
-    runNiaChatTurn: async (input: ProviderChatTurnInput) => {
-      wakeInputs.push(input);
-      await nia.runNiaChatTurn(
-        { ...input, exec },
-        new AbortController().signal,
-      );
-    },
-  })) as typeof ctx.ports.resolveService;
+  ctx.ports.resolveService = ((name: string) => {
+    if (name === COMPACTION_SERVICE)
+      return { compactBeforeProviderStep: async () => ({ compacted: false }) };
+    return {
+      runNaviChatTurn: async (input: ProviderChatTurnInput) => {
+        wakeInputs.push(input);
+        await navi.runNaviChatTurn(
+          { ...input, exec },
+          new AbortController().signal,
+        );
+      },
+      runNiaChatTurn: async (input: ProviderChatTurnInput) => {
+        wakeInputs.push(input);
+        await nia.runNiaChatTurn(
+          { ...input, exec },
+          new AbortController().signal,
+        );
+      },
+    };
+  }) as typeof ctx.ports.resolveService;
   const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(

@@ -57,5 +57,6 @@ export {
 export type {
   TailScrollAnchor,
   TailScrollEffect,
+  TailScrollInput,
   TailScrollState,
 } from "./tail-scroll-machine";

@@ -12,6 +12,7 @@ import {
   projectedRuntimeNotices,
   projectedWorkContracts,
 } from "@natalia/session";
+import { createScriptedProvider } from "./e2e-harness";
 
 /** A provider whose first step proposes the contract, then settles. */
 function proposeProvider(
@@ -631,58 +632,38 @@ test("record_validation runs a command and writes evidence", async () => {
 test("record_completion and record_decision write durable journal facts", async () => {
   const root = await officialPluginWorkspace("plan-contract-records");
   const events: RuntimeEvent[] = [];
-  let toolResults = 0;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_plan_contract_records",
     permissionMode: "auto",
-    provider: {
-      provider: "test",
-      model: "test",
-      async *stream(request: ProviderStreamRequest) {
-        const toolResult = (
-          request as {
-            messages: Array<{
-              role: string;
-              content: string;
-              toolCallID?: string;
-            }>;
-          }
-        ).messages
-          .filter((message) => message.role === "tool")
-          .at(-1);
-        if (toolResult) toolResults += 1;
-        if (toolResults < 2) {
-          yield {
-            type: "tool_call" as const,
-            calls: [
-              {
-                id: `call_record_${toolResults + 1}`,
-                name:
-                  toolResults === 0 ? "record_completion" : "record_decision",
-                arguments: JSON.stringify(
-                  toolResults === 0
-                    ? {
-                        taskID: "plan:1:s1",
-                        objective: "split the system prompt",
-                        changeSummary:
-                          "static persona and dynamic runtime context",
-                      }
-                    : {
-                        decision: "runtime context is appended, not injected",
-                        rationale: ["keeps the cacheable prefix stable"],
-                      },
-                ),
-              },
-            ],
-          };
-          yield { type: "done" as const };
-          return;
-        }
-        yield { type: "content" as const, text: "recorded" };
-        yield { type: "done" as const };
-      },
-    },
+    // The completion trigger wakes Nia in parallel; per-agent cursors keep
+    // that wake from consuming the Main Agent's next scripted step.
+    provider: createScriptedProvider({
+      main: [
+        {
+          tool: {
+            name: "record_completion",
+            arguments: {
+              taskID: "plan:1:s1",
+              objective: "split the system prompt",
+              changeSummary: "static persona and dynamic runtime context",
+            },
+          },
+        },
+        {
+          tool: {
+            name: "record_decision",
+            arguments: {
+              decision: "runtime context is appended, not injected",
+              rationale: ["keeps the cacheable prefix stable"],
+            },
+          },
+        },
+        { text: "recorded" },
+      ],
+      nia: [{ text: "audit wake observed" }],
+      navi: [{ text: "standby" }],
+    }),
   });
   client.start((event) => events.push(event));
   await client.sessionAttach!("ses_plan_contract_records" as SessionID);

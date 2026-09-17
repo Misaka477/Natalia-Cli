@@ -28,6 +28,7 @@ test("ensureSessionFullEvents loads the full log when the fast path seeded only 
   let loadFullCalls = 0;
   const store = {
     status: () => ({ initialized: true, mode: "sqlite" as const }),
+    flush: async () => undefined,
     loadFullAsync: async () => {
       loadFullCalls += 1;
       return {
@@ -43,6 +44,9 @@ test("ensureSessionFullEvents loads the full log when the fast path seeded only 
   const ctx = {
     ports: {
       resolveService: () => store,
+      // Production always exposes this; the test store has no pending
+      // persistence chain to drain, but the contract must still be honored.
+      getSessionPersistenceForSession: async () => undefined,
     },
   } as unknown as import("../src/runtime/context").RuntimeContext;
   const exec = {

@@ -42,6 +42,18 @@ const CHAT_READ_ONLY_TOOLS = new Set([
   "session_history",
 ]);
 
+/**
+ * EI §3.9: the chain-visibility tools are shared read surfaces for Navi, Nia
+ * and the Main Agent. Navi additionally owns `plan_propose` (the drafting half
+ * of the WorkContract gate), while Nia keeps only the read half — it never
+ * approves or mutates a contract.
+ */
+const CHAT_SHARED_INTELLIGENCE_TOOLS = new Set([
+  "work_contract_read",
+  "work_graph_query",
+]);
+const NAVI_EXTRA_TOOLS = new Set(["plan_propose"]);
+
 /** Nia may run shell commands for verification, but the prompt forbids mutating
  * commands; the tool itself is the existing run_shell implementation. */
 const NIA_EXTRA_TOOLS = new Set(["run_shell"]);
@@ -224,7 +236,12 @@ export function createChatTools(ctx: RuntimeContext) {
     const { tools } = ctx.state;
     const visible: RuntimeTool[] = [];
     for (const tool of tools.values())
-      if (CHAT_READ_ONLY_TOOLS.has(tool.name)) visible.push(tool);
+      if (
+        CHAT_READ_ONLY_TOOLS.has(tool.name) ||
+        CHAT_SHARED_INTELLIGENCE_TOOLS.has(tool.name) ||
+        NAVI_EXTRA_TOOLS.has(tool.name)
+      )
+        visible.push(tool);
     visible.push(
       {
         name: "session_snapshot",
@@ -696,7 +713,9 @@ export function createChatTools(ctx: RuntimeContext) {
     const visible = [...ctx.state.tools.values()]
       .filter(
         (tool) =>
-          CHAT_READ_ONLY_TOOLS.has(tool.name) || NIA_EXTRA_TOOLS.has(tool.name),
+          CHAT_READ_ONLY_TOOLS.has(tool.name) ||
+          CHAT_SHARED_INTELLIGENCE_TOOLS.has(tool.name) ||
+          NIA_EXTRA_TOOLS.has(tool.name),
       )
       .map((tool) =>
         tool.name === "run_shell" ? withNiaShellPolicy(tool) : tool,

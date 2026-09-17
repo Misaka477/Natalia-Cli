@@ -317,6 +317,7 @@ export function createIntelligenceSurface(
         [...instance.events, ...exec.session.events],
       )) as ReturnType<typeof projectedDecisionRecords>;
       return decisions.map((r) => ({
+        id: r.id,
         decision: r.decision,
         rationale: r.rationale ?? [],
         alternatives: r.alternatives ?? [],

@@ -226,6 +226,8 @@ export const RPC_ROUTE_MEMBERS = {
   "nativeTerminal.write": "nativeTerminalWrite",
   "nativeTerminal.resize": "nativeTerminalResize",
   "constitution.rules": "constitutionRules",
+  "constitution.rule.update": "updateConstitutionRule",
+  "constitution.rule.remove": "removeConstitutionRule",
   "context.notices": "notices",
   "decision.records": "decisionRecords",
   "decision.record": "recordDecision",
@@ -2041,6 +2043,46 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.constitutionRules?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "constitution.rule.update") {
+      optionsGuard(client, "updateConstitutionRule");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (!params || typeof params.ruleID !== "string" || !params.ruleID.trim())
+        throw invalidParams("constitution.rule.update requires a ruleID string");
+      if (
+        params.enabled !== undefined &&
+        typeof params.enabled !== "boolean"
+      )
+        throw invalidParams(
+          "constitution.rule.update.enabled must be a boolean when provided",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.updateConstitutionRule?.(
+          {
+            ruleID: params.ruleID,
+            ...(typeof params.enabled === "boolean"
+              ? { enabled: params.enabled }
+              : {}),
+          },
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "constitution.rule.remove") {
+      optionsGuard(client, "removeConstitutionRule");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (!params || typeof params.ruleID !== "string" || !params.ruleID.trim())
+        throw invalidParams("constitution.rule.remove requires a ruleID string");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.removeConstitutionRule?.(
+          { ruleID: params.ruleID },
           optionalStringParam(body.params, "sessionID"),
         ),
       };

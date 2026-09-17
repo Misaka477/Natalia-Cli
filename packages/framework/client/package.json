@@ -41,6 +41,7 @@
     "@natalia/goal": "workspace:*"
   },
   "devDependencies": {
-    "@natalia/installer": "workspace:*"
+    "@natalia/installer": "workspace:*",
+    "@natalia/view-store": "workspace:*"
   }
 }

@@ -360,6 +360,31 @@ export function workspaceChangeEdge(input: {
 }
 
 /**
+ * One node per recorded completion card (P2 E4). The completion is a
+ * validation-class fact in the graph: it is the durable "this task reached a
+ * judge-able state" answer that workspace changes link to through
+ * `validated_by`. The summary never carries the completion prose.
+ */
+export function completionNode(input: {
+  completionID: string;
+  taskID: string;
+  sessionID: SessionID;
+  turnID?: string;
+}): WorkGraphNodeEvent {
+  return {
+    type: "workgraph.node_added",
+    id: `wg:completion:${input.completionID}`,
+    nodeID: `wg:completion:${input.completionID}`,
+    kind: "validation",
+    summary: workGraphSummary(["completion", input.taskID]),
+    actor: "completion",
+    target: input.completionID,
+    sessionID: input.sessionID,
+    ...(input.turnID ? { turnID: input.turnID } : {}),
+  };
+}
+
+/**
  * A completion card validates a workspace change (P2 E4): the change node is
  * connected to a validation-node-style fact through a `validated_by` edge. The
  * edge exists in `workGraphEdgeSchema`; this is the writer that emits it. The
