@@ -1300,6 +1300,8 @@ type RuntimeEventData =
       status: "proposed" | "accepted" | "superseded";
       linkedPlans?: string[];
       linkedConstraints?: string[];
+      /** Omitted on legacy/model-tool facts, which are session-scoped. */
+      scope?: "session" | "workspace";
     }
   | {
       type: "mailbox.queued";
@@ -3506,9 +3508,23 @@ export type RuntimeClient = {
       };
     }>
   >;
-  decisionRecords?(sessionID?: string): Promise<
+  /**
+   * Session-scoped decisions by default. `scope: "workspace"` reads the
+   * instance/workspace store explicitly; `"all"` merges both and marks each
+   * record's source. A bare string is accepted as the session id for
+   * compatibility and intentionally means session scope.
+   */
+  decisionRecords?(
+    input?:
+      | string
+      | {
+          sessionID?: string;
+          scope?: "session" | "workspace" | "all";
+        },
+  ): Promise<
     Array<{
       id: string;
+      scope: "session" | "workspace";
       decision: string;
       rationale: string[];
       alternatives: { option: string; rejectedReason?: string }[];
@@ -3531,6 +3547,13 @@ export type RuntimeClient = {
       consequences?: string[];
       linkedPlans?: string[];
       linkedConstraints?: string[];
+      /**
+       * `session` (default) keeps the decision in this session's journal.
+       * `workspace` also promotes it to the instance/workspace decision store;
+       * callers must opt in explicitly so ordinary decisions never leak across
+       * sessions.
+       */
+      scope?: "session" | "workspace";
     },
     sessionID?: string,
   ): Promise<{ recorded: boolean }>;

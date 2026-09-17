@@ -324,6 +324,9 @@ export function applyStatusEvent(
       );
       return true;
     case "decision.recorded":
+      // Workspace-tier decisions are shown through an explicit workspace
+      // query, never silently mixed into a session transcript view.
+      if (event.scope === "workspace") return true;
       if (state.decisions.some((record) => record.id === event.id)) return true;
       state.decisions = appendBounded(state.decisions, event, decisionLimit);
       return true;

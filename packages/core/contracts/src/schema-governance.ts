@@ -30,6 +30,8 @@ export const decisionRecordSchema = z.object({
   linkedConstraints: z.array(z.string()).default([]),
 });
 
+export const decisionScopeSchema = z.enum(["session", "workspace"]);
+
 export const validationRunSchema = z.object({
   command: z.string(),
   target: z.string(),

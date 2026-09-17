@@ -3925,6 +3925,7 @@ test("instance governance decisions survive a new workspace session", async () =
     await pollHistoryForFinished(first);
     await first.recordDecision?.({
       decision: "instance-scoped release rule",
+      scope: "workspace",
     });
     await first.dispose?.();
 
@@ -3939,9 +3940,12 @@ test("instance governance decisions survive a new workspace session", async () =
     second.start(() => undefined);
     await second.submitAndWait!("hello again");
     await pollHistoryForFinished(second);
-    const records = await second.decisionRecords!();
+    const records = await second.decisionRecords!({ scope: "workspace" });
     expect(records).toContainEqual(
-      expect.objectContaining({ decision: "instance-scoped release rule" }),
+      expect.objectContaining({
+        decision: "instance-scoped release rule",
+        scope: "workspace",
+      }),
     );
     await second.dispose?.();
   } finally {

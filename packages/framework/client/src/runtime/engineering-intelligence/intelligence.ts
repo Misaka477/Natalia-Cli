@@ -22,6 +22,7 @@ import {
   projectedPlanDocs,
   sessionFactConstitutionRules,
   sessionFactCompletions,
+  sessionFactDecisionRecords,
   sessionFactDriftFindings,
   sessionFactEvidenceRecords,
 } from "@natalia/session";
@@ -161,6 +162,24 @@ function paginate<T>(items: T[], limit?: number, cursor?: string): T[] {
   if (!Number.isFinite(offset) || offset < 0) return items;
   const size = limit ?? items.length;
   return items.slice(offset, offset + Math.max(size, 1));
+}
+
+/** The external decision view: the journal fact plus its data scope. */
+function decisionView(
+  record: ReturnType<typeof projectedDecisionRecords>[number],
+  scope: "session" | "workspace",
+) {
+  return {
+    id: record.id,
+    scope,
+    decision: record.decision,
+    rationale: record.rationale ?? [],
+    alternatives: record.alternatives ?? [],
+    consequences: record.consequences ?? [],
+    status: record.status,
+    linkedPlans: record.linkedPlans ?? [],
+    linkedConstraints: record.linkedConstraints ?? [],
+  };
 }
 
 /**
@@ -306,26 +325,45 @@ export function createIntelligenceSurface(
         ...(r.appliesTo ? { appliesTo: r.appliesTo } : {}),
       }));
     },
-    async decisionRecords(sessionID?: string) {
+    async decisionRecords(
+      input?:
+        | string
+        | { sessionID?: string; scope?: "session" | "workspace" | "all" },
+    ) {
+      const sessionID =
+        typeof input === "string" ? input : input?.sessionID;
+      const scope =
+        typeof input === "string" ? "session" : (input?.scope ?? "session");
       const exec = await completeIntelligenceExec(sessionID);
       if (!exec?.session) return [];
+      // Session decisions are the default. Legacy facts without a scope are
+      // session-scoped; workspace facts carry an explicit scope and must be
+      // requested through scope workspace/all.
+      const sessionRecords = readFactSlice(
+        exec,
+        sessionFactDecisionRecords,
+        () => projectedDecisionRecords(exec.session.events),
+      )
+        .filter((record) => record.scope !== "workspace")
+        .map((record) => decisionView(record, "session"));
+      if (scope === "session") return sessionRecords;
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.state.pluginStoreRoot),
       );
-      const decisions = (await runSessionProjectionWithFallback(
-        "decisionRecords",
-        [...instance.events, ...exec.session.events],
-      )) as ReturnType<typeof projectedDecisionRecords>;
-      return decisions.map((r) => ({
-        id: r.id,
-        decision: r.decision,
-        rationale: r.rationale ?? [],
-        alternatives: r.alternatives ?? [],
-        consequences: r.consequences ?? [],
-        status: r.status,
-        linkedPlans: r.linkedPlans ?? [],
-        linkedConstraints: r.linkedConstraints ?? [],
-      }));
+      // Instance records are workspace-tier. A legacy instance event without an
+      // explicit scope is workspace-scoped by construction.
+      const workspaceRecords = projectedDecisionRecords(instance.events)
+        .filter((record) => record.scope !== "session")
+        .map((record) => decisionView(record, "workspace"));
+      if (scope === "workspace") return workspaceRecords;
+      const seen = new Set<string>();
+      const merged: ReturnType<typeof decisionView>[] = [];
+      for (const record of [...workspaceRecords, ...sessionRecords]) {
+        if (seen.has(record.id)) continue;
+        seen.add(record.id);
+        merged.push(record);
+      }
+      return merged;
     },
     /**
      * The `decision.recorded` production writer. Decisions are durable facts —
@@ -345,16 +383,23 @@ export function createIntelligenceSurface(
         consequences?: string[];
         linkedPlans?: string[];
         linkedConstraints?: string[];
+        scope?: "session" | "workspace";
       },
       sessionID?: string,
     ) {
       const exec = await intelligenceExecWindow(sessionID);
       if (!exec?.session) return { recorded: false as const };
+      const { scope: requestedScope, ...decisionInput } = input;
+      const scope = requestedScope === "workspace" ? "workspace" : "session";
       const event = requireGovernanceLedger().recordDecision({
         id: `decision:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
-        ...input,
+        ...decisionInput,
+        ...(scope === "workspace" ? { scope } : {}),
       });
-      if (event.status === "accepted")
+      // Workspace promotion is explicit opt-in; the default session decision
+      // never reaches the shared instance file and therefore cannot leak into
+      // another session's governance panel.
+      if (scope === "workspace" && event.status === "accepted")
         appendInstanceEvent(
           resolveGovernanceRoot(ctx.state.pluginStoreRoot),
           "decisions.jsonl",

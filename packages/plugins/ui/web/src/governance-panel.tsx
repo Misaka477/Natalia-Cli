@@ -92,7 +92,11 @@ export async function loadGovernanceSlices(
       ),
       loadSlice(
         "Decisions",
-        () => runtime?.decisionRecords?.(sessionID) ?? Promise.resolve([]),
+        () =>
+          runtime?.decisionRecords?.({
+            ...(sessionID ? { sessionID } : {}),
+            scope: "session",
+          }) ?? Promise.resolve([]),
       ),
       loadSlice(
         "Evidence",

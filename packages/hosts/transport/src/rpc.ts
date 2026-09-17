@@ -2099,12 +2099,26 @@ export async function handleRPCMessage(
     }
     if (body.method === "decision.records") {
       optionsGuard(client, "decisionRecords");
+      const params = body.params as Record<string, unknown> | undefined;
+      const scope = params?.scope;
+      if (
+        scope !== undefined &&
+        scope !== "session" &&
+        scope !== "workspace" &&
+        scope !== "all"
+      )
+        throw invalidParams(
+          "decision.records.scope must be session, workspace or all",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
-        result: await client.decisionRecords?.(
-          optionalStringParam(body.params, "sessionID"),
-        ),
+        result: await client.decisionRecords?.({
+          ...(optionalStringParam(body.params, "sessionID")
+            ? { sessionID: optionalStringParam(body.params, "sessionID")! }
+            : {}),
+          ...(scope ? { scope: scope as "session" | "workspace" | "all" } : {}),
+        }),
       };
     }
     if (body.method === "decision.record") {
@@ -2116,9 +2130,20 @@ export async function handleRPCMessage(
         params.decision.trim().length === 0
       )
         throw invalidParams("decision.record requires a decision string");
+      if (
+        params.scope !== undefined &&
+        params.scope !== "session" &&
+        params.scope !== "workspace"
+      )
+        throw invalidParams(
+          "decision.record.scope must be session or workspace",
+        );
       const result = await client.recordDecision?.(
         {
           decision: params.decision,
+          ...(params.scope === "workspace"
+            ? { scope: "workspace" as const }
+            : {}),
           ...(Array.isArray(params.rationale)
             ? { rationale: params.rationale.map(String) }
             : {}),

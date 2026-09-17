@@ -162,11 +162,13 @@ export function recordDecision(input: {
   consequences?: string[];
   linkedPlans?: string[];
   linkedConstraints?: string[];
+  scope?: "session" | "workspace";
 }): Extract<RuntimeEvent, { type: "decision.recorded" }> {
   return {
     type: "decision.recorded",
     id: input.id,
     decision: input.decision,
+    ...(input.scope ? { scope: input.scope } : {}),
     ...(input.rationale ? { rationale: input.rationale } : {}),
     ...(input.alternatives ? { alternatives: input.alternatives } : {}),
     ...(input.consequences ? { consequences: input.consequences } : {}),

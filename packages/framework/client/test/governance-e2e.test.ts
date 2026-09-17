@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { join } from "node:path";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   projectedCompletions,
@@ -304,4 +305,70 @@ test("Phase 0 E2E: Nia audit_report writes evidence visible to projection and ru
   expect(state.evidence).toHaveLength(1);
   expect(state.evidence[0]).toMatchObject({ taskID: planID });
   await client.dispose?.();
+}, 30_000);
+
+test("decisions are session-scoped unless explicitly promoted to workspace scope", async () => {
+  const root = await officialPluginWorkspace("governance-e2e-decision-scope");
+  const pluginStoreRoot = join(root, "plugin-store");
+  const first = createRealRuntimeClient({
+    workspaceRoot: root,
+    pluginStoreRoot,
+    sessionID: "ses_scope_a" as SessionID,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [{ text: "ready a" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  first.start(() => undefined);
+  await first.sessionAttach!("ses_scope_a" as SessionID);
+  await first.recordDecision!({ decision: "session A private choice" });
+  const firstSession = await first.decisionRecords!({ scope: "session" });
+  expect(firstSession).toContainEqual(
+    expect.objectContaining({
+      decision: "session A private choice",
+      scope: "session",
+    }),
+  );
+
+  const second = createRealRuntimeClient({
+    workspaceRoot: root,
+    pluginStoreRoot,
+    sessionID: "ses_scope_b" as SessionID,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [{ text: "ready b" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  second.start(() => undefined);
+  await second.sessionAttach!("ses_scope_b" as SessionID);
+  // A default session read must not leak session A's decision.
+  const secondSession = await second.decisionRecords!({ scope: "session" });
+  expect(secondSession).not.toContainEqual(
+    expect.objectContaining({ decision: "session A private choice" }),
+  );
+
+  // Only an explicit workspace promotion crosses the session boundary.
+  await first.recordDecision!({
+    decision: "workspace shared choice",
+    scope: "workspace",
+  });
+  const shared = await second.decisionRecords!({ scope: "workspace" });
+  expect(shared).toContainEqual(
+    expect.objectContaining({
+      decision: "workspace shared choice",
+      scope: "workspace",
+    }),
+  );
+  // The explicit workspace record does not silently appear in the session
+  // default view either.
+  const secondSessionAfter = await second.decisionRecords!({ scope: "session" });
+  expect(secondSessionAfter).not.toContainEqual(
+    expect.objectContaining({ decision: "workspace shared choice" }),
+  );
+  await first.dispose?.();
+  await second.dispose?.();
 }, 30_000);
