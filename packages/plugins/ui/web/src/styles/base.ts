@@ -4667,9 +4667,12 @@ button.neu-settings-item.neu-settings-item-button:active {
 }
 .session-usage-bar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 6px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 26px;
   padding: 3px 10px;
   margin: 0 0 4px;
   border-radius: 8px;
@@ -4679,12 +4682,19 @@ button.neu-settings-item.neu-settings-item-button:active {
   line-height: 1.5;
   opacity: 0.82;
   font-variant-numeric: tabular-nums;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.session-usage-bar::-webkit-scrollbar {
+  display: none;
 }
 .session-usage-seg {
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .session-usage-sep {
   opacity: 0.4;
+  flex-shrink: 0;
 }
 .wg-tree {
   display: flex;
