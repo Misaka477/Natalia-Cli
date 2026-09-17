@@ -239,11 +239,23 @@ function objectiveActivityRule(): Rule {
       if (scopeMatch) return undefined;
       const score = overlap(signal.objective, signal.currentActivity);
       if (score >= 0.35) return undefined;
+      const activityRefs = signal.changes
+        .map(
+          (change) =>
+            `${change.action ?? "change"}:${change.path ?? change.target ?? change.summary ?? "unknown"}`,
+        )
+        .filter(Boolean);
+      const shownRefs = activityRefs.slice(0, 30);
+      const moreRefs = activityRefs.length - shownRefs.length;
       return {
         confidence: Math.max(0.4, 1 - score),
         evidence: [
-          `activity:${signal.currentActivity.slice(0, 120)}`,
           `objective_overlap:${score.toFixed(2)}`,
+          `activity_count:${activityRefs.length || 1}`,
+          ...(shownRefs.length
+            ? shownRefs.map((ref) => `activity:${ref}`)
+            : [`activity:${signal.currentActivity.slice(0, 500)}`]),
+          ...(moreRefs > 0 ? [`activity_more:${moreRefs}`] : []),
         ],
       };
     },
@@ -456,7 +468,7 @@ export function createDriftEvaluator(input: {
           severity: rule.severity,
           confidence: result.confidence,
           originalObjective: signal.objective.slice(0, 200),
-          currentActivity: signal.currentActivity.slice(0, 200),
+          currentActivity: signal.currentActivity.slice(0, 1_000),
           evidence: result.evidence,
           applicableConstraints: signal.applicableConstraints,
           contractVersion: DRIFT_CONTRACT_VERSION,

@@ -13,6 +13,39 @@ type Tab =
   | "notices";
 
 /**
+ * Legacy findings predate `ruleHits`/`contractVersion` in the journal. Infer a
+ * rule label from the safe evidence prefix so old cards are still judge-able
+ * instead of showing an unexplained 100%.
+ */
+function ruleHitsFor(finding: {
+  ruleHits?: Array<{ rule: string; confidence: number }>;
+  evidence?: string[];
+  confidence?: number;
+}): Array<{ rule: string; confidence: number }> {
+  if (finding.ruleHits?.length) return finding.ruleHits;
+  const names = new Set<string>();
+  for (const item of finding.evidence ?? []) {
+    if (
+      item.startsWith("objective_overlap:") ||
+      item.startsWith("activity:") ||
+      item.startsWith("activity_count:")
+    )
+      names.add("objective_activity_mismatch");
+    else if (item.startsWith("constraint:"))
+      names.add("constraint_violation_signal");
+    else if (item.startsWith("completion:")) names.add("evidence_gap");
+    else if (item.startsWith("dependency:")) names.add("dependency_signal");
+    else if (item.startsWith("outside_target:")) names.add("target_drift");
+    else if (item.startsWith("reference:no_accepted_contract"))
+      names.add("unverifiable_no_contract");
+  }
+  return [...names].map((rule) => ({
+    rule: `${rule} (legacy)`,
+    confidence: finding.confidence ?? 0,
+  }));
+}
+
+/**
  * The governance pane content (EI Phase 2): the six governance sub-tabs and
  * their rows, reading the live RPC surfaces with the view-store projection as
  * the fallback. Extracted from the modal so the same content mounts both in
@@ -69,6 +102,10 @@ export function GovernancePane(props: {
   // EI §3.5: acknowledge a drift finding — the Main Agent explains it or
   // disputes it as a false positive (with a user-supplied rationale). Only an
   // open finding transitions; reload to reflect the new status.
+  function contractFor(planID?: string) {
+    return planID ? props.state.workContracts?.[planID] : undefined;
+  }
+
   async function acknowledgeFinding(
     findingID: string,
     status: "explained" | "disputed",
@@ -154,12 +191,40 @@ export function GovernancePane(props: {
                 <Show when={finding.planID}>
                   <div class="drift-card-meta">Plan: {finding.planID}</div>
                 </Show>
+                <Show when={contractFor(finding.planID)}>
+                  {(contract) => (
+                    <div class="drift-card-section">
+                      <div class="drift-card-section-title">
+                        Reference frame
+                      </div>
+                      <Show when={contract().scope?.length}>
+                        <div class="drift-card-evidence">
+                          scope: {contract().scope!.join(", ")}
+                        </div>
+                      </Show>
+                      <Show when={contract().verification?.length}>
+                        <div class="drift-card-evidence">
+                          verification:{" "}
+                          {contract().verification!.join(", ")}
+                        </div>
+                      </Show>
+                      <Show when={contract().constraints?.length}>
+                        <div class="drift-card-evidence">
+                          constraints: {contract().constraints!.join(", ")}
+                        </div>
+                      </Show>
+                      <div class="drift-card-meta">
+                        contract {contract().status} v{contract().version}
+                      </div>
+                    </div>
+                  )}
+                </Show>
                 <div class="drift-card-current">
                   Current: {finding.currentActivity}
                 </div>
                 <Show
                   when={
-                    finding.ruleHits?.length ||
+                    ruleHitsFor(finding).length ||
                     finding.contractVersion !== undefined
                   }
                 >
@@ -172,7 +237,7 @@ export function GovernancePane(props: {
                         contract v{finding.contractVersion}
                       </div>
                     </Show>
-                    <For each={finding.ruleHits ?? []}>
+                    <For each={ruleHitsFor(finding)}>
                       {(hit) => (
                         <div class="drift-card-rule">
                           {hit.rule} · {Math.round(hit.confidence * 100)}%
