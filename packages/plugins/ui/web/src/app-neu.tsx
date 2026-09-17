@@ -4011,16 +4011,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <div class="neu-pane-header">
                   <span class="neu-pane-title">Navi</span>
                   <span class="neu-pane-header-right">
-                    <Show when={naviPaging().hasOlder}>
-                      <button
-                        type="button"
-                        class="neu-load-older"
-                        disabled={naviPaging().loadingOlder}
-                        onClick={() => void loadOlderNaviChat()}
-                      >
-                        {naviPaging().loadingOlder ? "加载中…" : "加载更早"}
-                      </button>
-                    </Show>
                     <ContextMeter usage={state().navi.context} compact />
                     <span
                       class="neu-pane-status"

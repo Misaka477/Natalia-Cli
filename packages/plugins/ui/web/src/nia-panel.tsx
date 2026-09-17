@@ -309,16 +309,6 @@ export function NiaPanel(props: {
       <div class="neu-pane-header">
         <span class="neu-pane-title">Nia</span>
         <span class="neu-pane-header-actions">
-          <Show when={props.paging?.hasOlder}>
-            <button
-              type="button"
-              class="neu-load-older"
-              disabled={props.paging?.loadingOlder}
-              onClick={() => props.onLoadOlder?.()}
-            >
-              {props.paging?.loadingOlder ? "加载中…" : "加载更早"}
-            </button>
-          </Show>
           <ContextMeter usage={props.state.nia.context} compact />
           <span class="neu-pane-status" data-running={Boolean(active())}>
             {active() ? "running" : "idle"}
