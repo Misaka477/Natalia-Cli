@@ -454,14 +454,48 @@ export function GovernancePane(props: {
             }
           >
             {(record) => (
-              <div class="neu-gov-row">
-                <span class="neu-gov-title" data-priority={record.status}>
-                  {record.status}
-                </span>
-                <span class="neu-gov-text">{record.decision}</span>
-                <span class="neu-gov-meta">
-                  Rationale: {(record.rationale ?? []).join("; ")}
-                </span>
+              <div class="gov-card">
+                <div class="gov-card-head">
+                  <span class="neu-gov-title" data-priority={record.status}>
+                    {record.status}
+                  </span>
+                  <span class="gov-card-meta">{record.id}</span>
+                </div>
+                <div class="gov-card-section">
+                  <div class="gov-card-label">Decision</div>
+                  <div class="gov-card-text">{record.decision}</div>
+                </div>
+                <Show when={record.rationale?.length}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Rationale</div>
+                    <div class="gov-card-text">
+                      {(record.rationale ?? []).join("; ")}
+                    </div>
+                  </div>
+                </Show>
+                <Show when={record.alternatives?.length}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Alternatives</div>
+                    <For each={record.alternatives ?? []}>
+                      {(item: { option: string; rejectedReason?: string }) => (
+                        <div class="gov-card-text">
+                          {item.option}
+                          {item.rejectedReason
+                            ? ` — ${item.rejectedReason}`
+                            : ""}
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Show when={record.consequences?.length}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Consequences</div>
+                    <div class="gov-card-text">
+                      {(record.consequences ?? []).join("; ")}
+                    </div>
+                  </div>
+                </Show>
               </div>
             )}
           </For>
@@ -486,17 +520,58 @@ export function GovernancePane(props: {
             }
           >
             {(record) => (
-              <div class="neu-gov-row">
-                <span class="neu-gov-title" data-priority={record.status}>
-                  {record.status}
-                </span>
-                <span class="neu-gov-text">{record.objective}</span>
-                <span class="neu-gov-meta">
-                  {record.taskID}
-                  {(record.knownGaps ?? []).length
-                    ? ` · Gaps: ${(record.knownGaps ?? []).join("; ")}`
-                    : ""}
-                </span>
+              <div class="gov-card">
+                <div class="gov-card-head">
+                  <span class="neu-gov-title" data-priority={record.status}>
+                    {record.status}
+                  </span>
+                  <span class="gov-card-meta">{record.taskID}</span>
+                </div>
+                <div class="gov-card-text">{record.objective}</div>
+                <Show when={record.validations?.length}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Validations</div>
+                    <For each={record.validations ?? []}>
+                      {(validation: {
+                        command: string;
+                        result: string;
+                        safeSummary: string;
+                      }) => (
+                        <div class="gov-card-text">
+                          [{validation.result}] {validation.command} —{" "}
+                          {validation.safeSummary}
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Show when={record.changes?.length}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">
+                      Changes ({record.changes!.length})
+                    </div>
+                    <For each={record.changes ?? []}>
+                      {(change: {
+                        path: string;
+                        changeType?: string;
+                        summary?: string;
+                      }) => (
+                        <div class="gov-card-text">
+                          {change.changeType ?? "change"}: {change.path}
+                          {change.summary ? ` — ${change.summary}` : ""}
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Show when={record.knownGaps?.length}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Known gaps</div>
+                    <div class="gov-card-text">
+                      {(record.knownGaps ?? []).join("; ")}
+                    </div>
+                  </div>
+                </Show>
               </div>
             )}
           </For>
@@ -521,25 +596,63 @@ export function GovernancePane(props: {
             }
           >
             {(record) => (
-              <div class="neu-gov-row">
-                <span class="neu-gov-title" data-priority="completed">
-                  {record.taskID}
-                </span>
-                <span class="neu-gov-text">{record.objective}</span>
-                <span class="neu-gov-meta">
-                  {record.changeSummary}
-                  {(record.validations ?? []).length
-                    ? ` · ${(record.validations ?? [])
-                        .map(
-                          (validation: { result: string }) =>
-                            validation.result,
-                        )
-                        .join("/")}`
-                    : " · no validation"}
-                  {(record.knownGaps ?? []).length
-                    ? ` · gaps: ${(record.knownGaps ?? []).join("; ")}`
-                    : ""}
-                </span>
+              <div class="gov-card gov-completion-card">
+                <div class="gov-card-head">
+                  <span class="neu-gov-title" data-priority="validated">
+                    {record.taskID}
+                  </span>
+                  <span class="gov-card-meta">{record.recordedAt}</span>
+                </div>
+                <div class="gov-card-text">{record.objective}</div>
+                <div class="gov-card-section">
+                  <div class="gov-card-label">Changes</div>
+                  <div class="gov-card-text">{record.changeSummary}</div>
+                </div>
+                <div class="gov-card-section">
+                  <div class="gov-card-label">Validation matrix</div>
+                  <Show
+                    when={(record.validations ?? []).length}
+                    fallback={
+                      <div class="gov-card-text">
+                        no validation recorded
+                      </div>
+                    }
+                  >
+                    <For each={record.validations ?? []}>
+                      {(validation: {
+                        command: string;
+                        result: string;
+                        safeSummary: string;
+                      }) => (
+                        <div class="gov-card-text">
+                          [{validation.result}] {validation.command} —{" "}
+                          {validation.safeSummary}
+                        </div>
+                      )}
+                    </For>
+                  </Show>
+                </div>
+                <Show when={(record.knownGaps ?? []).length}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Known gaps</div>
+                    <div class="gov-card-text">
+                      {(record.knownGaps ?? []).join("; ")}
+                    </div>
+                  </div>
+                </Show>
+                <Show when={(record.evidenceIDs ?? []).length}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Evidence IDs</div>
+                    <div class="gov-card-text">
+                      {(record.evidenceIDs ?? []).join(", ")}
+                    </div>
+                  </div>
+                </Show>
+                <Show when={record.rollbackState}>
+                  <div class="gov-card-meta">
+                    rollback: {record.rollbackState}
+                  </div>
+                </Show>
               </div>
             )}
           </For>

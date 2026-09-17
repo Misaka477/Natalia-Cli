@@ -4159,6 +4159,45 @@ button.neu-settings-item.neu-settings-item-button:active {
   font-weight: 600;
   color: var(--neu-text);
 }
+.gov-card {
+  margin-bottom: 6px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  font-size: 12px;
+}
+.gov-completion-card {
+  border-left: 3px solid rgba(120, 200, 150, 0.7);
+}
+.gov-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.gov-card-meta {
+  color: var(--neu-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.gov-card-section {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.gov-card-label {
+  margin-bottom: 2px;
+  color: var(--neu-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gov-card-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.45;
+}
 .neu-gov-empty {
   margin-top: 8px;
   padding: 14px;
