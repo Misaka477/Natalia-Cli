@@ -4853,6 +4853,10 @@ button.neu-settings-item.neu-settings-item-button:active {
   color: #e6b45a;
 }
 .plan-task-states {
+  flex: 0 0 auto;
+  max-height: min(45%, 280px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px 8px;
   margin: 0 0 6px;
   border-radius: 6px;
