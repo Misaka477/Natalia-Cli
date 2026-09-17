@@ -4179,6 +4179,16 @@ button.neu-settings-item.neu-settings-item-button:active {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.neu-gov-action-note {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(120, 160, 255, 0.12);
+  color: #a9c2ff;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* ===== Workspace add panel ===== */
 .neu-workspace-window {
@@ -4807,6 +4817,10 @@ button.neu-settings-item.neu-settings-item-button:active {
 }
 .drift-card-btn:hover {
   background: rgba(255, 255, 255, 0.18);
+}
+.drift-card-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .drift-card-btn[data-kind="dispute"] {
   background: rgba(230, 180, 90, 0.18);

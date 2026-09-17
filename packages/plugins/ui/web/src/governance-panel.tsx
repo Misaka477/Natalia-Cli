@@ -69,6 +69,8 @@ export function GovernancePane(props: {
   // event stream and the server-projected contract converge here).
   const [liveNotices, setLiveNotices] = createSignal<any[]>([]);
   const [loadErrors, setLoadErrors] = createSignal<string[]>([]);
+  const [actionNotice, setActionNotice] = createSignal<string | undefined>();
+  const [actionBusy, setActionBusy] = createSignal(false);
   const { confirm, dialog } = useConfirmDialog();
 
   const load = async () => {
@@ -140,13 +142,26 @@ export function GovernancePane(props: {
     status: "explained" | "disputed",
     rationale?: string,
   ) {
+    setActionBusy(true);
+    setActionNotice(undefined);
     try {
-      await props.runtime?.acknowledgeDriftFinding?.(
+      const result = await props.runtime?.acknowledgeDriftFinding?.(
         { findingID, status, ...(rationale ? { rationale } : {}) },
         props.sessionID,
       );
+      setActionNotice(
+        result?.acknowledged
+          ? `已更新：${findingID} → ${status}`
+          : `未更新：${findingID} 已不是 open，或服务端没找到这条 finding。`,
+      );
       await load();
-    } catch {}
+    } catch (error) {
+      setActionNotice(
+        `更新失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   return (
@@ -214,6 +229,9 @@ export function GovernancePane(props: {
           <div class="neu-gov-error">
             {loadErrors().join(" · ")}
           </div>
+        </Show>
+        <Show when={actionNotice()}>
+          <div class="neu-gov-action-note">{actionNotice()}</div>
         </Show>
         <Show when={tab() === "drift"}>
           <For each={liveDrift()}>
@@ -316,6 +334,7 @@ export function GovernancePane(props: {
                     <button
                       type="button"
                       class="drift-card-btn"
+                      disabled={actionBusy()}
                       onClick={() =>
                         void acknowledgeFinding(finding.findingID, "explained")
                       }
@@ -326,6 +345,7 @@ export function GovernancePane(props: {
                       type="button"
                       class="drift-card-btn"
                       data-kind="dispute"
+                      disabled={actionBusy()}
                       onClick={() => {
                         const reason =
                           window.prompt("声明这是误报，给出理由：");

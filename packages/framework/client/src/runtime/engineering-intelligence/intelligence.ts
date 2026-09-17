@@ -39,7 +39,6 @@ import { ensureCompleteSessionFactState } from "../session-full-events";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
-  sessionWindowEventsForExec,
 } from "../session-event-window";
 import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
@@ -209,14 +208,6 @@ export function createIntelligenceSurface(
       throw new Error("work ledger unavailable (natalia-work-ledger)");
     return ledger;
   }
-  async function intelligenceSession(sessionID?: string) {
-    const exec = await intelligenceExecWindow(sessionID);
-    if (!exec) return undefined;
-    return {
-      ...exec.session,
-      events: await sessionWindowEventsForExec(ctx, exec),
-    };
-  }
   async function intelligenceExecWindow(sessionID?: string) {
     // `start()` only kicks composition off in the background. Intelligence
     // reads may be the first routed calls on a workspace proxy, so every
@@ -230,6 +221,17 @@ export function createIntelligenceSurface(
           sessionID as import("@natalia/contracts").SessionID,
         )))
       : ctx.ports.getActiveExec();
+    return exec;
+  }
+
+  /**
+   * Read surfaces must see the same history the writer saw. Fast attach keeps
+   * only a tail; complete the fact state before reading so a finding opened
+   * outside the current window is still returned after it is updated.
+   */
+  async function completeIntelligenceExec(sessionID?: string) {
+    const exec = await intelligenceExecWindow(sessionID);
+    if (exec?.session) await ensureCompleteSessionFactState(ctx, exec);
     return exec;
   }
   return {
@@ -283,14 +285,14 @@ export function createIntelligenceSurface(
       }
     },
     async constitutionRules(sessionID?: string) {
-      const session = await intelligenceSession(sessionID);
-      if (!session) return [];
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session) return [];
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.state.pluginStoreRoot),
       );
       const rules = (await runSessionProjectionWithFallback(
         "constitutionRules",
-        [...instance.events, ...session.events],
+        [...instance.events, ...exec.session.events],
       )) as ReturnType<typeof projectedConstitutionRules>;
       return rules.map((r) => ({
         ruleID: r.ruleID,
@@ -304,14 +306,14 @@ export function createIntelligenceSurface(
       }));
     },
     async decisionRecords(sessionID?: string) {
-      const session = await intelligenceSession(sessionID);
-      if (!session) return [];
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session) return [];
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.state.pluginStoreRoot),
       );
       const decisions = (await runSessionProjectionWithFallback(
         "decisionRecords",
-        [...instance.events, ...session.events],
+        [...instance.events, ...exec.session.events],
       )) as ReturnType<typeof projectedDecisionRecords>;
       return decisions.map((r) => ({
         decision: r.decision,
@@ -373,8 +375,8 @@ export function createIntelligenceSurface(
       sessionID?: string,
     ) {
       const resolvedSessionID = input?.sessionID ?? sessionID;
-      const session = await intelligenceSession(resolvedSessionID);
-      if (!session) return [];
+      const exec = await completeIntelligenceExec(resolvedSessionID);
+      if (!exec?.session) return [];
       // P2 E3: the effective status of each evidence record is driven by the
       // workspace-level lifecycle of the plan whose task it belongs to (a
       // projection policy — the journal keeps the recorded status; the query
@@ -385,16 +387,13 @@ export function createIntelligenceSurface(
       for (const plan of plans) {
         planStateForTask.set(plan.planID, plan.status);
       }
-      // B6: the hot fact state is authoritative when complete (O(1) fold over
-      // a window, never a full-journal rescan); the projected-events path is
-      // the fallback for a tail-only attach.
-      const exec = await intelligenceExecWindow(resolvedSessionID);
-      const evidence = (
-        exec
-          ? readFactSlice(exec, sessionFactEvidenceRecords, () =>
-              projectedEvidenceRecords(session.events),
-            )
-          : projectedEvidenceRecords(session.events)
+      // B6: the hot fact state is authoritative after the complete-history
+      // check above; the projected-events path is the fallback for a
+      // tail-only attach.
+      const evidence = readFactSlice(
+        exec,
+        sessionFactEvidenceRecords,
+        () => projectedEvidenceRecords(exec.session.events),
       ) as ReturnType<typeof projectedEvidenceRecords>;
       return paginate(
         evidence.map((r) => ({
@@ -421,14 +420,13 @@ export function createIntelligenceSurface(
       sessionID?: string,
     ) {
       const resolvedSessionID = input?.sessionID ?? sessionID;
-      const session = await intelligenceSession(resolvedSessionID);
-      if (!session) return [];
-      const exec = await intelligenceExecWindow(resolvedSessionID);
-      const completions = exec
-        ? readFactSlice(exec, sessionFactCompletions, () =>
-            projectedCompletions(session.events),
-          )
-        : projectedCompletions(session.events);
+      const exec = await completeIntelligenceExec(resolvedSessionID);
+      if (!exec?.session) return [];
+      const completions = readFactSlice(
+        exec,
+        sessionFactCompletions,
+        () => projectedCompletions(exec.session.events),
+      );
       return paginate(
         completions.map((c) => ({
           completionID: c.id,
@@ -591,14 +589,13 @@ export function createIntelligenceSurface(
       sessionID?: string,
     ) {
       const resolvedSessionID = input?.sessionID ?? sessionID;
-      const session = await intelligenceSession(resolvedSessionID);
-      if (!session) return [];
-      const exec = await intelligenceExecWindow(resolvedSessionID);
-      const findings = exec
-        ? readFactSlice(exec, sessionFactDriftFindings, () =>
-            projectedDriftFindings(session.events),
-          )
-        : projectedDriftFindings(session.events);
+      const exec = await completeIntelligenceExec(resolvedSessionID);
+      if (!exec?.session) return [];
+      const findings = readFactSlice(
+        exec,
+        sessionFactDriftFindings,
+        () => projectedDriftFindings(exec.session.events),
+      );
       return paginate(
         findings.map((f) => ({
           findingID: f.findingID,
@@ -882,11 +879,11 @@ export function createIntelligenceSurface(
       return [...merged.values()];
     },
     async notices(sessionID?: string) {
-      const session = await intelligenceSession(sessionID);
-      if (!session) return [];
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session) return [];
       return (await runSessionProjectionWithFallback(
         "notices",
-        session.events,
+        exec.session.events,
       )) as import("@natalia/contracts").RuntimeProjectedNotice[];
     },
   };
