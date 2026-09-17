@@ -65,6 +65,33 @@ test("objective/activity mismatch opens an advisory finding", () => {
   );
 });
 
+test("a long activity list is bounded by item, never mid-item", () => {
+  const evaluator = makeEvaluator();
+  const items = Array.from(
+    { length: 40 },
+    (_, index) => `deleted:packages/kernel/src/file_${index}.rs`,
+  );
+  const findings = evaluator.evaluate({
+    sessionID: "ses_1",
+    turnID: "t_items",
+    objective: "implement user authentication",
+    currentActivity: items.join(", "),
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+  });
+  expect(findings).toHaveLength(1);
+  const finding = findings[0]!;
+  // The first 30 items are kept whole; the rest is stated as a count — never a
+  // mid-item cut ("deleted:" -> "dele").
+  expect(finding.currentActivity).toContain("file_29.rs");
+  expect(finding.currentActivity).not.toContain("file_30.rs");
+  expect(finding.currentActivity).toContain("\u2026+10 more");
+  expect(finding.evidence.some((entry) => entry.includes("\u2026+10 more"))).toBe(
+    true,
+  );
+});
+
 test("a forbidden activity signal opens a high finding with the constraint", () => {
   const evaluator = makeEvaluator();
   const findings = evaluator.evaluate({

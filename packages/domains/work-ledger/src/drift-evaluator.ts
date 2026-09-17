@@ -222,6 +222,22 @@ type Rule = {
   ) => { confidence: number; evidence: string[] } | undefined;
 };
 
+/**
+ * Bounds a comma-joined activity list by ITEM count, never mid-item (EI §2
+ * principle 2: the finding carries refs, and a char slice would cut
+ * "deleted:path" into "dele"). The list keeps its first `maxItems` entries and
+ * states how many were dropped, so the card is bounded but never lies about
+ * what it shows.
+ */
+function boundActivity(text: string, maxItems: number): string {
+  const items = text
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (items.length <= 1 || items.length <= maxItems) return text;
+  return `${items.slice(0, maxItems).join(", ")}, …+${items.length - maxItems} more`;
+}
+
 function objectiveActivityRule(): Rule {
   return {
     name: "objective_activity_mismatch",
@@ -254,7 +270,7 @@ function objectiveActivityRule(): Rule {
           `activity_count:${activityRefs.length || 1}`,
           ...(shownRefs.length
             ? shownRefs.map((ref) => `activity:${ref}`)
-            : [`activity:${signal.currentActivity.slice(0, 500)}`]),
+            : [`activity:${boundActivity(signal.currentActivity, 30)}`]),
           ...(moreRefs > 0 ? [`activity_more:${moreRefs}`] : []),
         ],
       };
@@ -468,7 +484,7 @@ export function createDriftEvaluator(input: {
           severity: rule.severity,
           confidence: result.confidence,
           originalObjective: signal.objective.slice(0, 200),
-          currentActivity: signal.currentActivity.slice(0, 1_000),
+          currentActivity: boundActivity(signal.currentActivity, 30),
           evidence: result.evidence,
           applicableConstraints: signal.applicableConstraints,
           contractVersion: DRIFT_CONTRACT_VERSION,
