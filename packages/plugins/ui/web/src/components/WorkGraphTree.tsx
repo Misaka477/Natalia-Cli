@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import {
   buildWorkGraphForest,
+  buildWorkGraphNavigation,
   selectUnattributedWorkGraphNodes,
 } from "@natalia/view-store";
 import type { AppState, WorkGraphTreeNode } from "@natalia/view-store";
@@ -56,8 +57,97 @@ export function WorkGraphTree(props: { state: AppState }) {
   const unattributed = createMemo(() =>
     selectUnattributedWorkGraphNodes(props.state),
   );
+  const [query, setQuery] = createSignal("");
+  const [focusID, setFocusID] = createSignal<string | undefined>();
+  const matches = createMemo(() => {
+    const needle = query().trim().toLowerCase();
+    if (!needle) return [];
+    return Object.values(props.state.workGraphNodes)
+      .filter((node) =>
+        [node.nodeID, node.summary, node.target]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(needle)),
+      )
+      .slice(0, 8);
+  });
+  const navigation = createMemo(() => {
+    const id = focusID();
+    return id ? buildWorkGraphNavigation(props.state, id) : undefined;
+  });
   return (
     <div class="wg-tree">
+      <div class="wg-search">
+        <input
+          class="wg-search-input"
+          type="search"
+          placeholder="Search path / node / summary…"
+          value={query()}
+          onInput={(event) => setQuery(event.currentTarget.value)}
+        />
+        <Show when={focusID()}>
+          <button
+            type="button"
+            class="wg-search-clear"
+            onClick={() => {
+              setFocusID(undefined);
+              setQuery("");
+            }}
+          >
+            clear
+          </button>
+        </Show>
+      </div>
+      <Show when={matches().length}>
+        <div class="wg-search-results">
+          <For each={matches()}>
+            {(node) => (
+              <button
+                type="button"
+                class="wg-search-result"
+                onClick={() => {
+                  setFocusID(node.nodeID);
+                  setQuery(node.target ?? node.summary);
+                }}
+              >
+                <span class="wg-kind" data-kind={node.kind}>
+                  {node.kind}
+                </span>
+                <span class="wg-summary">{node.summary}</span>
+                <Show when={node.target}>
+                  <span class="wg-via">{node.target}</span>
+                </Show>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={navigation()}>
+        {(nav) => (
+          <div class="wg-navigation">
+            <div class="wg-section-title">
+              Why changed (backward) · {nav().focus?.summary}
+            </div>
+            <Show
+              when={nav().backward.length}
+              fallback={<div class="neu-gov-empty">No inbound causal edge.</div>}
+            >
+              <For each={nav().backward}>
+                {(node) => <TreeNode node={node} depth={0} />}
+              </For>
+            </Show>
+            <div class="wg-section-title">What changed (forward)</div>
+            <Show
+              when={nav().forward.length}
+              fallback={<div class="neu-gov-empty">No outbound causal edge.</div>}
+            >
+              <For each={nav().forward}>
+                {(node) => <TreeNode node={node} depth={0} />}
+              </For>
+            </Show>
+          </div>
+        )}
+      </Show>
+      <Show when={!navigation()}>
       <Show when={unattributed().length}>
         <div class="wg-unattributed">
           <div class="wg-section-title">
@@ -84,6 +174,7 @@ export function WorkGraphTree(props: { state: AppState }) {
         </div>
       </Show>
       <For each={forest()}>{(node) => <TreeNode node={node} depth={0} />}</For>
+      </Show>
     </div>
   );
 }

@@ -4673,6 +4673,58 @@ button.neu-settings-item.neu-settings-item-button:active {
   gap: 1px;
   font-size: 12px;
 }
+.wg-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+.wg-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 7px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+}
+.wg-search-clear {
+  border: none;
+  background: transparent;
+  color: var(--neu-muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+.wg-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+.wg-search-result {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 5px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.wg-search-result:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.wg-navigation {
+  margin-bottom: 7px;
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: rgba(120, 160, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(120, 160, 255, 0.18);
+}
 .wg-node {
   display: flex;
   flex-direction: column;
