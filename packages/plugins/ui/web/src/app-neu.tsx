@@ -61,7 +61,10 @@ import { SearchPanel } from "./search-panel";
 import { HelpPanel } from "./help-panel";
 import { StashPanel } from "./stash-panel";
 import { SandboxPanel } from "./sandbox-panel";
-import { GovernancePane } from "./governance-panel";
+import {
+  GovernancePane,
+  type GovernanceTab,
+} from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 import { parseGoalRoundPrompt } from "./goal-round";
@@ -83,6 +86,30 @@ const perfLog = (...args: unknown[]) => {
 const attachmentDataUrlCache = new Map<string, Promise<string>>();
 
 type RightTab = string;
+
+const GOVERNANCE_TABS: GovernanceTab[] = [
+  "drift",
+  "constitution",
+  "decisions",
+  "evidence",
+  "completions",
+  "workgraph",
+  "notices",
+];
+
+/**
+ * Read a deep-link parameter once. A host can open a specific governance view
+ * (`?rightTab=governance&governance=decisions`) without scripted clicking — this
+ * is also what the real-CEF smoke uses to exercise every tab.
+ */
+function queryParam(name: string): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    return new URLSearchParams(window.location.search).get(name) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 360;
@@ -680,7 +707,19 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   const [state, setState] = createSignal(
     cloneState(props.ctx.projection.getState()),
   );
-  const [rightTab, setRightTab] = createSignal<RightTab>("plan");
+  const requestedRightTab = queryParam("rightTab") ?? queryParam("tab");
+  const [rightTab, setRightTab] = createSignal<RightTab>(
+    requestedRightTab &&
+      ["diff", "plan", "governance", "nia", "agent"].includes(requestedRightTab)
+      ? requestedRightTab
+      : "plan",
+  );
+  const requestedGovernanceTab = queryParam("governance");
+  const governanceInitialTab =
+    requestedGovernanceTab &&
+    GOVERNANCE_TABS.includes(requestedGovernanceTab as GovernanceTab)
+      ? (requestedGovernanceTab as GovernanceTab)
+      : undefined;
   const [leftWidth, setLeftWidth] = createSignal(240);
   const [rightWidth, setRightWidth] = createSignal(
     typeof window === "undefined"
@@ -4259,6 +4298,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     state={state()}
                     runtime={props.ctx.runtime}
                     sessionID={selectedSessionID() || state().sessionID}
+                    initialTab={governanceInitialTab}
                   />
                 </Show>
                 <Show

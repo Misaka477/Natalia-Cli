@@ -4,7 +4,7 @@ import type { AppState } from "@natalia/view-store";
 import { WorkGraphTree } from "./components/WorkGraphTree";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 
-type Tab =
+export type GovernanceTab =
   | "constitution"
   | "decisions"
   | "evidence"
@@ -12,6 +12,7 @@ type Tab =
   | "drift"
   | "workgraph"
   | "notices";
+type Tab = GovernanceTab;
 
 /**
  * Legacy findings predate `ruleHits`/`contractVersion` in the journal. Infer a
@@ -171,7 +172,7 @@ export function GovernancePane(props: {
   runtime?: RuntimeClient;
   sessionID?: string;
   /** Optional deep-link target; defaults to the drift review view. */
-  initialTab?: Tab;
+  initialTab?: GovernanceTab;
 }) {
   const [tab, setTab] = createSignal<Tab>(props.initialTab ?? "drift");
   const [liveConstitution, setLiveConstitution] = createSignal<any[]>([]);
