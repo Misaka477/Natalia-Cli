@@ -39,6 +39,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
       responseMessageID: string;
       exec: SessionExecutionState;
       internal?: boolean;
+      detourReview?: { detourID: string; planID: string; reason: string };
       model?: { modelID?: string; variant?: string };
       reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
       attachments?: import("@natalia/contracts").LocalAttachment[];
@@ -153,7 +154,20 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
       { role: "system", content: niaChatPersona() },
       ...history.messages,
     ];
-    if (input.internal)
+    if (input.detourReview)
+      messages.push({
+        role: "user",
+        content:
+          `A detour was declared for plan ${input.detourReview.planID} ` +
+          `(detour ${input.detourReview.detourID}): ${input.detourReview.reason}. ` +
+          `Read the accepted WorkContract with work_contract_read and the detour ` +
+          `with work_graph_query, then record your independent review with ` +
+          `detour_review (approve or reject, with a rationale). Your verdict is ` +
+          `a reference for the user, who makes the final decision through the ` +
+          `detour gate. Do not call audit_report for this. This is not a user ` +
+          `message.`,
+      });
+    else if (input.internal)
       messages.push({
         role: "user",
         content:
@@ -243,9 +257,12 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         : undefined;
     };
     const activePlan = activePlanForExec(ctx, input.exec);
+    // A detour-review wake is not an audit: Nia reviews the detour, she does
+    // not audit the plan, so the audit expectation must not fire for it.
     const auditIntent =
-      /审计|audit|审核/iu.test(input.text) ||
-      (input.internal === true && Boolean(activePlan));
+      !input.detourReview &&
+      (/审计|audit|审核/iu.test(input.text) ||
+        (input.internal === true && Boolean(activePlan)));
     const requiredAuditAction = () => {
       if (!auditIntent || !activePlan) return undefined;
       if (auditReported || collabSent) return undefined;

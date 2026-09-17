@@ -19,8 +19,10 @@ import {
 import { ensureCompleteSessionFactState } from "./session-full-events";
 import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+  PROVIDER_MODEL_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type GovernanceLedgerController,
+  type ProviderModelController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import type { RuntimeTool } from "./context";
@@ -362,9 +364,27 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
           requestedAt: now,
         }),
       );
-      // Nia reviews the detour asynchronously (explicit trigger, not per-turn);
-      // the gate does not wait for her.
-      ctx.ports.requestNiaWake(exec);
+      // EI §3.4: wake Nia to review the detour — an explicit, detour-specific
+      // trigger (not the per-turn audit wake, which would ask her to audit the
+      // plan). Her verdict is a reference for the user; the gate does not wait
+      // for her, and a failed/unavailable review is recorded at resolution.
+      const providerController =
+        ctx.ports.resolveService<ProviderModelController>(
+          PROVIDER_MODEL_CONTROLLER_SERVICE,
+        );
+      if (providerController)
+        void providerController
+          .runNiaChatTurn({
+            sessionID: exec.session.id,
+            text: "",
+            responseMessageID: `chat:${Date.now().toString(36)}:${ctx.ports.nextChatSequence()}`,
+            internal: true,
+            detourReview: { detourID, planID, reason: args.reason! },
+          })
+          .catch(() => {
+            // A failed review wake is non-fatal: the gate proceeds and the
+            // resolution records the opinion as unavailable.
+          });
       const previewLines = [
         `reason: ${args.reason}`,
         `scope +: ${(args.scopeDelta ?? []).join("; ")}`,
@@ -386,6 +406,28 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
         sessionID: exec.session.id,
         signal: context.signal,
       });
+      // EI §3.4: the gate fires immediately and Nia reviews asynchronously, so
+      // by the time the user decides Nia may not have weighed in. Record that
+      // her opinion was unavailable — the gate proceeded without it. Nia's
+      // verdict is always a reference; the approval right is the user's.
+      if (
+        !exec.session.events.some(
+          (event) =>
+            event.type === "detour.reviewed" && event.detourID === detourID,
+        )
+      )
+        ctx.ports.publishForSession(
+          exec,
+          ledger.buildDetourReviewed({
+            id: `detour:unavailable:${detourID}`,
+            detourID,
+            planID,
+            verdict: "unavailable",
+            reviewedBy: "nia",
+            reviewedAt: new Date().toISOString(),
+            rationale: "Nia did not review before the user decided",
+          }),
+        );
       if (!response || response.decision === "reject")
         return JSON.stringify({
           accepted: false,

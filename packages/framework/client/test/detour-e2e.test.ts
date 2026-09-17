@@ -3,7 +3,7 @@ import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { projectedWorkContracts } from "@natalia/session";
 import { createRealRuntimeClient } from "../src";
 import { officialPluginWorkspace } from "./plugin-test-helpers";
-import { createScriptedProvider } from "./e2e-harness";
+import { createScriptedProvider, waitFor } from "./e2e-harness";
 
 const SESSION = "ses_e2e_detour" as SessionID;
 
@@ -84,6 +84,17 @@ test("Phase 2 E2E: an approved detour absorbs its deltas into a new accepted con
     scope: ["packages/a", "packages/b"],
     verification: ["bun test packages/a"],
   });
+  // Nia was woken to review but did not weigh in before the user decided, so
+  // her opinion is recorded as unavailable (the gate proceeded without it).
+  const niaReview = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "detour.reviewed" }> =>
+      event.type === "detour.reviewed",
+  );
+  expect(niaReview).toMatchObject({
+    detourID: requested.detourID,
+    verdict: "unavailable",
+    reviewedBy: "nia",
+  });
   await client.dispose?.();
 }, 30_000);
 
@@ -163,5 +174,104 @@ test("Phase 2 E2E: a stale detour and an overlapping scopeDelta are rejected bef
       (event) => event.type === "approval.request" && event.scope === "detour",
     ),
   ).toBe(false);
+  await client.dispose?.();
+}, 30_000);
+
+
+test("Phase 2 E2E: Nia reviews a requested detour and records detour.reviewed (reference only)", async () => {
+  const root = await officialPluginWorkspace("detour-e2e-nia-review");
+  const events: RuntimeEvent[] = [];
+  let planID = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "ask",
+    provider: createScriptedProvider({
+      main: [
+        {
+          tool: () => ({
+            name: "plan_propose",
+            arguments: { planID, scope: ["packages/a"], verification: ["bun test packages/a"] },
+          }),
+        },
+        {
+          tool: () => ({
+            name: "detour_declare",
+            arguments: {
+              planID,
+              currentVersion: 1,
+              reason: "the fix also needs the shared util package",
+              scopeDelta: ["packages/b"],
+            },
+          }),
+        },
+        { text: "detour declared" },
+      ],
+      navi: [{ text: "s" }],
+      // The detour_declare wake prompts Nia to review the detour; her turn
+      // reads the detourID from the injected detour-review message and reviews.
+      nia: [
+        {
+          tool: (context) => {
+            const text = context.request.messages
+              .map((message) => String(message.content ?? ""))
+              .join("\n");
+            const match = text.match(/detour ([\w:-]+)\):/u);
+            return {
+              name: "detour_review",
+              arguments: {
+                detourID: match?.[1] ?? "",
+                verdict: "approve",
+                rationale: "the util package is a legitimate dependency",
+              },
+            };
+          },
+        },
+        { text: "reviewed" },
+      ],
+    }),
+  });
+  client.start((event) => {
+    events.push(event);
+    if (
+      event.type === "approval.request" &&
+      (event.scope === "work_contract" || event.scope === "detour")
+    )
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.sessionAttach!(SESSION);
+  await client.planDocWrite!({
+    path: "plans/e2e-detour.md",
+    content: "# E2E detour\n",
+    title: "E2E detour",
+  });
+  const marked = await client.planDocMark!({ path: "plans/e2e-detour.md", title: "E2E detour" });
+  planID = marked.planID;
+  await client.planDocActivate!(planID);
+  await client.submitAndWait!("propose then declare a detour");
+
+  // The detour_declare wake drives Nia's review turn; wait for her verdict.
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "detour.reviewed" && event.verdict === "approve",
+      ),
+    { timeoutMs: 10_000 },
+  );
+  const detourID =
+    events.find((event) => event.type === "detour.requested")?.detourID ?? "";
+  const review = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "detour.reviewed" }> =>
+      event.type === "detour.reviewed" &&
+      event.detourID === detourID &&
+      event.verdict === "approve",
+  )!;
+  expect(review).toMatchObject({
+    planID,
+    verdict: "approve",
+    reviewedBy: "nia",
+    rationale: "the util package is a legitimate dependency",
+  });
   await client.dispose?.();
 }, 30_000);

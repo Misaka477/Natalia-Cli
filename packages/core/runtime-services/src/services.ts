@@ -312,6 +312,12 @@ export type ProviderChatTurnInput = {
   text: string;
   responseMessageID: string;
   internal?: boolean;
+  /**
+   * A detour-review wake (EI §3.4): when set on an internal Nia turn, the turn
+   * prompts Nia to review the requested detour (via detour_review) instead of
+   * the default audit wake. Her verdict is a reference for the user.
+   */
+  detourReview?: { detourID: string; planID: string; reason: string };
   model?: { modelID?: string; variant?: string };
   provider?: import("@natalia/runtime").StreamingProvider;
   reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
