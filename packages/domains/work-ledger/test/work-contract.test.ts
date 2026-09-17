@@ -6,12 +6,16 @@ import {
 } from "@natalia/session";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
+  buildDetourRequested,
+  buildDetourReviewed,
   buildWorkContractAccepted,
   buildWorkContractDrafted,
   classifyTaskKind,
   evaluateCompletionCard,
   isPlaceholderContractValue,
   isUnverifiableContract,
+  mergeDetourIntoContract,
+  validateDetour,
   validateWorkContractFields,
 } from "../src/work-contract";
 
@@ -372,4 +376,90 @@ test("the minimum-evidence matrix judges completion claims (EI §8.8)", () => {
   });
   expect(parser.kind).toBe("parser");
   expect(parser.missing).toContain("validation:parser");
+});
+
+
+test("detour.requested carries the optimistic lock and deltas", () => {
+  const event = buildDetourRequested({
+    id: "detour:1",
+    detourID: "plan:1:detour:1",
+    planID: "plan:1",
+    currentVersion: 2,
+    reason: "the fix also needs the shared util package",
+    scopeDelta: ["packages/b"],
+    verificationDelta: ["bun test packages/b"],
+    requestedAt: "2026-09-17T00:00:00.000Z",
+  });
+  expect(event).toMatchObject({
+    type: "detour.requested",
+    planID: "plan:1",
+    currentVersion: 2,
+    scopeDelta: ["packages/b"],
+    verificationDelta: ["bun test packages/b"],
+    requestedBy: "model",
+  });
+});
+
+test("detour.reviewed records Nia's reference verdict", () => {
+  const event = buildDetourReviewed({
+    id: "detour:reviewed:1",
+    detourID: "plan:1:detour:1",
+    planID: "plan:1",
+    verdict: "approve",
+    reviewedBy: "nia",
+    reviewedAt: "2026-09-17T00:01:00.000Z",
+    rationale: "the util package is a legitimate dependency",
+  });
+  expect(event).toMatchObject({
+    type: "detour.reviewed",
+    verdict: "approve",
+    reviewedBy: "nia",
+  });
+});
+
+test("a detour must have a reason and at least one delta", () => {
+  expect(
+    validateDetour({ reason: "", scopeDelta: ["packages/b"] }).some((problem) =>
+      problem.includes("non-empty reason"),
+    ),
+  ).toBe(true);
+  expect(
+    validateDetour({ reason: "need it", scopeDelta: [] }).some((problem) =>
+      problem.includes("at least one"),
+    ),
+  ).toBe(true);
+});
+
+test("a scopeDelta that overlaps the accepted scope is rejected", () => {
+  const problems = validateDetour({
+    reason: "extend coverage",
+    scopeDelta: ["packages/a"],
+    currentScope: ["packages/a"],
+  });
+  expect(problems.some((problem) => problem.includes("overlaps"))).toBe(true);
+  // A non-overlapping delta is valid.
+  expect(
+    validateDetour({
+      reason: "extend coverage",
+      scopeDelta: ["packages/b"],
+      currentScope: ["packages/a"],
+    }),
+  ).toEqual([]);
+});
+
+test("mergeDetourIntoContract unions the deltas into the next version", () => {
+  const merged = mergeDetourIntoContract(
+    { scope: ["packages/a"], verification: ["bun test packages/a"] },
+    { scopeDelta: ["packages/b"], verificationDelta: ["bun test packages/b"] },
+  );
+  expect(merged).toEqual({
+    scope: ["packages/a", "packages/b"],
+    verification: ["bun test packages/a", "bun test packages/b"],
+  });
+  // Deduplication: a delta already present is not doubled.
+  const deduped = mergeDetourIntoContract(
+    { scope: ["packages/a"] },
+    { scopeDelta: ["packages/a", "packages/b"] },
+  );
+  expect(deduped.scope).toEqual(["packages/a", "packages/b"]);
 });

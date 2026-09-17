@@ -30,6 +30,14 @@ export type WorkContractAcceptedEvent = Extract<
   RuntimeEvent,
   { type: "work_contract.accepted" }
 >;
+export type DetourRequestedEvent = Extract<
+  RuntimeEvent,
+  { type: "detour.requested" }
+>;
+export type DetourReviewedEvent = Extract<
+  RuntimeEvent,
+  { type: "detour.reviewed" }
+>;
 
 export type WorkContractFields = {
   scope?: string[];
@@ -307,5 +315,154 @@ export function evaluateCompletionCard(input: {
     missing,
     judgeable: missing.length === 0,
     note: matrix.note,
+  };
+}
+
+/**
+ * Builds a `detour.requested` event (EI §3.4): the model declares it needs to
+ * work outside the accepted contract's scope. `currentVersion` is the
+ * optimistic lock against the accepted contract; the deltas are merged into a
+ * new accepted contract (v+1) only after the user approves.
+ */
+export function buildDetourRequested(input: {
+  id: string;
+  detourID: string;
+  planID: string;
+  currentVersion: number;
+  reason: string;
+  scopeDelta: string[];
+  verificationDelta?: string[];
+  constraintDelta?: string[];
+  requestedAt: string;
+}): DetourRequestedEvent {
+  return {
+    type: "detour.requested",
+    id: input.id,
+    detourID: input.detourID,
+    planID: input.planID,
+    currentVersion: input.currentVersion,
+    reason: input.reason,
+    scopeDelta: input.scopeDelta,
+    ...(input.verificationDelta?.length
+      ? { verificationDelta: input.verificationDelta }
+      : {}),
+    ...(input.constraintDelta?.length
+      ? { constraintDelta: input.constraintDelta }
+      : {}),
+    requestedAt: input.requestedAt,
+    requestedBy: "model",
+  };
+}
+
+/**
+ * Builds a `detour.reviewed` event (EI §3.4): Nia's independent opinion
+ * (approve / reject) or `unavailable` when Nia could not review. Nia's verdict
+ * is always a reference; the user's approval lands as work_contract.accepted.
+ */
+export function buildDetourReviewed(input: {
+  id: string;
+  detourID: string;
+  planID: string;
+  verdict: "approve" | "reject" | "unavailable";
+  reviewedBy: "nia" | "user";
+  reviewedAt: string;
+  rationale?: string;
+}): DetourReviewedEvent {
+  return {
+    type: "detour.reviewed",
+    id: input.id,
+    detourID: input.detourID,
+    planID: input.planID,
+    verdict: input.verdict,
+    ...(input.rationale ? { rationale: input.rationale } : {}),
+    reviewedBy: input.reviewedBy,
+    reviewedAt: input.reviewedAt,
+  };
+}
+
+/**
+ * Validates a detour declaration (EI §3.4): the reason must be non-empty and
+ * at least one delta must be present (a detour that changes nothing is not a
+ * detour). The scopeDelta must not overlap the accepted scope — a detour adds
+ * new scope, it does not re-commit scope already covered. Returns the rejection
+ * reasons; an empty array means the detour is valid.
+ */
+export function validateDetour(input: {
+  reason: string;
+  scopeDelta: string[];
+  verificationDelta?: string[];
+  constraintDelta?: string[];
+  currentScope?: string[];
+}): string[] {
+  const problems: string[] = [];
+  if (!input.reason.trim())
+    problems.push("a detour requires a non-empty reason");
+  const hasDelta =
+    input.scopeDelta.length > 0 ||
+    (input.verificationDelta?.length ?? 0) > 0 ||
+    (input.constraintDelta?.length ?? 0) > 0;
+  if (!hasDelta)
+    problems.push(
+      "a detour requires at least one scope/verification/constraint delta",
+    );
+  for (const entry of input.scopeDelta) {
+    if (typeof entry !== "string" || !entry.trim()) {
+      problems.push("scopeDelta contains an empty entry");
+      continue;
+    }
+    if (isPlaceholderContractValue(entry))
+      problems.push(
+        `scopeDelta entry "${entry.trim().slice(0, 40)}" is a placeholder`,
+      );
+    // A scopeDelta that overlaps the committed scope is not a detour — it is
+    // already covered, so declaring it is a no-op the user should not gate on.
+    if (
+      (input.currentScope ?? []).some(
+        (existing) =>
+          existing === entry.trim() ||
+          entry.trim().startsWith(`${existing}`) ||
+          existing.startsWith(entry.trim()),
+      )
+    )
+      problems.push(
+        `scopeDelta entry "${entry.trim().slice(0, 40)}" overlaps the accepted scope`,
+      );
+  }
+  return problems;
+}
+
+/**
+ * Merges an approved detour's deltas into the accepted contract, producing the
+ * next version's fields (EI §3.4): scope/verification/constraints are unions
+ * (deduped, order-preserving). The objective direction never changes through a
+ * detour — only the scope/verification/constraints increments are absorbed.
+ */
+export function mergeDetourIntoContract(
+  current: WorkContractFields,
+  detour: {
+    scopeDelta: string[];
+    verificationDelta?: string[];
+    constraintDelta?: string[];
+  },
+): WorkContractFields {
+  const union = (...lists: Array<string[] | undefined>): string[] => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const list of lists)
+      for (const entry of list ?? [])
+        if (entry.trim() && !seen.has(entry)) {
+          seen.add(entry);
+          result.push(entry);
+        }
+    return result;
+  };
+  return {
+    scope: union(current.scope, detour.scopeDelta),
+    ...(current.verification?.length || detour.verificationDelta?.length
+      ? { verification: union(current.verification, detour.verificationDelta) }
+      : {}),
+    ...(current.constraints?.length || detour.constraintDelta?.length
+      ? { constraints: union(current.constraints, detour.constraintDelta) }
+      : {}),
   };
 }

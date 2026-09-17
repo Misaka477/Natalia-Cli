@@ -24,6 +24,10 @@ export { createWorkLedgerController } from "./work-ledger-controller";
 export {
   buildWorkContractAccepted,
   buildWorkContractDrafted,
+  buildDetourRequested,
+  buildDetourReviewed,
+  mergeDetourIntoContract,
+  validateDetour,
   classifyTaskKind,
   evaluateCompletionCard,
   isPlaceholderContractValue,

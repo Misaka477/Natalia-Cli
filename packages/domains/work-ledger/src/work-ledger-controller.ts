@@ -11,9 +11,13 @@ import {
   buildPlanDocUpdated,
 } from "./plan-registry";
 import {
+  buildDetourRequested,
+  buildDetourReviewed,
   buildWorkContractAccepted,
   buildWorkContractDrafted,
   evaluateCompletionCard,
+  mergeDetourIntoContract,
+  validateDetour,
   validateWorkContractFields,
 } from "./work-contract";
 import {
@@ -50,6 +54,10 @@ export function createWorkLedgerController(
     buildDriftFindingUpdate,
     buildWorkContractDrafted,
     buildWorkContractAccepted,
+    buildDetourRequested,
+    buildDetourReviewed,
+    validateDetour,
+    mergeDetourIntoContract,
     validateWorkContractFields,
     evaluateCompletionCard,
     agentActionNode,

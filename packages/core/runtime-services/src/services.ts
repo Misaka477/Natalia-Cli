@@ -936,6 +936,10 @@ export interface WorkLedgerController {
   buildDriftFindingUpdate: ServiceOperation;
   buildWorkContractDrafted: ServiceOperation;
   buildWorkContractAccepted: ServiceOperation;
+  buildDetourRequested: ServiceOperation;
+  buildDetourReviewed: ServiceOperation;
+  validateDetour: ServiceOperation;
+  mergeDetourIntoContract: ServiceOperation;
   validateWorkContractFields: ServiceOperation;
   evaluateCompletionCard: ServiceOperation;
   agentActionNode: ServiceOperation;

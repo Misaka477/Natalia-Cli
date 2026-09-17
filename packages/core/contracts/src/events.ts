@@ -1173,6 +1173,44 @@ type RuntimeEventData =
     }
   | {
       /**
+       * A model-declared detour (EI §3.4): the agent asks to work outside the
+       * accepted WorkContract's scope, carrying the increments it wants added.
+       * `currentVersion` is the optimistic lock — the accepted contract version
+       * the detour was declared against; a stale declaration is rejected. The
+       * deltas are merged into a new accepted contract (v+1) only after the
+       * user approves; a detour never silently replaces the commitment.
+       */
+      type: "detour.requested";
+      id: string;
+      detourID: string;
+      planID: string;
+      currentVersion: number;
+      reason: string;
+      scopeDelta: string[];
+      verificationDelta?: string[];
+      constraintDelta?: string[];
+      requestedAt: string;
+      requestedBy: "model";
+    }
+  | {
+      /**
+       * A detour review (EI §3.4): Nia's independent opinion on a requested
+       * detour, or the user's final decision. Nia's verdict is always a
+       * reference — the approval right is the user's; `unavailable` records that
+       * Nia could not review (timeout / crash) and the gate proceeds without an
+       * opinion. The user's approval lands as work_contract.accepted(v+1).
+       */
+      type: "detour.reviewed";
+      id: string;
+      detourID: string;
+      planID: string;
+      verdict: "approve" | "reject" | "unavailable";
+      rationale?: string;
+      reviewedBy: "nia" | "user";
+      reviewedAt: string;
+    }
+  | {
+      /**
        * A prompt-level context instruction change (ADR Phase C): the durable
        * journal record that the runtime's prompt-level instructions changed
        * (config reload, agent switch, a plan handoff notice). The projection

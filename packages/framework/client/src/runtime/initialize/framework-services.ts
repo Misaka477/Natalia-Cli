@@ -37,6 +37,7 @@ import {
   createConstitutionProposeTool,
   createPlanProposeTool,
   createWorkContractReadTool,
+  createDetourDeclareTool,
 } from "../plan-contract-tools";
 import { createWorkGraphQueryTool } from "../work-graph-tools";
 import {
@@ -232,6 +233,7 @@ export async function wireFrameworkServices(
     createPlanDocReadTool(ctx),
     createPlanProposeTool(ctx),
     createWorkContractReadTool(ctx),
+    createDetourDeclareTool(ctx),
     createWorkGraphQueryTool(ctx),
     // EI §8.4: model-facing journal record tools.
     createRecordValidationTool(ctx),

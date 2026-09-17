@@ -30,6 +30,7 @@ import { createWorkspaceRuntime } from "../workspace-runtime";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";
+import { createDetourReviewTool } from "../plan-contract-tools";
 
 const CHAT_READ_ONLY_TOOLS = new Set([
   "read_file",
@@ -1088,6 +1089,11 @@ export function createChatTools(ctx: RuntimeContext) {
         }
       },
     });
+    // EI §3.4: Nia reviews requested detours; her verdict is a reference for
+    // the user, who decides through the detour gate. Nia-only (not the main
+    // agent, which declares detours but never reviews its own).
+    if (!visible.some((tool) => tool.name === "detour_review"))
+      visible.push(createDetourReviewTool(ctx));
     // ADR D8: stable order across turns (see naviChatTools).
     return stableToolOrder(visible);
   }

@@ -249,6 +249,185 @@ export function createWorkContractReadTool(ctx: RuntimeContext): RuntimeTool {
 }
 
 /**
+ * `detour_declare` (EI §3.4): the model asks to work outside the accepted
+ * WorkContract's scope. This is the legitimate way to touch committed scope
+ * the plan did not anticipate — an undeclared move past the scope is a
+ * target_drift warning, a declared one is gated and, on user approval, becomes
+ * a new accepted contract (v+1). The declaration is validated (non-empty,
+ * scopeDelta does not overlap the accepted scope), recorded durably as
+ * `detour.requested`, and Nia is woken to review it asynchronously; the gate
+ * fires immediately (it does not wait for Nia), and Nia's opinion is always a
+ * reference — the approval right stays with the user.
+ */
+export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
+  return {
+    name: "detour_declare",
+    description:
+      "Declare a detour: work outside the accepted WorkContract's scope, with the scope/verification/constraint increments you need. currentVersion is the accepted contract version (optimistic lock). The scopeDelta must not overlap the committed scope. This blocks until the user Allow/Reject; on Allow a new accepted contract (v+1) absorbs the deltas, on Reject you get feedback. Nia reviews it asynchronously but the approval is always the user's.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        planID: { type: "string", description: "The plan's planID." },
+        currentVersion: {
+          type: "number",
+          description:
+            "The accepted contract version you are detouring from (optimistic lock).",
+        },
+        reason: {
+          type: "string",
+          description: "Why the work needs to go outside the committed scope.",
+        },
+        scopeDelta: {
+          type: "array",
+          items: { type: "string" },
+          description: "New scope paths to add (must not overlap the committed scope).",
+        },
+        verificationDelta: {
+          type: "array",
+          items: { type: "string" },
+          description: "New verification steps to add.",
+        },
+        constraintDelta: {
+          type: "array",
+          items: { type: "string" },
+          description: "New constraints to add.",
+        },
+      },
+      required: ["planID", "currentVersion", "reason", "scopeDelta"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      const args = parsed as {
+        planID?: string;
+        currentVersion?: number;
+        reason?: string;
+        scopeDelta?: string[];
+        verificationDelta?: string[];
+        constraintDelta?: string[];
+      };
+      const exec = resolveExec(ctx, context.sessionID);
+      if (!exec) return "no session";
+      const planID = args.planID?.trim();
+      if (!planID) return "detour_declare requires planID";
+      const ledger = requireWorkLedger(ctx);
+      if (!ledger) return "work ledger unavailable";
+      // Read the accepted contract from the complete fact state (a detour may
+      // be declared long after the contract was accepted, outside the window).
+      await ensureCompleteSessionFactState(ctx, exec);
+      const contract = (
+        exec.factState
+          ? sessionFactWorkContracts(exec.factState)
+          : projectedWorkContracts(exec.session.events)
+      ).find(
+        (candidate) => candidate.planID === planID && candidate.status === "current",
+      );
+      if (!contract)
+        return JSON.stringify({
+          accepted: false,
+          reason: `no accepted WorkContract for ${planID}; propose one with plan_propose first`,
+        });
+      // Optimistic lock: the detour is declared against a specific version.
+      if (args.currentVersion !== contract.version)
+        return JSON.stringify({
+          accepted: false,
+          reason: `stale currentVersion ${args.currentVersion}; the accepted contract is v${contract.version}; re-read it with work_contract_read`,
+        });
+      const problems = ledger.validateDetour({
+        reason: args.reason ?? "",
+        scopeDelta: args.scopeDelta ?? [],
+        ...(args.verificationDelta ? { verificationDelta: args.verificationDelta } : {}),
+        ...(args.constraintDelta ? { constraintDelta: args.constraintDelta } : {}),
+        currentScope: contract.scope ?? [],
+      });
+      if (problems.length)
+        return JSON.stringify({
+          accepted: false,
+          problems,
+          reason: "the detour failed validation; fix the problems and re-declare",
+        });
+      const now = new Date().toISOString();
+      const detourID = `${planID}:detour:${ctx.ports.nextPlanSequence()}`;
+      ctx.ports.publishForSession(
+        exec,
+        ledger.buildDetourRequested({
+          id: detourID,
+          detourID,
+          planID,
+          currentVersion: contract.version,
+          reason: args.reason!,
+          scopeDelta: args.scopeDelta!,
+          ...(args.verificationDelta ? { verificationDelta: args.verificationDelta } : {}),
+          ...(args.constraintDelta ? { constraintDelta: args.constraintDelta } : {}),
+          requestedAt: now,
+        }),
+      );
+      // Nia reviews the detour asynchronously (explicit trigger, not per-turn);
+      // the gate does not wait for her.
+      ctx.ports.requestNiaWake(exec);
+      const previewLines = [
+        `reason: ${args.reason}`,
+        `scope +: ${(args.scopeDelta ?? []).join("; ")}`,
+        ...(args.verificationDelta?.length
+          ? [`verification +: ${args.verificationDelta.join("; ")}`]
+          : []),
+        ...(args.constraintDelta?.length
+          ? [`constraints +: ${args.constraintDelta.join("; ")}`]
+          : []),
+        `→ new contract v${contract.version + 1}`,
+      ];
+      const response = await ctx.ports.getInteractive().requirePlanAcceptance({
+        approvalID: `detour:${detourID}`,
+        planID,
+        title: `Approve detour for ${planID}`,
+        preview: previewLines.join("\n"),
+        detail: `${args.reason}\n\n${previewLines.join("\n")}`,
+        scope: "detour",
+        sessionID: exec.session.id,
+        signal: context.signal,
+      });
+      if (!response || response.decision === "reject")
+        return JSON.stringify({
+          accepted: false,
+          detourID,
+          reason: `rejected${response?.feedback ? `: ${response.feedback}` : ""}`,
+          hint: "the detour stays on the journal as requested; do not touch the out-of-scope work",
+        });
+      // User approval absorbs the deltas into a new accepted contract (v+1).
+      const merged = ledger.mergeDetourIntoContract(
+        {
+          ...(contract.scope ? { scope: contract.scope } : {}),
+          ...(contract.verification ? { verification: contract.verification } : {}),
+          ...(contract.constraints ? { constraints: contract.constraints } : {}),
+        },
+        {
+          scopeDelta: args.scopeDelta!,
+          ...(args.verificationDelta ? { verificationDelta: args.verificationDelta } : {}),
+          ...(args.constraintDelta ? { constraintDelta: args.constraintDelta } : {}),
+        },
+      );
+      ctx.ports.publishForSession(
+        exec,
+        ledger.buildWorkContractAccepted({
+          id: `${planID}:work-contract-accepted:${ctx.ports.nextPlanSequence()}`,
+          planID,
+          planVersion: contract.version + 1,
+          ...merged,
+          acceptedAt: new Date().toISOString(),
+        }),
+      );
+      return JSON.stringify({
+        accepted: true,
+        detourID,
+        planID,
+        version: contract.version + 1,
+        hint: "the detour is now part of the accepted contract; proceed with the work",
+      });
+    },
+  };
+}
+
+/**
  * `constitution_propose_rule` (EI §3.8 P-1.c / §8.5): the model proposes a
  * rule that tightens itself. The proposal is validated (deny/approval require
  * a non-empty appliesTo anchor; release scope is rejected — runtime
@@ -369,6 +548,79 @@ export function createConstitutionProposeTool(
         }),
       );
       return JSON.stringify({ proposed: true, ruleID });
+    },
+  };
+}
+
+
+/**
+ * `detour_review` (EI §3.4): Nia's independent opinion on a requested detour.
+ * Nia reads the detour (and the contract / work graph) and records a
+ * `detour.reviewed` fact. Her verdict is always a reference — the approval
+ * right stays with the user, who decides through the detour gate. Nia never
+ * approves or mutates the contract herself.
+ */
+export function createDetourReviewTool(ctx: RuntimeContext): RuntimeTool {
+  return {
+    name: "detour_review",
+    description:
+      "Record Nia's independent review of a requested detour: approve or reject, with an optional rationale. Your verdict is a reference for the user, who makes the final decision through the detour gate. Read the detour and the accepted contract first.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        detourID: {
+          type: "string",
+          description: "The detourID from the detour.requested fact.",
+        },
+        verdict: {
+          type: "string",
+          enum: ["approve", "reject"],
+          description: "Nia's opinion on the detour.",
+        },
+        rationale: {
+          type: "string",
+          description: "Why Nia approves or rejects (safe prose).",
+        },
+      },
+      required: ["detourID", "verdict"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      const args = parsed as {
+        detourID?: string;
+        verdict?: "approve" | "reject";
+        rationale?: string;
+      };
+      const exec = resolveExec(ctx, context.sessionID);
+      if (!exec) return "no session";
+      const detourID = args.detourID?.trim();
+      if (!detourID) return "detour_review requires detourID";
+      if (args.verdict !== "approve" && args.verdict !== "reject")
+        return "detour_review requires verdict approve|reject";
+      const ledger = requireWorkLedger(ctx);
+      if (!ledger) return "work ledger unavailable";
+      // Find the requested detour to attribute the review to its plan.
+      await ensureCompleteSessionFactState(ctx, exec);
+      const requested = exec.session.events.find(
+        (event): event is Extract<typeof event, { type: "detour.requested" }> =>
+          event.type === "detour.requested" && event.detourID === detourID,
+      );
+      if (!requested)
+        return `no requested detour ${detourID}; read the session's detour.requested facts first`;
+      ctx.ports.publishForSession(
+        exec,
+        ledger.buildDetourReviewed({
+          id: `detour:reviewed:${detourID}:${ctx.ports.nextPlanSequence()}`,
+          detourID,
+          planID: requested.planID,
+          verdict: args.verdict,
+          reviewedBy: "nia",
+          reviewedAt: new Date().toISOString(),
+          ...(args.rationale ? { rationale: args.rationale } : {}),
+        }),
+      );
+      return JSON.stringify({ reviewed: true, detourID, verdict: args.verdict });
     },
   };
 }
