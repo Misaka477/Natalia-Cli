@@ -29,6 +29,7 @@ test("Phase 4 E2E: plan checkboxes project to evidence-first task states", async
       "- [x] add the parser",
       "- [x] wire the runtime client",
       "- [ ] ship the docs",
+      "- [ ] refactor the tokenizer",
       "- [~] legacy cleanup",
     ].join("\n"),
     title: "E2E tasks",
@@ -50,6 +51,19 @@ test("Phase 4 E2E: plan checkboxes project to evidence-first task states", async
     },
     SESSION,
   );
+  // A second completion backs an OPEN task — work has started but is not
+  // declared done.
+  await client.recordCompletion!(
+    {
+      taskID: "plan:e2e:tasks",
+      objective: "refactor the tokenizer",
+      changeSummary: "started the tokenizer refactor",
+      validations: [{ command: "bun test", result: "passed", safeSummary: "green" }],
+      knownGaps: [],
+      rollbackState: "clean",
+    },
+    SESSION,
+  );
 
   const states = await client.planTaskStates!({ planID }, SESSION);
   const byText = new Map(states.map((task) => [task.text, task.state]));
@@ -59,6 +73,8 @@ test("Phase 4 E2E: plan checkboxes project to evidence-first task states", async
   expect(byText.get("wire the runtime client")).toBe("gap");
   // Open + no evidence -> pending.
   expect(byText.get("ship the docs")).toBe("pending");
+  // Open + evidence -> in_progress (work started, not declared done).
+  expect(byText.get("refactor the tokenizer")).toBe("in_progress");
   // Skipped stays visible.
   expect(byText.get("legacy cleanup")).toBe("skipped");
   await client.dispose?.();
