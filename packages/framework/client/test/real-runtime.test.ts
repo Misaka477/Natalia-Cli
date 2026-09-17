@@ -7735,6 +7735,70 @@ test("a high-risk promotion requires a multi-stage user confirmation (E5 R3/R4)"
   await client.dispose?.();
 });
 
+test("a rejected high-risk promotion leaves the host unchanged and records failed evidence (E5 R3/R4)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-e5-highrisk-reject-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 3, sandbox: { promoteCommand: "true" } }),
+  );
+  const kernel = new CapabilityRegistry();
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_e5_highrisk_reject",
+    capabilityRegistry: kernel,
+    permissionMode: "ask",
+    provider: singleToolProvider("sandbox_create", { id: "box" }),
+  });
+  let gateFired = false;
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request") {
+      if ((event as { scope?: string }).scope === "sandbox_promotion") {
+        gateFired = true;
+        client.respondApproval({ requestID: event.id, decision: "reject" });
+      } else {
+        client.respondApproval({ requestID: event.id, decision: "once" });
+      }
+    }
+  });
+  await client.submitAndWait!("create sandbox");
+  await pollHistoryForFinished(client);
+  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  await sandboxes.write("box", "packages/core/tools/src/types.ts", "export {}\n");
+
+  // The high-risk gate fired and the user rejected it: the merge refuses.
+  let rejected = false;
+  try {
+    await client.sandboxMerge!("box");
+  } catch (error) {
+    rejected = /rejected by the user/iu.test(
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  expect(gateFired).toBe(true);
+  expect(rejected).toBe(true);
+  // The host is unchanged: the high-risk file did not land.
+  const landed = await readFile(
+    join(root, "packages/core/tools/src/types.ts"),
+    "utf8",
+  ).then(
+    () => true,
+    () => false,
+  );
+  expect(landed).toBe(false);
+  // Failed promotion evidence is recorded.
+  const records = await client.evidenceRecords!();
+  expect(
+    records.some(
+      (record) =>
+        record.taskID === "sandbox:box" && record.status === "failed",
+    ),
+  ).toBe(true);
+  await client.dispose?.();
+});
+
 test("a low-risk promotion skips the multi-stage confirmation (E5)", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-e5-lowrisk-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
