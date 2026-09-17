@@ -47,6 +47,15 @@ function taskStateLabel(state: string): string {
   return TASK_STATE_LABELS[state] ?? state;
 }
 
+/**
+ * A task label is one line of the plan document, so it can carry inline
+ * Markdown (`**bold**`, `code`, links). Render it the way the plan preview
+ * does instead of showing the raw syntax — raw labels are hard to read.
+ */
+function taskTextHtml(text: string): string {
+  return marked.parseInline(text ?? "") as string;
+}
+
 function MarkdownPreview(props: { content: string }) {
   const html = createMemo(() => marked.parse(props.content ?? "") as string);
   return <div class="plan-panel-preview markdown-body" innerHTML={html()} />;
@@ -513,9 +522,8 @@ export function PlanPanel(props: {
                           <span
                             class="plan-task-text"
                             style={{ "padding-left": `${task.depth * 14}px` }}
-                          >
-                            {task.text}
-                          </span>
+                            innerHTML={taskTextHtml(task.text)}
+                          />
                         </div>
                       )}
                     </For>

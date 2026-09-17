@@ -4925,6 +4925,19 @@ button.neu-settings-item.neu-settings-item-button:active {
   min-width: 0;
   word-break: break-word;
 }
+.plan-task-text strong {
+  font-weight: 600;
+}
+.plan-task-text code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  font-family: var(--neu-font-mono);
+  font-size: 10px;
+}
+.plan-task-text a {
+  color: var(--neu-accent);
+}
 .drift-card {
   padding: 6px 8px;
   margin-bottom: 6px;
