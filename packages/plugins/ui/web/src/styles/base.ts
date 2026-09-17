@@ -4859,6 +4859,34 @@ button.neu-settings-item.neu-settings-item-button:active {
   background: rgba(255, 255, 255, 0.03);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
+.plan-task-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.plan-task-counts {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--neu-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-task-toggle {
+  flex: 0 0 auto;
+  color: var(--neu-accent);
+  font-size: 10px;
+  opacity: 0.85;
+}
 .plan-task-row {
   display: flex;
   align-items: baseline;

@@ -81,6 +81,20 @@ export function PlanPanel(props: {
       state: string;
     }>
   >([]);
+  // The task list is collapsed by default: a plan's controls (edit / preview /
+  // active / delete) must stay immediately visible, so the states render as a
+  // compact one-line summary the user expands on demand.
+  const [tasksExpanded, setTasksExpanded] = createSignal(false);
+  const taskStateSummary = createMemo(() =>
+    ["verified", "gap", "in_progress", "pending", "skipped"]
+      .map((state) => ({
+        state,
+        count: taskStates().filter((task) => task.state === state).length,
+      }))
+      .filter((entry) => entry.count > 0)
+      .map((entry) => `${taskStateLabel(entry.state)} ${entry.count}`)
+      .join(" · "),
+  );
   const sessionID = () => props.sessionID ?? props.state.sessionID;
 
   const plans = createMemo(() =>
@@ -431,27 +445,7 @@ export function PlanPanel(props: {
                   </div>
                 )}
               </Show>
-              <Show when={taskStates().length}>
-                <div class="plan-task-states">
-                  <div class="review-section-label">任务态</div>
-                  <For each={taskStates()}>
-                    {(task) => (
-                      <div class="plan-task-row" data-state={task.state}>
-                        <span class="plan-task-badge" data-state={task.state}>
-                          {taskStateLabel(task.state)}
-                        </span>
-                        <span
-                          class="plan-task-text"
-                          style={{ "padding-left": `${task.depth * 14}px` }}
-                        >
-                          {task.text}
-                        </span>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </Show>
-              <div class="plan-panel-doc-buttons">
+<div class="plan-panel-doc-buttons">
                 <button
                   type="button"
                   class="plan-panel-btn"
@@ -494,6 +488,40 @@ export function PlanPanel(props: {
                   删除标记
                 </button>
               </div>
+              <Show when={taskStates().length}>
+                <div class="plan-task-states">
+                  <button
+                    type="button"
+                    class="plan-task-summary"
+                    onClick={() => setTasksExpanded(!tasksExpanded())}
+                  >
+                    <span class="review-section-label">任务态</span>
+                    <span class="plan-task-counts">{taskStateSummary()}</span>
+                    <span class="plan-task-toggle">
+                      {tasksExpanded()
+                        ? "收起"
+                        : `展开 ${taskStates().length}`}
+                    </span>
+                  </button>
+                  <Show when={tasksExpanded()}>
+                    <For each={taskStates()}>
+                      {(task) => (
+                        <div class="plan-task-row" data-state={task.state}>
+                          <span class="plan-task-badge" data-state={task.state}>
+                            {taskStateLabel(task.state)}
+                          </span>
+                          <span
+                            class="plan-task-text"
+                            style={{ "padding-left": `${task.depth * 14}px` }}
+                          >
+                            {task.text}
+                          </span>
+                        </div>
+                      )}
+                    </For>
+                  </Show>
+                </div>
+              </Show>
               <Show
                 when={preview()}
                 fallback={
