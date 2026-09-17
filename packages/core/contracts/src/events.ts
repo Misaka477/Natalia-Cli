@@ -3794,6 +3794,7 @@ export type RuntimeClient = {
       originalObjective: string;
       currentActivity: string;
       evidence: string[];
+      applicableConstraints: string[];
       status:
         | "open"
         | "explained"

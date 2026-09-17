@@ -607,6 +607,7 @@ export function createIntelligenceSurface(
           originalObjective: f.originalObjective,
           currentActivity: f.currentActivity,
           evidence: f.evidence,
+          applicableConstraints: f.applicableConstraints,
           status: f.status,
           contractVersion: f.contractVersion,
           ruleHits: f.ruleHits,

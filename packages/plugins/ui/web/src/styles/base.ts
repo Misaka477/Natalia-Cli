@@ -4732,8 +4732,37 @@ button.neu-settings-item.neu-settings-item-button:active {
 .drift-card-goal,
 .drift-card-current {
   margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.drift-card-meta {
+  margin-top: 2px;
+  opacity: 0.72;
+  font-size: 11px;
+}
+.drift-card-section {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.drift-card-section-title {
+  margin-bottom: 2px;
+  color: var(--neu-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.drift-card-rule,
+.drift-card-evidence {
+  padding-left: 6px;
+  opacity: 0.85;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.drift-card-evidence::before {
+  content: "· ";
+  opacity: 0.6;
 }
 .drift-card-rationale {
   margin-top: 3px;

@@ -151,9 +151,56 @@ export function GovernancePane(props: {
                 <div class="drift-card-goal">
                   Goal: {finding.originalObjective}
                 </div>
+                <Show when={finding.planID}>
+                  <div class="drift-card-meta">Plan: {finding.planID}</div>
+                </Show>
                 <div class="drift-card-current">
                   Current: {finding.currentActivity}
                 </div>
+                <Show
+                  when={
+                    finding.ruleHits?.length ||
+                    finding.contractVersion !== undefined
+                  }
+                >
+                  <div class="drift-card-section">
+                    <div class="drift-card-section-title">
+                      Why this fired
+                    </div>
+                    <Show when={finding.contractVersion !== undefined}>
+                      <div class="drift-card-meta">
+                        contract v{finding.contractVersion}
+                      </div>
+                    </Show>
+                    <For each={finding.ruleHits ?? []}>
+                      {(hit) => (
+                        <div class="drift-card-rule">
+                          {hit.rule} · {Math.round(hit.confidence * 100)}%
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Show when={finding.evidence?.length}>
+                  <div class="drift-card-section">
+                    <div class="drift-card-section-title">Evidence</div>
+                    <For each={finding.evidence}>
+                      {(item) => (
+                        <div class="drift-card-evidence">{item}</div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Show when={finding.applicableConstraints?.length}>
+                  <div class="drift-card-section">
+                    <div class="drift-card-section-title">Constraints</div>
+                    <For each={finding.applicableConstraints}>
+                      {(item) => (
+                        <div class="drift-card-evidence">{item}</div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
                 <Show when={finding.rationale}>
                   <div class="drift-card-rationale">{finding.rationale}</div>
                 </Show>
