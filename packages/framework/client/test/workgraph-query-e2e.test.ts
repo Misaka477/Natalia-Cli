@@ -129,3 +129,76 @@ test("Phase 3 E2E: work_graph_query filters by nodeKind and reports truncation",
 
   await client.dispose?.();
 }, 30_000);
+
+
+test("Phase 3 E2E: work_graph_query returns an empty (not error) result for a non-matching query", async () => {
+  const root = await officialPluginWorkspace("workgraph-query-empty");
+  const results: string[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        const messages = (
+          request as { messages: Array<{ role: string; content: string; toolCallID?: string }> }
+        ).messages;
+        const graphResult = messages
+          .filter(
+            (message) =>
+              message.role === "tool" &&
+              String(message.toolCallID ?? "").startsWith("call_graph"),
+          )
+          .at(-1);
+        if (graphResult) {
+          results.push(String(graphResult.content ?? ""));
+          if (results.length === 1) {
+            // A findingID precise query with no matching chain.
+            yield {
+              type: "tool_call" as const,
+              calls: [
+                {
+                  id: "call_graph",
+                  name: "work_graph_query",
+                  arguments: JSON.stringify({ findingID: "DF-nonexistent" }),
+                },
+              ],
+            };
+            yield { type: "done" as const };
+            return;
+          }
+          yield { type: "content" as const, text: "queried" };
+          yield { type: "done" as const };
+          return;
+        }
+        // First: a nodeKind with no nodes in this session.
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "call_graph",
+              name: "work_graph_query",
+              arguments: JSON.stringify({ nodeKind: "goal" }),
+            },
+          ],
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!(SESSION);
+  await client.submitAndWait!("query the graph");
+
+  expect(results.length).toBeGreaterThanOrEqual(2);
+  // A non-matching nodeKind filter is a success with an empty result, not an
+  // error string.
+  const byKind = JSON.parse(results[0]!) as GraphResult;
+  expect(byKind).toMatchObject({ total: 0, truncated: false, nodes: [] });
+  // A findingID precise query with no matching chain is likewise empty success.
+  const byFinding = JSON.parse(results[1]!) as GraphResult;
+  expect(byFinding).toMatchObject({ total: 0, truncated: false, nodes: [] });
+  await client.dispose?.();
+}, 30_000);
