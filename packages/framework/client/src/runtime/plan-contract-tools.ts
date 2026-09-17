@@ -12,7 +12,11 @@
  * draft / none) projected from the journal, plus the stale marker a plan
  * document change raises on an unapproved draft.
  */
-import { projectedWorkContracts } from "@natalia/session";
+import {
+  projectedWorkContracts,
+  sessionFactWorkContracts,
+} from "@natalia/session";
+import { ensureCompleteSessionFactState } from "./session-full-events";
 import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
@@ -126,15 +130,17 @@ export function createPlanProposeTool(ctx: RuntimeContext): RuntimeTool {
         !(fields.verification?.length ?? false) &&
         !(fields.constraints?.length ?? false);
       const now = new Date().toISOString();
+      // EI §3.4: the draft binds to the plan document's real revision (its
+      // planVersion). A later plan-document edit bumps the revision and
+      // publishes `plan.doc.updated`, which marks this draft stale until it is
+      // re-proposed against the newer revision.
+      const planVersion = plan.revision ?? 1;
       ctx.ports.publishForSession(
         exec,
         ledger.buildWorkContractDrafted({
           id: `${planID}:work-contract:${ctx.ports.nextPlanSequence()}`,
           planID,
-          // The plan document has no persisted version counter yet; the draft
-          // binds to the plan's current document state and the projection
-          // marks it stale when the document changes.
-          planVersion: 1,
+          planVersion,
           ...fields,
           draftedAt: now,
         }),
@@ -170,7 +176,7 @@ export function createPlanProposeTool(ctx: RuntimeContext): RuntimeTool {
         ledger.buildWorkContractAccepted({
           id: `${planID}:work-contract-accepted:${ctx.ports.nextPlanSequence()}`,
           planID,
-          planVersion: 1,
+          planVersion,
           ...fields,
           acceptedAt: new Date().toISOString(),
           ...(unverifiable ? { unverifiable: true } : {}),
@@ -214,9 +220,16 @@ export function createWorkContractReadTool(ctx: RuntimeContext): RuntimeTool {
       if (!exec) return "no session";
       const planID = args.planID?.trim();
       if (!planID) return "work_contract_read requires planID";
-      const contract = projectedWorkContracts(exec.session.events).find(
-        (candidate) => candidate.planID === planID,
-      );
+      // EI §3.4 / Phase 1: read the complete fact state, not the live
+      // window. A fast-attach exec holds only a tail, so a contract drafted
+      // outside the current window (and its stale marker) would be missed;
+      // completing the fact state folds the whole durable history first.
+      await ensureCompleteSessionFactState(ctx, exec);
+      const contract = (
+        exec.factState
+          ? sessionFactWorkContracts(exec.factState)
+          : projectedWorkContracts(exec.session.events)
+      ).find((candidate) => candidate.planID === planID);
       if (!contract) return JSON.stringify({ planID, status: "none" });
       return JSON.stringify({
         planID,

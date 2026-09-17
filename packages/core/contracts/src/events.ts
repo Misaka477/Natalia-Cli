@@ -1370,9 +1370,17 @@ type RuntimeEventData =
       createdAt: string;
     }
   | {
+      /**
+       * A plan document content edit (EI §3.4 / Phase -1.a). Carries the plan
+       * document's new `revision` so the WorkContract projection can tell that
+       * a draft extracted from an older revision is stale and must be
+       * re-proposed. Revisions are monotonic per plan; an accepted contract is
+       * never invalidated by an edit — only an unapproved draft is.
+       */
       type: "plan.doc.updated";
       id: string;
       planID: string;
+      revision: number;
       updatedAt: string;
       reason?: string;
     }
@@ -3629,6 +3637,13 @@ export type RuntimeClient = {
       createdBy: "user" | "live_chat" | "main_agent";
       createdAt: string;
       updatedAt: string;
+      /**
+       * Monotonic content revision (EI §3.4): bumps on every plan-document
+       * write, and is the value a WorkContract draft binds to as its
+       * planVersion. A draft whose planVersion is older than the document's
+       * revision is stale and must be re-proposed.
+       */
+      revision: number;
       markedAt?: string;
     }>
   >;

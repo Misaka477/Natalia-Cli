@@ -62,6 +62,7 @@ export function buildPlanDocCreated(
 export function buildPlanDocUpdated(input: {
   id: string;
   planID: string;
+  revision: number;
   updatedAt: string;
   reason?: string;
 }): Extract<RuntimeEvent, { type: "plan.doc.updated" }> {
@@ -69,6 +70,7 @@ export function buildPlanDocUpdated(input: {
     type: "plan.doc.updated",
     id: input.id,
     planID: input.planID,
+    revision: input.revision,
     updatedAt: input.updatedAt,
     ...(input.reason ? { reason: input.reason } : {}),
   };

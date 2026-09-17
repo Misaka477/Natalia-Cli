@@ -1752,12 +1752,20 @@ export function applySessionWorkContractFact(
     });
     return;
   }
-  // A plan document edit invalidates a draft extracted from the older version;
-  // an accepted contract is the user's commitment and survives until a new
-  // one is approved.
+  // A plan document edit invalidates a draft extracted from an older
+  // revision; an accepted contract is the user's commitment and survives
+  // until a new one is approved. The update carries the document's new
+  // revision, so a draft is stale only when the document moved past the
+  // version it was extracted from (revision > planVersion); re-proposing
+  // against the current revision clears the marker.
   if (event.type === "plan.doc.updated") {
     const contract = state.contracts.get(event.planID);
-    if (contract && contract.status === "draft") contract.stale = true;
+    if (
+      contract &&
+      contract.status === "draft" &&
+      event.revision > contract.version
+    )
+      contract.stale = true;
   }
 }
 

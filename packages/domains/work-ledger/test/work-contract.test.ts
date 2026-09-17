@@ -185,14 +185,16 @@ test("repeated drafts keep the latest one", () => {
   ]);
 });
 
-test("a plan document edit marks the draft stale; a re-proposed draft clears it", () => {
+test("a plan document edit past the draft's version marks it stale; a re-proposed draft clears it", () => {
   const state = emptySessionWorkContractFactState();
   for (const event of contractEvents())
     applySessionWorkContractFact(state, event);
+  // The document moved to revision 2; the draft was extracted from revision 1.
   applySessionWorkContractFact(state, {
     type: "plan.doc.updated",
-    id: "plan:1:updated",
+    id: "plan:1:updated:2",
     planID: "plan:1",
+    revision: 2,
     updatedAt: now,
   });
   expect(sessionWorkContractsFrom(state)).toEqual([
@@ -224,6 +226,28 @@ test("a plan document edit marks the draft stale; a re-proposed draft clears it"
     },
   ]);
 });
+test("a plan document edit at or below the draft's version does not mark it stale", () => {
+  const state = emptySessionWorkContractFactState();
+  for (const event of contractEvents())
+    applySessionWorkContractFact(state, event);
+  // An update that does not move past the extracted revision (a touch or
+  // re-mark at the same version) must not invalidate a draft bound to it.
+  applySessionWorkContractFact(state, {
+    type: "plan.doc.updated",
+    id: "plan:1:updated:1",
+    planID: "plan:1",
+    revision: 1,
+    updatedAt: now,
+  });
+  expect(sessionWorkContractsFrom(state)).toEqual([
+    {
+      planID: "plan:1",
+      version: 1,
+      scope: ["packages/a"],
+      status: "draft",
+    },
+  ]);
+});
 
 test("a plan document edit never invalidates an accepted contract", () => {
   const state = emptySessionWorkContractFactState();
@@ -239,8 +263,9 @@ test("a plan document edit never invalidates an accepted contract", () => {
   );
   applySessionWorkContractFact(state, {
     type: "plan.doc.updated",
-    id: "plan:1:updated",
+    id: "plan:1:updated:2",
     planID: "plan:1",
+    revision: 2,
     updatedAt: now,
   });
   expect(sessionWorkContractsFrom(state)).toEqual([

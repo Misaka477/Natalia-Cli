@@ -40,6 +40,7 @@ export type PlanDocRuntime = {
       createdBy: "user" | "live_chat" | "main_agent";
       createdAt: string;
       updatedAt: string;
+      revision: number;
       markedAt?: string;
     }>
   >;
@@ -295,6 +296,34 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       const targetPath = ensurePlanPath(ctx, input.path);
       await mkdir(join(targetPath, ".."), { recursive: true });
       await writeFile(targetPath, input.content, "utf8");
+      // EI §3.4: an edit to an already-marked plan bumps its revision and
+      // publishes `plan.doc.updated`, so a WorkContract draft extracted from
+      // the older revision is marked stale and must be re-proposed. A write to
+      // a not-yet-marked file only creates the Markdown source (no registry
+      // entry to version yet).
+      const documentPath = relativePlanPath(ctx, targetPath);
+      const entries = await readIndex(ctx);
+      const existing = Object.values(entries).find(
+        (entry) => entry.documentPath === documentPath,
+      );
+      if (existing) {
+        const now = new Date().toISOString();
+        const revision = (existing.revision ?? 1) + 1;
+        existing.revision = revision;
+        existing.updatedAt = now;
+        entries[existing.planID] = existing;
+        await writeIndex(ctx, entries);
+        publish(
+          requireWorkLedger().buildPlanDocUpdated({
+            id: `${existing.planID}:updated:${revision}:${ctx.ports.nextPlanSequence()}`,
+            planID: existing.planID,
+            revision,
+            updatedAt: now,
+          }),
+          input.sessionID,
+        );
+        return { written: true, planID: existing.planID };
+      }
       return { written: true, planID: input.planID };
     },
 
@@ -331,6 +360,10 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
         createdBy: input.createdBy ?? "user",
         createdAt: now,
         updatedAt: now,
+        // EI §3.4: the plan document starts at revision 1; every later write
+        // bumps it, and a WorkContract draft binds to the revision it was
+        // extracted from (its planVersion).
+        revision: 1,
         markedAt: now,
       };
       entries[planID] = record;
@@ -477,7 +510,10 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
               requireWorkLedger().buildAuditRequested({
                 id: `audit:${planID}:${ctx.ports.nextPlanSequence()}`,
                 planID,
-                planVersion: 1,
+                // EI §3.4: bind the audit to the plan document's real
+                // revision, not a hardcoded 1 — an audit must be attributable
+                // to the exact document version it reviewed.
+                planVersion: record.revision ?? 1,
                 triggerEventID: statusID,
                 round,
                 scope: status === "auditing" ? "audit_wake" : "awaiting_audit",

@@ -677,6 +677,7 @@ test("work contracts fold to the current / draft three-state view with staleness
       type: "plan.doc.updated",
       id: "plan:1:updated",
       planID: "plan:1",
+      revision: 2,
       updatedAt: "2026-09-16T01:00:00.000Z",
     },
     {

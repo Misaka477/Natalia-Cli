@@ -38,6 +38,7 @@ test("plan registry transitions build the corresponding events", () => {
   const updated = buildPlanDocUpdated({
     id: "plan:update:1",
     planID: "plan_001",
+    revision: 2,
     updatedAt: "2026-09-02T00:02:00.000Z",
     reason: "refined objective",
   });
