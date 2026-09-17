@@ -7696,6 +7696,80 @@ test("promote records evidence when validation passes", async () => {
   await client.dispose?.();
 });
 
+test("a high-risk promotion requires a multi-stage user confirmation (E5 R3/R4)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-e5-highrisk-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 3, sandbox: { promoteCommand: "true" } }),
+  );
+  const kernel = new CapabilityRegistry();
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_e5_highrisk",
+    capabilityRegistry: kernel,
+    permissionMode: "ask",
+    provider: singleToolProvider("sandbox_create", { id: "box" }),
+  });
+  const approvalRequests: string[] = [];
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request") {
+      approvalRequests.push(String((event as { scope?: string }).scope ?? ""));
+      client.respondApproval({ requestID: event.id, decision: "once" });
+    }
+  });
+  await client.submitAndWait!("create sandbox");
+  await pollHistoryForFinished(client);
+  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  // A change to the tool contract is high risk.
+  await sandboxes.write("box", "packages/core/tools/src/types.ts", "export {}\n");
+  const changes = await client.sandboxMerge!("box");
+  // The multi-stage gate fired for the high-risk promotion.
+  expect(approvalRequests).toContain("sandbox_promotion");
+  // The user approved, so the high-risk file landed.
+  expect(changes).toContainEqual(
+    expect.objectContaining({ path: "packages/core/tools/src/types.ts" }),
+  );
+  await client.dispose?.();
+});
+
+test("a low-risk promotion skips the multi-stage confirmation (E5)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-e5-lowrisk-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({ version: 3, sandbox: { promoteCommand: "true" } }),
+  );
+  const kernel = new CapabilityRegistry();
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_e5_lowrisk",
+    capabilityRegistry: kernel,
+    permissionMode: "auto",
+    provider: singleToolProvider("sandbox_create", { id: "box" }),
+  });
+  client.start((event) => events.push(event));
+  await client.submitAndWait!("create sandbox");
+  await pollHistoryForFinished(client);
+  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  // A docs change is low risk.
+  await sandboxes.write("box", "docs/note.md", "hello");
+  const changes = await client.sandboxMerge!("box");
+  expect(changes).toContainEqual(expect.objectContaining({ path: "docs/note.md" }));
+  // No multi-stage confirmation gate for a low-risk promotion.
+  expect(
+    events.some(
+      (event) =>
+        event.type === "approval.request" &&
+        (event as { scope?: string }).scope === "sandbox_promotion",
+    ),
+  ).toBe(false);
+  await client.dispose?.();
+});
+
 test("failed validation records failed evidence and does not promote", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-e5-promote-fail-"));
   await mkdir(join(root, ".natalia"), { recursive: true });

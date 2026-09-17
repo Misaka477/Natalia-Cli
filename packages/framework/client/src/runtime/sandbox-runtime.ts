@@ -18,6 +18,7 @@ import {
   ensureSessionEventWindow,
   sessionWindowEvents,
 } from "./session-event-window";
+import { riskTierForChanges, riskTierForPath } from "@natalia/sandbox";
 
 async function appendSandboxMutation(
   ctx: RuntimeContext,
@@ -278,6 +279,50 @@ export function createSandboxRuntime(
         );
       }
       try {
+        // EI E5 (R3/R4): compute the promotion's risk tier from the candidate's
+        // real change set, and require a multi-stage confirmation for a
+        // high-risk promotion — one that touches the tool contract, the
+        // capability kernel or the plugin registry. A low/medium change clears
+        // the single per-path constitution gate; a high-risk one gets an
+        // explicit preview + confirm so a self-modifying agent cannot silently
+        // rewrite its own contract. The tier is recorded as an audit fact.
+        const preview = await sandboxes.previewMerge(id);
+        const tier = riskTierForChanges(preview);
+        ctx.ports.publishForSession(
+          owner,
+          sandboxes.auditEvent(id, "merge", tier === "high"),
+        );
+        if (tier === "high") {
+          const highRiskPaths = preview
+            .filter((change) => riskTierForPath(change.path) === "high")
+            .map((change) => change.path);
+          const response = await ctx.ports
+            .getInteractive()
+            .requirePlanAcceptance({
+              approvalID: `sandbox_promotion:${id}:${Date.now().toString(36)}`,
+              planID: id,
+              title: `High-risk promotion: sandbox ${id}`,
+              preview: highRiskPaths.join("\n"),
+              detail:
+                `This promotion touches ${highRiskPaths.length} high-risk path(s) ` +
+                `(the tool contract, capability kernel or plugin registry):\n` +
+                `${highRiskPaths.join("\n")}\n\nConfirm to proceed, or reject to leave the host unchanged.`,
+              scope: "sandbox_promotion",
+              sessionID: owner.session.id,
+            });
+          if (!response || response.decision === "reject") {
+            publishPromotionEvidence({
+              status: "failed",
+              result: "failed",
+              output: "high-risk promotion rejected by the user",
+              durationMs: performance.now() - startedAt,
+              knownGaps: ["high-risk promotion not confirmed; host unchanged"],
+            });
+            throw new Error(
+              `high-risk promotion of sandbox ${id} was rejected by the user`,
+            );
+          }
+        }
         const promotion = await sandboxes.promoteWithValidation(id, {
           command,
           hostRoot: ctx.ports.getWorkspaceRoot(),
