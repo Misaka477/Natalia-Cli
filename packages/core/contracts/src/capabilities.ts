@@ -214,6 +214,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "sessionAttach",
     "subagents",
     "subagentHistory",
+    "subagentHistoryPage",
   ],
   /** Tools and prompts contributed by MCP servers. */
   mcp: [
@@ -298,6 +299,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "chatSubmit",
     "chatAbort",
     "chatMessages",
+    "chatMessagesPage",
     "chatRollback",
     "chatModelProfile",
     "setChatModelProfile",

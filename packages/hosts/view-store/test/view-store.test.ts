@@ -1971,6 +1971,55 @@ test("hydrating chat rows splits Navi and Nia into independent streams", () => {
     "audit result",
   ]);
 });
+
+test("paged chat hydration prepends older and appends newer in order", () => {
+  const state = initialState();
+  hydrateNaviMessages(
+    state,
+    [
+      {
+        messageID: "page:new",
+        role: "chat",
+        text: "new",
+        at: "t2",
+        channel: "navi",
+      },
+    ],
+    { replace: true },
+  );
+  hydrateNaviMessages(
+    state,
+    [
+      {
+        messageID: "page:old",
+        role: "chat",
+        text: "old",
+        at: "t1",
+        channel: "navi",
+      },
+    ],
+    { direction: "older" },
+  );
+  hydrateNaviMessages(
+    state,
+    [
+      {
+        messageID: "page:newest",
+        role: "chat",
+        text: "newest",
+        at: "t3",
+        channel: "navi",
+      },
+    ],
+    { direction: "newer" },
+  );
+  expect(state.navi.messages.map((block) => block.text)).toEqual([
+    "old",
+    "new",
+    "newest",
+  ]);
+});
+
 test("events from another session do not mix into the current transcript", () => {
   const state = initialState();
   applyEvent(state, {

@@ -275,6 +275,7 @@ export const RPC_ROUTE_MEMBERS = {
   "session.snapshot": "sessionSnapshot",
   "session.subagents": "subagents",
   "subagent.history": "subagentHistory",
+  "subagent.history.page": "subagentHistoryPage",
   "attachment.upload": "uploadAttachment",
   "attachment.dataUrl": "attachmentDataUrl",
   "submit.input": "submitInput",
@@ -283,6 +284,7 @@ export const RPC_ROUTE_MEMBERS = {
   "input.promote": "promoteInput",
   // P8 C2: the always-available Live Work Chat conversation (read + rollback).
   "chat.messages": "chatMessages",
+  "chat.messages.page": "chatMessagesPage",
   "chat.model.profile": "chatModelProfile",
   "chat.model.profile.set": "setChatModelProfile",
   "chat.submit": "chatSubmit",
@@ -3079,6 +3081,28 @@ export async function handleRPCMessage(
         ),
       };
     }
+    if (body.method === "subagent.history.page") {
+      optionsGuard(client, "subagentHistoryPage");
+      const params = body.params;
+      if (
+        params !== undefined &&
+        (typeof params !== "object" || Array.isArray(params))
+      )
+        throw invalidParams(
+          "subagent.history.page.params must be an object",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.subagentHistoryPage?.(
+          (params ?? {}) as {
+            sessionID?: string;
+            cursor?: string;
+            limit?: number;
+          },
+        ),
+      };
+    }
     if (body.method === "attachment.upload") {
       optionsGuard(client, "uploadAttachment");
       const params = body.params ?? {};
@@ -3190,6 +3214,27 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.chatMessages?.(params?.channel, params?.sessionID),
+      };
+    }
+    if (body.method === "chat.messages.page") {
+      optionsGuard(client, "chatMessagesPage");
+      const params = body.params;
+      if (
+        params !== undefined &&
+        (typeof params !== "object" || Array.isArray(params))
+      )
+        throw invalidParams("chat.messages.page.params must be an object");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.chatMessagesPage?.(
+          (params ?? {}) as {
+            channel?: import("@natalia/contracts").ChatChannel;
+            sessionID?: string;
+            cursor?: string;
+            limit?: number;
+          },
+        ),
       };
     }
     if (body.method === "chat.abort") {

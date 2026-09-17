@@ -813,6 +813,8 @@ export function createWorkspaceRuntimeClient(
     "planDocMark",
     "planDocUpdateStatus",
     "chatSubmit",
+    "chatMessagesPage",
+    "subagentHistoryPage",
     "pendingInteractive",
     "commandExecute",
     "snapshot",

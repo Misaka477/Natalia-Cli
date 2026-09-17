@@ -137,13 +137,13 @@ export async function createUiPluginHost<TContext = unknown>(
       for (const listener of projectionListeners) listener(state);
       return evicted;
     },
-    hydrateNaviMessages(messages) {
-      const evicted = viewStore.hydrateNaviMessages(state, messages);
+    hydrateNaviMessages(messages, options) {
+      const evicted = viewStore.hydrateNaviMessages(state, messages, options);
       for (const listener of projectionListeners) listener(state);
       return evicted;
     },
-    hydrateNiaMessages(messages) {
-      const evicted = viewStore.hydrateNiaMessages(state, messages);
+    hydrateNiaMessages(messages, options) {
+      const evicted = viewStore.hydrateNiaMessages(state, messages, options);
       for (const listener of projectionListeners) listener(state);
       return evicted;
     },

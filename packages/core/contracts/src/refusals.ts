@@ -379,6 +379,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure read of persisted subagent history",
   },
+  subagentHistoryPage: {
+    refusal: "none",
+    note: "pure paged read of persisted subagent history",
+  },
   uploadAttachment: {
     refusal: "error",
     note: "an unknown path or policy refusal is an argument error",
@@ -488,6 +492,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   chatMessages: {
     refusal: "none",
     note: "pure read of the durable Chat conversation",
+  },
+  chatMessagesPage: {
+    refusal: "none",
+    note: "pure paged read of the durable Chat conversation",
   },
   chatModelProfile: {
     refusal: "none",

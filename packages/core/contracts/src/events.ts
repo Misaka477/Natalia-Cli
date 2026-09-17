@@ -2008,6 +2008,20 @@ export type RuntimeMessagePage = {
   data: RuntimeProjectedMessage[];
   cursor: RuntimeMessageCursor;
 };
+/** Opaque, source-owned cursors shared by every transcript page surface. */
+export type TranscriptPageCursor = {
+  previous?: string;
+  next?: string;
+};
+/**
+ * Uniform one-page result for transcript-like streams. Natalia turns, Chat
+ * rows and subagent history all use this shape so the UI can share one paging
+ * controller instead of reimplementing cursor semantics per panel.
+ */
+export type TranscriptPage<T> = {
+  data: T[];
+  cursor: TranscriptPageCursor;
+};
 export type PendingInteractiveRequests = {
   approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
   questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
@@ -3931,12 +3945,32 @@ export type RuntimeClient = {
     sessionID?: string,
   ): Promise<ChatMessageRow[]>;
   /**
+   * Paged Chat conversation. Prefer this over `chatMessages` for UI readers:
+   * it returns one bounded page plus opaque cursors, so long Chat histories do
+   * not force every panel to hold the full stream.
+   */
+  chatMessagesPage?(input: {
+    channel?: ChatChannel;
+    sessionID?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<TranscriptPage<ChatMessageRow>>;
+  /**
    * Current subagent views for the active session. The runtime keeps subagent
    * records in its own persistent registry, so this is a lazy read surface; it
    * does not require replaying the full session event log.
    */
   subagents?(sessionID?: string): Promise<RuntimeSubagentView[]>;
   subagentHistory?(sessionID?: string): Promise<RuntimeSubagentView[]>;
+  /**
+   * Paged subagent history for inspector panes. The legacy array surface stays
+   * for callers that only need a bounded tail.
+   */
+  subagentHistoryPage?(input: {
+    sessionID?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<TranscriptPage<RuntimeSubagentView>>;
   /**
    * Rolls the Chat conversation back to a message boundary — the only rollback
    * the Chat may issue, and it never touches workspace/checkpoint state.

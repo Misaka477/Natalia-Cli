@@ -244,16 +244,26 @@ test("chat history survives after the newest event window", async () => {
   try {
     const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
     const session = createSessionRecord("ses_chat_tail", "Chat tail");
-    session.events.push({
-      type: "navi.chat.message.added",
-      id: "navi_old",
-      messageID: "navi_old_msg",
-      role: "chat",
-      text: "old navi",
-      at: "2026-08-01T00:00:00Z",
-    });
-    // The shared window keeps only the newest 2000 events. Put the chat row
-    // behind that page so a window-only projection silently drops it.
+    session.events.push(
+      {
+        type: "navi.chat.message.added",
+        id: "navi_old_1",
+        messageID: "navi_old_1_msg",
+        role: "chat",
+        text: "old navi 1",
+        at: "2026-08-01T00:00:00Z",
+      },
+      {
+        type: "navi.chat.message.added",
+        id: "navi_old_2",
+        messageID: "navi_old_2_msg",
+        role: "chat",
+        text: "old navi 2",
+        at: "2026-08-01T00:00:01Z",
+      },
+    );
+    // The shared window keeps only the newest 2000 events. Put the chat rows
+    // behind that page so a window-only projection silently drops them.
     for (let index = 0; index < 2_100; index += 1)
       session.events.push({
         type: "tool.update",
@@ -269,7 +279,21 @@ test("chat history survives after the newest event window", async () => {
       (await client.chatMessages?.("navi", session.id))?.map(
         (row) => row.text,
       ),
-    ).toEqual(["old navi"]);
+    ).toEqual(["old navi 1", "old navi 2"]);
+    const page = await client.chatMessagesPage?.({
+      channel: "navi",
+      sessionID: session.id,
+      limit: 1,
+    });
+    expect(page?.data.map((row) => row.text)).toEqual(["old navi 2"]);
+    expect(page?.cursor.previous).toBeDefined();
+    const older = await client.chatMessagesPage?.({
+      channel: "navi",
+      sessionID: session.id,
+      cursor: page?.cursor.previous,
+      limit: 1,
+    });
+    expect(older?.data.map((row) => row.text)).toEqual(["old navi 1"]);
   } finally {
     await manager.dispose();
     if (previousRegistry === undefined)

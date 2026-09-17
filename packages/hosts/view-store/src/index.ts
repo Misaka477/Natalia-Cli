@@ -463,18 +463,25 @@ function chatRowToBlock(row: ChatMessageRow): {
  * Nia are independent streams: the channel on each durable row routes it into
  * that agent's own projection so neither UI can read the other's transcript.
  */
+export type HydrateAgentMessagesOptions = {
+  direction?: "older" | "newer";
+  replace?: boolean;
+};
+
 export function hydrateNaviMessages(
   state: AppState,
   rows: ChatMessageRow[],
+  options?: HydrateAgentMessagesOptions,
 ): boolean {
-  return replaceAgentMessages(state.navi, rows);
+  return applyAgentMessagePage(state.navi, rows, options);
 }
 
 export function hydrateNiaMessages(
   state: AppState,
   rows: ChatMessageRow[],
+  options?: HydrateAgentMessagesOptions,
 ): boolean {
-  return replaceAgentMessages(state.nia, rows);
+  return applyAgentMessagePage(state.nia, rows, options);
 }
 
 /**
@@ -504,6 +511,39 @@ export function hydrateRuntimeNotices(
     changed = true;
   }
   return changed;
+}
+
+function applyAgentMessagePage(
+  target: AppState["navi"],
+  rows: ChatMessageRow[],
+  options?: HydrateAgentMessagesOptions,
+): boolean {
+  const replace = options?.replace ?? options?.direction === undefined;
+  return replace
+    ? replaceAgentMessages(target, rows)
+    : mergeAgentMessages(target, rows, options?.direction ?? "newer");
+}
+
+/**
+ * Merge one page of durable Chat rows into an already-paged stream. Existing
+ * rows win over duplicates so a stale page can never roll back a live row or a
+ * newer page.
+ */
+function mergeAgentMessages(
+  target: AppState["navi"],
+  rows: ChatMessageRow[],
+  direction: "older" | "newer",
+): boolean {
+  const incoming = rows.map(chatRowToBlock);
+  const existing = new Set(target.messages.map((row) => row.id));
+  const additions = incoming.filter((row) => !existing.has(row.id));
+  if (!additions.length) return false;
+  target.messages = dedupeMessagesByID(
+    direction === "older"
+      ? [...additions, ...target.messages]
+      : [...target.messages, ...additions],
+  );
+  return true;
 }
 
 function replaceAgentMessages(

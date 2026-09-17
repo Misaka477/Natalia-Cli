@@ -106,6 +106,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "session.snapshot": "sessionSnapshot",
   "session.subagents": "subagents",
   "subagent.history": "subagentHistory",
+  "subagent.history.page": "subagentHistoryPage",
   "attachment.upload": "uploadAttachment",
   "attachment.dataUrl": "attachmentDataUrl",
   "planDoc.list": "planDocList",
@@ -130,6 +131,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "constitution.override.request": "requestOverride",
   "constitution.override.approve": "approveOverride",
   "chat.messages": "chatMessages",
+  "chat.messages.page": "chatMessagesPage",
   "chat.submit": "chatSubmit",
   "chat.abort": "chatAbort",
   "chat.rollback": "chatRollback",
@@ -235,6 +237,7 @@ type WorkerRequest = {
     | "session.snapshot"
     | "session.subagents"
     | "subagent.history"
+    | "subagent.history.page"
     | "attachment.upload"
     | "attachment.dataUrl"
     | "planDoc.list"
@@ -259,6 +262,7 @@ type WorkerRequest = {
     | "constitution.override.request"
     | "constitution.override.approve"
     | "chat.messages"
+    | "chat.messages.page"
     | "chat.abort"
     | "chat.submit"
     | "chat.rollback"
@@ -940,6 +944,11 @@ export function createWorkerRuntimeClient(
         sessionID,
       })) as Awaited<ReturnType<NonNullable<RuntimeClient["chatMessages"]>>>;
     },
+    async chatMessagesPage(input) {
+      return (await request("chat.messages.page", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["chatMessagesPage"]>>
+      >;
+    },
     async subagents(sessionID) {
       return (await request(
         "session.subagents",
@@ -949,6 +958,11 @@ export function createWorkerRuntimeClient(
     async subagentHistory(sessionID) {
       return (await request("subagent.history", sessionID)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["subagentHistory"]>>
+      >;
+    },
+    async subagentHistoryPage(input) {
+      return (await request("subagent.history.page", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["subagentHistoryPage"]>>
       >;
     },
     async uploadAttachment(input) {
@@ -1569,12 +1583,16 @@ export async function handleWorkerRequest(
       | undefined;
     return await client.chatMessages?.(value?.channel, value?.sessionID);
   }
+  if (request.method === "chat.messages.page")
+    return await client.chatMessagesPage?.(request.value as never);
   if (request.method === "session.subagents")
     return await client.subagents?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,
     );
   if (request.method === "subagent.history")
     return await client.subagentHistory?.(request.value as never);
+  if (request.method === "subagent.history.page")
+    return await client.subagentHistoryPage?.(request.value as never);
   if (request.method === "attachment.upload")
     return await client.uploadAttachment?.(request.value as never);
   if (request.method === "attachment.dataUrl")

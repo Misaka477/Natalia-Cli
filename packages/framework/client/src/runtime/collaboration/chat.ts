@@ -9,6 +9,7 @@ import type {
 } from "@natalia/runtime-services";
 import type {
   ChatChannel,
+  ChatMessageRow,
   ChatModelProfile,
   RuntimeEvent,
   RuntimeReasoningEffort,
@@ -21,6 +22,7 @@ import {
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
 import { scanSessionWindowNewestFirst } from "../session-event-window";
+import { paginateTranscript } from "../transcript-page";
 
 /**
  * Find `toMessageID` from the newest event backwards across the shared window
@@ -56,6 +58,7 @@ type Surface = Pick<
   | "chatSubmit"
   | "chatAbort"
   | "chatMessages"
+  | "chatMessagesPage"
   | "chatRollback"
   | "chatModelProfile"
   | "setChatModelProfile"
@@ -110,6 +113,27 @@ async function streamExec(ctx: RuntimeContext, sessionID?: string) {
   return ctx.ports.getActiveExec();
 }
 
+/** Project one channel's durable chat rows from raw session events. */
+function projectChatRows(
+  channel: ChatChannel,
+  events: RuntimeEvent[],
+): ChatMessageRow[] {
+  const projected =
+    channel === "nia"
+      ? projectedNiaChatMessages(events)
+      : projectedNaviChatMessages(events);
+  return projected.map((message) => ({
+    messageID: message.messageID,
+    role: message.role,
+    text: message.text,
+    at: message.at,
+    ...(message.kind ? { kind: message.kind } : {}),
+    ...(message.tool ? { tool: message.tool } : {}),
+    ...(message.attachments ? { attachments: message.attachments } : {}),
+    channel,
+  }));
+}
+
 function scheduleChatTitle(
   ctx: RuntimeContext,
   exec: SessionExecutionState,
@@ -145,16 +169,7 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
       // shared event window only holds the newest page and can silently drop
       // older chat once the session tail is tool/turn traffic.
       await ensureSessionFullEvents(ctx, exec);
-      return projectedNaviChatMessages(exec.session.events).map((message) => ({
-        messageID: message.messageID,
-        role: message.role,
-        text: message.text,
-        at: message.at,
-        ...(message.kind ? { kind: message.kind } : {}),
-        ...(message.tool ? { tool: message.tool } : {}),
-        ...(message.attachments ? { attachments: message.attachments } : {}),
-        channel: "navi" as const,
-      }));
+      return projectChatRows("navi", exec.session.events);
     },
     async rollback(input, sessionID) {
       const exec = await streamExec(ctx, sessionID);
@@ -281,16 +296,7 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
       // shared event window only holds the newest page and can silently drop
       // older chat once the session tail is tool/turn traffic.
       await ensureSessionFullEvents(ctx, exec);
-      return projectedNiaChatMessages(exec.session.events).map((message) => ({
-        messageID: message.messageID,
-        role: message.role,
-        text: message.text,
-        at: message.at,
-        ...(message.kind ? { kind: message.kind } : {}),
-        ...(message.tool ? { tool: message.tool } : {}),
-        ...(message.attachments ? { attachments: message.attachments } : {}),
-        channel: "nia" as const,
-      }));
+      return projectChatRows("nia", exec.session.events);
     },
     async rollback(input, sessionID) {
       const exec = await streamExec(ctx, sessionID);
@@ -418,6 +424,17 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
       channel === "nia" ? nia.abort(sessionID) : navi.abort(sessionID),
     chatMessages: (channel, sessionID) =>
       channel === "nia" ? nia.messages(sessionID) : navi.messages(sessionID),
+    async chatMessagesPage(input) {
+      const exec = await streamExec(ctx, input.sessionID);
+      if (!exec) return { data: [], cursor: {} };
+      await ensureSessionFullEvents(ctx, exec);
+      return paginateTranscript(
+        projectChatRows(input.channel ?? "navi", exec.session.events),
+        input.cursor,
+        input.limit,
+        "chat",
+      );
+    },
     chatRollback: (input, channel, sessionID) =>
       channel === "nia"
         ? nia.rollback(input, sessionID)

@@ -727,6 +727,25 @@ body { background: var(--neu-bg); color: var(--neu-text); font-size: 14px; }
   gap: 8px;
   min-width: 0;
 }
+.neu-load-older {
+  border: 1px solid var(--neu-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--neu-muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.neu-load-older:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.neu-load-older:hover:not(:disabled) {
+  color: var(--neu-text);
+  border-color: var(--neu-accent);
+}
 .natalia-context-meter {
   --context-meter-color: var(--neu-accent);
   display: inline-flex;

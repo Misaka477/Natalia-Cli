@@ -1,6 +1,7 @@
 import type { UiPluginContext } from "@natalia/ui-host";
 import { selectPrimaryActivity } from "@natalia/view-store";
 import type {
+  ChatMessageRow,
   RuntimeEvent,
   RuntimeModelCatalogEntry,
   RuntimeModelSelection,
@@ -25,9 +26,11 @@ import {
 } from "solid-js";
 import {
   ContextMeter,
+  PagedTranscriptController,
   PendingBadge,
   Transcript,
   type Attachment,
+  type PagedTranscriptState,
   type TranscriptHandle,
 } from "@natalia/ui-kit";
 import type { UiPanelDefinition } from "@natalia/ui-host";
@@ -782,6 +785,79 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   let historyCursor: string | undefined;
   let newerHistoryCursor: string | undefined;
   let loadingOlderHistory = false;
+  const naviPager = new PagedTranscriptController<ChatMessageRow>({
+    pageSize: 100,
+    onPage: (page, direction) => {
+      props.ctx.projection.hydrateNaviMessages?.(
+        page.data,
+        direction === "initial" ? { replace: true } : { direction },
+      );
+    },
+  });
+  const niaPager = new PagedTranscriptController<ChatMessageRow>({
+    pageSize: 100,
+    onPage: (page, direction) => {
+      props.ctx.projection.hydrateNiaMessages?.(
+        page.data,
+        direction === "initial" ? { replace: true } : { direction },
+      );
+    },
+  });
+  const [naviPaging, setNaviPaging] = createSignal<PagedTranscriptState>(
+    naviPager.snapshot(),
+  );
+  const [niaPaging, setNiaPaging] = createSignal<PagedTranscriptState>(
+    niaPager.snapshot(),
+  );
+  onCleanup(naviPager.subscribe(() => setNaviPaging(naviPager.snapshot())));
+  function chatPageSource(
+    channel: "navi" | "nia",
+    sessionID: string | undefined,
+    input: { cursor?: string; limit: number },
+  ) {
+    if (!sessionID) return Promise.resolve({ data: [], cursor: {} });
+    if (props.ctx.runtime.chatMessagesPage)
+      return props.ctx.runtime.chatMessagesPage({
+        channel,
+        sessionID,
+        limit: input.limit,
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      });
+    return Promise.resolve(
+      props.ctx.runtime.chatMessages?.(channel, sessionID),
+    ).then((data) => ({ data: data ?? [], cursor: {} }));
+  }
+
+  function naviChatPageSource(input: { cursor?: string; limit: number }) {
+    return chatPageSource(
+      "navi",
+      selectedSessionID() || state().sessionID,
+      input,
+    );
+  }
+
+  function niaChatPageSource(input: { cursor?: string; limit: number }) {
+    return chatPageSource(
+      "nia",
+      selectedSessionID() || state().sessionID,
+      input,
+    );
+  }
+
+  async function loadOlderNaviChat() {
+    await naviPager.loadOlder();
+    setState(cloneState(props.ctx.projection.getState()));
+  }
+
+  async function loadOlderNiaChat() {
+    await niaPager.loadOlder();
+    setState(cloneState(props.ctx.projection.getState()));
+  }
+
+  onCleanup(niaPager.subscribe(() => setNiaPaging(niaPager.snapshot())));
+  onCleanup(() => naviPager.dispose());
+  onCleanup(() => niaPager.dispose());
+
   let loadingNewerHistory = false;
   const [statusOpen, setStatusOpen] = createSignal(false);
   const [turnElapsedMs, setTurnElapsedMs] = createSignal(0);
@@ -2017,9 +2093,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const chatStart = performance.now();
         props.ctx.projection.beginNaviHydration?.();
         props.ctx.projection.beginNiaHydration?.();
-        const [naviChat, niaChat, runtimeNotices] = await Promise.all([
-          props.ctx.runtime.chatMessages?.("navi", sessionID),
-          props.ctx.runtime.chatMessages?.("nia", sessionID),
+        naviPager.setSource(naviChatPageSource);
+        niaPager.setSource(niaChatPageSource);
+        const [, , runtimeNotices] = await Promise.all([
+          naviPager.loadInitial(),
+          niaPager.loadInitial(),
           // ADR Phase C dual ingestion: the server-projected notices merge
           // into the same view the live `context.instructions` stream feeds.
           props.ctx.runtime.notices?.(sessionID),
@@ -2028,12 +2106,11 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           `[perf] secondary chatMessages ${(performance.now() - chatStart).toFixed(1)}ms`,
         );
         if (isCurrentLoad()) {
-          // Empty snapshots intentionally replace the selected stream and clear
-          // stale durable history. Each hydration targets its explicit stream.
-          props.ctx.projection.hydrateNaviMessages?.(naviChat ?? []);
-          props.ctx.projection.hydrateNiaMessages?.(niaChat ?? []);
           if (runtimeNotices?.length)
             props.ctx.projection.hydrateRuntimeNotices?.(runtimeNotices);
+          // The projection listener may be suppressed while history is still
+          // replaying, so copy the paged Chat projection into the UI signal.
+          setState(cloneState(props.ctx.projection.getState()));
           perfLog(
             `[perf] secondary chat applied +${(performance.now() - chatStart).toFixed(1)}ms`,
           );
@@ -2133,15 +2210,17 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         const secondarySessionID =
           detail?.sessionID || selectedSessionID() || state().sessionID;
         if (secondarySessionID) {
-          const [naviChat, niaChat] = await Promise.all([
-            props.ctx.runtime.chatMessages?.("navi", secondarySessionID),
-            props.ctx.runtime.chatMessages?.("nia", secondarySessionID),
+          naviPager.setSource((input) =>
+            chatPageSource("navi", secondarySessionID, input),
+          );
+          niaPager.setSource((input) =>
+            chatPageSource("nia", secondarySessionID, input),
+          );
+          await Promise.all([
+            naviPager.loadInitial(),
+            niaPager.loadInitial(),
           ]);
           if (isStaleLoad()) return;
-          if (naviChat !== undefined)
-            props.ctx.projection.hydrateNaviMessages?.(naviChat);
-          if (niaChat !== undefined)
-            props.ctx.projection.hydrateNiaMessages?.(niaChat);
         }
         // Session loading finished; take one projection snapshot instead of
         // cloning once per raw event.
@@ -3934,6 +4013,16 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                 <div class="neu-pane-header">
                   <span class="neu-pane-title">Navi</span>
                   <span class="neu-pane-header-right">
+                    <Show when={naviPaging().hasOlder}>
+                      <button
+                        type="button"
+                        class="neu-load-older"
+                        disabled={naviPaging().loadingOlder}
+                        onClick={() => void loadOlderNaviChat()}
+                      >
+                        {naviPaging().loadingOlder ? "加载中…" : "加载更早"}
+                      </button>
+                    </Show>
                     <ContextMeter usage={state().navi.context} compact />
                     <span
                       class="neu-pane-status"
@@ -3961,6 +4050,9 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                         onFollowChange={(following) =>
                           setChatShowJumpToBottom(!following)
                         }
+                        onNearTop={() => void loadOlderNaviChat()}
+                        historyLoading={!naviPaging().initialized}
+                        olderHistoryLoading={naviPaging().loadingOlder}
                         loadAttachmentUrl={loadAttachmentUrl}
                         suspendVirtualization={resizing()}
                       />
@@ -4221,6 +4313,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     sessionID={selectedSessionID() || state().sessionID}
                     loadAttachmentUrl={loadAttachmentUrl}
                     suspendVirtualization={resizing()}
+                    paging={niaPaging()}
+                    onLoadOlder={() => void loadOlderNiaChat()}
                   />
                 </Show>
                 <Show

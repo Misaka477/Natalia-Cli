@@ -19,16 +19,21 @@ import {
 import type { RuntimeContext } from "./context";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { subagentHistoryInWorker } from "./session-project-client";
+import { ensureSessionFullEvents } from "./session-full-events";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
 } from "./session-event-window";
 import { projectSubagentsInWorker } from "./secondary-worker-client";
+import { paginateTranscript } from "./transcript-page";
 import { perfLog } from "@natalia/runtime-services";
 
 export function createSubagentRuntime(
   ctx: RuntimeContext,
-): Pick<RuntimeServiceClient, "subagents" | "subagentHistory"> {
+): Pick<
+  RuntimeServiceClient,
+  "subagents" | "subagentHistory" | "subagentHistoryPage"
+> {
   return {
     async subagents(sessionID?: string): Promise<RuntimeSubagentView[]> {
       await ctx.ports.getReady();
@@ -91,6 +96,35 @@ export function createSubagentRuntime(
         `[perf] subagentHistory done count=${result.length} +${(performance.now() - start).toFixed(1)}ms`,
       );
       return result;
+    },
+    async subagentHistoryPage(input) {
+      await ctx.ports.getReady();
+      const exec = input.sessionID
+        ? ctx.ports
+            .getExecutionBySession()
+            .get(input.sessionID as SessionID)
+        : ctx.ports.getActiveExec();
+      if (!exec) return { data: [], cursor: {} };
+      // Pages are projected from the durable log; the legacy array surface
+      // remains the bounded tail caller for non-inspector consumers.
+      await ensureSessionFullEvents(ctx, exec);
+      let result: RuntimeSubagentView[];
+      try {
+        result = await subagentHistoryInWorker(exec.session.events);
+      } catch {
+        result = exec.session.events.filter(
+          (
+            event,
+          ): event is Extract<RuntimeEvent, { type: "subagent.update" }> =>
+            event.type === "subagent.update",
+        );
+      }
+      return paginateTranscript(
+        result,
+        input.cursor,
+        input.limit,
+        "subagent",
+      );
     },
   };
 }

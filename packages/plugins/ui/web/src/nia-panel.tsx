@@ -15,6 +15,7 @@ import { type AppState } from "@natalia/view-store";
 import {
   ContextMeter,
   Transcript,
+  type PagedTranscriptState,
   type TranscriptHandle,
 } from "@natalia/ui-kit";
 import { Composer, type ComposerAttachment } from "./components/Composer";
@@ -29,6 +30,8 @@ export function NiaPanel(props: {
   catalog: RuntimeModelCatalogEntry[];
   loadAttachmentUrl?: (attachment: Attachment) => Promise<string>;
   suspendVirtualization?: boolean;
+  paging?: PagedTranscriptState;
+  onLoadOlder?: () => void;
 }) {
   const [draft, setDraft] = createSignal("");
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([]);
@@ -305,6 +308,16 @@ export function NiaPanel(props: {
       <div class="neu-pane-header">
         <span class="neu-pane-title">Nia</span>
         <span class="neu-pane-header-actions">
+          <Show when={props.paging?.hasOlder}>
+            <button
+              type="button"
+              class="neu-load-older"
+              disabled={props.paging?.loadingOlder}
+              onClick={() => props.onLoadOlder?.()}
+            >
+              {props.paging?.loadingOlder ? "加载中…" : "加载更早"}
+            </button>
+          </Show>
           <ContextMeter usage={props.state.nia.context} compact />
           <span class="neu-pane-status" data-running={Boolean(active())}>
             {active() ? "running" : "idle"}
@@ -323,6 +336,9 @@ export function NiaPanel(props: {
               niaApi = api;
             }}
             onFollowChange={(following) => setNiaShowJumpToBottom(!following)}
+            onNearTop={() => props.onLoadOlder?.()}
+            historyLoading={!props.paging?.initialized}
+            olderHistoryLoading={props.paging?.loadingOlder}
             loadAttachmentUrl={props.loadAttachmentUrl}
             suspendVirtualization={props.suspendVirtualization}
           />

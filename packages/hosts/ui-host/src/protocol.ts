@@ -104,8 +104,14 @@ export type UiProjection = {
     direction?: "older" | "newer",
     options?: { replace?: boolean },
   ): boolean;
-  hydrateNaviMessages?(messages: ChatMessageRow[]): boolean;
-  hydrateNiaMessages?(messages: ChatMessageRow[]): boolean;
+  hydrateNaviMessages?(
+    messages: ChatMessageRow[],
+    options?: import("@natalia/view-store").HydrateAgentMessagesOptions,
+  ): boolean;
+  hydrateNiaMessages?(
+    messages: ChatMessageRow[],
+    options?: import("@natalia/view-store").HydrateAgentMessagesOptions,
+  ): boolean;
   hydrateRuntimeNotices?(
     notices: import("@natalia/contracts").RuntimeProjectedNotice[],
   ): boolean;

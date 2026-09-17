@@ -10,6 +10,15 @@ export {
   duplicateVirtualIndexes,
 } from "./virtual-items";
 export { TailScrollController } from "./scroll-controller";
+export { PagedTranscriptController } from "./paged-transcript";
+export type {
+  PagedTranscriptCursor,
+  PagedTranscriptOptions,
+  PagedTranscriptPage,
+  PagedTranscriptPageDirection,
+  PagedTranscriptSource,
+  PagedTranscriptState,
+} from "./paged-transcript";
 export type {
   OlderScrollAnchor,
   TailScrollAlignment,
