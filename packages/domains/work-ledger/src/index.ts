@@ -9,6 +9,7 @@ export {
   type DriftSignal,
 } from "./drift-evaluator";
 export {
+  buildAuditRequested,
   buildPlanDocCreated,
   buildPlanDocDeleted,
   buildPlanDocMarked,

@@ -12,6 +12,7 @@ import {
   WORK_LEDGER_CONTROLLER_SERVICE,
 } from "@natalia/runtime-services";
 import { projectedDriftFindings } from "@natalia/session";
+import { requestAuditAfterCompletion } from "./audit-request";
 import type { GovernanceLedgerController } from "./context";
 import { redactToolOutput } from "./engineering-intelligence/redaction";
 import { runValidationCommand } from "./engineering-intelligence/validation";
@@ -223,35 +224,34 @@ export function createRecordCompletionTool(
         return "record_completion requires taskID, objective and changeSummary";
       const recordedAt = new Date().toISOString();
       const completionID = `completion:${Date.now().toString(36)}:${ctx.ports.nextCompletionSequence()}`;
-      ctx.ports.publishForSession(
-        exec,
-        ledger.buildCompletionRecorded({
-          id: completionID,
-          taskID: args.taskID.trim(),
-          objective: args.objective.trim(),
-          changeSummary: redactToolOutput(args.changeSummary, true),
-          ...(args.behaviorImpact
-            ? { behaviorImpact: redactToolOutput(args.behaviorImpact, true) }
-            : {}),
-          validations: (args.validations ?? []).map((validation) =>
-            ledger.boundValidationOutcome({
-              command: redactToolOutput(validation.command, true),
-              result: validation.result,
-              safeSummary: validation.safeSummary,
-            }),
-          ),
-          ...(args.humanValidation
-            ? { humanValidation: redactToolOutput(args.humanValidation, true) }
-            : {}),
-          ...(args.knownGaps ? { knownGaps: args.knownGaps } : {}),
-          ...(args.externalSideEffects
-            ? { externalSideEffects: args.externalSideEffects }
-            : {}),
-          ...(args.rollbackState ? { rollbackState: args.rollbackState } : {}),
-          ...(args.evidenceIDs ? { evidenceIDs: args.evidenceIDs } : {}),
-          recordedAt,
-        }),
-      );
+      const completionEvent = ledger.buildCompletionRecorded({
+        id: completionID,
+        taskID: args.taskID.trim(),
+        objective: args.objective.trim(),
+        changeSummary: redactToolOutput(args.changeSummary, true),
+        ...(args.behaviorImpact
+          ? { behaviorImpact: redactToolOutput(args.behaviorImpact, true) }
+          : {}),
+        validations: (args.validations ?? []).map((validation) =>
+          ledger.boundValidationOutcome({
+            command: redactToolOutput(validation.command, true),
+            result: validation.result,
+            safeSummary: validation.safeSummary,
+          }),
+        ),
+        ...(args.humanValidation
+          ? { humanValidation: redactToolOutput(args.humanValidation, true) }
+          : {}),
+        ...(args.knownGaps ? { knownGaps: args.knownGaps } : {}),
+        ...(args.externalSideEffects
+          ? { externalSideEffects: args.externalSideEffects }
+          : {}),
+        ...(args.rollbackState ? { rollbackState: args.rollbackState } : {}),
+        ...(args.evidenceIDs ? { evidenceIDs: args.evidenceIDs } : {}),
+        recordedAt,
+      });
+      ctx.ports.publishForSession(exec, completionEvent);
+      requestAuditAfterCompletion(ctx, exec, completionEvent);
       const workLedger = ctx.ports.resolveService<
         import("./context").WorkLedgerController
       >(WORK_LEDGER_CONTROLLER_SERVICE);
@@ -271,7 +271,7 @@ export function createRecordCompletionTool(
       const card = requireWorkLedger(ctx)!.evaluateCompletionCard({
         objective: args.objective.trim(),
         ...(args.changePaths?.length ? { scope: args.changePaths } : {}),
-        evidenceIDs: args.evidenceIDs ?? [],
+        evidenceRefs: args.evidenceIDs ?? [],
         validations: args.validations ?? [],
       });
       return JSON.stringify({

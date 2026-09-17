@@ -244,7 +244,8 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
     };
     const activePlan = activePlanForExec(ctx, input.exec);
     const auditIntent =
-      input.internal !== true && /审计|audit|审核/iu.test(input.text);
+      /审计|audit|审核/iu.test(input.text) ||
+      (input.internal === true && Boolean(activePlan));
     const requiredAuditAction = () => {
       if (!auditIntent || !activePlan) return undefined;
       if (auditReported || collabSent) return undefined;

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  buildAuditRequested,
   buildPlanDocCreated,
   buildPlanDocMarked,
   buildPlanDocStatus,
@@ -53,5 +54,25 @@ test("plan registry transitions build the corresponding events", () => {
     type: "plan.doc.status",
     planID: "plan_001",
     status: "audit_passed",
+  });
+});
+
+test("buildAuditRequested carries the durable trigger shadow", () => {
+  const request = buildAuditRequested({
+    id: "audit:plan_001:1",
+    planID: "plan_001",
+    planVersion: 2,
+    triggerEventID: "plan:status:7",
+    round: 3,
+    scope: "completion_recorded",
+    at: "2026-09-02T00:04:00.000Z",
+  });
+  expect(request).toMatchObject({
+    type: "audit.requested",
+    planID: "plan_001",
+    planVersion: 2,
+    triggerEventID: "plan:status:7",
+    round: 3,
+    scope: "completion_recorded",
   });
 });

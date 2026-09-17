@@ -253,11 +253,13 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
 
   return {
     async planDocList(_sessionID?: string) {
+      await ctx.ports.getReady();
       const entries = await readIndex(ctx);
       return Object.values(entries);
     },
 
     async planDocRead(input) {
+      await ctx.ports.getReady();
       const entries = await readIndex(ctx);
       const record =
         (input.planID && entries[input.planID]) ||
@@ -289,6 +291,7 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     },
 
     async planDocWrite(input) {
+      await ctx.ports.getReady();
       const targetPath = ensurePlanPath(ctx, input.path);
       await mkdir(join(targetPath, ".."), { recursive: true });
       await writeFile(targetPath, input.content, "utf8");
@@ -296,6 +299,7 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     },
 
     async planDocMark(input) {
+      await ctx.ports.getReady();
       const targetPath = ensurePlanPath(ctx, input.path);
       let target;
       try {
@@ -347,6 +351,7 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     },
 
     async planDocDelete(planID, sessionID?) {
+      await ctx.ports.getReady();
       const entries = await readIndex(ctx);
       if (!entries[planID]) return { deleted: false };
       const record = entries[planID];
@@ -380,6 +385,7 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     },
 
     async planDocStatus(planID, _sessionID?) {
+      await ctx.ports.getReady();
       const entries = await readIndex(ctx);
       const record = entries[planID];
       return { status: record?.status ?? "unmarked" };
@@ -394,6 +400,7 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     },
 
     async planDocActive(sessionID?) {
+      await ctx.ports.getReady();
       let exec = sessionExec(sessionID);
       if (!exec && sessionID)
         exec = await ctx.ports.ensureExecution(
@@ -406,15 +413,18 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     },
 
     async planDocActivate(planID, sessionID?) {
+      await ctx.ports.getReady();
       if (!planID || !readIndexSync(ctx)[planID]) return { updated: false };
       return await updateActivePlanID(planID, sessionID);
     },
 
     async planDocDeactivate(sessionID?) {
+      await ctx.ports.getReady();
       return await updateActivePlanID(undefined, sessionID);
     },
 
     async planDocUpdateStatus(input) {
+      await ctx.ports.getReady();
       const { planID, status, sessionID } = input;
       const entries = await readIndex(ctx);
       const record = entries[planID];
@@ -431,9 +441,10 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
         sessionID,
         previousStatus,
       });
+      const statusID = `${planID}:status:${ctx.ports.nextPlanSequence()}`;
       publish(
         requireWorkLedger().buildPlanDocStatus({
-          id: `${planID}:status:${ctx.ports.nextPlanSequence()}`,
+          id: statusID,
           planID,
           status,
           at: now,
@@ -448,7 +459,34 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
           sessionID,
           hasExec: Boolean(exec),
         });
-        if (exec) ctx.ports.requestNiaWake(exec);
+        if (exec) {
+          const round =
+            exec.session.events.filter(
+              (event) =>
+                event.type === "audit.requested" &&
+                event.planID === planID,
+            ).length + 1;
+          const alreadyRequested = exec.session.events.some(
+            (event) =>
+              event.type === "audit.requested" &&
+              event.triggerEventID === statusID,
+          );
+          if (!alreadyRequested) {
+            ctx.ports.publishForSession(
+              exec,
+              requireWorkLedger().buildAuditRequested({
+                id: `audit:${planID}:${ctx.ports.nextPlanSequence()}`,
+                planID,
+                planVersion: 1,
+                triggerEventID: statusID,
+                round,
+                scope: status === "auditing" ? "audit_wake" : "awaiting_audit",
+                at: now,
+              }),
+            );
+          }
+          ctx.ports.requestNiaWake(exec);
+        }
       }
       return { updated: true };
     },

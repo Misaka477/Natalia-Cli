@@ -930,6 +930,7 @@ export interface WorkLedgerController {
   buildPlanDocMarked: ServiceOperation;
   buildPlanDocDeleted: ServiceOperation;
   buildPlanDocStatus: ServiceOperation;
+  buildAuditRequested: ServiceOperation;
   evaluateDrift: ServiceOperation;
   buildDriftFindingUpdate: ServiceOperation;
   buildWorkContractDrafted: ServiceOperation;

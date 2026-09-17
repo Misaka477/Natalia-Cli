@@ -242,6 +242,22 @@ export function createChatPrompt(ctx: RuntimeContext) {
       (message) =>
         message.status === "queued" || message.status === "delivered",
     );
+    const closedPlans = new Set(
+      plans
+        .filter(
+          (plan) =>
+            plan.status === "completed" || plan.status === "audit_passed",
+        )
+        .map((plan) => plan.planID),
+    );
+    const pendingAudits = chatSession.events
+      .filter(
+        (
+          event,
+        ): event is Extract<RuntimeEvent, { type: "audit.requested" }> =>
+          event.type === "audit.requested" && !closedPlans.has(event.planID),
+      )
+      .slice(-5);
     return [
       "<live_work_context>",
       `Main agent: ${snapshot?.agentStatus ?? "unknown"}${snapshot?.currentStep ? ` · ${promptData(snapshot.currentStep)}` : ""}${snapshot?.activeTool ? ` · tool: ${promptData(snapshot.activeTool)}` : ""}`,
@@ -258,6 +274,15 @@ export function createChatPrompt(ctx: RuntimeContext) {
             )
             .join("\n")}`
         : "Known plan documents: none",
+      pendingAudits.length
+        ? `Pending audit requests:\n${pendingAudits
+            .map(
+              (request) =>
+                `- ${request.planID} · round ${request.round} · ${request.scope} · trigger ${request.triggerEventID}`,
+            )
+            .join("\n")}`
+        : "Pending audit requests: none",
+
       mailbox.length
         ? `Pending mailbox intents:\n${mailbox
             .map(

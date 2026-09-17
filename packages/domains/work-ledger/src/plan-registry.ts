@@ -116,3 +116,30 @@ export function buildPlanDocStatus(input: {
     ...(input.reason ? { reason: input.reason } : {}),
   };
 }
+
+/**
+ * EI §3.9: durable audit request. One trigger event → one request; the
+ * request is the restart-safe shadow for the process-local Nia wake queue.
+ */
+export function buildAuditRequested(input: {
+  id: string;
+  planID: string;
+  planVersion: number;
+  triggerEventID: string;
+  round: number;
+  checkpointID?: string;
+  scope: string;
+  at: string;
+}): Extract<RuntimeEvent, { type: "audit.requested" }> {
+  return {
+    type: "audit.requested",
+    id: input.id,
+    planID: input.planID,
+    planVersion: input.planVersion,
+    triggerEventID: input.triggerEventID,
+    round: input.round,
+    scope: input.scope,
+    at: input.at,
+    ...(input.checkpointID ? { checkpointID: input.checkpointID } : {}),
+  };
+}

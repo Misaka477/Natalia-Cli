@@ -35,6 +35,7 @@ import {
   resolveGovernanceRoot,
 } from "@natalia/governance-ledger";
 import type { RuntimeContext } from "../context";
+import { requestAuditAfterCompletion } from "../audit-request";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import {
   ensureSessionEventWindow,
@@ -571,6 +572,9 @@ export function createIntelligenceSurface(
         recordedAt,
       });
       ctx.ports.publishForSession(exec, event);
+      // EI §3.9: completion.recorded is one of the two explicit audit triggers
+      // (the other is awaiting_audit/auditing).
+      requestAuditAfterCompletion(ctx, exec, event);
       // P2 E4 Work Graph integration: each completed change is validated by the
       // card through a `validated_by` edge.
       for (const path of input.changePaths ?? [])

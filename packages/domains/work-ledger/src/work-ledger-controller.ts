@@ -3,6 +3,7 @@ import {
   createDriftEvaluator,
 } from "./drift-evaluator";
 import {
+  buildAuditRequested,
   buildPlanDocCreated,
   buildPlanDocDeleted,
   buildPlanDocMarked,
@@ -43,6 +44,7 @@ export function createWorkLedgerController(
     buildPlanDocMarked,
     buildPlanDocStatus,
     buildPlanDocUpdated,
+    buildAuditRequested,
     evaluateDrift: driftEvaluator.evaluate,
     buildDriftFindingUpdate,
     buildWorkContractDrafted,

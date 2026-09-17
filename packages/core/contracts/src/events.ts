@@ -1390,6 +1390,22 @@ type RuntimeEventData =
       reason?: string;
     }
   | {
+      /**
+       * Durable audit request (EI §3.9). This is the shadow the runtime wakes
+       * Nia from: a trigger event requested an independent audit of this plan
+       * version, and the request survives restart/dedup.
+       */
+      type: "audit.requested";
+      id: string;
+      planID: string;
+      planVersion: number;
+      triggerEventID: string;
+      round: number;
+      checkpointID?: string;
+      scope: string;
+      at: string;
+    }
+  | {
       type: "goal.changed";
       id: string;
       operation: GoalOperation;
