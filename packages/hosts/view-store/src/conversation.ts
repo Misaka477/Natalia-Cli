@@ -827,6 +827,7 @@ function userText(
 
 /** Shared mechanics for explicit stream-specific projectors. */
 function applyAgentChatEvent(
+  root: AppState,
   target: AgentStreamState,
   event: RuntimeEvent,
 ): boolean {
@@ -862,11 +863,12 @@ function applyAgentChatEvent(
           ? "nia"
           : (event as { channel?: "navi" | "nia" }).channel;
       if (channel) {
-        const state = target as AppState;
-        if (!state.usageByChannel?.[channel])
-          state.usageByChannel[channel] = emptySessionUsageStats();
-        state.usageByChannel[channel].turns += 1;
-        state.usageByChannel[channel].llmMs += Math.max(
+        // usageByChannel lives on the root AppState, not the agent sub-state
+        // (target), so the per-channel token bars accumulate across panes.
+        if (!root.usageByChannel?.[channel])
+          root.usageByChannel[channel] = emptySessionUsageStats();
+        root.usageByChannel[channel].turns += 1;
+        root.usageByChannel[channel].llmMs += Math.max(
           0,
           event.endedAt - event.startedAt,
         );
@@ -998,24 +1000,24 @@ function applyAgentChatEvent(
 
 export function applyNaviEvent(state: AppState, event: RuntimeEvent): boolean {
   if (event.type.startsWith("navi.chat."))
-    return applyAgentChatEvent(state.navi, event);
+    return applyAgentChatEvent(state, state.navi, event);
   // Legacy journals are the sole place payload channel compatibility remains.
   if (
     event.type.startsWith("chat.") &&
     (event as { channel?: string }).channel !== "nia"
   )
-    return applyAgentChatEvent(state.navi, event);
+    return applyAgentChatEvent(state, state.navi, event);
   return applyNaviCollabEvent(state, event);
 }
 
 export function applyNiaEvent(state: AppState, event: RuntimeEvent): boolean {
   if (event.type.startsWith("nia.chat."))
-    return applyAgentChatEvent(state.nia, event);
+    return applyAgentChatEvent(state, state.nia, event);
   if (
     event.type.startsWith("chat.") &&
     (event as { channel?: string }).channel === "nia"
   )
-    return applyAgentChatEvent(state.nia, event);
+    return applyAgentChatEvent(state, state.nia, event);
   return applyNiaCollabEvent(state, event);
 }
 

@@ -2762,3 +2762,41 @@ test("context.instructions interleave into the transcript as system bubbles at t
   expect(notice.role).toBe("system");
   expect(notice.text).toBe("config_reload: runtime config reloaded");
 });
+
+test("per-channel token usage accumulates on the root state, not the agent sub-state", () => {
+  // Regression: the per-channel token bars (main/navi/nia) accumulate
+  // usageByChannel on the root AppState. Folding a navi/nia turn.finished must
+  // not throw by writing to the agent sub-state (which has no usageByChannel),
+  // and each channel's turns/llmMs must land under its own key.
+  const state = initialState();
+  applyEvent(state, {
+    type: "navi.chat.turn.finished",
+    id: "navi:fin:1",
+    messageID: "navi:m1",
+    stopReason: "done",
+    startedAt: 1_000,
+    endedAt: 1_250,
+  });
+  applyEvent(state, {
+    type: "nia.chat.turn.finished",
+    id: "nia:fin:1",
+    messageID: "nia:m1",
+    stopReason: "done",
+    startedAt: 2_000,
+    endedAt: 2_100,
+  });
+  applyEvent(state, {
+    type: "navi.chat.turn.finished",
+    id: "navi:fin:2",
+    messageID: "navi:m2",
+    stopReason: "done",
+    startedAt: 3_000,
+    endedAt: 3_400,
+  });
+  expect(state.usageByChannel.navi.turns).toBe(2);
+  expect(state.usageByChannel.navi.llmMs).toBe(250 + 400);
+  expect(state.usageByChannel.nia.turns).toBe(1);
+  expect(state.usageByChannel.nia.llmMs).toBe(100);
+  // The main channel is untouched by navi/nia turns.
+  expect(state.usageByChannel.main.turns).toBe(0);
+});
