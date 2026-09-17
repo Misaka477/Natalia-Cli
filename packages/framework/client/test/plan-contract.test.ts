@@ -314,6 +314,114 @@ test("plan_propose returns the rejection feedback without landing a contract", a
   await client.dispose?.();
 }, 30_000);
 
+test("A1 E2E: a plan edit marks the draft stale in work_contract_read (re-propose required)", async () => {
+  const root = await officialPluginWorkspace("plan-contract-stale");
+  const events: RuntimeEvent[] = [];
+  const readResults: string[] = [];
+  let planID = "";
+  let toolCalls = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_plan_contract_stale",
+    permissionMode: "ask",
+    provider: {
+      provider: "plan-contract-stale",
+      model: "plan-contract-stale-model",
+      async *stream(request: ProviderStreamRequest) {
+        const messages = (
+          request as {
+            messages: Array<{ role: string; content: string; toolCallID?: string }>;
+          }
+        ).messages;
+        // After a tool call (the last message is its result), capture the read
+        // result and end the turn (one tool call per turn keeps the plan edit
+        // between reads deterministic).
+        const lastMessage = messages.at(-1);
+        if (lastMessage?.role === "tool") {
+          const readResult = messages
+            .filter(
+              (message) =>
+                message.role === "tool" &&
+                String(message.toolCallID ?? "").startsWith("call_read"),
+            )
+            .at(-1);
+          if (readResult) readResults.push(String(readResult.content ?? ""));
+          yield { type: "content" as const, text: "done" };
+          yield { type: "done" as const };
+          return;
+        }
+        // First tool call proposes (the gate is rejected, so a draft stays);
+        // later tool calls read the contract.
+        toolCalls += 1;
+        if (toolCalls === 1)
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_propose",
+                name: "plan_propose",
+                arguments: JSON.stringify({ planID, scope: ["packages/a"] }),
+              },
+            ],
+          };
+        else
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_read",
+                name: "work_contract_read",
+                arguments: JSON.stringify({ planID }),
+              },
+            ],
+          };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request" && event.scope === "work_contract")
+      client.respondApproval({
+        requestID: event.id,
+        decision: "reject",
+        feedback: "not yet",
+      });
+  });
+  await client.sessionAttach!("ses_plan_contract_stale" as SessionID);
+  await client.planDocWrite!({
+    path: "plans/stale-plan.md",
+    content: "# Stale plan\n",
+    title: "Stale plan",
+  });
+  const marked = await client.planDocMark!({ path: "plans/stale-plan.md", title: "Stale plan" });
+  planID = marked.planID;
+  await client.planDocActivate!(marked.planID);
+
+  // 1. Propose (rejected) -> a draft bound to plan revision 1.
+  await client.submitAndWait!("propose the contract");
+  // 2. Read: the draft is current for its revision (not stale).
+  await client.submitAndWait!("read the contract");
+  expect(readResults).toHaveLength(1);
+  const before = JSON.parse(readResults[0]!);
+  expect(before).toMatchObject({ planID, status: "draft", version: 1 });
+  expect(before.stale).toBeUndefined();
+
+  // 3. Edit the plan document -> revision bumps, plan.doc.updated published.
+  await client.planDocWrite!({
+    path: "plans/stale-plan.md",
+    content: "# Stale plan\n\n- a new step\n",
+    title: "Stale plan",
+  });
+
+  // 4. Read again: the draft extracted from revision 1 is now stale.
+  await client.submitAndWait!("read the contract again");
+  expect(readResults).toHaveLength(2);
+  const after = JSON.parse(readResults[1]!);
+  expect(after).toMatchObject({ planID, status: "draft", version: 1, stale: true });
+  await client.dispose?.();
+}, 30_000);
+
 test("work_contract_read reports none before any proposal", async () => {
   const root = await officialPluginWorkspace("plan-contract-read");
   let readResult = "";
