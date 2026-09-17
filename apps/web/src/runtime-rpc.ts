@@ -149,6 +149,7 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   removeConstitutionRule: "constitution.rule.remove",
   constitutionDocRules: "constitution.docRules",
   promoteConstitutionDocRule: "constitution.docRule.promote",
+  updateConstitutionDocRule: "constitution.docRule.update",
   decisionRecords: "decision.records",
   recordDecision: "decision.record",
   evidenceRecords: "evidence.records",
@@ -260,6 +261,7 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   removeConstitutionRule: ["ruleID", "sessionID"],
   constitutionDocRules: ["sessionID"],
   promoteConstitutionDocRule: ["id", "sessionID"],
+  updateConstitutionDocRule: ["id", "sessionID"],
   decisionRecords: ["sessionID"],
   evidenceRecords: ["sessionID"],
   completions: ["sessionID"],
@@ -813,6 +815,12 @@ export function createWebRuntimeClient(
     },
     async createConstitutionRule(input, sessionID?) {
       return (await call("constitution.rule.create", {
+        ...(input as Record<string, unknown>),
+        ...(sessionID ? { sessionID } : {}),
+      })) as never;
+    },
+    async updateConstitutionDocRule(input, sessionID?) {
+      return (await call("constitution.docRule.update", {
         ...(input as Record<string, unknown>),
         ...(sessionID ? { sessionID } : {}),
       })) as never;

@@ -135,6 +135,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "constitution.override.approve": "approveOverride",
   "constitution.docRules": "constitutionDocRules",
   "constitution.docRule.promote": "promoteConstitutionDocRule",
+  "constitution.docRule.update": "updateConstitutionDocRule",
   "chat.messages": "chatMessages",
   "chat.messages.page": "chatMessagesPage",
   "chat.submit": "chatSubmit",
@@ -271,6 +272,7 @@ type WorkerRequest = {
     | "constitution.override.approve"
     | "constitution.docRules"
     | "constitution.docRule.promote"
+    | "constitution.docRule.update"
     | "chat.messages"
     | "chat.messages.page"
     | "chat.abort"
@@ -1603,6 +1605,20 @@ export async function handleWorkerRequest(
   if (request.method === "constitution.docRule.promote")
     return await client.promoteConstitutionDocRule?.(
       request.value as { id: string; sessionID?: string },
+    );
+  if (request.method === "constitution.docRule.update")
+    return await client.updateConstitutionDocRule?.(
+      request.value as {
+        id: string;
+        statement?: string;
+        enforcement?: "deny" | "approval" | "warn";
+        appliesTo?: {
+          tools?: string[];
+          paths?: string[];
+          commandPattern?: string;
+        };
+        sessionID?: string;
+      },
     );
   if (request.method === "chat.messages") {
     const value = request.value as

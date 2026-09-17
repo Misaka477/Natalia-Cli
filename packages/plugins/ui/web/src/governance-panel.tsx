@@ -236,6 +236,28 @@ export async function promoteConstitutionDocRuleViaRpc(
   return runtime?.promoteConstitutionDocRule?.({ id }, sessionID);
 }
 
+/**
+ * The RPC action behind a constitution document-rule [编辑] click (EI §3.8
+ * P-1.c 软规则): the user rewrites the section's prose and syncs its
+ * enforcement / appliesTo annotations; the runtime writes the document back.
+ */
+export async function updateConstitutionDocRuleViaRpc(
+  runtime: RuntimeClient | undefined,
+  sessionID: string | undefined,
+  input: {
+    id: string;
+    statement?: string;
+    enforcement?: "deny" | "approval" | "warn";
+    appliesTo?: {
+      tools?: string[];
+      paths?: string[];
+      commandPattern?: string;
+    };
+  },
+) {
+  return runtime?.updateConstitutionDocRule?.(input, sessionID);
+}
+
 /** The RPC action behind the [新增规则] button (user creates a rule). */
 export async function createConstitutionRuleViaRpc(
   runtime: RuntimeClient | undefined,
@@ -519,6 +541,21 @@ export function GovernancePane(props: {
       }
     | undefined
   >();
+  // The constitution document-rule editor (EI §3.8 P-1.c 软规则): edits a soft
+  // section's prose + enforcement/appliesTo and writes the document back.
+  const [docRuleEditor, setDocRuleEditor] = createSignal<
+    | {
+        id: string;
+        section: string;
+        source: string;
+        statement: string;
+        enforcement: "deny" | "approval" | "warn";
+        tools: string;
+        paths: string;
+        commandPattern: string;
+      }
+    | undefined
+  >();
   const { confirm, dialog } = useConfirmDialog();
 
   const load = async () => {
@@ -638,6 +675,78 @@ export function GovernancePane(props: {
           : `失败：${outcome?.reason ?? "未知原因"}`,
       );
       if (ok) setRuleEditor(undefined);
+      await load();
+    } catch (error) {
+      setActionNotice(
+        `失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  function openDocRuleEditor(rule: {
+    id: string;
+    section: string;
+    source: string;
+    statement: string;
+    enforcement: string;
+    appliesTo?: {
+      tools?: string[];
+      paths?: string[];
+      commandPattern?: string;
+    };
+  }) {
+    setActionNotice(undefined);
+    setDocRuleEditor({
+      id: rule.id,
+      section: rule.section,
+      source: rule.source,
+      statement: rule.statement,
+      enforcement: (rule.enforcement as "deny" | "approval" | "warn") ?? "warn",
+      tools: (rule.appliesTo?.tools ?? []).join(", "),
+      paths: (rule.appliesTo?.paths ?? []).join(", "),
+      commandPattern: rule.appliesTo?.commandPattern ?? "",
+    });
+  }
+
+  async function saveDocRule() {
+    const editor = docRuleEditor();
+    if (!editor) return;
+    setActionBusy(true);
+    setActionNotice(undefined);
+    try {
+      const list = (value: string) =>
+        value
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+      const appliesTo = {
+        ...(list(editor.tools).length ? { tools: list(editor.tools) } : {}),
+        ...(list(editor.paths).length ? { paths: list(editor.paths) } : {}),
+        ...(editor.commandPattern.trim()
+          ? { commandPattern: editor.commandPattern.trim() }
+          : {}),
+      };
+      const result = await updateConstitutionDocRuleViaRpc(
+        props.runtime,
+        props.sessionID,
+        {
+          id: editor.id,
+          statement: editor.statement,
+          enforcement: editor.enforcement,
+          ...(Object.keys(appliesTo).length ? { appliesTo } : {}),
+        },
+      );
+      const outcome = result as
+        | { updated?: boolean; reason?: string }
+        | undefined;
+      setActionNotice(
+        outcome?.updated
+          ? `已更新文档规则「${editor.section}」`
+          : `失败：${outcome?.reason ?? "未知原因"}`,
+      );
+      if (outcome?.updated) setDocRuleEditor(undefined);
       await load();
     } catch (error) {
       setActionNotice(
@@ -954,6 +1063,13 @@ export function GovernancePane(props: {
                     <button
                       type="button"
                       class="constitution-btn"
+                      onClick={() => openDocRuleEditor(rule)}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      class="constitution-btn"
                       onClick={() =>
                         void (async () => {
                           const result =
@@ -977,6 +1093,97 @@ export function GovernancePane(props: {
                 </div>
               )}
             </For>
+          </Show>
+          <Show when={docRuleEditor()}>
+            {(editor) => (
+              <div class="constitution-editor">
+                <div class="constitution-editor-row">
+                  <span class="neu-gov-meta">
+                    编辑文档规则「{editor().section}」（{editor().source}）
+                  </span>
+                </div>
+                <textarea
+                  class="constitution-input constitution-textarea"
+                  placeholder="规则内容（statement，写回文档段落）"
+                  value={editor().statement}
+                  onInput={(event) =>
+                    setDocRuleEditor({
+                      ...editor(),
+                      statement: event.currentTarget.value,
+                    })
+                  }
+                />
+                <div class="constitution-editor-row">
+                  <select
+                    class="constitution-input"
+                    value={editor().enforcement}
+                    onChange={(event) =>
+                      setDocRuleEditor({
+                        ...editor(),
+                        enforcement: event.currentTarget.value as
+                          | "deny"
+                          | "approval"
+                          | "warn",
+                      })
+                    }
+                  >
+                    <option value="warn">warn（软约束）</option>
+                    <option value="approval">approval</option>
+                    <option value="deny">deny</option>
+                  </select>
+                  <input
+                    class="constitution-input"
+                    placeholder="tools（逗号分隔；deny/approval 必填）"
+                    value={editor().tools}
+                    onInput={(event) =>
+                      setDocRuleEditor({
+                        ...editor(),
+                        tools: event.currentTarget.value,
+                      })
+                    }
+                  />
+                  <input
+                    class="constitution-input"
+                    placeholder="paths（逗号分隔）"
+                    value={editor().paths}
+                    onInput={(event) =>
+                      setDocRuleEditor({
+                        ...editor(),
+                        paths: event.currentTarget.value,
+                      })
+                    }
+                  />
+                  <input
+                    class="constitution-input"
+                    placeholder="commandPattern"
+                    value={editor().commandPattern}
+                    onInput={(event) =>
+                      setDocRuleEditor({
+                        ...editor(),
+                        commandPattern: event.currentTarget.value,
+                      })
+                    }
+                  />
+                </div>
+                <div class="constitution-editor-actions">
+                  <button
+                    type="button"
+                    class="constitution-btn"
+                    disabled={actionBusy()}
+                    onClick={() => void saveDocRule()}
+                  >
+                    保存到文档
+                  </button>
+                  <button
+                    type="button"
+                    class="constitution-btn"
+                    onClick={() => setDocRuleEditor(undefined)}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
           </Show>
           <Show
             when={

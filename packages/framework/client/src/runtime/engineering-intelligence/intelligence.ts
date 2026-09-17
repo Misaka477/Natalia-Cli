@@ -7,6 +7,8 @@ import {
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import { loadProjectDocuments } from "../project-docs";
+import { applyConstitutionDocEdit } from "../constitution-doc";
+import { writeWorkspaceFile } from "@natalia/platform";
 import type { SessionFactState } from "@natalia/session";
 import {
   projectedCanonicalTools,
@@ -87,6 +89,7 @@ type Surface = Pick<
   | "createConstitutionRule"
   | "constitutionDocRules"
   | "promoteConstitutionDocRule"
+  | "updateConstitutionDocRule"
   | "planTaskStates"
   | "workGraphIntegrity"
   | "unattributedChanges"
@@ -1201,6 +1204,65 @@ export function createIntelligenceSurface(
       );
       return { promoted: true as const, ruleID };
     },
+
+      /**
+       * Edit a soft (document) rule in place and write it back (EI §3.8 P-1.c
+       * 软规则编辑): the user rewrites a section's prose and syncs its
+       * enforcement / appliesTo HTML-comment annotations. The document is the
+       * source of truth for soft rules — there is no journal event; the change
+       * is picked up by the hash-based runtime-context re-derivation. The model
+       * never calls this (§3.6): only the user, through the governance panel.
+       */
+      async updateConstitutionDocRule(
+        input: {
+          id: string;
+          statement?: string;
+          enforcement?: ConstitutionDocRule["enforcement"];
+          appliesTo?: ConstitutionDocRule["appliesTo"];
+        },
+        sessionID?: string,
+      ) {
+        if (!input.id.trim())
+          return { updated: false as const, reason: "no rule id" };
+        const statement = input.statement?.trim();
+        if (input.statement !== undefined && !statement)
+          return {
+            updated: false as const,
+            reason: "statement must not be empty",
+          };
+        await ctx.ports.getReady();
+        const workspaceRoot = ctx.ports.getWorkspaceRoot();
+        const snapshot = await loadProjectDocuments(workspaceRoot);
+        const document = snapshot.documents.find((candidate) =>
+          candidate.rules.some((rule) => rule.id === input.id),
+        );
+        if (!document)
+          return { updated: false as const, reason: "unknown document rule id" };
+        const current = document.rules.find((rule) => rule.id === input.id)!;
+        const next = {
+          statement: statement ?? current.statement,
+          enforcement: input.enforcement ?? current.enforcement,
+          ...(input.appliesTo !== undefined
+            ? { appliesTo: input.appliesTo }
+            : current.appliesTo
+              ? { appliesTo: current.appliesTo }
+              : {}),
+        };
+        const edited = applyConstitutionDocEdit(
+          document.content,
+          document.source,
+          input.id,
+          next,
+        );
+        if (!edited.ok)
+          return { updated: false as const, reason: edited.reason };
+        await writeWorkspaceFile({
+          workspaceRoot,
+          path: document.path,
+          content: edited.content,
+        });
+        return { updated: true as const };
+      },
     async registeredTools(sessionID?: string) {
       await ctx.ports.getReady();
       const exec = await intelligenceExecWindow(sessionID);

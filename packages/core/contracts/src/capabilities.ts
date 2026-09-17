@@ -273,6 +273,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "createConstitutionRule",
     "constitutionDocRules",
     "promoteConstitutionDocRule",
+    "updateConstitutionDocRule",
     "notices",
   ],
   /** Live Work Chat durable mailbox (P8 Phase C3). */

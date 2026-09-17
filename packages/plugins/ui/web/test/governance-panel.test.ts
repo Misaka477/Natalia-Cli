@@ -11,6 +11,7 @@ import {
   promoteConstitutionDocRuleViaRpc,
   removeConstitutionRuleViaRpc,
   reopenDriftFindingViaRpc,
+  updateConstitutionDocRuleViaRpc,
   splitActivityRefs,
   updateConstitutionRuleViaRpc,
 } from "../src/governance-panel";
@@ -432,4 +433,40 @@ test("collapseList honours an explicit limit and the exact-boundary case", () =>
   const over = collapseList(items, false, 2);
   expect(over.shown).toEqual(["a", "b"]);
   expect(over.hiddenCount).toBe(1);
+});
+
+test("updateConstitutionDocRuleViaRpc forwards the edit (id + fields) to the RPC", async () => {
+  const calls: Array<{ input: unknown; sessionID: string | undefined }> = [];
+  const runtime = {
+    updateConstitutionDocRule: async (
+      input: unknown,
+      sessionID: string | undefined,
+    ) => {
+      calls.push({ input, sessionID });
+      return { updated: true };
+    },
+  } as unknown as RuntimeClient;
+
+  const result = await updateConstitutionDocRuleViaRpc(
+    runtime,
+    "ses_doc",
+    {
+      id: "constitution:small-prs:2",
+      statement: "Prefer small, single-purpose pull requests.",
+      enforcement: "approval",
+      appliesTo: { tools: ["shell"] },
+    },
+  );
+  expect(result).toEqual({ updated: true });
+  expect(calls).toEqual([
+    {
+      input: {
+        id: "constitution:small-prs:2",
+        statement: "Prefer small, single-purpose pull requests.",
+        enforcement: "approval",
+        appliesTo: { tools: ["shell"] },
+      },
+      sessionID: "ses_doc",
+    },
+  ]);
 });

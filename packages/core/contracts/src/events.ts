@@ -4101,6 +4101,25 @@ export type RuntimeClient = {
     input: { id: string },
     sessionID?: string,
   ): Promise<{ promoted: boolean; ruleID?: string; reason?: string }>;
+  /**
+   * Edit a soft (document) constitution/AGENTS rule in place and write it back
+   * (EI §3.8 P-1.c): the user rewrites a section's prose and syncs its
+   * enforcement / appliesTo annotations. The document is the source of truth;
+   * a deny/approval rule requires a non-empty appliesTo anchor.
+   */
+  updateConstitutionDocRule?(
+    input: {
+      id: string;
+      statement?: string;
+      enforcement?: "deny" | "approval" | "warn";
+      appliesTo?: {
+        tools?: string[];
+        paths?: string[];
+        commandPattern?: string;
+      };
+    },
+    sessionID?: string,
+  ): Promise<{ updated: boolean; reason?: string }>;
   registeredTools?(sessionID?: string): Promise<
     Array<{
       name: string;

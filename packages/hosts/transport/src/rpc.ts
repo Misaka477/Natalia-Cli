@@ -231,6 +231,7 @@ export const RPC_ROUTE_MEMBERS = {
   "constitution.rule.remove": "removeConstitutionRule",
   "constitution.docRules": "constitutionDocRules",
   "constitution.docRule.promote": "promoteConstitutionDocRule",
+  "constitution.docRule.update": "updateConstitutionDocRule",
   "context.notices": "notices",
   "decision.records": "decisionRecords",
   "decision.record": "recordDecision",
@@ -2186,6 +2187,59 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.promoteConstitutionDocRule?.(
           { id: params.id },
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "constitution.docRule.update") {
+      optionsGuard(client, "updateConstitutionDocRule");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (!params || typeof params.id !== "string" || !params.id.trim())
+        throw invalidParams(
+          "constitution.docRule.update requires an id string",
+        );
+      if (
+        params.statement !== undefined &&
+        (typeof params.statement !== "string" || !params.statement.trim())
+      )
+        throw invalidParams(
+          "constitution.docRule.update statement must be a non-empty string",
+        );
+      if (
+        params.enforcement !== undefined &&
+        params.enforcement !== "deny" &&
+        params.enforcement !== "approval" &&
+        params.enforcement !== "warn"
+      )
+        throw invalidParams(
+          "constitution.docRule.update enforcement must be deny|approval|warn",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.updateConstitutionDocRule?.(
+          {
+            id: params.id,
+            ...(typeof params.statement === "string"
+              ? { statement: params.statement }
+              : {}),
+            ...(params.enforcement === "deny" ||
+            params.enforcement === "approval" ||
+            params.enforcement === "warn"
+              ? { enforcement: params.enforcement }
+              : {}),
+            ...(params.appliesTo &&
+            typeof params.appliesTo === "object" &&
+            !Array.isArray(params.appliesTo)
+              ? {
+                  appliesTo: params.appliesTo as {
+                    tools?: string[];
+                    paths?: string[];
+                    commandPattern?: string;
+                  },
+                }
+              : {}),
+          },
           optionalStringParam(body.params, "sessionID"),
         ),
       };

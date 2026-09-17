@@ -652,6 +652,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "promoted",
     note: "promotes a parsed constitution/AGENTS document rule into a journal rule (user-owned; a deny/approval rule needs an appliesTo anchor)",
   },
+  updateConstitutionDocRule: {
+    refusal: "value",
+    expressedBy: "updated",
+    note: "edits a constitution/AGENTS document section in place and writes it back (user-owned; a deny/approval rule needs an appliesTo anchor)",
+  },
   projectionContributions: {
     refusal: "none",
     note: "pure read of sanitized plugin projection contributions",

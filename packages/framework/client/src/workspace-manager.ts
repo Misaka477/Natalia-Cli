@@ -766,6 +766,7 @@ export function createWorkspaceRuntimeClient(
     "acknowledgeDriftFinding",
     "reopenDriftFinding",
     "promoteConstitutionDocRule",
+    "updateConstitutionDocRule",
     "planTaskStates",
     "workGraphIntegrity",
     "unattributedChanges",

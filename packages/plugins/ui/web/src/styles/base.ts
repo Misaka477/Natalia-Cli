@@ -5012,6 +5012,13 @@ button.neu-settings-item.neu-settings-item-button:active {
   color: inherit;
   font-size: 12px;
 }
+.constitution-textarea {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.4;
+}
 .constitution-editor-actions {
   display: flex;
   justify-content: flex-end;

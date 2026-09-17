@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   projectedCompletions,
@@ -553,5 +553,112 @@ test("Phase -1 E2E: a user can add, edit, disable and delete a constitution rule
     sessionID,
   );
   expect(removed.removed).toBe(true);
+  await client.dispose?.();
+}, 30_000);
+
+
+test("Phase -1 E2E: a user edits a soft constitution doc rule and it is written back (EI §3.8 P-1.c)", async () => {
+  const root = await officialPluginWorkspace("governance-e2e-constitution-docedit");
+  const sessionID = "ses_e2e_constitution_docedit" as SessionID;
+  const constitutionPath = join(root, ".natalia", "constitution.md");
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    constitutionPath,
+    [
+      "# Project constitution",
+      "",
+      "## Never force-push",
+      "",
+      "Force-pushing rewrites shared history.",
+      "",
+      "<!-- enforcement: deny -->",
+      '<!-- appliesTo: { commandPattern: "git push --force" } -->',
+      "",
+      "## Small pull requests",
+      "",
+      "Prefer small, reviewable pull requests.",
+    ].join("\n"),
+    "utf8",
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [{ text: "standby" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!(sessionID);
+
+  const before = await client.constitutionDocRules!(sessionID);
+  const smallPRs = before.find((rule) => rule.section === "Small pull requests")!;
+  const forcePush = before.find((rule) => rule.section === "Never force-push")!;
+  expect(smallPRs.enforcement).toBe("warn");
+
+  // 1. Edit a prose rule's statement — the document is rewritten in place.
+  const edited = await client.updateConstitutionDocRule!(
+    {
+      id: smallPRs.id,
+      statement: "Prefer small, single-purpose pull requests under 400 lines.",
+    },
+    sessionID,
+  );
+  expect(edited.updated).toBe(true);
+  const onDisk = await readFile(constitutionPath, "utf8");
+  expect(onDisk).toContain("under 400 lines");
+  // The other section is untouched.
+  expect(onDisk).toContain("Force-pushing rewrites shared history.");
+  const afterStatement = await client.constitutionDocRules!(sessionID);
+  expect(
+    afterStatement.find((rule) => rule.section === "Small pull requests")!
+      .statement,
+  ).toBe("Prefer small, single-purpose pull requests under 400 lines.");
+
+  // 2. Annotate the prose rule into a hard approval rule with an anchor — the
+  // HTML-comment annotations are synced into the document.
+  const annotated = await client.updateConstitutionDocRule!(
+    {
+      id: smallPRs.id,
+      enforcement: "approval",
+      appliesTo: { tools: ["shell"] },
+    },
+    sessionID,
+  );
+  expect(annotated.updated).toBe(true);
+  const annotatedDisk = await readFile(constitutionPath, "utf8");
+  expect(annotatedDisk).toContain("<!-- enforcement: approval -->");
+  expect(annotatedDisk).toContain('tools: ["shell"]');
+  const afterAnnotate = await client.constitutionDocRules!(sessionID);
+  expect(
+    afterAnnotate.find((rule) => rule.section === "Small pull requests"),
+  ).toMatchObject({ enforcement: "approval", annotated: true, appliesTo: { tools: ["shell"] } });
+
+  // 3. A deny edit that clears the appliesTo anchor is refused (unenforceable
+  // hard rule) and writes nothing.
+  const beforeRefusal = await readFile(constitutionPath, "utf8");
+  const refused = await client.updateConstitutionDocRule!(
+    { id: smallPRs.id, statement: "x", enforcement: "deny", appliesTo: {} },
+    sessionID,
+  );
+  expect(refused.updated).toBe(false);
+  expect(refused.reason).toContain("appliesTo");
+  expect(await readFile(constitutionPath, "utf8")).toBe(beforeRefusal);
+
+  // 4. An unknown rule id is reported, not thrown.
+  const unknown = await client.updateConstitutionDocRule!(
+    { id: "constitution:nope:9", statement: "x" },
+    sessionID,
+  );
+  expect(unknown.updated).toBe(false);
+
+  // The hard deny rule edited earlier stays intact (its id is stable).
+  const finalRules = await client.constitutionDocRules!(sessionID);
+  expect(
+    finalRules.find((rule) => rule.section === "Never force-push"),
+  ).toMatchObject({ enforcement: "deny", appliesTo: { commandPattern: "git push --force" } });
+
   await client.dispose?.();
 }, 30_000);

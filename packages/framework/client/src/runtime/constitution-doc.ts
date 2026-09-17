@@ -112,57 +112,211 @@ export function parseConstitutionDocument(
   content: string,
   source: "constitution" | "agents",
 ): ConstitutionDocRule[] {
-  const lines = content.replace(/\r\n?/gu, "\n").split("\n");
   const rules: ConstitutionDocRule[] = [];
-  let section = "";
-  let body: string[] = [];
   let ordinal = 0;
-
-  const flush = () => {
-    const raw = body.join("\n");
-    const enforcementMatch = raw.match(ENFORCEMENT_ANNOTATION);
-    const appliesToMatch = raw.match(APPLIESTO_ANNOTATION);
-    // The statement is the prose with every HTML comment stripped.
-    const statement = raw
-      .replace(ANY_HTML_COMMENT, "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .join("\n")
-      .trim();
-    if (!statement && !enforcementMatch) {
-      body = [];
-      return;
+  for (const section of splitConstitutionSections(content)) {
+    const derived = sectionToRule(section, source, ordinal);
+    if (derived) {
+      ordinal = derived.ordinal;
+      rules.push(derived.rule);
     }
-    ordinal += 1;
-    const enforcement: ConstitutionDocEnforcement =
-      (enforcementMatch?.[1]?.toLowerCase() as ConstitutionDocEnforcement) ??
-      "warn";
-    const appliesTo = appliesToMatch
-      ? parseAppliesTo(appliesToMatch[1]!)
-      : undefined;
-    const heading = section || `rule ${ordinal}`;
-    rules.push({
-      id: `${source}:${slugify(heading)}:${ordinal}`,
+  }
+  return rules;
+}
+
+/** A raw document section: its heading, body lines and line range (EI §3.8). */
+export type ConstitutionDocSection = {
+  /** The heading text ("" for content before the first heading). */
+  heading: string;
+  /** The original heading line ("" for content before the first heading). */
+  headingLine: string;
+  /** Body lines (prose + annotations) between this heading and the next. */
+  body: string[];
+  /** Inclusive start line (the heading line) in the normalized line array. */
+  startLine: number;
+  /** Inclusive end line (last line before the next heading) in that array. */
+  endLine: number;
+};
+
+/**
+ * Splits a document into its ATX sections with line ranges (EI §3.8 P-1.c).
+ * Line numbers index the CRLF-normalized line array, so an edit can splice a
+ * rewritten section back in. Content before the first heading is one section
+ * with an empty heading — matching how the parser treats it (a `rule N`).
+ */
+export function splitConstitutionSections(
+  content: string,
+): ConstitutionDocSection[] {
+  const lines = content.replace(/\r\n?/gu, "\n").split("\n");
+  const sections: ConstitutionDocSection[] = [];
+  let current: ConstitutionDocSection = {
+    heading: "",
+    headingLine: "",
+    body: [],
+    startLine: 0,
+    endLine: 0,
+  };
+  const flush = (endLine: number) => {
+    sections.push({ ...current, endLine });
+  };
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    const heading = line.match(HEADING);
+    if (heading) {
+      flush(index - 1);
+      current = {
+        heading: heading[2]!.trim(),
+        headingLine: line,
+        body: [],
+        startLine: index,
+        endLine: index,
+      };
+      continue;
+    }
+    current.body.push(line);
+  }
+  flush(lines.length - 1);
+  return sections;
+}
+
+/** Derives a section's rule (or nothing, when it has no statement/annotation). */
+function sectionToRule(
+  section: ConstitutionDocSection,
+  source: "constitution" | "agents",
+  ordinal: number,
+): { rule: ConstitutionDocRule; ordinal: number } | undefined {
+  const raw = section.body.join("\n");
+  const enforcementMatch = raw.match(ENFORCEMENT_ANNOTATION);
+  const appliesToMatch = raw.match(APPLIESTO_ANNOTATION);
+  const statement = raw
+    .replace(ANY_HTML_COMMENT, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join("\n")
+    .trim();
+  if (!statement && !enforcementMatch) return undefined;
+  const nextOrdinal = ordinal + 1;
+  const enforcement: ConstitutionDocEnforcement =
+    (enforcementMatch?.[1]?.toLowerCase() as ConstitutionDocEnforcement) ??
+    "warn";
+  const appliesTo = appliesToMatch
+    ? parseAppliesTo(appliesToMatch[1]!)
+    : undefined;
+  const heading = section.heading || `rule ${nextOrdinal}`;
+  return {
+    ordinal: nextOrdinal,
+    rule: {
+      id: `${source}:${slugify(heading)}:${nextOrdinal}`,
       source,
       section: heading,
       statement: statement || heading,
       enforcement,
       annotated: Boolean(enforcementMatch),
       ...(appliesTo ? { appliesTo } : {}),
-    });
-    body = [];
+    },
   };
+}
 
-  for (const line of lines) {
-    const heading = line.match(HEADING);
-    if (heading) {
-      flush();
-      section = heading[2]!.trim();
-      continue;
+/** Whether an appliesTo anchor carries at least one executable field. */
+function hasAnchor(
+  appliesTo: ConstitutionDocAppliesTo | undefined,
+): appliesTo is ConstitutionDocAppliesTo {
+  return Boolean(
+    appliesTo &&
+      (appliesTo.tools?.length ||
+        appliesTo.paths?.length ||
+        appliesTo.commandPattern),
+  );
+}
+
+/** Serializes an appliesTo anchor back to the documented annotation body. */
+function renderAppliesTo(appliesTo: ConstitutionDocAppliesTo): string {
+  const parts: string[] = [];
+  if (appliesTo.tools?.length)
+    parts.push(
+      `tools: [${appliesTo.tools.map((t) => JSON.stringify(t)).join(", ")}]`,
+    );
+  if (appliesTo.paths?.length)
+    parts.push(
+      `paths: [${appliesTo.paths.map((p) => JSON.stringify(p)).join(", ")}]`,
+    );
+  if (appliesTo.commandPattern)
+    parts.push(`commandPattern: ${JSON.stringify(appliesTo.commandPattern)}`);
+  return `{ ${parts.join(", ")} }`;
+}
+
+/**
+ * The desired state of a document rule after an edit (EI §3.8 P-1.c): the prose
+ * statement plus its enforcement tier and structured anchor. A warn rule with
+ * no anchor stays prose (no annotation); anything else is written with
+ * `<!-- enforcement -->` / `<!-- appliesTo -->` comments so the parser reads it
+ * back as a hard rule.
+ */
+export type ConstitutionDocEdit = {
+  statement: string;
+  enforcement: ConstitutionDocEnforcement;
+  appliesTo?: ConstitutionDocAppliesTo;
+};
+
+/**
+ * Rewrites one document section in place and returns the new document (EI §3.8
+ * P-1.c 软规则编辑): the statement prose is replaced and the enforcement /
+ * appliesTo HTML-comment annotations are synced to the requested tier. The
+ * section is located by its stable rule id, so other sections (and their ids)
+ * are untouched. Pure — the caller writes the returned content to disk.
+ *
+ * A deny/approval rule must carry a non-empty appliesTo anchor (the same hard
+ * invariant the promote path enforces); an unknown id is reported, not thrown.
+ */
+export function applyConstitutionDocEdit(
+  content: string,
+  source: "constitution" | "agents",
+  ruleId: string,
+  next: ConstitutionDocEdit,
+): { ok: true; content: string } | { ok: false; reason: string } {
+  const anchor = hasAnchor(next.appliesTo);
+  if (next.enforcement !== "warn" && !anchor)
+    return {
+      ok: false,
+      reason: "a deny/approval rule requires a non-empty appliesTo anchor",
+    };
+
+  const sections = splitConstitutionSections(content);
+  let ordinal = 0;
+  let target: ConstitutionDocSection | undefined;
+  for (const section of sections) {
+    const derived = sectionToRule(section, source, ordinal);
+    if (!derived) continue;
+    ordinal = derived.ordinal;
+    if (derived.rule.id === ruleId) {
+      target = section;
+      break;
     }
-    body.push(line);
   }
-  flush();
-  return rules;
+  if (!target) return { ok: false, reason: "unknown document rule id" };
+
+  const annotated = next.enforcement !== "warn" || anchor;
+  const body: string[] = [];
+  const prose = next.statement
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  body.push(...prose);
+  if (annotated) {
+    if (body.length) body.push("");
+    body.push(`<!-- enforcement: ${next.enforcement} -->`);
+    if (anchor)
+      body.push(`<!-- appliesTo: ${renderAppliesTo(next.appliesTo!)} -->`);
+  }
+  const headingLine = target.headingLine || `## ${target.heading}`;
+  const replacement = headingLine ? [headingLine, "", ...body] : body;
+
+  const lines = content.replace(/\r\n?/gu, "\n").split("\n");
+  const updated = [
+    ...lines.slice(0, target.startLine),
+    ...replacement,
+    ...lines.slice(target.endLine + 1),
+  ].join("\n");
+  return { ok: true, content: updated };
 }
