@@ -8,6 +8,7 @@ type Tab =
   | "constitution"
   | "decisions"
   | "evidence"
+  | "completions"
   | "drift"
   | "workgraph"
   | "notices";
@@ -62,35 +63,63 @@ export function GovernancePane(props: {
   const [liveConstitution, setLiveConstitution] = createSignal<any[]>([]);
   const [liveDecisions, setLiveDecisions] = createSignal<any[]>([]);
   const [liveEvidence, setLiveEvidence] = createSignal<any[]>([]);
+  const [liveCompletions, setLiveCompletions] = createSignal<any[]>([]);
   const [liveDrift, setLiveDrift] = createSignal<any[]>([]);
   // ADR Phase C: the projected runtime notices (dual ingestion — the live
   // event stream and the server-projected contract converge here).
   const [liveNotices, setLiveNotices] = createSignal<any[]>([]);
+  const [loadErrors, setLoadErrors] = createSignal<string[]>([]);
   const { confirm, dialog } = useConfirmDialog();
 
   const load = async () => {
     const sessionID = props.sessionID;
-    try {
-      setLiveConstitution(
-        (await props.runtime?.constitutionRules?.(sessionID)) ?? [],
-      );
-    } catch {}
-    try {
-      setLiveDecisions(
-        (await props.runtime?.decisionRecords?.(sessionID)) ?? [],
-      );
-    } catch {}
-    try {
-      setLiveEvidence(
-        (await props.runtime?.evidenceRecords?.({ sessionID })) ?? [],
-      );
-    } catch {}
-    try {
-      setLiveDrift((await props.runtime?.driftFindings?.({ sessionID })) ?? []);
-    } catch {}
-    try {
-      setLiveNotices((await props.runtime?.notices?.(sessionID)) ?? []);
-    } catch {}
+    const errors: string[] = [];
+    const loadSlice = async <T,>(
+      label: string,
+      load: () => Promise<T[] | undefined>,
+      apply: (items: T[]) => void,
+    ) => {
+      try {
+        apply((await load()) ?? []);
+      } catch (error) {
+        errors.push(
+          `${label}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    };
+    await Promise.all([
+      loadSlice(
+        "Constitution",
+        () => props.runtime?.constitutionRules?.(sessionID) ?? Promise.resolve([]),
+        (items) => setLiveConstitution(items as any[]),
+      ),
+      loadSlice(
+        "Decisions",
+        () => props.runtime?.decisionRecords?.(sessionID) ?? Promise.resolve([]),
+        (items) => setLiveDecisions(items as any[]),
+      ),
+      loadSlice(
+        "Evidence",
+        () => props.runtime?.evidenceRecords?.({ sessionID }) ?? Promise.resolve([]),
+        (items) => setLiveEvidence(items as any[]),
+      ),
+      loadSlice(
+        "Completions",
+        () => props.runtime?.completions?.({ sessionID }) ?? Promise.resolve([]),
+        (items) => setLiveCompletions(items as any[]),
+      ),
+      loadSlice(
+        "Drift",
+        () => props.runtime?.driftFindings?.({ sessionID }) ?? Promise.resolve([]),
+        (items) => setLiveDrift(items as any[]),
+      ),
+      loadSlice(
+        "Notices",
+        () => props.runtime?.notices?.(sessionID) ?? Promise.resolve([]),
+        (items) => setLiveNotices(items as any[]),
+      ),
+    ]);
+    setLoadErrors(errors);
   };
 
   // Reload when the active session changes so the pane follows the session.
@@ -158,6 +187,14 @@ export function GovernancePane(props: {
         <button
           type="button"
           class="review-subtab"
+          data-active={tab() === "completions"}
+          onClick={() => setTab("completions")}
+        >
+          Completions
+        </button>
+        <button
+          type="button"
+          class="review-subtab"
           data-active={tab() === "workgraph"}
           onClick={() => setTab("workgraph")}
         >
@@ -173,6 +210,11 @@ export function GovernancePane(props: {
         </button>
       </div>
       <div class="neu-governance-content">
+        <Show when={loadErrors().length}>
+          <div class="neu-gov-error">
+            {loadErrors().join(" · ")}
+          </div>
+        </Show>
         <Show when={tab() === "drift"}>
           <For each={liveDrift()}>
             {(finding) => (
@@ -370,6 +412,17 @@ export function GovernancePane(props: {
               </div>
             )}
           </For>
+          <Show
+            when={
+              !liveConstitution().length &&
+              !Object.values(props.state.constitutionRules ?? {}).length
+            }
+          >
+            <div class="neu-gov-empty">
+              No constitution rules loaded. Seeded self-protection rules and
+              user/project rules appear here.
+            </div>
+          </Show>
           {dialog}
         </Show>
         <Show when={tab() === "decisions"}>
@@ -392,6 +445,17 @@ export function GovernancePane(props: {
               </div>
             )}
           </For>
+          <Show
+            when={
+              !liveDecisions().length && !(props.state.decisions ?? []).length
+            }
+          >
+            <div class="neu-gov-empty">
+              No decision.recorded for this session yet. Decisions appear when
+              the model calls record_decision for an architecture or trade-off
+              choice.
+            </div>
+          </Show>
         </Show>
         <Show when={tab() === "evidence"}>
           <For
@@ -416,6 +480,60 @@ export function GovernancePane(props: {
               </div>
             )}
           </For>
+          <Show
+            when={
+              !liveEvidence().length && !(props.state.evidence ?? []).length
+            }
+          >
+            <div class="neu-gov-empty">
+              No evidence.recorded for this session yet. Evidence appears after
+              the model runs record_validation / record_completion or Nia
+              submits an audit report.
+            </div>
+          </Show>
+        </Show>
+        <Show when={tab() === "completions"}>
+          <For
+            each={
+              liveCompletions().length
+                ? liveCompletions()
+                : (props.state.completions ?? [])
+            }
+          >
+            {(record) => (
+              <div class="neu-gov-row">
+                <span class="neu-gov-title" data-priority="completed">
+                  {record.taskID}
+                </span>
+                <span class="neu-gov-text">{record.objective}</span>
+                <span class="neu-gov-meta">
+                  {record.changeSummary}
+                  {(record.validations ?? []).length
+                    ? ` · ${(record.validations ?? [])
+                        .map(
+                          (validation: { result: string }) =>
+                            validation.result,
+                        )
+                        .join("/")}`
+                    : " · no validation"}
+                  {(record.knownGaps ?? []).length
+                    ? ` · gaps: ${(record.knownGaps ?? []).join("; ")}`
+                    : ""}
+                </span>
+              </div>
+            )}
+          </For>
+          <Show
+            when={
+              !liveCompletions().length &&
+              !(props.state.completions ?? []).length
+            }
+          >
+            <div class="neu-gov-empty">
+              No completion.recorded yet. A completion card appears after the
+              model calls record_completion with its validation matrix.
+            </div>
+          </Show>
         </Show>
         <Show when={tab() === "workgraph"}>
           <WorkGraphTree state={props.state} />

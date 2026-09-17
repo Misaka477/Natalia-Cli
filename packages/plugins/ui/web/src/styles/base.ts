@@ -4159,6 +4159,26 @@ button.neu-settings-item.neu-settings-item-button:active {
   font-weight: 600;
   color: var(--neu-text);
 }
+.neu-gov-empty {
+  margin-top: 8px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--neu-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+.neu-gov-error {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(220, 80, 80, 0.14);
+  color: #e6a0a0;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* ===== Workspace add panel ===== */
 .neu-workspace-window {
