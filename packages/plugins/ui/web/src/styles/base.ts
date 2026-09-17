@@ -4852,6 +4852,47 @@ button.neu-settings-item.neu-settings-item-button:active {
 .plan-contract-seg[data-status="stale"] {
   color: #e6b45a;
 }
+.plan-task-states {
+  padding: 4px 8px;
+  margin: 0 0 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.plan-task-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+  font-size: 11px;
+}
+.plan-task-badge {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.plan-task-badge[data-state="verified"] {
+  background: rgba(143, 212, 143, 0.16);
+  color: #8fd48f;
+}
+.plan-task-badge[data-state="gap"] {
+  background: rgba(230, 120, 120, 0.18);
+  color: #e78a8a;
+}
+.plan-task-badge[data-state="in_progress"] {
+  background: rgba(120, 160, 255, 0.18);
+  color: #8ab4f8;
+}
+.plan-task-badge[data-state="skipped"] {
+  opacity: 0.6;
+}
+.plan-task-text {
+  min-width: 0;
+  word-break: break-word;
+}
 .drift-card {
   padding: 6px 8px;
   margin-bottom: 6px;

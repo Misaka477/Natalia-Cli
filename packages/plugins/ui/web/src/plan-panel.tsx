@@ -35,6 +35,18 @@ function planStatusLabel(status: string): string {
   return PLAN_STATUS_LABELS[status] ?? status;
 }
 
+const TASK_STATE_LABELS: Record<string, string> = {
+  verified: "已验证",
+  gap: "缺证据",
+  in_progress: "进行中",
+  pending: "待办",
+  skipped: "跳过",
+};
+
+function taskStateLabel(state: string): string {
+  return TASK_STATE_LABELS[state] ?? state;
+}
+
 function MarkdownPreview(props: { content: string }) {
   const html = createMemo(() => marked.parse(props.content ?? "") as string);
   return <div class="plan-panel-preview markdown-body" innerHTML={html()} />;
@@ -58,6 +70,17 @@ export function PlanPanel(props: {
   const [saving, setSaving] = createSignal(false);
   const [markPath, setMarkPath] = createSignal("");
   const [localPlans, setLocalPlans] = createSignal<PlanRow[]>([]);
+  // EI §4 Phase 4: the selected plan's tasks projected evidence-first
+  // (pending / in_progress / verified / gap / skipped).
+  const [taskStates, setTaskStates] = createSignal<
+    Array<{
+      id: string;
+      text: string;
+      declaration: string;
+      depth: number;
+      state: string;
+    }>
+  >([]);
   const sessionID = () => props.sessionID ?? props.state.sessionID;
 
   const plans = createMemo(() =>
@@ -143,6 +166,22 @@ export function PlanPanel(props: {
     });
   });
 
+  async function loadTaskStates(planID?: string) {
+    if (!planID) {
+      setTaskStates([]);
+      return;
+    }
+    try {
+      const result = await props.runtime?.planTaskStates?.(
+        { planID },
+        sessionID(),
+      );
+      setTaskStates(result ?? []);
+    } catch {
+      setTaskStates([]);
+    }
+  }
+
   async function readSelected(planID?: string) {
     const plan = planID
       ? plans().find((candidate) => candidate.planID === planID)
@@ -155,6 +194,7 @@ export function PlanPanel(props: {
       });
       setDraft(result?.content ?? "");
       setError("");
+      void loadTaskStates(plan.planID);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -390,6 +430,26 @@ export function PlanPanel(props: {
                     </Show>
                   </div>
                 )}
+              </Show>
+              <Show when={taskStates().length}>
+                <div class="plan-task-states">
+                  <div class="review-section-label">任务态</div>
+                  <For each={taskStates()}>
+                    {(task) => (
+                      <div class="plan-task-row" data-state={task.state}>
+                        <span class="plan-task-badge" data-state={task.state}>
+                          {taskStateLabel(task.state)}
+                        </span>
+                        <span
+                          class="plan-task-text"
+                          style={{ "padding-left": `${task.depth * 14}px` }}
+                        >
+                          {task.text}
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </div>
               </Show>
               <div class="plan-panel-doc-buttons">
                 <button
