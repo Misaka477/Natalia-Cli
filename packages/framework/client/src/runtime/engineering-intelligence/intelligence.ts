@@ -909,7 +909,18 @@ export function createIntelligenceSurface(
           status: "open",
         }),
       );
-      return { reopened: true as const };
+      // EI §3.5 / Phase 2 B2: a reopened warning/high finding is re-injected
+      // into the main agent's next step so it is re-reviewed — with a note not
+      // to repeat the rationale it gave last time (reopenedCount + 1 is this
+      // review's ordinal). advisory findings are not re-injected.
+      const reopenedCount = finding.reopenedCount + 1;
+      injectFindingIntoMainAgent(ctx, exec, finding, {
+        reviewNote:
+          `This is reopen #${reopenedCount}; do not repeat the rationale you ` +
+          `gave last time.`,
+        idSuffix: `reopen_${reopenedCount}`,
+      });
+      return { reopened: true as const, reopenedCount };
     },
     async requestOverride(
       input: {

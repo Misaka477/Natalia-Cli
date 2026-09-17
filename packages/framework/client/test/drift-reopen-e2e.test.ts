@@ -193,3 +193,75 @@ test("Phase 2 E2E: a warning/high finding is auto-injected into the main agent's
 
   await client.dispose?.();
 }, 30_000);
+
+
+test("Phase 2 E2E: reopening a warning/high finding re-injects it for re-review (EI §3.5)", async () => {
+  const root = await officialPluginWorkspace("drift-e2e-reopen-reinject");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [{ text: "standby" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start((event) => events.push(event));
+  await client.sessionAttach!(SESSION);
+
+  // A high finding: the applicable constraint forbids "delete" and the current
+  // activity does it — constraint_violation_signal fires at high severity, and
+  // B3 auto-injects it into the main agent's next step.
+  await client.evaluateDrift!(
+    {
+      objective: "clean up the workspace",
+      currentActivity: "delete the old build artifacts",
+      applicableConstraints: ["never delete files without approval"],
+    },
+    SESSION,
+  );
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "drift.finding_opened" && event.severity === "high",
+      ),
+    { timeoutMs: 10_000 },
+  );
+  const finding = (await client.driftFindings!({ sessionID: SESSION })).find(
+    (f) => f.severity === "high",
+  )!;
+  const injectionsForFinding = () =>
+    events.filter(
+      (event): event is Extract<RuntimeEvent, { type: "input.admitted" }> =>
+        event.type === "input.admitted" &&
+        event.internal === true &&
+        event.text.includes(finding.findingID),
+    );
+  // The original finding_opened already injected once.
+  expect(injectionsForFinding().length).toBeGreaterThanOrEqual(1);
+
+  // Dismiss, then reopen — the reopen re-injects for re-review.
+  await client.acknowledgeDriftFinding!(
+    { findingID: finding.findingID, status: "dismissed" },
+    SESSION,
+  );
+  const reopened = await client.reopenDriftFinding!(
+    { findingID: finding.findingID },
+    SESSION,
+  );
+  expect(reopened.reopened).toBe(true);
+  expect(reopened.reopenedCount).toBe(1);
+
+  await waitFor(() => injectionsForFinding().length >= 2, { timeoutMs: 10_000 });
+  const reinjection = injectionsForFinding().at(-1)!;
+  // The re-review note tells the agent not to repeat its last rationale, and
+  // the admission id is distinct from the original injection's.
+  expect(reinjection.text).toContain("reopen #1");
+  expect(reinjection.text).toContain("do not repeat the rationale");
+  expect(reinjection.id).not.toBe(`turn_drift_${finding.findingID}`);
+
+  await client.dispose?.();
+}, 30_000);

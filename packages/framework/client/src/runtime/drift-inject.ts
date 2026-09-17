@@ -9,28 +9,43 @@
  * findingID, severity and the rules that fired — never chain-of-thought,
  * objective prose or evidence payloads.
  *
- * Both finding writers share this: the boundary reconcile (workspace-change
- * detection) and the `evaluateDrift` surface (an explicit evaluation).
+ * Three writers share this: the boundary reconcile and the `evaluateDrift`
+ * surface (a fresh `finding_opened`), and `reopenDriftFinding` (a user reopens
+ * a terminal finding — a warning/high reopen is re-injected so the main agent
+ * re-reviews it, EI §3.5 "reopen 后 warning/high 自动复审").
  */
 import { admitInput, buildInputAdmission } from "@natalia/session";
-import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
+
+/** The minimal finding facts an injection needs (an opened event or a projection). */
+export type DriftFindingSummary = {
+  findingID: string;
+  severity: "advisory" | "warning" | "high";
+  ruleHits?: Array<{ rule: string; confidence: number }>;
+};
 
 export function injectFindingIntoMainAgent(
   ctx: RuntimeContext,
   target: SessionExecutionState,
-  finding: Extract<RuntimeEvent, { type: "drift.finding_opened" }>,
+  finding: DriftFindingSummary,
+  options: { reviewNote?: string; idSuffix?: string } = {},
 ): void {
   if (finding.severity !== "warning" && finding.severity !== "high") return;
   const rules = (finding.ruleHits ?? []).map((hit) => hit.rule).join(", ");
-  const id = `turn_drift_${finding.findingID.replace(/[^a-zA-Z0-9]/gu, "_")}`;
+  // A reopen reuses the findingID, so its admission needs a distinct id (the
+  // original finding_opened injection already claimed `turn_drift_<findingID>`).
+  const suffix = options.idSuffix
+    ? `_${options.idSuffix.replace(/[^a-zA-Z0-9]/gu, "_")}`
+    : "";
+  const id = `turn_drift_${finding.findingID.replace(/[^a-zA-Z0-9]/gu, "_")}${suffix}`;
+  const reviewNote = options.reviewNote ? ` ${options.reviewNote}` : "";
   const text =
     `(internal drift finding ${finding.findingID} [${finding.severity}]` +
-    `${rules ? ` fired: ${rules}` : ""}. In your next step you must respond to ` +
-    `it: call drift_acknowledge to explain or dispute it (with a rationale), ` +
-    `correct the work, or detour_declare a sanctioned detour. This is not a ` +
-    `user message.)`;
+    `${rules ? ` fired: ${rules}` : ""}.${reviewNote} In your next step you ` +
+    `must respond to it: call drift_acknowledge to explain or dispute it (with ` +
+    `a rationale), correct the work, or detour_declare a sanctioned detour. ` +
+    `This is not a user message.)`;
   let admitted;
   try {
     admitted = admitInput(target.session, {

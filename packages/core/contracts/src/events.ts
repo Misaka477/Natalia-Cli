@@ -4005,7 +4005,7 @@ export type RuntimeClient = {
   reopenDriftFinding?(
     input: { findingID: string },
     sessionID?: string,
-  ): Promise<{ reopened: boolean; reason?: string }>;
+  ): Promise<{ reopened: boolean; reason?: string; reopenedCount?: number }>;
   requestOverride?(
     input: {
       ruleID: string;
