@@ -693,11 +693,20 @@ export function GovernancePane(props: {
                   </span>
                   <span class="gov-card-meta">{record.recordedAt}</span>
                 </div>
-                <div class="gov-card-text">{record.objective}</div>
+                <div class="gov-card-section">
+                  <div class="gov-card-label">Target</div>
+                  <div class="gov-card-text">{record.objective}</div>
+                </div>
                 <div class="gov-card-section">
                   <div class="gov-card-label">Changes</div>
                   <div class="gov-card-text">{record.changeSummary}</div>
                 </div>
+                <Show when={record.behaviorImpact}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Behavior impact</div>
+                    <div class="gov-card-text">{record.behaviorImpact}</div>
+                  </div>
+                </Show>
                 <div class="gov-card-section">
                   <div class="gov-card-label">Validation matrix</div>
                   <Show
@@ -730,6 +739,20 @@ export function GovernancePane(props: {
                     </div>
                   </div>
                 </Show>
+                <Show when={record.humanValidation}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Human validation</div>
+                    <div class="gov-card-text">{record.humanValidation}</div>
+                  </div>
+                </Show>
+                <Show when={(record.externalSideEffects ?? []).length}>
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">External side effects</div>
+                    <div class="gov-card-text">
+                      {(record.externalSideEffects ?? []).join("; ")}
+                    </div>
+                  </div>
+                </Show>
                 <Show when={(record.evidenceIDs ?? []).length}>
                   <div class="gov-card-section">
                     <div class="gov-card-label">Evidence IDs</div>
@@ -739,8 +762,9 @@ export function GovernancePane(props: {
                   </div>
                 </Show>
                 <Show when={record.rollbackState}>
-                  <div class="gov-card-meta">
-                    rollback: {record.rollbackState}
+                  <div class="gov-card-section">
+                    <div class="gov-card-label">Rollback</div>
+                    <div class="gov-card-text">{record.rollbackState}</div>
                   </div>
                 </Show>
               </div>
