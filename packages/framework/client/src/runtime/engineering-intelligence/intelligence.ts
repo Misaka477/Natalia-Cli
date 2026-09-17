@@ -218,6 +218,10 @@ export function createIntelligenceSurface(
     };
   }
   async function intelligenceExecWindow(sessionID?: string) {
+    // `start()` only kicks composition off in the background. Intelligence
+    // reads may be the first routed calls on a workspace proxy, so every
+    // surface must wait for the session-store before ensureExecution runs.
+    await ctx.ports.getReady();
     const exec = sessionID
       ? (ctx.ports
           .getExecutionBySession()

@@ -232,6 +232,38 @@ test("workspace proxy chat messages await lazy runtime initialization", async ()
   }
 });
 
+test("workspace proxy intelligence reads await lazy initialization", async () => {
+  const root = await officialPluginWorkspace("workspace-intelligence-ready");
+  const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
+  process.env.NATALIA_WORKSPACES_FILE = join(root, "workspaces.json");
+  const options = {
+    pluginStoreRoot: officialPluginStoreRoot(root),
+    globalConfigPath: join(root, "global-config.json"),
+  };
+  const manager = createWorkspaceManager(options);
+  try {
+    const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
+    const session = createSessionRecord(
+      "ses_intelligence_ready",
+      "Intelligence ready",
+    );
+    await store.save(session);
+    await manager.add({ path: root });
+    const client = createWorkspaceRuntimeClient(manager);
+    // These read surfaces may be the first routed call on a fresh workspace.
+    await expect(
+      client.driftFindings?.({ sessionID: session.id }),
+    ).resolves.toEqual([]);
+    await expect(client.notices?.(session.id)).resolves.toEqual([]);
+  } finally {
+    await manager.dispose();
+    if (previousRegistry === undefined)
+      delete process.env.NATALIA_WORKSPACES_FILE;
+    else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
+  }
+});
+
+
 test("chat history survives after the newest event window", async () => {
   const root = await officialPluginWorkspace("workspace-chat-tail");
   const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
