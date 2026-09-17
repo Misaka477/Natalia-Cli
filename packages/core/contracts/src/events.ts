@@ -3943,6 +3943,37 @@ export type RuntimeClient = {
     input: { ruleID: string },
     sessionID?: string,
   ): Promise<{ removed: boolean }>;
+  /**
+   * The constitution/AGENTS document rules (EI §3.8 P-1.c): the sections parsed
+   * from the workspace documents, each tagged with its enforcement (prose →
+   * warn, `<!-- enforcement -->` → hard with appliesTo). The soft rules the UI
+   * can promote into journal rules.
+   */
+  constitutionDocRules?(sessionID?: string): Promise<
+    Array<{
+      id: string;
+      source: "constitution" | "agents";
+      section: string;
+      statement: string;
+      enforcement: "deny" | "approval" | "warn";
+      annotated: boolean;
+      appliesTo?: {
+        tools?: string[];
+        paths?: string[];
+        commandPattern?: string;
+      };
+    }>
+  >;
+  /**
+   * Promote a parsed document rule into the executable journal (EI §3.8 P-1.c):
+   * a user lifts a soft section into a hard `constitution.rule_added` (source
+   * "user", no gate). A deny/approval rule must already carry a non-empty
+   * appliesTo anchor; a promote without one is refused.
+   */
+  promoteConstitutionDocRule?(
+    input: { id: string },
+    sessionID?: string,
+  ): Promise<{ promoted: boolean; ruleID?: string; reason?: string }>;
   registeredTools?(sessionID?: string): Promise<
     Array<{
       name: string;

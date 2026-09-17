@@ -54,6 +54,7 @@ function ruleHitsFor(finding: {
  */
 export type GovernanceSliceBundle = {
   constitution: any[];
+  docRules: any[];
   decisions: any[];
   evidence: any[];
   completions: any[];
@@ -87,11 +88,23 @@ export async function loadGovernanceSlices(
       return [];
     }
   };
-  const [constitution, decisions, evidence, completions, drift, notices] =
-    await Promise.all([
+  const [
+    constitution,
+    docRules,
+    decisions,
+    evidence,
+    completions,
+    drift,
+    notices,
+  ] = await Promise.all([
       loadSlice(
         "Constitution",
         () => runtime?.constitutionRules?.(sessionID) ?? Promise.resolve([]),
+      ),
+      loadSlice(
+        "ConstitutionDocs",
+        () =>
+          runtime?.constitutionDocRules?.(sessionID) ?? Promise.resolve([]),
       ),
       loadSlice(
         "Decisions",
@@ -120,6 +133,7 @@ export async function loadGovernanceSlices(
     ]);
   return {
     constitution,
+    docRules,
     decisions,
     evidence,
     completions,
@@ -166,6 +180,15 @@ export async function removeConstitutionRuleViaRpc(
   return runtime?.removeConstitutionRule?.({ ruleID }, sessionID);
 }
 
+/** The RPC action behind a constitution document-rule promote click. */
+export async function promoteConstitutionDocRuleViaRpc(
+  runtime: RuntimeClient | undefined,
+  sessionID: string | undefined,
+  id: string,
+) {
+  return runtime?.promoteConstitutionDocRule?.({ id }, sessionID);
+}
+
 /**
  * The governance pane content (EI Phase 2): the six governance sub-tabs and
  * their rows, reading the live RPC surfaces with the view-store projection as
@@ -183,6 +206,7 @@ export function GovernancePane(props: {
 }) {
   const [tab, setTab] = createSignal<Tab>(props.initialTab ?? "drift");
   const [liveConstitution, setLiveConstitution] = createSignal<any[]>([]);
+  const [liveDocRules, setLiveDocRules] = createSignal<any[]>([]);
   const [liveDecisions, setLiveDecisions] = createSignal<any[]>([]);
   const [decisionScope, setDecisionScope] = createSignal<
     "session" | "workspace" | "all"
@@ -203,6 +227,7 @@ export function GovernancePane(props: {
       decisionScope: decisionScope(),
     });
     setLiveConstitution(bundle.constitution);
+    setLiveDocRules(bundle.docRules);
     setLiveDecisions(bundle.decisions);
     setLiveEvidence(bundle.evidence);
     setLiveCompletions(bundle.completions);
@@ -535,6 +560,47 @@ export function GovernancePane(props: {
               </div>
             )}
           </For>
+          <Show when={liveDocRules().length}>
+            <div class="neu-gov-section-label">文档规则（可提升）</div>
+            <For each={liveDocRules()}>
+              {(rule) => (
+                <div class="constitution-row">
+                  <div class="constitution-row-main">
+                    <span class="neu-gov-title">{rule.section}</span>
+                    <span class="neu-gov-text">{rule.statement}</span>
+                    <span class="neu-gov-meta">
+                      {rule.source} · {rule.enforcement}
+                      {rule.annotated ? " · 已标注" : " · prose"}
+                    </span>
+                  </div>
+                  <div class="constitution-row-actions">
+                    <button
+                      type="button"
+                      class="constitution-btn"
+                      onClick={() =>
+                        void (async () => {
+                          const result =
+                            await promoteConstitutionDocRuleViaRpc(
+                              props.runtime,
+                              props.sessionID,
+                              rule.id,
+                            );
+                          setActionNotice(
+                            result?.promoted
+                              ? `已提升为正式规则 ${result.ruleID}`
+                              : `提升失败：${result?.reason ?? "未知原因"}`,
+                          );
+                          await load();
+                        })()
+                      }
+                    >
+                      提升为正式规则
+                    </button>
+                  </div>
+                </div>
+              )}
+            </For>
+          </Show>
           <Show
             when={
               !liveConstitution().length &&

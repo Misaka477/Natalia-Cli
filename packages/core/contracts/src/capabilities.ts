@@ -266,6 +266,8 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "approveOverride",
     "updateConstitutionRule",
     "removeConstitutionRule",
+    "constitutionDocRules",
+    "promoteConstitutionDocRule",
     "notices",
   ],
   /** Live Work Chat durable mailbox (P8 Phase C3). */

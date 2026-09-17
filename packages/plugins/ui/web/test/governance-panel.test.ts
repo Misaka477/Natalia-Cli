@@ -4,6 +4,7 @@ import { applyEvent, initialState, type AppState } from "@natalia/view-store";
 import {
   acknowledgeDriftFindingViaRpc,
   loadGovernanceSlices,
+  promoteConstitutionDocRuleViaRpc,
   removeConstitutionRuleViaRpc,
   updateConstitutionRuleViaRpc,
 } from "../src/governance-panel";
@@ -11,6 +12,7 @@ import {
 test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
   const filled = {
     constitutionRules: async () => [{ ruleID: "C-1" }],
+    constitutionDocRules: async () => [{ id: "constitution:small-prs:1" }],
     decisionRecords: async () => [{ id: "decision:1" }],
     evidenceRecords: async () => [{ taskID: "task:1" }],
     completions: async () => [{ taskID: "task:1" }],
@@ -19,6 +21,7 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
   } as unknown as RuntimeClient;
   const data = await loadGovernanceSlices(filled, "ses_panel");
   expect(data.constitution).toHaveLength(1);
+  expect(data.docRules).toHaveLength(1);
   expect(data.decisions).toHaveLength(1);
   expect(data.evidence).toHaveLength(1);
   expect(data.completions).toHaveLength(1);
@@ -29,6 +32,7 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
   const empty = await loadGovernanceSlices({} as RuntimeClient, "ses_panel");
   expect(empty).toEqual({
     constitution: [],
+    docRules: [],
     decisions: [],
     evidence: [],
     completions: [],
@@ -206,6 +210,55 @@ test("constitution actions call their RPCs and reload reflects update and tombst
   await removeConstitutionRuleViaRpc(runtime, "ses_action", "C-ACTION");
   expect((await loadGovernanceSlices(runtime, "ses_action")).constitution)
     .toHaveLength(0);
+});
+
+test("constitution document rules load and promote into the journal rule set", async () => {
+  const docRules = [
+    {
+      id: "constitution:never-force-push:1",
+      source: "constitution",
+      section: "Never force-push",
+      statement: "Force-pushing rewrites shared history.",
+      enforcement: "deny",
+      annotated: true,
+      appliesTo: { commandPattern: "git push --force" },
+    },
+    {
+      id: "constitution:small-prs:2",
+      source: "constitution",
+      section: "Small PRs",
+      statement: "Prefer small pull requests.",
+      enforcement: "warn",
+      annotated: false,
+    },
+  ];
+  const journal: Array<{ ruleID: string }> = [];
+  const promoteCalls: Array<{ id: string }> = [];
+  const runtime = {
+    constitutionDocRules: async () => docRules.map((rule) => ({ ...rule })),
+    promoteConstitutionDocRule: async (input: { id: string }) => {
+      promoteCalls.push({ id: input.id });
+      const ruleID = `P-DOC-${input.id}`;
+      journal.push({ ruleID });
+      return { promoted: true, ruleID };
+    },
+    constitutionRules: async () => journal.map((rule) => ({ ...rule })),
+  } as unknown as RuntimeClient;
+
+  const bundle = await loadGovernanceSlices(runtime, "ses_doc");
+  expect(bundle.docRules).toHaveLength(2);
+
+  const result = await promoteConstitutionDocRuleViaRpc(
+    runtime,
+    "ses_doc",
+    "constitution:never-force-push:1",
+  );
+  expect(result).toMatchObject({
+    promoted: true,
+    ruleID: "P-DOC-constitution:never-force-push:1",
+  });
+  expect(promoteCalls).toEqual([{ id: "constitution:never-force-push:1" }]);
+  expect(journal).toHaveLength(1);
 });
 
 test("the Decisions read requests session scope by default and workspace scope on demand", async () => {

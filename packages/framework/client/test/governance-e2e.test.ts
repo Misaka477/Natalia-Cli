@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   projectedCompletions,
@@ -371,4 +372,88 @@ test("decisions are session-scoped unless explicitly promoted to workspace scope
   );
   await first.dispose?.();
   await second.dispose?.();
+}, 30_000);
+
+
+test("Phase -1 E2E: constitution doc rules are read and promoted into journal rules", async () => {
+  const root = await officialPluginWorkspace("governance-e2e-constitution");
+  const sessionID = "ses_e2e_constitution" as SessionID;
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "constitution.md"),
+    [
+      "# Project constitution",
+      "",
+      "## Never force-push",
+      "",
+      "Force-pushing rewrites shared history.",
+      "",
+      "<!-- enforcement: deny -->",
+      '<!-- appliesTo: { commandPattern: "git push --force" } -->',
+      "",
+      "## Small pull requests",
+      "",
+      "Prefer small, reviewable pull requests.",
+      "",
+      "## Block rm -rf",
+      "",
+      "<!-- enforcement: deny -->",
+    ].join("\n"),
+    "utf8",
+  );
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [{ text: "standby" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!(sessionID);
+
+  // 1. The read surface parses the document into enforcement-tagged rules.
+  const docRules = await client.constitutionDocRules!(sessionID);
+  const forcePush = docRules.find((rule) => rule.section === "Never force-push");
+  expect(forcePush).toMatchObject({
+    enforcement: "deny",
+    annotated: true,
+    appliesTo: { commandPattern: "git push --force" },
+  });
+  const smallPRs = docRules.find((rule) => rule.section === "Small pull requests");
+  expect(smallPRs).toMatchObject({ enforcement: "warn", annotated: false });
+  const blockRm = docRules.find((rule) => rule.section === "Block rm -rf");
+  expect(blockRm).toMatchObject({ enforcement: "deny", annotated: true });
+  expect(blockRm!.appliesTo).toBeUndefined();
+
+  // 2. A deny rule without an appliesTo anchor is refused (unenforceable hard rule).
+  const refused = await client.promoteConstitutionDocRule!(
+    { id: blockRm!.id },
+    sessionID,
+  );
+  expect(refused.promoted).toBe(false);
+  expect(refused.reason).toContain("appliesTo");
+
+  // 3. A deny rule with an anchor promotes into a journal rule (source user).
+  const promoted = await client.promoteConstitutionDocRule!(
+    { id: forcePush!.id },
+    sessionID,
+  );
+  expect(promoted.promoted).toBe(true);
+  expect(promoted.ruleID).toStartWith("P-DOC-");
+
+  // 4. The promoted rule is now a journal constitution rule the runtime reads.
+  // (Publishing the rule_added event is synchronous on the session event sink,
+  // so the read surface sees it immediately.)
+  const rules = await client.constitutionRules!(sessionID);
+  const promotedRule = rules.find((rule) => rule.ruleID === promoted.ruleID);
+  expect(promotedRule).toMatchObject({
+    source: "user",
+    enforcement: "deny",
+    scope: "project",
+    appliesTo: { commandPattern: "git push --force" },
+  });
+  await client.dispose?.();
 }, 30_000);

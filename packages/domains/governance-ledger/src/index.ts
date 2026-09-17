@@ -8,6 +8,7 @@ export {
   SELF_PROTECTION_RULES,
   buildConstitutionRuleEnabledChange,
   buildConstitutionRuleRemoved,
+  buildPromotedConstitutionRule,
   buildProposedConstitutionRule,
   recordDecision,
   seedConstitutionRules,

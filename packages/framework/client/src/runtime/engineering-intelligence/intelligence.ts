@@ -2,9 +2,11 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
+  type ConstitutionDocRule,
   type GovernanceLedgerController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { loadProjectDocuments } from "../project-docs";
 import type { SessionFactState } from "@natalia/session";
 import {
   projectedCanonicalTools,
@@ -74,6 +76,8 @@ type Surface = Pick<
   | "approveOverride"
   | "updateConstitutionRule"
   | "removeConstitutionRule"
+  | "constitutionDocRules"
+  | "promoteConstitutionDocRule"
   | "notices"
 >;
 async function projectedCanonicalToolsWithFallback(
@@ -892,6 +896,73 @@ export function createIntelligenceSurface(
         }),
       );
       return { removed: true as const };
+    },
+    /**
+     * The constitution/AGENTS document rules (EI §3.8 P-1.c): the sections
+     * parsed from the workspace documents, each tagged with its enforcement
+     * (prose → warn, `<!-- enforcement -->` → hard with appliesTo). These are
+     * the soft rules the governance panel can promote into journal rules.
+     */
+    async constitutionDocRules(_sessionID?: string): Promise<
+      ConstitutionDocRule[]
+    > {
+      await ctx.ports.getReady();
+      const snapshot = await loadProjectDocuments(
+        ctx.ports.getWorkspaceRoot(),
+      );
+      return snapshot.documents.flatMap((document) => document.rules);
+    },
+    /**
+     * Promote a parsed document rule into the executable journal (EI §3.8
+     * P-1.c): a user lifts a soft section into a hard `constitution.rule_added`
+     * (source "user", no gate). A deny/approval rule must already carry a
+     * non-empty appliesTo anchor — the same hard-rule invariant the proposal
+     * path enforces; a promote without one is refused so the model cannot be
+     * handed an unenforceable hard rule.
+     */
+    async promoteConstitutionDocRule(
+      input: { id: string },
+      sessionID?: string,
+    ) {
+      const exec = await intelligenceExecWindow(sessionID);
+      if (!exec?.session || !input.id.trim())
+        return { promoted: false as const, reason: "no rule id" };
+      await ctx.ports.getReady();
+      const snapshot = await loadProjectDocuments(
+        ctx.ports.getWorkspaceRoot(),
+      );
+      const rule = snapshot.documents
+        .flatMap((document) => document.rules)
+        .find((candidate) => candidate.id === input.id);
+      if (!rule)
+        return { promoted: false as const, reason: "unknown document rule id" };
+      const anchored = Boolean(
+        rule.appliesTo &&
+          (rule.appliesTo.tools?.length ||
+            rule.appliesTo.paths?.length ||
+            rule.appliesTo.commandPattern),
+      );
+      if (rule.enforcement !== "warn" && !anchored)
+        return {
+          promoted: false as const,
+          reason:
+            "a deny/approval rule requires a non-empty appliesTo anchor; annotate the section first",
+        };
+      const governanceLedger = requireGovernanceLedger();
+      if (!governanceLedger)
+        return { promoted: false as const, reason: "governance ledger unavailable" };
+      const ruleID = `P-DOC-${rule.id.replace(/[^a-zA-Z0-9]+/gu, "-")}`;
+      ctx.ports.publishForSession(
+        exec,
+        governanceLedger.buildPromotedConstitutionRule({
+          id: `constitution:promoted:${rule.id}:${ctx.ports.nextDecisionSequence()}`,
+          ruleID,
+          statement: rule.statement,
+          enforcement: rule.enforcement,
+          ...(rule.appliesTo ? { appliesTo: rule.appliesTo } : {}),
+        }),
+      );
+      return { promoted: true as const, ruleID };
     },
     async registeredTools(sessionID?: string) {
       await ctx.ports.getReady();

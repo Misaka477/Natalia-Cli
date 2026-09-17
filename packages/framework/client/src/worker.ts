@@ -130,6 +130,8 @@ export const WORKER_ROUTE_MEMBERS = {
   "projections.list": "projectionContributions",
   "constitution.override.request": "requestOverride",
   "constitution.override.approve": "approveOverride",
+  "constitution.docRules": "constitutionDocRules",
+  "constitution.docRule.promote": "promoteConstitutionDocRule",
   "chat.messages": "chatMessages",
   "chat.messages.page": "chatMessagesPage",
   "chat.submit": "chatSubmit",
@@ -261,6 +263,8 @@ type WorkerRequest = {
     | "projections.list"
     | "constitution.override.request"
     | "constitution.override.approve"
+    | "constitution.docRules"
+    | "constitution.docRule.promote"
     | "chat.messages"
     | "chat.messages.page"
     | "chat.abort"
@@ -1574,6 +1578,14 @@ export async function handleWorkerRequest(
     return await client.requestOverride?.(request.value as never);
   if (request.method === "constitution.override.approve")
     return await client.approveOverride?.(request.value as never);
+  if (request.method === "constitution.docRules")
+    return await client.constitutionDocRules?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  if (request.method === "constitution.docRule.promote")
+    return await client.promoteConstitutionDocRule?.(
+      request.value as { id: string; sessionID?: string },
+    );
   if (request.method === "chat.messages") {
     const value = request.value as
       | {

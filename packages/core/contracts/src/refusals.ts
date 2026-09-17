@@ -633,6 +633,12 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "removed",
     note: "records the append-only tombstone for a removed constitution rule (user-owned, confirmed)",
   },
+  constitutionDocRules: { refusal: "none", note: "pure read" },
+  promoteConstitutionDocRule: {
+    refusal: "value",
+    expressedBy: "promoted",
+    note: "promotes a parsed constitution/AGENTS document rule into a journal rule (user-owned; a deny/approval rule needs an appliesTo anchor)",
+  },
   projectionContributions: {
     refusal: "none",
     note: "pure read of sanitized plugin projection contributions",

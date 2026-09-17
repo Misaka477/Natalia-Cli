@@ -1,6 +1,7 @@
 import {
   buildConstitutionRuleEnabledChange,
   buildConstitutionRuleRemoved,
+  buildPromotedConstitutionRule,
   buildProposedConstitutionRule,
   recordDecision,
   seedConstitutionRules,
@@ -24,6 +25,7 @@ export function createGovernanceLedgerController(): GovernanceLedgerController {
     evidenceStatusForPlanState,
     validateConstitutionRuleProposal,
     buildProposedConstitutionRule,
+    buildPromotedConstitutionRule,
     buildConstitutionRuleEnabledChange,
     buildConstitutionRuleRemoved,
   };

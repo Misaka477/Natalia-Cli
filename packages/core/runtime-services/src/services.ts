@@ -921,6 +921,7 @@ export interface GovernanceLedgerController {
   evidenceStatusForPlanState: ServiceOperation;
   validateConstitutionRuleProposal: ServiceOperation;
   buildProposedConstitutionRule: ServiceOperation;
+  buildPromotedConstitutionRule: ServiceOperation;
   buildConstitutionRuleEnabledChange: ServiceOperation;
   buildConstitutionRuleRemoved: ServiceOperation;
 }

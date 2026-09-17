@@ -273,6 +273,41 @@ export function buildProposedConstitutionRule(input: {
 }
 
 /**
+ * Builds the `constitution.rule_added` event that promotes a parsed document
+ * rule into the executable journal (EI §3.8 P-1.c "promote"): a user lifts a
+ * soft constitution/AGENTS section (with its enforcement/appliesTo annotation)
+ * into a hard rule. Provenance is `source: "user"` — a promote is a direct
+ * user action, not a model proposal, so it needs no approval gate. A
+ * deny/approval rule still requires a non-empty appliesTo anchor (the same
+ * hard-rule invariant the proposal path enforces); the caller validates first.
+ */
+export function buildPromotedConstitutionRule(input: {
+  id: string;
+  ruleID: string;
+  statement: string;
+  enforcement: "deny" | "approval" | "warn";
+  appliesTo?: {
+    tools?: string[];
+    paths?: string[];
+    commandPattern?: string;
+  };
+  priority?: "critical" | "high" | "medium" | "low";
+}): Extract<RuntimeEvent, { type: "constitution.rule_added" }> {
+  return {
+    type: "constitution.rule_added",
+    id: input.id,
+    ruleID: input.ruleID,
+    statement: input.statement,
+    scope: "project",
+    priority: input.priority ?? "medium",
+    source: "user",
+    enforcement: input.enforcement,
+    overridePolicy: "user_explicit",
+    ...(input.appliesTo ? { appliesTo: input.appliesTo } : {}),
+  };
+}
+
+/**
  * Builds a `constitution.rule_updated` event that disables (or re-enables) a
  * rule (EI §3.8 P-1.c): a disable is reversible and keeps the rule in the
  * journal; only `rule_removed` is the durable tombstone.
