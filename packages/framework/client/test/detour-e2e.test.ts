@@ -275,3 +275,76 @@ test("Phase 2 E2E: Nia reviews a requested detour and records detour.reviewed (r
   });
   await client.dispose?.();
 }, 30_000);
+
+
+test("Phase 2 E2E: a rejected detour leaves the contract at its current version and records Nia unavailable", async () => {
+  const root = await officialPluginWorkspace("detour-e2e-reject-gate");
+  const events: RuntimeEvent[] = [];
+  let planID = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "ask",
+    provider: createScriptedProvider({
+      main: [
+        {
+          tool: () => ({
+            name: "plan_propose",
+            arguments: { planID, scope: ["packages/a"], verification: ["bun test packages/a"] },
+          }),
+        },
+        {
+          tool: () => ({
+            name: "detour_declare",
+            arguments: {
+              planID,
+              currentVersion: 1,
+              reason: "the fix also needs the shared util package",
+              scopeDelta: ["packages/b"],
+            },
+          }),
+        },
+        { text: "detour rejected" },
+      ],
+      navi: [{ text: "s" }],
+      nia: [{ text: "s" }],
+    }),
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request") {
+      // Accept the contract, but reject the detour gate.
+      client.respondApproval({
+        requestID: event.id,
+        decision: event.scope === "detour" ? "reject" : "once",
+        ...(event.scope === "detour" ? { feedback: "stay in scope" } : {}),
+      });
+    }
+  });
+  await client.sessionAttach!(SESSION);
+  await client.planDocWrite!({
+    path: "plans/e2e-detour.md",
+    content: "# E2E detour\n",
+    title: "E2E detour",
+  });
+  const marked = await client.planDocMark!({ path: "plans/e2e-detour.md", title: "E2E detour" });
+  planID = marked.planID;
+  await client.planDocActivate!(planID);
+  await client.submitAndWait!("propose then declare a detour to reject");
+
+  // The contract stays at v1 — a rejected detour does not absorb its deltas.
+  const accepted = events.filter((event) => event.type === "work_contract.accepted");
+  expect(accepted).toHaveLength(1);
+  expect(accepted[0]).toMatchObject({ planVersion: 1 });
+  const contract = projectedWorkContracts(events).find((c) => c.planID === planID)!;
+  expect(contract).toMatchObject({ status: "current", version: 1, scope: ["packages/a"] });
+  // The detour was requested; Nia did not weigh in before the user rejected,
+  // so her opinion is recorded as unavailable.
+  expect(events.some((event) => event.type === "detour.requested")).toBe(true);
+  const review = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "detour.reviewed" }> =>
+      event.type === "detour.reviewed",
+  );
+  expect(review).toMatchObject({ verdict: "unavailable", reviewedBy: "nia" });
+  await client.dispose?.();
+}, 30_000);
