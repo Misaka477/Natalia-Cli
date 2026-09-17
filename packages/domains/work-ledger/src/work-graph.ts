@@ -194,6 +194,14 @@ export function constitutionRuleNode(input: {
   ruleID: string;
   statement: string;
   sessionID: SessionID;
+  /**
+   * The rule's scope. Release-scope rules are the runtime's own
+   * self-protection rules — background facts, not the user's causal chain — so
+   * the node's actor is marked `"runtime"` (vs `"constitution"` for the
+   * user/project rules). The Work Graph default view filters the runtime ones
+   * out of its roots; they still appear when a tool call is constrained by them.
+   */
+  scope?: "project" | "package" | "sandbox" | "task" | "release";
 }): WorkGraphNodeEvent {
   return {
     type: "workgraph.node_added",
@@ -201,7 +209,7 @@ export function constitutionRuleNode(input: {
     nodeID: `wg:constraint:${input.ruleID}`,
     kind: WORK_GRAPH_KIND.constraint,
     summary: workGraphSummary(["constraint", input.ruleID]),
-    actor: "constitution",
+    actor: input.scope === "release" ? "runtime" : "constitution",
     target: input.ruleID,
     sessionID: input.sessionID,
   };

@@ -144,6 +144,7 @@ export async function finalizeInitialize(
         workLedgerController.constitutionRuleNode({
           ruleID: event.ruleID,
           statement: event.statement,
+          scope: event.scope,
           sessionID: scope.sessionID,
         }),
       );
@@ -164,6 +165,7 @@ export async function finalizeInitialize(
       workLedgerController.constitutionRuleNode({
         ruleID: rule.ruleID,
         statement: rule.statement,
+        scope: rule.scope,
         sessionID: scope.sessionID,
       }),
     );

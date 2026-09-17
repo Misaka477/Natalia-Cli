@@ -2676,6 +2676,78 @@ test("a real tool-call causal chain folds into the work-graph forest and step us
   });
 });
 
+test("the default forest omits runtime self-protection constraints but keeps them when linked", () => {
+  const sessionID = "ses_filter" as SessionID;
+  const runtimeConstraint = "wg:constraint:C-TERM-001";
+  const decision = "wg:decision:d1";
+  // A runtime self-protection constraint is a root on a fresh session (nothing
+  // constrained yet); a decision node is also a root.
+  const state = projectEvents([
+    {
+      type: "workgraph.node_added",
+      id: runtimeConstraint,
+      nodeID: runtimeConstraint,
+      kind: "constraint",
+      summary: "constraint · C-TERM-001",
+      actor: "runtime",
+      target: "C-TERM-001",
+      sessionID,
+    },
+    {
+      type: "workgraph.node_added",
+      id: decision,
+      nodeID: decision,
+      kind: "decision",
+      summary: "a decision",
+      actor: "model",
+      sessionID,
+    },
+  ] as unknown as RuntimeEvent[]);
+  // The runtime constraint is filtered from the default roots; the decision stays.
+  expect(buildWorkGraphForest(state).map((node) => node.node.nodeID)).toEqual([
+    decision,
+  ]);
+
+  // When a tool call is actually constrained by it, the runtime constraint
+  // still appears (as a child), so the filter does not lose the information.
+  const toolCall = "wg:tool:turn_1:call_1";
+  const linked = projectEvents([
+    {
+      type: "workgraph.node_added",
+      id: toolCall,
+      nodeID: toolCall,
+      kind: "tool_call",
+      summary: "shell · succeeded",
+      actor: "shell",
+      sessionID,
+      turnID: "turn_1",
+    },
+    {
+      type: "workgraph.node_added",
+      id: runtimeConstraint,
+      nodeID: runtimeConstraint,
+      kind: "constraint",
+      summary: "constraint · C-TERM-001",
+      actor: "runtime",
+      target: "C-TERM-001",
+      sessionID,
+    },
+    {
+      type: "workgraph.edge_added",
+      id: "e:constrained",
+      sourceID: toolCall,
+      targetID: runtimeConstraint,
+      kind: "constrained_by",
+    },
+  ] as unknown as RuntimeEvent[]);
+  const forest = buildWorkGraphForest(linked);
+  expect(forest).toHaveLength(1);
+  expect(forest[0]!.node.nodeID).toBe(toolCall);
+  expect(forest[0]!.children.map((child) => child.node.nodeID)).toContain(
+    runtimeConstraint,
+  );
+});
+
 test("an older session (tool.update + turn.finished only) still rebuilds the causal forest and usage (historical replay)", () => {
   const sessionID = "ses_old";
   const turnID = "turn_old";

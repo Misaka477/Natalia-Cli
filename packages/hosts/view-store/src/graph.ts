@@ -112,7 +112,13 @@ export function buildWorkGraphForest(
   const edges = Object.values(state.workGraphEdges);
   const hasInbound = new Set(edges.map((edge) => edge.targetID));
   const roots = Object.values(nodes).filter(
-    (node) => !hasInbound.has(node.nodeID),
+    (node) =>
+      !hasInbound.has(node.nodeID) &&
+      // Runtime self-protection constraints (release-scope rules, actor
+      // "runtime") are background facts, not the user's causal chain — keep
+      // them out of the default forest roots. They still surface as children
+      // when a tool call is actually constrained by them.
+      !(node.kind === "constraint" && node.actor === "runtime"),
   );
   const forest: WorkGraphTreeNode[] = [];
   for (const root of roots) {
