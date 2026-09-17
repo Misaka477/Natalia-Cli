@@ -425,3 +425,109 @@ export function constitutionCheckEdge(input: {
     kind: WORK_GRAPH_EDGE_KIND.constrainedBy,
   };
 }
+
+
+/**
+ * A Work Graph integrity report (EI WG4 / Phase 3 D): the graph is a
+ * projection of the append-only journal, rebuilt by replay. This verifies the
+ * rebuild is internally consistent — the causal chain is not faked.
+ *
+ * - **dangling edges**: an edge whose endpoint references no node. A dangling
+ *   edge is a broken causal claim (the thing it points at was never recorded).
+ * - **incomplete nodes**: a node with no session correlation. Per EI §2
+ *   principle 4/5, missing correlation is marked incomplete, never silently
+ *   attributed — the graph refuses to fake a complete causal chain.
+ * - **duplicate node ids**: a writer re-emitted the same node; the projection
+ *   is idempotent by id, so a duplicate signals a non-idempotent writer.
+ * - **stable**: no dangling edges and no duplicate ids — the replay is sound.
+ */
+export type WorkGraphIntegrityReport = {
+  nodeCount: number;
+  edgeCount: number;
+  danglingEdges: Array<{
+    edgeID: string;
+    sourceID: string;
+    targetID: string;
+    missing: "source" | "target" | "both";
+  }>;
+  incompleteNodes: Array<{ nodeID: string; kind: string; summary: string }>;
+  duplicateNodeIDs: string[];
+  stable: boolean;
+};
+
+/**
+ * Rebuilds the Work Graph from the event stream and verifies its integrity
+ * (EI WG4 / Phase 3 D). Pure: the same events always rebuild the same graph,
+ * so this doubles as the replay check — a non-deterministic writer (e.g. a
+ * `Date.now()` node id) would surface as a duplicate id or a dangling edge.
+ */
+export function verifyWorkGraphIntegrity(
+  events: RuntimeEvent[],
+): WorkGraphIntegrityReport {
+  const nodeEvents = events.filter(
+    (event): event is WorkGraphNodeEvent =>
+      event.type === "workgraph.node_added",
+  );
+  const edgeEvents = events.filter(
+    (event): event is WorkGraphEdgeEvent =>
+      event.type === "workgraph.edge_added",
+  );
+  const nodeIDs = new Set(nodeEvents.map((node) => node.nodeID));
+  const seen = new Set<string>();
+  const duplicateNodeIDs: string[] = [];
+  for (const node of nodeEvents) {
+    if (seen.has(node.nodeID)) duplicateNodeIDs.push(node.nodeID);
+    else seen.add(node.nodeID);
+  }
+  const danglingEdges: WorkGraphIntegrityReport["danglingEdges"] = [];
+  for (const edge of edgeEvents) {
+    const missingSource = !nodeIDs.has(edge.sourceID);
+    const missingTarget = !nodeIDs.has(edge.targetID);
+    if (missingSource || missingTarget)
+      danglingEdges.push({
+        edgeID: edge.id,
+        sourceID: edge.sourceID,
+        targetID: edge.targetID,
+        missing:
+          missingSource && missingTarget
+            ? "both"
+            : missingSource
+              ? "source"
+              : "target",
+      });
+  }
+  const incompleteNodes = nodeEvents
+    .filter((node) => !node.sessionID)
+    .map((node) => ({
+      nodeID: node.nodeID,
+      kind: node.kind,
+      summary: node.summary,
+    }));
+  return {
+    nodeCount: nodeEvents.length,
+    edgeCount: edgeEvents.length,
+    danglingEdges,
+    incompleteNodes,
+    duplicateNodeIDs,
+    stable: danglingEdges.length === 0 && duplicateNodeIDs.length === 0,
+  };
+}
+
+/**
+ * The unattributed workspace changes in a graph (EI WG4 / Phase 3 D): the
+ * `workspace_change` nodes an external reconcile produced with no reliable
+ * turn identity (`actor: "external"`, no `turnID`). These are the changes the
+ * runtime could not attribute to a tool call — surfaced for diagnosis, never
+ * silently folded into the causal chain.
+ */
+export function unattributedChangeNodes(
+  events: RuntimeEvent[],
+): WorkGraphNodeEvent[] {
+  return events.filter(
+    (event): event is WorkGraphNodeEvent =>
+      event.type === "workgraph.node_added" &&
+      event.kind === WORK_GRAPH_KIND.workspaceChange &&
+      event.actor === "external" &&
+      !event.turnID,
+  );
+}

@@ -237,6 +237,8 @@ export const RPC_ROUTE_MEMBERS = {
   "evidence.record": "recordValidation",
   "completion.records": "completions",
   "plan.task.states": "planTaskStates",
+  "workgraph.integrity": "workGraphIntegrity",
+  "workgraph.unattributed": "unattributedChanges",
   "completion.record": "recordCompletion",
   "drift.findings": "driftFindings",
   "drift.evaluate": "evaluateDrift",
@@ -2276,6 +2278,26 @@ export async function handleRPCMessage(
         id: body.id ?? null,
         result: await client.planTaskStates?.(
           body.params as { planID?: string } | undefined,
+        ),
+      };
+    }
+    if (body.method === "workgraph.integrity") {
+      optionsGuard(client, "workGraphIntegrity");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.workGraphIntegrity?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "workgraph.unattributed") {
+      optionsGuard(client, "unattributedChanges");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.unattributedChanges?.(
+          optionalStringParam(body.params, "sessionID"),
         ),
       };
     }

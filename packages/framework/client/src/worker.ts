@@ -125,6 +125,8 @@ export const WORKER_ROUTE_MEMBERS = {
   "drift.list": "driftFindings",
   completions: "completions",
   "plan.task.states": "planTaskStates",
+  "workgraph.integrity": "workGraphIntegrity",
+  "workgraph.unattributed": "unattributedChanges",
   "constitution.list": "constitutionRules",
   "decision.list": "decisionRecords",
   "evidence.list": "evidenceRecords",
@@ -259,6 +261,8 @@ type WorkerRequest = {
     | "drift.list"
     | "completions"
     | "plan.task.states"
+    | "workgraph.integrity"
+    | "workgraph.unattributed"
     | "constitution.list"
     | "decision.list"
     | "evidence.list"
@@ -1561,6 +1565,14 @@ export async function handleWorkerRequest(
   if (request.method === "plan.task.states")
     return await client.planTaskStates?.(
       request.value as { planID?: string } | undefined,
+    );
+  if (request.method === "workgraph.integrity")
+    return await client.workGraphIntegrity?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  if (request.method === "workgraph.unattributed")
+    return await client.unattributedChanges?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
     );
   if (request.method === "constitution.list")
     return await client.constitutionRules?.(

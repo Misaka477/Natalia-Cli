@@ -3863,6 +3863,33 @@ export type RuntimeClient = {
     }>
   >;
   /**
+   * Work Graph integrity (EI WG4 / Phase 3 D): rebuilds the graph from the
+   * session's complete event history and verifies the causal chain is not
+   * faked — no dangling edges, no session-less (incomplete) nodes, no
+   * duplicate ids. `stable` is the single trust bit.
+   */
+  workGraphIntegrity?(sessionID?: string): Promise<{
+    nodeCount: number;
+    edgeCount: number;
+    danglingEdges: Array<{
+      edgeID: string;
+      sourceID: string;
+      targetID: string;
+      missing: "source" | "target" | "both";
+    }>;
+    incompleteNodes: Array<{ nodeID: string; kind: string; summary: string }>;
+    duplicateNodeIDs: string[];
+    stable: boolean;
+  }>;
+  /**
+   * The unattributed workspace changes (EI WG4 / Phase 3 D): the workspace
+   * changes the runtime could not attribute to a tool call, surfaced for
+   * diagnosis, never silently folded into the causal chain.
+   */
+  unattributedChanges?(sessionID?: string): Promise<
+    Array<{ nodeID: string; path: string; sessionID?: string }>
+  >;
+  /**
    * Record a completion card: the fixed report structure that answers "is it
    * really done, what evidence is missing". changeSummary is safe prose — never
    * a diff or file content.

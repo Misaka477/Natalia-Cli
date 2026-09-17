@@ -154,6 +154,8 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   recordValidation: "evidence.record",
   completions: "completion.records",
   planTaskStates: "plan.task.states",
+  workGraphIntegrity: "workgraph.integrity",
+  unattributedChanges: "workgraph.unattributed",
   recordCompletion: "completion.record",
   driftFindings: "drift.findings",
   evaluateDrift: "drift.evaluate",

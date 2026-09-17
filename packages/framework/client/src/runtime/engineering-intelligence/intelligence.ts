@@ -40,6 +40,8 @@ import {
 import {
   parsePlanTasks,
   projectPlanTaskStates,
+  unattributedChangeNodes,
+  verifyWorkGraphIntegrity,
 } from "@natalia/work-ledger";
 import type { RuntimeContext } from "../context";
 import { requestAuditAfterCompletion } from "../audit-request";
@@ -85,6 +87,8 @@ type Surface = Pick<
   | "constitutionDocRules"
   | "promoteConstitutionDocRule"
   | "planTaskStates"
+  | "workGraphIntegrity"
+  | "unattributedChanges"
   | "notices"
 >;
 async function projectedCanonicalToolsWithFallback(
@@ -548,6 +552,42 @@ export function createIntelligenceSurface(
         })),
       ];
       return projectPlanTaskStates(parsePlanTasks(content), evidence);
+    },
+    /**
+     * Work Graph integrity (EI WG4 / Phase 3 D): rebuilds the graph from the
+     * session's complete event history and verifies the causal chain is not
+     * faked — no dangling edges, no silently-attributed (session-less) nodes,
+     * no duplicate ids. A headless consumer can assert `stable` before trusting
+     * the graph.
+     */
+    async workGraphIntegrity(sessionID?: string) {
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session)
+        return {
+          nodeCount: 0,
+          edgeCount: 0,
+          danglingEdges: [],
+          incompleteNodes: [],
+          duplicateNodeIDs: [],
+          stable: true,
+        };
+      return verifyWorkGraphIntegrity(exec.session.events);
+    },
+    /**
+     * The unattributed workspace changes (EI WG4 / Phase 3 D): the
+     * `workspace_change` nodes an external reconcile produced with no reliable
+     * turn identity. These are the changes the runtime could not attribute to a
+     * tool call — surfaced for diagnosis, never silently folded into the
+     * causal chain (EI §2 principle 5).
+     */
+    async unattributedChanges(sessionID?: string) {
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session) return [];
+      return unattributedChangeNodes(exec.session.events).map((node) => ({
+        nodeID: node.nodeID,
+        path: node.target ?? "",
+        sessionID: node.sessionID,
+      }));
     },
     /**
      * The `evidence.recorded` production writer (E2 起步): runs a validation

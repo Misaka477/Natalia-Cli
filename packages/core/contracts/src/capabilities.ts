@@ -258,6 +258,8 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "completions",
     "recordCompletion",
     "planTaskStates",
+    "workGraphIntegrity",
+    "unattributedChanges",
     "driftFindings",
     "evaluateDrift",
     "acknowledgeDriftFinding",

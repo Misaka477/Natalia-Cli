@@ -67,8 +67,11 @@ export {
   WORK_GRAPH_EDGE_KIND,
   WORK_GRAPH_KIND,
   workspaceChangeEdge,
+  unattributedChangeNodes,
+  verifyWorkGraphIntegrity,
   workspaceChangeNode,
   workspaceChangeNodeID,
   type WorkGraphEdgeEvent,
+  type WorkGraphIntegrityReport,
   type WorkGraphNodeEvent,
 } from "./work-graph";

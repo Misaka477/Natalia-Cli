@@ -548,6 +548,8 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   evidenceRecords: { refusal: "none", note: "pure read" },
   completions: { refusal: "none", note: "pure read" },
   planTaskStates: { refusal: "none", note: "pure read of the plan task state machine" },
+  workGraphIntegrity: { refusal: "none", note: "pure read: rebuilds and verifies the work graph" },
+  unattributedChanges: { refusal: "none", note: "pure read of unattributed workspace changes" },
   recordCompletion: {
     refusal: "value",
     expressedBy: "recorded",

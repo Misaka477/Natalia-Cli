@@ -767,6 +767,8 @@ export function createWorkspaceRuntimeClient(
     "reopenDriftFinding",
     "promoteConstitutionDocRule",
     "planTaskStates",
+    "workGraphIntegrity",
+    "unattributedChanges",
     "requestOverride",
     "nativeTerminalRead",
     "nativeTerminalClaimHumanInput",
