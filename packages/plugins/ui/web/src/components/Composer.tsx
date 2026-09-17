@@ -1,4 +1,11 @@
-import { For, Show, type JSX, createSignal, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  type JSX,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 
 export interface ComposerAttachment {
   path: string;
@@ -23,17 +30,43 @@ export interface ComposerProps {
 
 export function Composer(props: ComposerProps) {
   let textareaRef: HTMLTextAreaElement | undefined;
+  let resizeObserver: ResizeObserver | undefined;
   const [isFocused, setIsFocused] = createSignal(false);
   const canSubmit = () =>
     Boolean(props.value.trim() || props.attachments?.length);
 
-  onMount(() => adjustHeight());
-
   function adjustHeight() {
     if (!textareaRef) return;
     textareaRef.style.height = "auto";
-    textareaRef.style.height = Math.min(textareaRef.scrollHeight, 200) + "px";
+    // The textarea is width-sensitive: single-pane and dual-pane layouts give
+    // it different wrapping widths, so the same content has different line
+    // counts. Re-measure from the current scrollHeight every time the width
+    // changes instead of leaving the mount-time height behind.
+    const next = `${Math.min(textareaRef.scrollHeight, 160)}px`;
+    if (textareaRef.style.height !== next) textareaRef.style.height = next;
   }
+
+  function scheduleAdjustHeight() {
+    if (typeof requestAnimationFrame === "function")
+      requestAnimationFrame(() => adjustHeight());
+    else adjustHeight();
+  }
+
+  onMount(() => {
+    scheduleAdjustHeight();
+    if (textareaRef && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => scheduleAdjustHeight());
+      resizeObserver.observe(textareaRef);
+    }
+    if (typeof window !== "undefined")
+      window.addEventListener("resize", scheduleAdjustHeight);
+  });
+
+  onCleanup(() => {
+    resizeObserver?.disconnect();
+    if (typeof window !== "undefined")
+      window.removeEventListener("resize", scheduleAdjustHeight);
+  });
 
   function handleInput(event: Event) {
     const target = event.currentTarget as HTMLTextAreaElement;
