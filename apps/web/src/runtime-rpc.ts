@@ -292,7 +292,7 @@ const RPC_PARAM_NAMES: Record<string, string[]> = {
   goalEdit: ["input", "sessionID"],
 };
 
-function buildParams(member: string, args: unknown[]) {
+export function buildParams(member: string, args: unknown[]) {
   const names = RPC_PARAM_NAMES[member];
   if (!names) {
     if (args.length === 0) return undefined;
@@ -301,6 +301,13 @@ function buildParams(member: string, args: unknown[]) {
       return first as Record<string, unknown>;
     return { value: first };
   }
+  const first = args[0];
+  // Object-style surfaces are declared with a single parameter name in the
+  // table above (e.g. driftFindings({ sessionID })). Returning the object
+  // directly keeps JSON-RPC params flat instead of nesting it as
+  // `{ sessionID: { sessionID } }`.
+  if (names.length === 1 && typeof first === "object" && first !== null)
+    return first as Record<string, unknown>;
   const params: Record<string, unknown> = {};
   for (let index = 0; index < names.length; index++)
     params[names[index]] = args[index];
