@@ -34,19 +34,53 @@ export function createWorkGraphQueryTool(
   return {
     name: "work_graph_query",
     description:
-      "Query the session's Work Graph — the recorded fact graph of plans, decisions, tool calls, approvals, checkpoints, validations and workspace changes. Filter by planID (or a plan document path). Returns matching nodes and the edges between them, paginated with a cursor.",
+      "Query the session's Work Graph — the recorded fact graph of goals, plans, decisions, tool calls, approvals, checkpoints, validations and workspace changes. " +
+        "Decision tree: leave everything empty for the active plan's whole chain; fill exactly one precise query — `path` (a file/plan-document causal chain) or `findingID` (a drift finding's context); " +
+        "narrow with the range filters planID / goalID / checkpointID / nodeKind. " +
+        "Pagination: `limit` (default 20, max 100) and `cursor`; when the result is over the limit the response carries `truncated: true` and a `nextCursor` — pass that cursor back until `truncated` is false. " +
+        "An empty result is `{ nodes: [], truncated: false }` (no matching chain, not an error).",
     requiresApproval: false,
     parameters: {
       type: "object",
       properties: {
-        planID: {
-          type: "string",
-          description: "The planID to filter the graph by.",
-        },
         path: {
           type: "string",
           description:
-            "A plan document path (resolved to its planID, alternative to planID).",
+            "Precise query: a file path or plan-document path (resolved to its planID). Mutually exclusive with findingID.",
+        },
+        findingID: {
+          type: "string",
+          description:
+            "Precise query: a drift findingID — returns the nodes in that finding's context. Mutually exclusive with path.",
+        },
+        planID: {
+          type: "string",
+          description: "Range filter: only nodes belonging to this plan.",
+        },
+        goalID: {
+          type: "string",
+          description: "Range filter: only nodes belonging to this goal.",
+        },
+        checkpointID: {
+          type: "string",
+          description: "Range filter: only nodes belonging to this checkpoint.",
+        },
+        nodeKind: {
+          type: "string",
+          enum: [
+            "goal",
+            "constraint",
+            "decision",
+            "plan",
+            "plan_step",
+            "agent_action",
+            "tool_call",
+            "approval",
+            "checkpoint",
+            "validation",
+            "workspace_change",
+          ],
+          description: "Range filter: only nodes of this kind.",
         },
         cursor: {
           type: "string",
@@ -55,7 +89,7 @@ export function createWorkGraphQueryTool(
         },
         limit: {
           type: "number",
-          description: `Maximum nodes per page (default ${WORK_GRAPH_PAGE_LIMIT}).`,
+          description: `Maximum nodes per page (default ${WORK_GRAPH_PAGE_LIMIT}, max 100).`,
         },
         direction: {
           type: "string",
@@ -73,8 +107,12 @@ export function createWorkGraphQueryTool(
     },
     async execute(parsed, context) {
       const args = parsed as {
-        planID?: string;
         path?: string;
+        findingID?: string;
+        planID?: string;
+        goalID?: string;
+        checkpointID?: string;
+        nodeKind?: string;
         cursor?: string;
         limit?: number;
         direction?: "out" | "in" | "both";
@@ -82,63 +120,79 @@ export function createWorkGraphQueryTool(
       };
       const exec = resolveExec(ctx, context.sessionID);
       if (!exec) return "no session";
+      const path = args.path?.trim();
+      const findingID = args.findingID?.trim();
+      // Exactly one precise query (path / findingID); the range filters are
+      // optional narrowers, not precise queries.
+      if (path && findingID)
+        return "fill exactly one precise query: path or findingID, not both";
       let planID = args.planID?.trim();
-      if (!planID && args.path?.trim()) {
+      if (path) {
         const plans = ctx.ports.planDocRuntime.planDocSnapshot();
-        const normalized = args.path
-          .trim()
-          .replace(/^\.?\/?natalia\/plans\//u, "");
+        const normalized = path.replace(/^\.?\/?natalia\/plans\//u, "");
         const match = plans.find(
           (plan) =>
             plan.documentPath === normalized ||
             plan.documentPath.endsWith(normalized) ||
             plan.planID === normalized,
         );
-        planID = match?.planID;
+        if (!match) return `unknown planID: ${path}`;
+        planID = match.planID;
       }
       const nodes = projectedWorkGraphNodes(exec.session.events);
       const edges = projectedWorkGraphEdges(exec.session.events);
-      // B7: exact planID provenance when the node carries it; the summary/
-      // target substring match stays for nodes whose provenance is only
-      // implicit (the graph predates planID tracking).
-      const filtered = planID
-        ? nodes.filter(
-            (node) =>
-              node.planID === planID ||
-              node.target === planID ||
-              node.target?.includes(planID) === true ||
-              node.summary.includes(planID),
-          )
-        : nodes;
+      // A node matches an id filter when it carries the id, or its target /
+      // summary references it (the graph predates structured id tracking, so
+      // provenance is sometimes only implicit).
+      const matchesID = (
+        node: (typeof nodes)[number],
+        id: string,
+      ): boolean =>
+        node.planID === id ||
+        node.target === id ||
+        node.target?.includes(id) === true ||
+        node.summary.includes(id);
+      let filtered = nodes;
+      if (findingID)
+        filtered = filtered.filter((node) => matchesID(node, findingID));
+      if (planID)
+        filtered = filtered.filter((node) => matchesID(node, planID));
+      if (args.goalID?.trim())
+        filtered = filtered.filter((node) =>
+          matchesID(node, args.goalID!.trim()),
+        );
+      if (args.checkpointID?.trim())
+        filtered = filtered.filter((node) =>
+          matchesID(node, args.checkpointID!.trim()),
+        );
+      if (args.nodeKind)
+        filtered = filtered.filter((node) => node.kind === args.nodeKind);
       const limit = Math.min(
         Math.max(args.limit ?? WORK_GRAPH_PAGE_LIMIT, 1),
         100,
       );
       const offset = Number(args.cursor ?? "0");
       if (!Number.isFinite(offset) || offset < 0)
-        return "invalid cursor; pass the exact cursor from a previous result";
-      // B7: optional edge traversal (direction + depth) expands the matched
-      // set through the graph before pagination, so "what does this plan
-      // touch" can reach the checkpoints, validations and changes behind it.
+        return "invalid cursor; re-query without cursor";
+      // Optional edge traversal (direction + depth) expands the matched set
+      // through the graph before pagination, so "what does this plan touch" can
+      // reach the checkpoints, validations and changes behind it.
       const direction = args.direction ?? "both";
       const depth = Math.max(Math.min(args.depth ?? 1, 5), 0);
       let expanded = filtered;
       if (depth > 0) {
-        const adjacency = new Map<
-          string,
-          Array<{ to: string; kind: string }>
-        >();
+        const adjacency = new Map<string, Array<{ to: string }>>();
         for (const edge of edges) {
           if (direction !== "in")
             (
               adjacency.get(edge.sourceID) ??
               adjacency.set(edge.sourceID, []).get(edge.sourceID)!
-            ).push({ to: edge.targetID, kind: edge.kind });
+            ).push({ to: edge.targetID });
           if (direction !== "out")
             (
               adjacency.get(edge.targetID) ??
               adjacency.set(edge.targetID, []).get(edge.targetID)!
-            ).push({ to: edge.sourceID, kind: edge.kind });
+            ).push({ to: edge.sourceID });
         }
         const reached = new Set(filtered.map((node) => node.id));
         let frontier = [...reached];
@@ -160,17 +214,20 @@ export function createWorkGraphQueryTool(
       const pageEdges = edges.filter(
         (edge) => nodeIDs.has(edge.sourceID) && nodeIDs.has(edge.targetID),
       );
-      const nextCursor =
-        offset + limit < expanded.length ? String(offset + limit) : undefined;
+      const hasMore = offset + limit < expanded.length;
       return JSON.stringify({
         ...(planID ? { planID } : {}),
+        ...(findingID ? { findingID } : {}),
         total: expanded.length,
+        truncated: hasMore,
         nodes: page,
         edges: pageEdges,
-        ...(nextCursor ? { nextCursor } : {}),
+        ...(hasMore ? { nextCursor: String(offset + limit) } : {}),
       } satisfies {
         planID?: string;
+        findingID?: string;
         total: number;
+        truncated: boolean;
         nodes: WorkGraphNode[];
         edges: WorkGraphEdge[];
         nextCursor?: string;
