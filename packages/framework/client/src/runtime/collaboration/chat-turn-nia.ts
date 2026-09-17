@@ -429,6 +429,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           publishForSession(input.exec, {
             type: "runtime.step_usage",
             id: `${input.responseMessageID}:usage:${nextChatSequence()}`,
+            channel: "nia",
             inputTokens: providerUsage.inputTokens,
             outputTokens: providerUsage.outputTokens,
             ...(providerUsage.cacheCreationInputTokens === undefined

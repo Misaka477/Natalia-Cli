@@ -23,6 +23,7 @@ import {
 } from "@natalia/ui-kit";
 import type { Message } from "./types";
 import { stableRows, type RowSignature } from "./stable-rows";
+import { SessionUsageBar } from "./components/SessionUsageBar";
 
 function subagentToolCallsFromText(
   text: string,
@@ -548,6 +549,12 @@ export function AgentPanel(props: {
                     onNearTop={() => void loadOlderSubagentHistory()}
                     historyLoading={!subagentPaging().initialized}
                     olderHistoryLoading={subagentPaging().loadingOlder}
+                  />
+                  <SessionUsageBar
+                    usage={
+                      props.state.subagentStates[selectedID() ?? ""]
+                        ?.sessionUsage
+                    }
                   />
                   <Show when={selectedSubagent()?.status === "running"}>
                     <div class="neu-activity-bar" data-running={true}>

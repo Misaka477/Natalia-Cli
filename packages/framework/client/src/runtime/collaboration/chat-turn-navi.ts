@@ -425,6 +425,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           publishForSession(input.exec, {
             type: "runtime.step_usage",
             id: `${input.responseMessageID}:usage:${nextChatSequence()}`,
+            channel: "navi",
             inputTokens: providerUsage.inputTokens,
             outputTokens: providerUsage.outputTokens,
             ...(providerUsage.cacheCreationInputTokens === undefined

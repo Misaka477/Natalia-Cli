@@ -1201,6 +1201,11 @@ type RuntimeEventData =
        */
       type: "runtime.step_usage";
       id: string;
+      /**
+       * Which provider stream spent the tokens. Missing on legacy events and
+       * on the main-agent runner (the safe default is main).
+       */
+      channel?: "main" | "navi" | "nia";
       inputTokens?: number;
       outputTokens?: number;
       cacheReadInputTokens?: number;

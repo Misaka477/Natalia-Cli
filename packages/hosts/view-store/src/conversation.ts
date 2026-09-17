@@ -20,6 +20,7 @@ import {
   providerSafeThinkingSummary,
 } from "@natalia/ui-model";
 import {
+  emptySessionUsageStats,
   streamSegmentChars,
   upsertBlock,
   type AppState,
@@ -476,8 +477,13 @@ export function applyConversationEvent(
       // provider sample, not the turn total; the per-step runtime.step_usage is
       // the token authority for turns that ran under it.
       state.sessionUsage.turns += 1;
-      if (event.durationMs !== undefined)
+      if (!state.usageByChannel.main)
+        state.usageByChannel.main = emptySessionUsageStats();
+      state.usageByChannel.main.turns += 1;
+      if (event.durationMs !== undefined) {
         state.sessionUsage.llmMs += event.durationMs;
+        state.usageByChannel.main.llmMs += event.durationMs;
+      }
       flushStream(state, streamID(event.id, "thinking"));
       flushStream(state, streamID(event.id, "assistant"));
       // A turn that has finished has finished reasoning, whether or not the
@@ -850,6 +856,21 @@ function applyAgentChatEvent(
     case "chat.turn.finished": {
       if (target.activity?.messageID === event.messageID)
         target.activity = undefined;
+      const channel = event.type.startsWith("navi.")
+        ? "navi"
+        : event.type.startsWith("nia.")
+          ? "nia"
+          : (event as { channel?: "navi" | "nia" }).channel;
+      if (channel) {
+        const state = target as AppState;
+        if (!state.usageByChannel?.[channel])
+          state.usageByChannel[channel] = emptySessionUsageStats();
+        state.usageByChannel[channel].turns += 1;
+        state.usageByChannel[channel].llmMs += Math.max(
+          0,
+          event.endedAt - event.startedAt,
+        );
+      }
       return true;
     }
     case "navi.chat.message.new":

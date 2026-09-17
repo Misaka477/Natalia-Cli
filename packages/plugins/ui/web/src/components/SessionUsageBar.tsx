@@ -1,6 +1,10 @@
 import { Show, createMemo } from "solid-js";
 import * as viewStore from "@natalia/view-store";
-import type { AppState, SessionUsageView } from "@natalia/view-store";
+import type {
+  AppState,
+  SessionUsageStats,
+  SessionUsageView,
+} from "@natalia/view-store";
 
 function formatCount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
@@ -22,12 +26,20 @@ function formatMs(ms: number): string {
  * active session's state, so switching sessions switches the figures. Cost is
  * intentionally absent (the user computes it).
  */
-export function SessionUsageBar(props: { state: AppState }) {
+export function SessionUsageBar(props: {
+  state?: AppState;
+  usage?: SessionUsageStats;
+}) {
   // Always present: a usage meter is a standing readout, not a popup. With no
   // steps yet the figures are all zero, which is the honest "nothing spent
   // yet" state — the bar still shows so the slot never flickers in and out.
   const view = createMemo<SessionUsageView>(() =>
-    viewStore.deriveSessionUsageView(props.state.sessionUsage),
+    viewStore.deriveSessionUsageView(
+      props.usage ??
+        props.state?.usageByChannel?.main ??
+        props.state?.sessionUsage ??
+        viewStore.emptySessionUsageStats(),
+    ),
   );
 
   return (

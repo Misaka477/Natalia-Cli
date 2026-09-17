@@ -173,6 +173,24 @@ export function subagentHistoryRowKey(
  * rate, tokens/sec, average first-token latency) are derived by
  * `deriveSessionUsageView`, never stored.
  */
+export type SessionUsageChannel = "main" | "navi" | "nia";
+
+export function emptySessionUsageStats(): SessionUsageStats {
+  return {
+    steps: 0,
+    turns: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    llmMs: 0,
+    toolMs: 0,
+    ttftMs: 0,
+    ttftSteps: 0,
+    decodeMs: 0,
+  };
+}
+
 export type SessionUsageStats = {
   /** Provider steps counted (each emits one `runtime.step_usage`). */
   steps: number;
@@ -425,6 +443,12 @@ export type AppState = {
    */
   sessionUsage: SessionUsageStats;
   /**
+   * Per-stream usage totals. `sessionUsage` stays the session-wide aggregate
+   * (all providers) for backwards compatibility; the UI bars read the stream
+   * they belong to so Natalia, Navi and Nia do not show each other's tokens.
+   */
+  usageByChannel: Record<SessionUsageChannel, SessionUsageStats>;
+  /**
    * Projected WorkContracts per plan (EI §8.2), consumed by the plan tab's
    * contract summary bar. Session-scoped like the rest of the state.
    */
@@ -576,18 +600,11 @@ export function initialState(): AppState {
     mailbox: {},
     plans: {},
     runtimeNotices: [],
-    sessionUsage: {
-      steps: 0,
-      turns: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadInputTokens: 0,
-      cacheCreationInputTokens: 0,
-      llmMs: 0,
-      toolMs: 0,
-      ttftMs: 0,
-      ttftSteps: 0,
-      decodeMs: 0,
+    sessionUsage: emptySessionUsageStats(),
+    usageByChannel: {
+      main: emptySessionUsageStats(),
+      navi: emptySessionUsageStats(),
+      nia: emptySessionUsageStats(),
     },
     workContracts: {},
   };
@@ -662,6 +679,11 @@ export function cloneState(state: AppState): AppState {
     plans: mapRecord(state.plans, (value) => ({ ...value })),
     runtimeNotices: state.runtimeNotices.map((notice) => ({ ...notice })),
     sessionUsage: { ...state.sessionUsage },
+    usageByChannel: {
+      main: { ...state.usageByChannel.main },
+      navi: { ...state.usageByChannel.navi },
+      nia: { ...state.usageByChannel.nia },
+    },
     workContracts: mapRecord(state.workContracts, (value) => ({ ...value })),
     ...(state.goal
       ? {

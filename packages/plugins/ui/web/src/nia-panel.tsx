@@ -19,6 +19,7 @@ import {
   type TranscriptHandle,
 } from "@natalia/ui-kit";
 import { Composer, type ComposerAttachment } from "./components/Composer";
+import { SessionUsageBar } from "./components/SessionUsageBar";
 import { NeuSelect } from "./components/NeuSelect";
 import type { Attachment, Message } from "./types";
 import { stableRows, type RowSignature } from "./stable-rows";
@@ -392,6 +393,7 @@ export function NiaPanel(props: {
             menuPosition="top"
           />
         </div>
+        <SessionUsageBar usage={props.state.usageByChannel.nia} />
         <Composer
           value={draft()}
           placeholder="向 Nia 提问…"

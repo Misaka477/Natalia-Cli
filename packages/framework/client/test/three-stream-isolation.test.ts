@@ -189,6 +189,7 @@ test("Navi and Nia provider usage feeds the session usage dashboard", async () =
         event.type === "runtime.step_usage",
     );
     expect(usage).toHaveLength(2);
+    expect(usage.map((event) => event.channel)).toEqual(["navi", "nia"]);
     expect(usage.map((event) => event.inputTokens)).toEqual([11, 11]);
     expect(usage.map((event) => event.outputTokens)).toEqual([7, 7]);
   } finally {

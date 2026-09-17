@@ -305,6 +305,14 @@ export async function createSubagentSupport(
               surfaceTokens: meter.observeSurface(scopeKey, providerMessages),
             });
             publishSubagentTokenSnapshot(ledger, runner);
+            // Mirror the main runner's per-step usage event so the subagent
+            // pane can show the same token/latency bar as Natalia/Navi/Nia.
+            publishSubagentEvent(runner, {
+              type: "runtime.step_usage",
+              id: `${id}:usage:${attempt}`,
+              inputTokens: providerUsage.inputTokens,
+              outputTokens: providerUsage.outputTokens,
+            });
           }
           return { output, thinking, calls, protocolViolation };
         },

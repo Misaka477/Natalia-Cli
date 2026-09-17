@@ -2518,6 +2518,48 @@ test("runtime.step_usage folds into per-session token/latency totals with derive
   expect(view.tokensPerSecond).toBe(0);
 });
 
+test("per-channel usage keeps Natalia, Navi and Nia totals separate", () => {
+  const step = (
+    id: string,
+    channel: "main" | "navi" | "nia",
+    inputTokens: number,
+    outputTokens: number,
+  ) =>
+    ({
+      type: "runtime.step_usage",
+      id,
+      channel,
+      inputTokens,
+      outputTokens,
+    }) as unknown as RuntimeEvent;
+  const state = projectEvents([
+    step("m1", "main", 100, 10),
+    step("n1", "navi", 200, 20),
+    step("a1", "nia", 300, 30),
+  ]);
+  expect(state.usageByChannel.main).toMatchObject({
+    inputTokens: 100,
+    outputTokens: 10,
+    steps: 1,
+  });
+  expect(state.usageByChannel.navi).toMatchObject({
+    inputTokens: 200,
+    outputTokens: 20,
+    steps: 1,
+  });
+  expect(state.usageByChannel.nia).toMatchObject({
+    inputTokens: 300,
+    outputTokens: 30,
+    steps: 1,
+  });
+  // The legacy aggregate remains the session-wide sum for existing consumers.
+  expect(state.sessionUsage).toMatchObject({
+    inputTokens: 600,
+    outputTokens: 60,
+    steps: 3,
+  });
+});
+
 test("session usage is per-session isolated via the session id on events", () => {
   const usage = (id: string, sessionID: string, outputTokens: number) =>
     ({

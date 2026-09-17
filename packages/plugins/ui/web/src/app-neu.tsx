@@ -3902,7 +3902,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                       });
                     }}
                   />
-                  <SessionUsageBar state={state()} />
+                  <SessionUsageBar usage={state().usageByChannel.main} />
                   <Composer
                     value={mainDraft()}
                     placeholder="输入消息，使用 @ 提及文件…"
@@ -4155,6 +4155,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                       menuPosition="top"
                     />
                   </div>
+                  <SessionUsageBar usage={state().usageByChannel.navi} />
                   <Composer
                     value={chatDraft()}
                     placeholder="向 Navi 提问…"

@@ -12,6 +12,7 @@ import {
   appendBounded,
   completionLimit,
   constitutionConflictLimit,
+  emptySessionUsageStats,
   constitutionOverrideLimit,
   decisionLimit,
   driftFindingLimit,
@@ -21,6 +22,24 @@ import {
   type AppState,
 } from "./state";
 
+function accumulateUsage(
+  target: import("./state").SessionUsageStats,
+  event: Extract<RuntimeEvent, { type: "runtime.step_usage" }>,
+) {
+  target.steps += 1;
+  target.inputTokens += event.inputTokens ?? 0;
+  target.outputTokens += event.outputTokens ?? 0;
+  target.cacheReadInputTokens += event.cacheReadInputTokens ?? 0;
+  target.cacheCreationInputTokens += event.cacheCreationInputTokens ?? 0;
+  target.llmMs += event.llmMs ?? 0;
+  target.toolMs += event.toolMs ?? 0;
+  if (event.ttftMs !== undefined) {
+    target.ttftMs += event.ttftMs;
+    target.ttftSteps += 1;
+  }
+  target.decodeMs += event.decodeMs ?? 0;
+}
+
 /** Returns true when the event belongs to this projection. */
 export function applyStatusEvent(
   state: AppState,
@@ -28,23 +47,14 @@ export function applyStatusEvent(
 ): boolean {
   switch (event.type) {
     case "runtime.step_usage": {
-      // Per-session token/latency accumulation. Absent fields contribute
-      // nothing (a step without provider usage still counts and carries
-      // timing); each numeric field is a plain sum, matching the deepseek
-      // session-stats fold the dashboard is modeled on.
-      const usage = state.sessionUsage;
-      usage.steps += 1;
-      usage.inputTokens += event.inputTokens ?? 0;
-      usage.outputTokens += event.outputTokens ?? 0;
-      usage.cacheReadInputTokens += event.cacheReadInputTokens ?? 0;
-      usage.cacheCreationInputTokens += event.cacheCreationInputTokens ?? 0;
-      usage.llmMs += event.llmMs ?? 0;
-      usage.toolMs += event.toolMs ?? 0;
-      if (event.ttftMs !== undefined) {
-        usage.ttftMs += event.ttftMs;
-        usage.ttftSteps += 1;
-      }
-      usage.decodeMs += event.decodeMs ?? 0;
+      // Session-wide aggregate (backwards compatible) plus the stream that
+      // actually produced the step. Absent fields contribute nothing; a step
+      // without provider usage still counts and carries timing.
+      accumulateUsage(state.sessionUsage, event);
+      const channel = event.channel ?? "main";
+      if (!state.usageByChannel[channel])
+        state.usageByChannel[channel] = emptySessionUsageStats();
+      accumulateUsage(state.usageByChannel[channel], event);
       return true;
     }
     case "work_contract.drafted":
