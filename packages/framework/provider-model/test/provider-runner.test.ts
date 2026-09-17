@@ -13,6 +13,7 @@ import type {
   StreamingProvider,
 } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
+import type { ProjectDocumentSnapshot } from "@natalia/runtime-services";
 import { ToolRegistry } from "@natalia/tools";
 import {
   createProviderRunner,
@@ -82,6 +83,7 @@ function makeHarness(
       verification: string[];
       riskNotes: string[];
     };
+    projectDocuments?: ProjectDocumentSnapshot;
     retryPolicy?: {
       maxAttemptsPerStep: number | null;
       initialBackoffMs: number;
@@ -181,6 +183,7 @@ function makeHarness(
     naviAnswers: () => options?.naviAnswers ?? [],
     naviChats: () => options?.naviChats ?? [],
     activePlan: () => options?.activePlan,
+    projectDocuments: () => options?.projectDocuments,
     ...(options?.tokenMeter ? { tokenMeter: () => options.tokenMeter! } : {}),
     retry,
     lastProviderUsage: () => lastUsage,
@@ -1544,6 +1547,67 @@ test("environment details move to the runtime context and precede the user reque
   );
   expect(requestIndex).toBeGreaterThan(contextIndex);
   expect(messages[contextIndex]!.content).toContain("Permission mode: ask");
+});
+
+test("constitution/AGENTS documents inject with explicit per-section enforcement (EI §3.8 P-1.c)", async () => {
+  // A deny-annotated section and a prose section both reach the provider
+  // context; the structured <constitution_rules> list states each section's
+  // enforcement so the model knows which rules are hard vs warn-level prose.
+  const shapes: string[] = [];
+  const { runner } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        shapes.push(request.messages.map((m) => m.content).join("\n"));
+        yield content("ok");
+      },
+    },
+    {
+      permissionMode: "ask",
+      projectDocuments: {
+        hash: "constitution:abc",
+        documents: [
+          {
+            source: "constitution",
+            path: ".natalia/constitution.md",
+            content: "# Rules",
+            hash: "abc",
+            rules: [
+              {
+                id: "constitution:never-force-push:1",
+                source: "constitution",
+                section: "Never force-push",
+                statement: "Force-pushing rewrites shared history.",
+                enforcement: "deny",
+                annotated: true,
+                appliesTo: { commandPattern: "git push --force" },
+              },
+              {
+                id: "constitution:small-prs:2",
+                source: "constitution",
+                section: "Small PRs",
+                statement: "Prefer small pull requests.",
+                enforcement: "warn",
+                annotated: false,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  );
+  await runner.runTurn(turn);
+  const injected = shapes[0]!;
+  expect(injected).toContain("<constitution_rules>");
+  expect(injected).toContain("[deny] Force-pushing rewrites shared history.");
+  expect(injected).toContain('[warn] Prefer small pull requests.');
+  expect(injected).toContain('appliesTo: {"commandPattern":"git push --force"}');
+  // The raw content still rides along for grounding.
+  expect(injected).toContain("# Rules");
+  // The block stays in the appended runtime context, never the static system.
+  const systemMsg = injected.split("\n").find((line) => line === "SYSTEM_PLACEHOLDER");
+  expect(systemMsg).toBeUndefined();
 });
 
 test("a mid-turn step input appends a fresh runtime context instead of mutating the system (ADR D3/D6)", async () => {

@@ -24,8 +24,21 @@ import type {
   LoadedProjectDocument,
   ProjectDocumentSnapshot,
 } from "@natalia/runtime-services";
+import {
+  parseConstitutionDocument,
+  type ConstitutionDocRule,
+} from "./constitution-doc";
 
 export type { LoadedProjectDocument, ProjectDocumentSnapshot };
+
+/** The parsed constitution/AGENTS rules across a snapshot's documents. */
+export function projectDocumentRules(
+  snapshot: ProjectDocumentSnapshot,
+): ConstitutionDocRule[] {
+  return snapshot.documents.flatMap((document) =>
+    parseConstitutionDocument(document.content, document.source),
+  );
+}
 
 function hashContent(content: string): string {
   return createHash("sha256")
@@ -69,6 +82,19 @@ async function readOptional(
   }
 }
 
+/** Attaches the parsed constitution/AGENTS rules to a loaded document. */
+function withRules(document: {
+  source: "constitution" | "agents";
+  path: string;
+  content: string;
+  hash: string;
+}): LoadedProjectDocument {
+  return {
+    ...document,
+    rules: parseConstitutionDocument(document.content, document.source),
+  };
+}
+
 /**
  * Loads the project documents for a workspace root (EI §8.5): the workspace
  * `AGENTS.md` and the `.natalia/constitution.md`. A `.natalia/constitution.md`
@@ -83,18 +109,16 @@ export async function loadProjectDocuments(
     join(workspaceRoot, ".natalia", "constitution.md"),
   );
   if (constitution)
-    documents.push({
-      source: "constitution",
-      path: ".natalia/constitution.md",
-      ...constitution,
-    });
+    documents.push(
+      withRules({
+        source: "constitution",
+        path: ".natalia/constitution.md",
+        ...constitution,
+      }),
+    );
   const agents = await readOptional(join(workspaceRoot, "AGENTS.md"));
   if (agents)
-    documents.push({
-      source: "agents",
-      path: "AGENTS.md",
-      ...agents,
-    });
+    documents.push(withRules({ source: "agents", path: "AGENTS.md", ...agents }));
   return {
     documents,
     hash: documents
@@ -125,13 +149,15 @@ export function loadProjectDocumentsSync(
   if (cached && cached.hash === hash) return cached.snapshot;
   const documents: LoadedProjectDocument[] = [];
   if (constitution)
-    documents.push({
-      source: "constitution",
-      path: ".natalia/constitution.md",
-      ...constitution,
-    });
+    documents.push(
+      withRules({
+        source: "constitution",
+        path: ".natalia/constitution.md",
+        ...constitution,
+      }),
+    );
   if (agents)
-    documents.push({ source: "agents", path: "AGENTS.md", ...agents });
+    documents.push(withRules({ source: "agents", path: "AGENTS.md", ...agents }));
   const snapshot: ProjectDocumentSnapshot | undefined = documents.length
     ? { documents, hash }
     : undefined;
@@ -144,18 +170,37 @@ export function loadProjectDocumentsSync(
  * block (ADR D2): user-tier authority, injected before the turn's request.
  * The block carries the aggregate hash so a document edit changes the block
  * and the runtime re-appends on change (D5/D6).
+ *
+ * EI §3.8 P-1.c: each document is also parsed into its rules, and the block
+ * states each rule's enforcement explicitly — a prose section is a warn-level
+ * soft rule, an `<!-- enforcement -->`-annotated section is a hard rule with
+ * its `appliesTo` anchor. The raw content stays for grounding; the structured
+ * `<constitution_rules>` list is what makes enforcement machine-visible.
  */
 export function renderProjectDocumentsBlock(
   snapshot: ProjectDocumentSnapshot,
 ): string | undefined {
   if (!snapshot.documents.length) return undefined;
   const body = snapshot.documents
-    .map(
-      (document) =>
-        `<${document.source === "constitution" ? "constitution" : "agents"}>` +
-        `\n${document.content}\n` +
-        `</${document.source === "constitution" ? "constitution" : "agents"}>`,
-    )
+    .map((document) => {
+      const tag = document.source === "constitution" ? "constitution" : "agents";
+      const ruleLines = document.rules
+        .map((rule) => {
+          const anchor = rule.appliesTo
+            ? ` (appliesTo: ${JSON.stringify(rule.appliesTo)})`
+            : "";
+          const oneLine = rule.statement.replace(/\s+/gu, " ").trim();
+          return `[${rule.enforcement}] ${oneLine}${anchor}`;
+        })
+        .join("\n");
+      const rulesBlock = ruleLines
+        ? `\n<constitution_rules>\n${ruleLines}\n</constitution_rules>`
+        : "";
+      return (
+        `<${tag} source="${document.path}">\n${document.content}\n</${tag}>` +
+        rulesBlock
+      );
+    })
     .join("\n\n");
   return `<runtime_context source="project" authority="user" trust="runtime" revision="1" hash="${snapshot.hash}">\n${body}\n</runtime_context>`;
 }

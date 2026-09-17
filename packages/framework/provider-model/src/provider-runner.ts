@@ -29,6 +29,7 @@ import { modelRefKey } from "@natalia/contracts";
 import { buildSubmittedTurn, type SessionRecord } from "@natalia/session";
 import { materializeTools } from "@natalia/tools";
 import type {
+  ConstitutionDocRule,
   ProviderRunnerInput,
   ProviderUsage,
   SkillMetadata,
@@ -1521,6 +1522,7 @@ type RuntimeContextBlockInput = {
       path: string;
       content: string;
       hash: string;
+      rules: ConstitutionDocRule[];
     }>;
     hash: string;
   };
@@ -1615,12 +1617,32 @@ function runtimeContextBlocks(
       authority: "user",
       trust: "runtime",
       lines: [
-        ...projectDocs.map(
-          (document) =>
-            `<${document.source === "constitution" ? "constitution" : "agents"} path="${document.path}" hash="${document.hash}">` +
+        ...projectDocs.map((document) => {
+          const tag =
+            document.source === "constitution" ? "constitution" : "agents";
+          // EI §3.8 P-1.c: state each section's enforcement explicitly so the
+          // model knows which rules are hard (deny/approval, with an appliesTo
+          // anchor) and which are warn-level prose. The raw content stays for
+          // grounding; the structured list makes enforcement machine-visible.
+          const ruleLines = (document.rules ?? [])
+            .map((rule) => {
+              const anchor = rule.appliesTo
+                ? ` (appliesTo: ${JSON.stringify(rule.appliesTo)})`
+                : "";
+              const oneLine = rule.statement.replace(/\s+/gu, " ").trim();
+              return `[${rule.enforcement}] ${oneLine}${anchor}`;
+            })
+            .join("\n");
+          const rulesBlock = ruleLines
+            ? `\n<constitution_rules>\n${ruleLines}\n</constitution_rules>`
+            : "";
+          return (
+            `<${tag} path="${document.path}" hash="${document.hash}">` +
             `\n${document.content}\n` +
-            `</${document.source === "constitution" ? "constitution" : "agents"}>`,
-        ),
+            `</${tag}>` +
+            rulesBlock
+          );
+        }),
       ],
     });
   }
