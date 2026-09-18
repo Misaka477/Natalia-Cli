@@ -171,7 +171,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
       messages.push({
         role: "user",
         content:
-          "Your audit wake request has arrived. Read the active plan and shared context, perform the audit, then call audit_report with planID and verdict passed or gaps. Use collab_chat to send concrete findings to Natalia. If Natalia claims fixes after a re-audit, verify the actual workspace and plan before passing. Be concise and exact.",
+          "Your audit wake request has arrived. Start by pulling the full chain — read the accepted WorkContract with work_contract_read and the plan's graph with work_graph_query(planID) — then read the active plan and shared context, perform the audit, and call audit_report with planID and verdict passed or gaps. Use collab_chat to send concrete findings to Natalia. If Natalia claims fixes after a re-audit, verify the actual workspace and plan before passing. Be concise and exact.",
       });
     applyLiveContext(messages);
     await applyChatHistoryAttachments(ctx, {

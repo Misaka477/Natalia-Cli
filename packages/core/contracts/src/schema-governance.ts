@@ -121,7 +121,14 @@ export const driftFindingSchema = z.object({
   currentActivity: z.string().min(1),
   evidence: z.array(z.string()).default([]),
   applicableConstraints: z.array(z.string()).default([]),
-  status: z.enum(["open", "explained", "dismissed", "corrected"]),
+  status: z.enum([
+    "open",
+    "explained",
+    "disputed",
+    "dismissed",
+    "corrected",
+    "detour_declared",
+  ]),
   options: z
     .array(
       z.object({

@@ -173,9 +173,10 @@ export async function mailboxMessagesForStatus(
     : projectedMailboxMessages(exec.session.events);
 }
 
-function planDocWriteTool(
+export function planDocWriteTool(
   ctx: RuntimeContext,
   description: string,
+  createdBy?: "user" | "live_chat" | "main_agent",
 ): RuntimeTool {
   return {
     name: "plan_doc_write",
@@ -205,6 +206,43 @@ function planDocWriteTool(
             path: args.path,
             content: args.content,
             ...(args.title ? { title: args.title } : {}),
+            ...(createdBy ? { createdBy } : {}),
+          }),
+        );
+      } catch (cause) {
+        return cause instanceof Error ? cause.message : String(cause);
+      }
+    },
+  };
+}
+
+export function planDocMarkTool(
+  ctx: RuntimeContext,
+  createdBy?: "user" | "live_chat" | "main_agent",
+): RuntimeTool {
+  return {
+    name: "plan_doc_mark",
+    description:
+      "Mark a Markdown plan document as a formal Plan. It returns a stable planID used for handoff and audit routing.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        title: { type: "string" },
+      },
+      required: ["path"],
+      additionalProperties: false,
+    },
+    async execute(parsed) {
+      const args = parsed as { path?: string; title?: string };
+      if (typeof args.path !== "string") return "plan_doc_mark requires path";
+      try {
+        return JSON.stringify(
+          await ctx.ports.planDocRuntime.planDocMark({
+            path: args.path,
+            ...(args.title ? { title: args.title } : {}),
+            ...(createdBy ? { createdBy } : {}),
           }),
         );
       } catch (cause) {
@@ -652,40 +690,13 @@ export function createChatTools(ctx: RuntimeContext) {
         planDocWriteTool(
           ctx,
           "Write or update a Markdown plan document under .natalia/plans/. Use it when the user asks to draft or revise a plan document. Never write project source with this tool.",
+          "live_chat",
         ),
       );
     }
     if (!visible.some((tool) => tool.name === "plan_doc_mark")) {
-      visible.push({
-        name: "plan_doc_mark",
-        description:
-          "Mark a Markdown plan document as a formal Plan. It returns a stable planID used for handoff and audit routing.",
-        requiresApproval: false,
-        parameters: {
-          type: "object",
-          properties: {
-            path: { type: "string" },
-            title: { type: "string" },
-          },
-          required: ["path"],
-          additionalProperties: false,
-        },
-        async execute(parsed) {
-          const args = parsed as { path?: string; title?: string };
-          if (typeof args.path !== "string")
-            return "plan_doc_mark requires path";
-          try {
-            return JSON.stringify(
-              await ctx.ports.planDocRuntime.planDocMark({
-                path: args.path,
-                ...(args.title ? { title: args.title } : {}),
-              }),
-            );
-          } catch (cause) {
-            return cause instanceof Error ? cause.message : String(cause);
-          }
-        },
-      });
+      // EI §8.1: provenance follows the caller — Navi is the Live Work Chat.
+      visible.push(planDocMarkTool(ctx, "live_chat"));
     }
     // ADR D8: tool schemas and order are part of the cacheable prefix. The set
     // is already fixed, but registry insertion order can shift with plugin
@@ -922,7 +933,7 @@ export function createChatTools(ctx: RuntimeContext) {
               }>(GOVERNANCE_LEDGER_CONTROLLER_SERVICE);
               if (governanceLedger) {
                 const now = new Date().toISOString();
-                evidenceID = `evidence:${Date.now().toString(36)}:${ctx.ports.nextEvidenceSequence()}`;
+                evidenceID = `evidence:${args.planID}:audit:${round}`;
                 ctx.ports.publishForSession(
                   owner,
                   governanceLedger.buildEvidenceRecorded({

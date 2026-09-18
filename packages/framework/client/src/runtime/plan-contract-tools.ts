@@ -258,6 +258,14 @@ export function createPlanProposeTool(ctx: RuntimeContext): RuntimeTool {
       return JSON.stringify({
         accepted: true,
         planID,
+        contract: {
+          planID,
+          version: planVersion,
+          ...(fields.scope ? { scope: fields.scope } : {}),
+          ...(fields.verification ? { verification: fields.verification } : {}),
+          ...(fields.constraints ? { constraints: fields.constraints } : {}),
+          ...(unverifiable ? { unverifiable: true } : {}),
+        },
         ...(unverifiable ? { unverifiable: true } : {}),
         hint: "hand the plan off with mailbox_send next_plan_handoff with this relatedPlanID",
       });
@@ -303,6 +311,10 @@ export function createWorkContractReadTool(ctx: RuntimeContext): RuntimeTool {
           ? sessionFactWorkContracts(exec.factState)
           : projectedWorkContracts(exec.session.events)
       ).find((candidate) => candidate.planID === planID);
+      // An unknown planID is an error, not the legitimate "none" (plan exists
+      // but has no proposed contract yet) — EI §3.9.
+      if (!ctx.ports.planDocRuntime.planDocByID(planID))
+        return `unknown planID: ${planID}`;
       if (!contract) return JSON.stringify({ planID, status: "none" });
       return JSON.stringify({
         planID,

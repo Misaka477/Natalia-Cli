@@ -422,9 +422,10 @@ test("A1 E2E: a plan edit marks the draft stale in work_contract_read (re-propos
   await client.dispose?.();
 }, 30_000);
 
-test("work_contract_read reports none before any proposal", async () => {
+test("work_contract_read reports none for a known plan and an error for an unknown planID", async () => {
   const root = await officialPluginWorkspace("plan-contract-read");
-  let readResult = "";
+  const results: string[] = [];
+  let planID = "";
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID: "ses_plan_contract_read",
@@ -433,7 +434,7 @@ test("work_contract_read reports none before any proposal", async () => {
       provider: "test",
       model: "test",
       async *stream(request: ProviderStreamRequest) {
-        const toolResult = (
+        const toolResults = (
           request as {
             messages: Array<{
               role: string;
@@ -441,34 +442,63 @@ test("work_contract_read reports none before any proposal", async () => {
               toolCallID?: string;
             }>;
           }
-        ).messages.find(
+        ).messages.filter(
           (message) =>
-            message.role === "tool" && message.toolCallID === "call_read",
+            message.role === "tool" &&
+            String(message.toolCallID ?? "").startsWith("call_read"),
         );
-        if (toolResult) {
-          readResult = String(toolResult.content ?? "");
-          yield { type: "content" as const, text: "read done" };
+        if (toolResults.length === 0) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_read",
+                name: "work_contract_read",
+                arguments: JSON.stringify({ planID }),
+              },
+            ],
+          };
           yield { type: "done" as const };
           return;
         }
-        yield {
-          type: "tool_call" as const,
-          calls: [
-            {
-              id: "call_read",
-              name: "work_contract_read",
-              arguments: JSON.stringify({ planID: "plan:missing" }),
-            },
-          ],
-        };
+        results.push(String(toolResults.at(-1)?.content ?? ""));
+        if (toolResults.length === 1) {
+          // An unknown planID is an error, distinct from a real "none".
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "call_read",
+                name: "work_contract_read",
+                arguments: JSON.stringify({ planID: "plan:missing" }),
+              },
+            ],
+          };
+          yield { type: "done" as const };
+          return;
+        }
+        yield { type: "content" as const, text: "read done" };
         yield { type: "done" as const };
       },
     },
   });
   client.start(() => undefined);
   await client.sessionAttach!("ses_plan_contract_read" as SessionID);
+  await client.planDocWrite!({
+    path: "plans/read-none.md",
+    content: "# Read none\n",
+    title: "Read none",
+  });
+  const marked = await client.planDocMark!({
+    path: "plans/read-none.md",
+    title: "Read none",
+  });
+  planID = marked.planID;
   await client.submitAndWait!("check the contract");
-  expect(readResult).toContain('"status":"none"');
+  // A known plan with no proposal is a legitimate "none".
+  expect(results[0]).toContain('"status":"none"');
+  // An unknown planID is an error string, not "none" (EI §3.9).
+  expect(results[1]).toContain("unknown planID");
   await client.dispose?.();
 }, 30_000);
 
