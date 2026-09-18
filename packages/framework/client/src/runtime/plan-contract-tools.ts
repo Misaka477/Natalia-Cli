@@ -664,6 +664,10 @@ export function createConstitutionProposeTool(
         scope: "constitution_rule",
         sessionID: exec.session.id,
         signal: context.signal,
+        // EI §3.7.1/§3.7.2: a rule change is confirmed per item by the human —
+        // never auto-granted in `auto` mode and never session-approved, or a
+        // model could tighten/replace the workspace's rules without consent.
+        requireExplicit: true,
       });
       if (!response || response.decision === "reject")
         return JSON.stringify({

@@ -618,11 +618,19 @@ export function createInteractiveWaiter(
     permissionMode?: "ask" | "auto" | "read_only";
     signal?: AbortSignal;
     permissionFamily?: import("@natalia/contracts").PermissionFamily;
+    /**
+     * EI §3.7.1/3.7.2: a rule-class (or other user-tier) change must be
+     * confirmed per item by the human. When true, the gate is NOT auto-granted
+     * in `auto` mode, the session-level "Allow … for session" shortcut is
+     * skipped, and the card is published with `allowSession: false` so the UI
+     * never offers it. Only rule/user-safety commitments set this.
+     */
+    requireExplicit?: boolean;
   }): Promise<ApprovalResponse | undefined> {
     const permissionMode = input.permissionMode ?? deps.permissionMode();
     const sessionID = input.sessionID ?? deps.sessionID();
     const family = input.permissionFamily ?? PERMISSION_FAMILIES.planning;
-    if (permissionMode === "auto")
+    if (permissionMode === "auto" && !input.requireExplicit)
       return { requestID: input.approvalID, decision: "once" };
     if (permissionMode === "read_only")
       return {
@@ -630,7 +638,10 @@ export function createInteractiveWaiter(
         decision: "reject",
         feedback: "read_only",
       };
-    if (sessionApprovedFamilies.get(sessionID)?.has(family.id))
+    if (
+      !input.requireExplicit &&
+      sessionApprovedFamilies.get(sessionID)?.has(family.id)
+    )
       return { requestID: input.approvalID, decision: "session" };
     // Establish the pending record before publishing, so a synchronous
     // `respondApproval` from an event sink is not mistaken for a response to a
@@ -648,6 +659,7 @@ export function createInteractiveWaiter(
       sensitive: false,
       scope: input.scope ?? family.scope,
       permissionFamily: family,
+      ...(input.requireExplicit ? { allowSession: false } : {}),
     });
     try {
       return await waitForResponse(

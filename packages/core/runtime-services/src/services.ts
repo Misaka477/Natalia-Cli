@@ -905,6 +905,11 @@ export interface InteractiveWaiter {
     permissionMode?: "ask" | "auto" | "read_only";
     signal?: AbortSignal;
     permissionFamily?: import("@natalia/contracts").PermissionFamily;
+    /**
+     * EI §3.7.1/3.7.2: a rule-class/user-safety change is confirmed per item —
+     * the gate is never auto-granted in `auto` mode and never session-approved.
+     */
+    requireExplicit?: boolean;
   }): Promise<ApprovalResponse | undefined>;
 }
 
