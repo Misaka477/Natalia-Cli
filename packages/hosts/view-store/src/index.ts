@@ -148,6 +148,7 @@ export {
   selectWorkGraphNeighborhood,
   deriveSessionUsageView,
   type WorkGraphSlice,
+  type WorkGraphState,
   type WorkGraphTreeNode,
   type WorkGraphNavigation,
 } from "./graph";

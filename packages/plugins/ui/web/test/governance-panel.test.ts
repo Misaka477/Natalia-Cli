@@ -5,6 +5,7 @@ import {
   acknowledgeDriftFindingViaRpc,
   collapseList,
   constitutionRuleAffordance,
+  mergeWorkGraphState,
   createConstitutionRuleViaRpc,
   DRIFT_COLLAPSE_LIMIT,
   editConstitutionRuleViaRpc,
@@ -26,6 +27,8 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
     completions: async () => [{ taskID: "task:1" }],
     driftFindings: async () => [{ findingID: "DF-1" }],
     notices: async () => [{ noticeID: "notice:1" }],
+    workGraphNodes: async () => [{ nodeID: "wg:action:1" }],
+    workGraphEdges: async () => [{ sourceID: "a", targetID: "b", kind: "caused" }],
   } as unknown as RuntimeClient;
   const data = await loadGovernanceSlices(filled, "ses_panel");
   expect(data.constitution).toHaveLength(1);
@@ -35,6 +38,8 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
   expect(data.completions).toHaveLength(1);
   expect(data.drift).toHaveLength(1);
   expect(data.notices).toHaveLength(1);
+  expect(data.workGraphNodes).toHaveLength(1);
+  expect(data.workGraphEdges).toHaveLength(1);
   expect(data.errors).toEqual([]);
 
   const empty = await loadGovernanceSlices({} as RuntimeClient, "ses_panel");
@@ -46,6 +51,8 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
     completions: [],
     drift: [],
     notices: [],
+    workGraphNodes: [],
+    workGraphEdges: [],
     errors: [],
   });
 });
@@ -484,4 +491,61 @@ test("constitution rows: only hard-protected rules lock, everything else edits",
   expect(constitutionRuleAffordance({ ruleID: "P-USER-abc" })).toBe("editable");
   // A rule without an id is never silently protected.
   expect(constitutionRuleAffordance({})).toBe("editable");
+});
+
+test("mergeWorkGraphState backfills durable nodes and de-dupes edges by content", () => {
+  // The view-store holds one live node + one edge (keyed by its own id); the
+  // RPC holds the same edge plus an older historical node. After a reload the
+  // merged graph must contain both nodes and exactly one copy of the edge.
+  const liveState = {
+    workGraphNodes: {
+      "wg:tool:t1:c1": {
+        nodeID: "wg:tool:t1:c1",
+        kind: "tool_call" as const,
+        summary: "read_file done",
+      },
+    },
+    workGraphEdges: {
+      "wg:edge:caused:wg:tool:t1:c1": {
+        sourceID: "wg:action:t1",
+        targetID: "wg:tool:t1:c1",
+        kind: "caused" as const,
+      },
+    },
+  };
+  const merged = mergeWorkGraphState(
+    liveState,
+    [
+      {
+        nodeID: "wg:action:t1",
+        kind: "agent_action" as const,
+        summary: "agent acted",
+      },
+      {
+        nodeID: "wg:tool:t1:c1",
+        kind: "tool_call" as const,
+        summary: "read_file done",
+      },
+    ],
+    [
+      { sourceID: "wg:action:t1", targetID: "wg:tool:t1:c1", kind: "caused" as const },
+    ],
+  );
+  expect(Object.keys(merged.workGraphNodes).sort()).toEqual([
+    "wg:action:t1",
+    "wg:tool:t1:c1",
+  ]);
+  // Edge de-duped by content: the live and RPC copies collapse to one.
+  expect(Object.values(merged.workGraphEdges)).toHaveLength(1);
+});
+
+test("mergeWorkGraphState without RPC data keeps the live graph intact", () => {
+  const liveState = {
+    workGraphNodes: {
+      n1: { nodeID: "n1", kind: "agent_action" as const, summary: "x" },
+    },
+    workGraphEdges: {},
+  };
+  const merged = mergeWorkGraphState(liveState, [], []);
+  expect(Object.keys(merged.workGraphNodes)).toEqual(["n1"]);
 });

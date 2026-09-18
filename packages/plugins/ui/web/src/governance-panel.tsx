@@ -1,7 +1,11 @@
-import { createSignal, createEffect, Show, For } from "solid-js";
-import type { RuntimeClient } from "@natalia/contracts";
+import { createSignal, createEffect, createMemo, Show, For } from "solid-js";
+import type {
+  RuntimeClient,
+  WorkGraphEdgeView,
+  WorkGraphNodeView,
+} from "@natalia/contracts";
 import { isHardProtectedConstitutionRule } from "@natalia/contracts";
-import type { AppState } from "@natalia/view-store";
+import type { AppState, WorkGraphState } from "@natalia/view-store";
 import { WorkGraphTree } from "./components/WorkGraphTree";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 
@@ -95,8 +99,43 @@ export type GovernanceSliceBundle = {
   completions: any[];
   drift: any[];
   notices: any[];
+  /**
+   * The Work Graph read surface (EI Phase 3). Unlike the live view-store graph,
+   * this folds the session's durable event window, so the tab survives a web
+   * reload / reattach instead of showing an empty graph until new work happens.
+   */
+  workGraphNodes: WorkGraphNodeView[];
+  workGraphEdges: WorkGraphEdgeView[];
   errors: string[];
 };
+
+/**
+ * Merge the durable RPC Work Graph (a session's event window) with the live
+ * view-store graph so the tab shows history after a reload AND any node that
+ * happened before the next RPC flush. Nodes merge by nodeID (the RPC read wins
+ * on a collision); edges are de-duped by content because the two sources key
+ * them differently (the view-store keys by event id).
+ */
+export function mergeWorkGraphState(
+  liveState: Pick<AppState, "workGraphNodes" | "workGraphEdges">,
+  rpcNodes: readonly WorkGraphNodeView[],
+  rpcEdges: readonly WorkGraphEdgeView[],
+): WorkGraphState {
+  const nodes: Record<string, WorkGraphNodeView> = {};
+  const edges = new Map<string, WorkGraphEdgeView>();
+  const edgeKey = (edge: WorkGraphEdgeView) =>
+    `${edge.sourceID}|${edge.targetID}|${edge.kind}`;
+  for (const node of Object.values(liveState.workGraphNodes ?? {}))
+    nodes[node.nodeID] = node;
+  for (const edge of Object.values(liveState.workGraphEdges ?? {}))
+    edges.set(edgeKey(edge), edge);
+  for (const node of rpcNodes) nodes[node.nodeID] = node;
+  for (const edge of rpcEdges) edges.set(edgeKey(edge), edge);
+  return {
+    workGraphNodes: nodes,
+    workGraphEdges: Object.fromEntries(edges),
+  };
+}
 
 /**
  * Load every governance read surface independently: one unavailable tab must
@@ -131,6 +170,8 @@ export async function loadGovernanceSlices(
     completions,
     drift,
     notices,
+    workGraphNodes,
+    workGraphEdges,
   ] = await Promise.all([
       loadSlice(
         "Constitution",
@@ -165,6 +206,20 @@ export async function loadGovernanceSlices(
         "Notices",
         () => runtime?.notices?.(sessionID) ?? Promise.resolve([]),
       ),
+      loadSlice(
+        "WorkGraphNodes",
+        () =>
+          runtime?.workGraphNodes?.(
+            sessionID ? { sessionID } : undefined,
+          ) ?? Promise.resolve([]),
+      ),
+      loadSlice(
+        "WorkGraphEdges",
+        () =>
+          runtime?.workGraphEdges?.(
+            sessionID ? { sessionID } : undefined,
+          ) ?? Promise.resolve([]),
+      ),
     ]);
   return {
     constitution,
@@ -174,6 +229,8 @@ export async function loadGovernanceSlices(
     completions,
     drift,
     notices,
+    workGraphNodes,
+    workGraphEdges,
     errors,
   };
 }
@@ -543,6 +600,12 @@ export function GovernancePane(props: {
   // ADR Phase C: the projected runtime notices (dual ingestion — the live
   // event stream and the server-projected contract converge here).
   const [liveNotices, setLiveNotices] = createSignal<any[]>([]);
+  const [liveWorkGraphNodes, setLiveWorkGraphNodes] = createSignal<
+    WorkGraphNodeView[]
+  >([]);
+  const [liveWorkGraphEdges, setLiveWorkGraphEdges] = createSignal<
+    WorkGraphEdgeView[]
+  >([]);
   const [loadErrors, setLoadErrors] = createSignal<string[]>([]);
   const [actionNotice, setActionNotice] = createSignal<string | undefined>();
   const [actionBusy, setActionBusy] = createSignal(false);
@@ -588,6 +651,8 @@ export function GovernancePane(props: {
     setLiveCompletions(bundle.completions);
     setLiveDrift(bundle.drift);
     setLiveNotices(bundle.notices);
+    setLiveWorkGraphNodes(bundle.workGraphNodes);
+    setLiveWorkGraphEdges(bundle.workGraphEdges);
     setLoadErrors(bundle.errors);
   };
 
@@ -597,6 +662,18 @@ export function GovernancePane(props: {
     void decisionScope();
     void load();
   });
+
+  // EI Phase 3: the Work Graph tab must survive a reload, so it folds the
+  // durable RPC graph (loadGovernanceSlices) together with the live view-store
+  // graph (a just-happened live node may not be persisted into the RPC window
+  // yet). See mergeWorkGraphState.
+  const workGraphState = createMemo<WorkGraphState>(() =>
+    mergeWorkGraphState(
+      props.state,
+      liveWorkGraphNodes(),
+      liveWorkGraphEdges(),
+    ),
+  );
 
   // EI §3.5: acknowledge a drift finding — the Main Agent explains it or
   // disputes it as a false positive (with a user-supplied rationale). Only an
@@ -1501,7 +1578,7 @@ export function GovernancePane(props: {
           </Show>
         </Show>
         <Show when={tab() === "workgraph"}>
-          <WorkGraphTree state={props.state} />
+          <WorkGraphTree state={workGraphState()} />
         </Show>
         <Show when={tab() === "notices"}>
           <div class="neu-gov-section-title">Runtime Notices</div>

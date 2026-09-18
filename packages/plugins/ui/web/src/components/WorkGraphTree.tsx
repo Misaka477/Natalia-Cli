@@ -4,7 +4,7 @@ import {
   buildWorkGraphNavigation,
   selectUnattributedWorkGraphNodes,
 } from "@natalia/view-store";
-import type { AppState, WorkGraphTreeNode } from "@natalia/view-store";
+import type { WorkGraphState, WorkGraphTreeNode } from "@natalia/view-store";
 
 /**
  * One causal-tree node: a graph node plus its already-linked children (via the
@@ -52,7 +52,7 @@ function TreeNode(props: { node: WorkGraphTreeNode; depth: number }) {
  * attributed). Session-scoped: reads the active session's projection, so
  * switching sessions switches the graph.
  */
-export function WorkGraphTree(props: { state: AppState }) {
+export function WorkGraphTree(props: { state: WorkGraphState }) {
   const forest = createMemo(() => buildWorkGraphForest(props.state));
   const unattributed = createMemo(() =>
     selectUnattributedWorkGraphNodes(props.state),

@@ -104,8 +104,18 @@ function buildBranch(
  * inbound edge (goals, plans, decisions, approvals, root actions). A Web UI
  * renders this directly as a collapsible tree; it never has to assemble edges.
  */
+/**
+ * The two work-graph fields every builder needs. Narrower than `AppState` so a
+ * caller can feed a graph assembled from the RPC read surface (the governance
+ * panel's history backfill) without fabricating the rest of the state.
+ */
+export type WorkGraphState = Pick<
+  AppState,
+  "workGraphNodes" | "workGraphEdges"
+>;
+
 export function buildWorkGraphForest(
-  state: AppState,
+  state: WorkGraphState,
   maxDepth = DEFAULT_MAX_DEPTH,
 ): WorkGraphTreeNode[] {
   const nodes = state.workGraphNodes;
@@ -144,7 +154,7 @@ export function buildWorkGraphForest(
  * touch" / "why did this change").
  */
 export function buildWorkGraphNavigation(
-  state: AppState,
+  state: WorkGraphState,
   focusID?: string,
   maxDepth = DEFAULT_MAX_DEPTH,
 ): WorkGraphNavigation {
@@ -242,7 +252,7 @@ export function selectWorkGraphNeighborhood(
  * mark unknown provenance instead of inventing a cause.
  */
 export function selectUnattributedWorkGraphNodes(
-  state: AppState,
+  state: WorkGraphState,
 ): WorkGraphNodeView[] {
   const inbound = new Set(
     Object.values(state.workGraphEdges).map((edge) => edge.targetID),
