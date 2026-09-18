@@ -35,9 +35,36 @@ import {
   deriveDriftBehaviorSignals,
   proseRelevanceQuestion,
 } from "@natalia/work-ledger";
+import { foldGoal } from "@natalia/goal";
 import { constitutionPathMatch as globPathMatch } from "@natalia/governance-ledger";
 
+/**
+ * The main agent's narration for the finished turn: the latest assistant
+ * `content.done` text. Used only by the goal 问通道 (EI Phase 2 机制 3) to
+ * detect low relevance against the goal objective — never judged, never
+ * journaled. Returns the trimmed text, or undefined when the turn was silent.
+ */
+export function lastAssistantNarration(
+  events: readonly import("@natalia/contracts").RuntimeEvent[],
+): string | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.type === "content.done" && event.text?.trim())
+      return event.text.trim();
+  }
+  return undefined;
+}
+
+/**
+ * One goal 问通道 streak per session (EI Phase 2 机制 3): the question is asked
+ * only after K consecutive low-relevance rounds, then the counter resets, so a
+ * drifting agent is nudged rather than spammed.
+ */
+const GOAL_QUESTION_STREAK = 3;
+
 export function createCollaborationBoundary(ctx: RuntimeContext) {
+  const proseStreaks = new Map<string, number>();
+
   function mailboxMessagesFor(exec?: SessionExecutionState) {
     // The hot state is complete even when session.events is a fast-attach tail.
     if (exec?.factStateComplete === true && exec.factState)
@@ -296,12 +323,6 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           // rule summary — never chain-of-thought.
           injectFindingIntoMainAgent(ctx, target, finding);
         }
-        // EI Phase 2 判/问分离: with no accepted contract, a prose-relevance
-        // mismatch is a 问 (ask), not a finding — inject it instead of opening
-        // the false-positive-prone objective_activity_mismatch finding.
-        const proseQuestion = proseRelevanceQuestion(driftSignal);
-        if (proseQuestion)
-          injectProseQuestion(ctx, target, proseQuestion, target.activeTurnID);
       } else {
         // No workspace changes this turn: still evaluate the behaviour signals so
         // a spinning or stuck agent opens a no-progress / failure-loop finding.
@@ -319,6 +340,48 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         for (const finding of behaviorFindings) {
           publishForSession(target, finding);
           injectFindingIntoMainAgent(ctx, target, finding);
+        }
+      }
+      // EI Phase 2 机制 3 (goal 问通道): with an active goal but no accepted
+      // contract the judge channel is silent, so a goal whose main agent keeps
+      // narrating work barely related to the objective gets an ASK — never a
+      // finding — and only after K consecutive low-relevance rounds (误问=打扰,
+      // 漏问=自查, 代价不对称). The question compares the goal objective with
+      // the agent's own narration; a plan contract silences it (the plan judge
+      // channel owns that case).
+      let goal: import("@natalia/contracts").GoalSnapshot | undefined;
+      try {
+        goal = foldGoal(target.session.events);
+      } catch {
+        // A mid-history tail cannot be folded; the question channel is
+        // best-effort and never blocks turn settlement.
+        goal = undefined;
+      }
+      if (goal?.phase === "active") {
+        const hasContract = projectedWorkContracts(
+          target.session.events,
+        ).some((candidate) => candidate.status === "current");
+        const narration = hasContract
+          ? undefined
+          : lastAssistantNarration(target.session.events);
+        const question = narration
+          ? proseRelevanceQuestion({
+              sessionID: target.session.id,
+              turnID: target.activeTurnID,
+              objective: goal.objective,
+              currentActivity: narration,
+              applicableConstraints: [],
+              changes: [],
+              evidenceRefs: [],
+            })
+          : undefined;
+        const streak = question
+          ? (proseStreaks.get(target.session.id) ?? 0) + 1
+          : 0;
+        proseStreaks.set(target.session.id, streak);
+        if (question && streak >= GOAL_QUESTION_STREAK) {
+          proseStreaks.set(target.session.id, 0);
+          injectProseQuestion(ctx, target, question, target.activeTurnID);
         }
       }
       return confirmed;
