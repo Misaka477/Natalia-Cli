@@ -16,13 +16,29 @@ import type { GoalService } from "./service";
 import type { GoalView } from "./types";
 
 /** Renders one retained goal-round instruction (dsh's `<goal_round>` block). */
-export function renderGoalRoundPrompt(goal: GoalView, round: number): string {
+export function renderGoalRoundPrompt(
+  goal: GoalView,
+  round: number,
+  linkedPlan?: GoalLinkedPlanStatus,
+): string {
   const cap =
     goal.maxGoalRounds === 0 ? "unlimited" : String(goal.maxGoalRounds);
+  // EI Open Question "goal 关联的 plan 完成是否自动推进 goal round" — decided:
+  // 不自动（plan 完成是证据不是目标本身，goal 完成权在模型+用户），只做可见性。
+  // The round is told the linked plan's live lifecycle so the model decides
+  // with it in view; the driver never completes the goal on the plan's behalf.
+  const planBlock = linkedPlan
+    ? `\nLinked plan: ${linkedPlan.planID} — lifecycle: ${linkedPlan.lifecycle}. ` +
+      "The plan is one instrument of this objective, not the objective itself: " +
+      "treat its completion as evidence, and mark the goal complete only when " +
+      "the whole objective is achieved.\n"
+    : "";
   return (
     "<goal_round>\n" +
     `Objective: ${JSON.stringify(goal.objective)}\n` +
-    `Round: ${round}/${cap}\n\n` +
+    `Round: ${round}/${cap}\n` +
+    planBlock +
+    "\n" +
     "Continue working toward the objective in this same session. Treat the current " +
     "workspace, tool results, and durable session state as authoritative; inspect them " +
     "instead of assuming earlier narration is still current. Make concrete progress and " +
@@ -35,6 +51,18 @@ export function renderGoalRoundPrompt(goal: GoalView, round: number): string {
 }
 
 export type GoalRoundStop = "done" | "error" | "cancelled" | "max-tokens";
+
+/**
+ * The linked plan's status, surfaced into the goal round (EI Open Question:
+ * goal 关联的 plan 完成是否自动推进 goal round — decided: 不自动，只做可见性).
+ * Read fresh every round so a plan completed mid-round (or in another session
+ * before a handoff) is visible without the driver waking on its behalf.
+ */
+export type GoalLinkedPlanStatus = {
+  planID: string;
+  /** The plan's lifecycle state (marked … completed). */
+  lifecycle: string;
+};
 
 /** Everything the driver needs from the runtime, injected for testability. */
 export type GoalRoundHost = {
@@ -56,6 +84,15 @@ export type GoalRoundHost = {
     sessionID: string,
     event: GoalRoundEvent | import("./builders").GoalChangedEvent,
   ): void;
+  /**
+   * Optional: the linked plan's live status for the round prompt. A goal
+   * without a planID, or a host that does not provide it, renders no plan
+   * block — the driver never requires a plan to continue.
+   */
+  linkedPlanStatus?(
+    sessionID: string,
+    planID: string,
+  ): GoalLinkedPlanStatus | undefined;
   now(): string;
   nextEventId(): string;
   /** Optional debug sink (`[goal-driver] ...`); runs only when provided. */
@@ -185,9 +222,16 @@ export class GoalRoundDriver {
     });
     let admitted = false;
     try {
+      // EI Open Question "goal 关联的 plan 联动" — decided: 不自动推进 / 不自动
+      // 完成，只做可见性。 Read the linked plan's live lifecycle fresh at admit
+      // time (a plan completed mid-round, or in another session before a
+      // handoff, is visible to the next round), and let the round decide.
+      const linkedPlan = latest.planID
+        ? this.host.linkedPlanStatus?.(sessionID, latest.planID)
+        : undefined;
       admitted = await this.host.admit(sessionID, {
         id: reservation.messageID,
-        text: renderGoalRoundPrompt(latest, round),
+        text: renderGoalRoundPrompt(latest, round, linkedPlan),
       });
     } catch {
       admitted = false;

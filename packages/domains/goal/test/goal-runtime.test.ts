@@ -4,11 +4,17 @@ import {
   GoalRoundDriver,
   GoalService,
   buildGoalChanged,
+  renderGoalRoundPrompt,
   type GoalRoundHost,
 } from "../src";
 
 function harness(
-  options: { idle?: boolean; competing?: boolean; flushFails?: boolean } = {},
+  options: {
+    idle?: boolean;
+    competing?: boolean;
+    flushFails?: boolean;
+    linkedPlanStatus?: GoalRoundHost["linkedPlanStatus"];
+  } = {},
 ) {
   const events: RuntimeEvent[] = [];
   const published: RuntimeEvent[] = [];
@@ -30,17 +36,25 @@ function harness(
       return true;
     },
     publish: (_sessionID, event) => {
-      published.push(event);
+      published.push(event as RuntimeEvent);
       events.push(event as RuntimeEvent);
     },
+    ...(options.linkedPlanStatus
+      ? { linkedPlanStatus: options.linkedPlanStatus }
+      : {}),
     now,
     nextEventId,
   };
   const driver = new GoalRoundDriver(service, host);
-  const seed = (objective: string, maxGoalRounds?: number) => {
+  const seed = (
+    objective: string,
+    maxGoalRounds?: number,
+    planID?: string,
+  ) => {
     const result = service.create("s1", service.current("s1", events), {
       objective,
       ...(maxGoalRounds === undefined ? {} : { maxGoalRounds }),
+      ...(planID === undefined ? {} : { planID }),
     });
     host.publish("s1", result.event);
     return result;
@@ -243,4 +257,81 @@ test("edit preserves continuation authority instead of disarming", () => {
   });
   expect(again.view.activation).toBe("disarmed");
   expect(h.service.isArmed("s1")).toBe(false);
+});
+
+test("renderGoalRoundPrompt carries the linked plan's lifecycle when present", () => {
+  const withPlan = renderGoalRoundPrompt(
+    {
+      goalID: "g1",
+      revision: 1,
+      objective: "ship the feature",
+      phase: "active",
+      maxGoalRounds: 0,
+      roundsStarted: 0,
+      activation: "armed",
+      createdAt: "now",
+      updatedAt: "now",
+      planID: "plan_x",
+    },
+    2,
+    { planID: "plan_x", lifecycle: "completed" },
+  );
+  expect(withPlan).toContain("Linked plan: plan_x");
+  expect(withPlan).toContain("lifecycle: completed");
+  // The plan is evidence, not the objective itself: the prompt says so.
+  expect(withPlan).toContain("one instrument of this objective");
+
+  const withoutPlan = renderGoalRoundPrompt(
+    {
+      goalID: "g1",
+      revision: 1,
+      objective: "ship the feature",
+      phase: "active",
+      maxGoalRounds: 0,
+      roundsStarted: 0,
+      activation: "armed",
+      createdAt: "now",
+      updatedAt: "now",
+    },
+    2,
+  );
+  expect(withoutPlan).not.toContain("Linked plan");
+});
+
+test("driver surfaces the linked plan status into the admitted round", async () => {
+  const seen: Array<string | undefined> = [];
+  const h = harness({
+    linkedPlanStatus: (_sessionID, planID) => {
+      seen.push(planID);
+      return { planID: planID!, lifecycle: "executing" };
+    },
+  });
+  h.seed("with a plan", undefined, "plan_x");
+  await h.driver.drive("s1");
+  expect(seen).toEqual(["plan_x"]);
+  expect(h.admitted[0]!.text).toContain("Linked plan: plan_x");
+  expect(h.admitted[0]!.text).toContain("lifecycle: executing");
+});
+
+test("driver omits the plan block when the goal has no planID", async () => {
+  let called = false;
+  const h = harness({
+    linkedPlanStatus: () => {
+      called = true;
+      return { planID: "unused", lifecycle: "completed" };
+    },
+  });
+  h.seed("no plan");
+  await h.driver.drive("s1");
+  expect(called).toBe(false);
+  expect(h.admitted[0]!.text).not.toContain("Linked plan");
+});
+
+test("driver omits the plan block when the plan is gone", async () => {
+  const h = harness({
+    linkedPlanStatus: () => undefined,
+  });
+  h.seed("plan vanished", undefined, "plan_gone");
+  await h.driver.drive("s1");
+  expect(h.admitted[0]!.text).not.toContain("Linked plan");
 });

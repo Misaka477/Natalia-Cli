@@ -36,6 +36,7 @@ export {
 export {
   GoalRoundDriver,
   renderGoalRoundPrompt,
+  type GoalLinkedPlanStatus,
   type GoalRoundHost,
   type GoalRoundStop,
 } from "./driver";

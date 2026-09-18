@@ -133,6 +133,17 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
       const exec = execFor(sessionID);
       if (exec) ctx.ports.publishForSession(exec, event as RuntimeEvent);
     },
+    // EI Open Question "goal 关联的 plan 联动" — decided: 不自动推进 / 不自动
+    // 完成，只做可见性。 The round prompt is told the linked plan's live
+    // lifecycle (read fresh every round); the goal's completion authority
+    // stays with the model and the user.
+    linkedPlanStatus: (sessionID, planID) => {
+      const exec = execFor(sessionID);
+      if (!exec) return undefined;
+      const plan = ctx.ports.planDocRuntime.planDocByID(planID);
+      if (!plan) return undefined;
+      return { planID, lifecycle: plan.status };
+    },
     now,
     nextEventId,
     log: (event, detail) => {
