@@ -70,3 +70,46 @@ export function injectFindingIntoMainAgent(
     }),
   );
 }
+
+/**
+ * Inject a prose-relevance 问通道 prompt (EI Phase 2, 机制 3) — the "ask" that
+ * replaces the objective_activity_mismatch finding. When there is no accepted
+ * contract and the recent activity barely relates to the goal, ask the main
+ * agent to confirm it is on track. It is a question, not a finding: not
+ * journaled, shown for the current turn, and it does not force a
+ * drift_acknowledge. Carries only the (clipped) activity and objective prose.
+ */
+export function injectProseQuestion(
+  ctx: RuntimeContext,
+  target: SessionExecutionState,
+  question: string,
+  turnID?: string,
+): void {
+  const id = `turn_prose_${(turnID ?? target.activeTurnID ?? "session").replace(
+    /[^a-zA-Z0-9]/gu,
+    "_",
+  )}`;
+  let admitted;
+  try {
+    admitted = admitInput(target.session, {
+      id,
+      text: `(internal check, not a user message) ${question}`,
+      delivery: "next-step",
+      internal: true,
+    });
+  } catch {
+    // A conflicting admission for the same id already exists; do not duplicate.
+    return;
+  }
+  ctx.ports.publishForSession(
+    target,
+    buildInputAdmission({
+      id: admitted.id,
+      text: admitted.text,
+      internal: true,
+      delivery: admitted.delivery,
+      admittedAt: admitted.admittedAt,
+      admittedSeq: admitted.admittedSeq,
+    }),
+  );
+}

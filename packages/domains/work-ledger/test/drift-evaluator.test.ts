@@ -4,6 +4,7 @@ import {
   createDriftEvaluator,
   DRIFT_CONTRACT_VERSION,
   DRIFT_FINDING_WRITER_OWNER,
+  proseRelevanceQuestion,
 } from "../src";
 
 function makeEvaluator(open: ReadonlySet<string> = new Set()) {
@@ -36,7 +37,7 @@ test("no drift when activity overlaps the objective", () => {
   expect(findings).toEqual([]);
 });
 
-test("objective/activity mismatch opens an advisory finding", () => {
+test("no accepted contract opens an advisory unverifiable finding", () => {
   const evaluator = makeEvaluator();
   const findings = evaluator.evaluate({
     sessionID: "ses_1",
@@ -46,12 +47,6 @@ test("objective/activity mismatch opens an advisory finding", () => {
     applicableConstraints: [],
     changes: [{ action: "modified", path: "src/theme.css" }],
     evidenceRefs: [],
-    contract: {
-      planID: "plan:1",
-      scope: [],
-      verification: [],
-      constraints: [],
-    },
   });
   expect(findings).toHaveLength(1);
   const finding = findings[0]!;
@@ -60,9 +55,7 @@ test("objective/activity mismatch opens an advisory finding", () => {
   expect(finding.confidence).toBeGreaterThan(0.4);
   expect(finding.originalObjective).toContain("authentication");
   expect(finding.currentActivity).toContain("css theme");
-  expect(finding.evidence.some((entry) => entry.startsWith("activity:"))).toBe(
-    true,
-  );
+  expect(finding.evidence).toContain("reference:no_accepted_contract");
 });
 
 test("a long activity list is bounded by item, never mid-item", () => {
@@ -79,7 +72,7 @@ test("a long activity list is bounded by item, never mid-item", () => {
     objective: "implement user authentication",
     currentActivity: normal.join(", "),
     applicableConstraints: [],
-    changes: [],
+    changes: [{ path: "src/lib.rs", action: "modified" }],
     evidenceRefs: [],
   });
   expect(whole).toHaveLength(1);
@@ -99,7 +92,7 @@ test("a long activity list is bounded by item, never mid-item", () => {
     objective: "implement user authentication",
     currentActivity: pathological.join(", "),
     applicableConstraints: [],
-    changes: [],
+    changes: [{ path: "src/lib.rs", action: "modified" }],
     evidenceRefs: [],
   });
   expect(bounded).toHaveLength(1);
@@ -107,9 +100,6 @@ test("a long activity list is bounded by item, never mid-item", () => {
   expect(finding.currentActivity).toContain("file_499.rs");
   expect(finding.currentActivity).not.toContain("file_500.rs");
   expect(finding.currentActivity).toContain("\u2026+100 more");
-  expect(finding.evidence.some((entry) => entry.includes("\u2026+100 more"))).toBe(
-    true,
-  );
 });
 
 test("a forbidden activity signal opens a high finding with the constraint", () => {
@@ -150,7 +140,7 @@ test("a verify objective with no evidence and changed files opens a warning", ()
 });
 
 test("an already-open finding is not reopened", () => {
-  const findingID = "drift:objective_activity_mismatch:t_1:ses_1";
+  const findingID = "drift:unverifiable_no_contract:t_1:ses_1";
   const evaluator = makeEvaluator(new Set([findingID]));
   const findings = evaluator.evaluate({
     sessionID: "ses_1",
@@ -302,29 +292,41 @@ test("minimumConfidence tuning suppresses weak signals", () => {
 
 test("CJK objectives score overlap instead of reading as zero (EI §8.6)", () => {
   // The old word-only metric split Chinese into zero tokens, so every CJK
-  // objective looked like total mismatch — the largest false-positive source.
-  const { evaluate } = createDriftEvaluator({
-    openFindingIDs: () => new Set(),
-  });
-  const findings = evaluate({
+  // objective looked like total mismatch. The CJK-aware metric now scores the
+  // bigram overlap, so an on-track activity asks no prose-relevance question.
+  const question = proseRelevanceQuestion({
     objective: "把运行时提示词改成静态加运行时上下文",
     currentActivity: "把运行时提示词改成静态加运行时上下文的改动",
     applicableConstraints: [],
     changes: [{ path: "packages/framework/runtime/src", action: "edit" }],
     evidenceRefs: [],
-    contract: {
-      planID: "plan:1",
-      scope: [],
-      verification: [],
-      constraints: [],
-    },
   });
-  // The activity shares CJK bigrams with the objective, so no mismatch finding.
+  expect(question).toBeUndefined();
+});
+
+test("proseRelevanceQuestion asks when there is no contract and the activity is unrelated", () => {
+  // No contract + unrelated activity -> the 问通道 asks; it is not a finding.
+  const question = proseRelevanceQuestion({
+    sessionID: "ses_1",
+    objective: "implement user authentication",
+    currentActivity: "writing cooking recipes documentation",
+    applicableConstraints: [],
+    changes: [{ path: "docs/recipes.md", action: "edit" }],
+    evidenceRefs: [],
+  });
+  expect(question).toContain("关联不大");
+  expect(question).toContain("implement user authentication");
+  // With a contract the judge channel governs, so no prose question.
   expect(
-    findings.some((f) =>
-      f.ruleHits?.some((h) => h.rule === "objective_activity_mismatch"),
-    ),
-  ).toBe(false);
+    proseRelevanceQuestion({
+      objective: "implement user authentication",
+      currentActivity: "writing cooking recipes documentation",
+      applicableConstraints: [],
+      changes: [],
+      evidenceRefs: [],
+      contract: { planID: "plan:1", scope: [], verification: [], constraints: [] },
+    }),
+  ).toBeUndefined();
 });
 
 test("an accepted contract is the R: scope matches are not drift and its constraints bind", () => {
@@ -348,11 +350,17 @@ test("an accepted contract is the R: scope matches are not drift and its constra
       constraints: ["never commit directly"],
     },
   });
+  // A contract governs the judge channel, so no prose-relevance question.
   expect(
-    scopeFindings.some((f) =>
-      f.ruleHits?.some((h) => h.rule === "objective_activity_mismatch"),
-    ),
-  ).toBe(false);
+    proseRelevanceQuestion({
+      objective: "rewrite the entire runtime",
+      currentActivity: "edit:packages/framework/runtime/src",
+      applicableConstraints: [],
+      changes: [],
+      evidenceRefs: [],
+      contract: { planID: "plan:1", scope: ["packages/framework/runtime/src"], verification: [], constraints: [] },
+    }),
+  ).toBeUndefined();
   // The contract's own constraint is as binding as a seeded rule.
   const constraintFindings = evaluate({
     objective: "ship the change",

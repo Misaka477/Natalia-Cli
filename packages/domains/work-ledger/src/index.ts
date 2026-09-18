@@ -4,6 +4,8 @@ export {
   buildDriftFinding,
   buildDriftFindingUpdate,
   createDriftEvaluator,
+  proseRelevanceQuestion,
+  PROSE_RELEVANCE_THRESHOLD,
   type DriftActionKind,
   type DriftFindingInput,
   type DriftFindingStatus,

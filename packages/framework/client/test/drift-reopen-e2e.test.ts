@@ -29,12 +29,13 @@ test("Phase 2 E2E: a dismissed drift finding can be reopened by the user and cou
   const root = await officialPluginWorkspace("drift-e2e-reopen");
   const client = await attachClient(root);
 
-  // Open an advisory finding: the objective and the current activity share no
-  // tokens, so objective_activity_mismatch fires.
+  // Open an advisory finding: no accepted contract + a change, so the
+  // unverifiable_no_contract advisory fires.
   const opened = await client.evaluateDrift!(
     {
       objective: "refactor the parser tokenizer",
       currentActivity: "writing cooking recipes documentation",
+      changes: [{ path: "docs/recipes.md", action: "modified" }],
     },
     SESSION,
   );
@@ -84,6 +85,7 @@ test("Phase 2 E2E: a corrected drift finding cannot be reopened (its premise is 
     {
       objective: "refactor the parser tokenizer",
       currentActivity: "writing cooking recipes documentation",
+      changes: [{ path: "docs/recipes.md", action: "modified" }],
     },
     SESSION,
   );
@@ -168,13 +170,14 @@ test("Phase 2 E2E: a warning/high finding is auto-injected into the main agent's
   expect(injected).toBeDefined();
   expect(injected!.text).toContain("drift_acknowledge");
 
-  // An advisory finding (objective/activity mismatch, no contract) is NOT
-  // auto-injected — it is noise-level.
+  // An advisory finding (no accepted contract + a change -> unverifiable) is
+  // NOT auto-injected — it is noise-level.
   const beforeAdvisory = events.filter((event) => event.type === "input.admitted").length;
   await client.evaluateDrift!(
     {
       objective: "refactor the parser tokenizer",
       currentActivity: "writing cooking recipes documentation",
+      changes: [{ path: "docs/recipes.md", action: "modified" }],
     },
     SESSION,
   );

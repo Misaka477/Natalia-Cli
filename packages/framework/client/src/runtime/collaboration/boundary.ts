@@ -27,8 +27,14 @@ import {
   projectedEvidenceRecords,
   projectedWorkContracts,
 } from "@natalia/session";
-import { injectFindingIntoMainAgent } from "../drift-inject";
-import { deriveDriftBehaviorSignals } from "@natalia/work-ledger";
+import {
+  injectFindingIntoMainAgent,
+  injectProseQuestion,
+} from "../drift-inject";
+import {
+  deriveDriftBehaviorSignals,
+  proseRelevanceQuestion,
+} from "@natalia/work-ledger";
 
 /**
  * Minimal constitution-rule path matching (EI §8.1 a/p/c wiring): a rule
@@ -261,7 +267,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         const contract = projectedWorkContracts(target.session.events).find(
           (candidate) => candidate.status === "current",
         );
-        const findings = workLedgerController.evaluateDrift({
+        const driftSignal = {
           sessionID: target.session.id,
           turnID: target.activeTurnID,
           objective,
@@ -290,7 +296,8 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
                 },
               }
             : {}),
-        });
+        };
+        const findings = workLedgerController.evaluateDrift(driftSignal);
         for (const finding of findings) {
           publishForSession(target, finding);
           // EI §3.5 / Phase 2 B3: a warning/high finding is auto-injected into
@@ -301,6 +308,12 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           // rule summary — never chain-of-thought.
           injectFindingIntoMainAgent(ctx, target, finding);
         }
+        // EI Phase 2 判/问分离: with no accepted contract, a prose-relevance
+        // mismatch is a 问 (ask), not a finding — inject it instead of opening
+        // the false-positive-prone objective_activity_mismatch finding.
+        const proseQuestion = proseRelevanceQuestion(driftSignal);
+        if (proseQuestion)
+          injectProseQuestion(ctx, target, proseQuestion, target.activeTurnID);
       } else {
         // No workspace changes this turn: still evaluate the behaviour signals so
         // a spinning or stuck agent opens a no-progress / failure-loop finding.

@@ -8513,9 +8513,9 @@ test("evaluateDrift opens durable findings and driftFindings answers them", asyn
   await client.submitAndWait!("hello");
   await pollHistoryForFinished(client);
 
-  // EI §8.6: a session with no accepted contract additionally gets the
-  // advisory unverifiable finding, so the objective/activity mismatch and the
-  // no-reference-frame advisory both open.
+  // EI §8.6: a session with no accepted contract gets the advisory unverifiable
+  // finding. The prose objective/activity mismatch is now a 问通道 (ask), not a
+  // finding, so it does not open here.
   const opened = await client.evaluateDrift?.({
     objective: "implement user authentication",
     currentActivity: "refactoring the css theme",
@@ -8523,10 +8523,10 @@ test("evaluateDrift opens durable findings and driftFindings answers them", asyn
     changes: [{ action: "modified", path: "src/theme.css" }],
     evidenceRefs: [],
   });
-  expect(opened).toEqual({ opened: 2 });
+  expect(opened).toEqual({ opened: 1 });
 
   const findings = await client.driftFindings!();
-  expect(findings).toHaveLength(2);
+  expect(findings).toHaveLength(1);
   expect(findings[0]).toMatchObject({
     severity: "advisory",
     originalObjective: "implement user authentication",
@@ -8536,7 +8536,7 @@ test("evaluateDrift opens durable findings and driftFindings answers them", asyn
     events.some(
       (event) =>
         event.type === "drift.finding_opened" &&
-        event.findingID.includes("objective_activity_mismatch"),
+        event.findingID.includes("unverifiable_no_contract"),
     ),
   ).toBe(true);
 
@@ -8549,7 +8549,7 @@ test("evaluateDrift opens durable findings and driftFindings answers them", asyn
     evidenceRefs: [],
   });
   expect(again).toEqual({ opened: 0 });
-  expect(await client.driftFindings!()).toHaveLength(2);
+  expect(await client.driftFindings!()).toHaveLength(1);
 });
 
 test("evaluateDrift opens a high finding for a forbidden constraint signal", async () => {

@@ -288,49 +288,32 @@ function boundActivity(text: string, maxItems: number): string {
   return `${items.slice(0, maxItems).join(", ")}, …+${items.length - maxItems} more`;
 }
 
-function objectiveActivityRule(): Rule {
-  return {
-    name: "objective_activity_mismatch",
-    severity: "advisory",
-    match: (signal) => {
-      // The R's scope, when present, is what the work should touch — an
-      // activity matching the committed scope is on-track even when the
-      // objective sentence itself reads differently.
-      const scope = signal.contract?.scope ?? [];
-      const scopeMatch = scope.some(
-        (entry) =>
-          signal.currentActivity.includes(entry) ||
-          signal.changes.some((change) => change.path?.includes(entry)),
-      );
-      if (scopeMatch) return undefined;
-      const score = overlap(signal.objective, signal.currentActivity);
-      if (score >= 0.35) return undefined;
-      const activityRefs = signal.changes
-        .map(
-          (change) =>
-            `${change.action ?? "change"}:${change.path ?? change.target ?? change.summary ?? "unknown"}`,
-        )
-        .filter(Boolean);
-      const shownRefs = activityRefs.slice(0, MAX_ACTIVITY_REFS);
-      const moreRefs = activityRefs.length - shownRefs.length;
-      return {
-        confidence: Math.max(0.4, 1 - score),
-        evidence: [
-          `objective_overlap:${score.toFixed(2)}`,
-          `activity_count:${activityRefs.length || 1}`,
-          ...(shownRefs.length
-            ? shownRefs.map((ref) => `activity:${ref}`)
-            : [
-                `activity:${boundActivity(
-                  signal.currentActivity,
-                  MAX_ACTIVITY_REFS,
-                )}`,
-              ]),
-          ...(moreRefs > 0 ? [`activity_more:${moreRefs}`] : []),
-        ],
-      };
-    },
-  };
+/** The prose-relevance 问通道 threshold (EI Phase 2): below this overlap, ask. */
+export const PROSE_RELEVANCE_THRESHOLD = 0.15;
+
+/**
+ * The prose-relevance 问通道 (EI Phase 2, 机制 3): when there is no accepted
+ * contract (so the judge channel is silent) and the main agent's recent activity
+ * barely relates to the goal objective, ASK — do not judge. Returns a question
+ * prompt, or undefined when on-track or a contract governs. This is a 问 (an
+ * interaction), not a finding: it is not journaled and is shown for the current
+ * turn only. The objective_activity_mismatch rule that used to open an advisory
+ * finding here is the false-positive source this replaces.
+ */
+export function proseRelevanceQuestion(
+  signal: DriftSignal,
+): string | undefined {
+  if (signal.contract) return undefined;
+  const objective = signal.objective.trim();
+  const activity = signal.currentActivity.trim();
+  if (!objective || !activity) return undefined;
+  if (overlap(objective, activity) >= PROSE_RELEVANCE_THRESHOLD)
+    return undefined;
+  const clip = (value: string) =>
+    value.length > 120 ? `${value.slice(0, 120)}…` : value;
+  return `你最近在做「${clip(activity)}」，与目标「${clip(
+    objective,
+  )}」的关联不大——确认在推进目标吗？`;
 }
 
 function constraintViolationRule(): Rule {
@@ -566,7 +549,6 @@ export function createDriftEvaluator(input: {
 }) {
   const minimumConfidence = input.minimumConfidence ?? 0.5;
   const rules: Rule[] = [
-    objectiveActivityRule(),
     constraintViolationRule(),
     evidenceGapRule(),
     dependencyRule(),
