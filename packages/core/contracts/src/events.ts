@@ -1111,8 +1111,15 @@ type RuntimeEventData =
         command: string;
         result: "passed" | "failed" | "skipped";
         safeSummary: string;
+        /** EI E2: a ref to the stored (redacted) full output of the run. */
+        artifactRef?: string;
+        durationMs?: number;
       }>;
       knownGaps?: string[];
+      /** EI E2: when the evidence was recorded (the journal id is opaque). */
+      recordedAt?: string;
+      /** EI E2: a safe environment summary (platform/arch), never a path. */
+      environment?: string;
     }
   | {
       type: "completion.recorded";
@@ -1126,6 +1133,8 @@ type RuntimeEventData =
         command: string;
         result: "passed" | "failed" | "skipped";
         safeSummary: string;
+        artifactRef?: string;
+        durationMs?: number;
       }>;
       humanValidation?: string;
       knownGaps?: string[];
@@ -3830,9 +3839,12 @@ export type RuntimeClient = {
         command: string;
         result: "passed" | "failed" | "skipped";
         safeSummary: string;
+        artifactRef?: string;
         durationMs?: number;
       }>;
       knownGaps: string[];
+      recordedAt?: string;
+      environment?: string;
     }>
   >;
   /**

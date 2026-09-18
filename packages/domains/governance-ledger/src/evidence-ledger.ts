@@ -22,6 +22,8 @@ export type ValidationOutcome = {
   command: string;
   result: "passed" | "failed" | "skipped";
   safeSummary: string;
+  /** EI E2: a ref to the stored (redacted) full output of the run. */
+  artifactRef?: string;
   durationMs?: number;
 };
 
@@ -45,6 +47,10 @@ export type EvidenceInput = {
   }>;
   validations?: ValidationOutcome[];
   knownGaps?: string[];
+  /** EI E2: when the evidence was recorded. */
+  recordedAt?: string;
+  /** EI E2: a safe environment summary (platform/arch). */
+  environment?: string;
 };
 
 /**
@@ -92,6 +98,8 @@ export function buildEvidenceRecorded(
     ...(input.knownGaps && input.knownGaps.length
       ? { knownGaps: input.knownGaps }
       : {}),
+    ...(input.recordedAt ? { recordedAt: input.recordedAt } : {}),
+    ...(input.environment ? { environment: input.environment } : {}),
   };
 }
 
@@ -105,12 +113,14 @@ export function boundValidationOutcome(input: {
   command: string;
   result: "passed" | "failed" | "skipped";
   safeSummary: string;
+  artifactRef?: string;
   durationMs?: number;
 }): ValidationOutcome {
   return {
     command: input.command,
     result: input.result,
     safeSummary: input.safeSummary.slice(0, 2000),
+    ...(input.artifactRef ? { artifactRef: input.artifactRef } : {}),
     ...(input.durationMs !== undefined
       ? { durationMs: Math.max(0, Math.round(input.durationMs)) }
       : {}),

@@ -4,7 +4,15 @@ export async function runValidationCommand(
   command: string,
   cwd: string,
   timeoutSec: number,
-): Promise<{ exitCode: number; safeSummary: string }> {
+): Promise<{
+  exitCode: number;
+  safeSummary: string;
+  /**
+   * EI E2: the redacted output (bounded) so the caller can persist it as an
+   * artifact and reference it from the evidence when it exceeds the summary.
+   */
+  fullOutput: string;
+}> {
   const process = Bun.spawn(["/bin/bash", "-c", command], {
     cwd,
     stdout: "pipe",
@@ -27,7 +35,8 @@ export async function runValidationCommand(
   await process.exited;
   clearTimeout(timer);
   const exitCode = process.exitCode ?? 0;
-  const combined = `${stdout}\n${stderr}`.slice(0, 4000);
-  const safeSummary = redactToolOutput(combined.trim(), true).slice(0, 2000);
-  return { exitCode, safeSummary };
+  const combined = `${stdout}\n${stderr}`.slice(0, 20_000);
+  const redacted = redactToolOutput(combined.trim(), true);
+  const safeSummary = redacted.slice(0, 2000);
+  return { exitCode, safeSummary, fullOutput: redacted.slice(0, 20_000) };
 }

@@ -540,6 +540,8 @@ export function createIntelligenceSurface(
           changes: r.changes ?? [],
           validations: r.validations ?? [],
           knownGaps: r.knownGaps ?? [],
+          ...(r.recordedAt ? { recordedAt: r.recordedAt } : {}),
+          ...(r.environment ? { environment: r.environment } : {}),
         })),
         input?.limit,
         input?.cursor,

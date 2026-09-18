@@ -12,6 +12,8 @@ import {
   WORK_LEDGER_CONTROLLER_SERVICE,
 } from "@natalia/runtime-services";
 import { projectedDriftFindings } from "@natalia/session";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { requestAuditAfterCompletion } from "./audit-request";
 import type { GovernanceLedgerController } from "./context";
 import { redactToolOutput } from "./engineering-intelligence/redaction";
@@ -102,8 +104,10 @@ export function createRecordValidationTool(
       )
         return "record_validation requires taskID, objective and command";
       const startedAt = performance.now();
+      const recordedAt = new Date().toISOString();
       let result: "passed" | "failed" | "skipped" = "failed";
       let safeSummary = "validation command did not run";
+      let artifactRef: string | undefined;
       try {
         const run = await runValidationCommand(
           args.command,
@@ -112,6 +116,23 @@ export function createRecordValidationTool(
         );
         result = run.exitCode === 0 ? "passed" : "failed";
         safeSummary = run.safeSummary;
+        // EI E2 artifact refs: a run whose output exceeds the summary is
+        // persisted (redacted + bounded) so the evidence can reference it.
+        if (run.fullOutput.length > run.safeSummary.length) {
+          const name = `validation:${Date.now().toString(36)}:${ctx.ports.nextEvidenceSequence()}`;
+          const relative = `.natalia/artifacts/${name.replace(/[^a-zA-Z0-9:_-]/gu, "_")}.log`;
+          try {
+            const absolute = join(ctx.ports.getWorkspaceRoot(), relative);
+            await mkdir(join(ctx.ports.getWorkspaceRoot(), ".natalia", "artifacts"), {
+              recursive: true,
+            });
+            await writeFile(absolute, run.fullOutput, "utf8");
+            artifactRef = relative;
+          } catch {
+            // A failed artifact write must not fail the validation record.
+            artifactRef = undefined;
+          }
+        }
       } catch (error) {
         safeSummary = `validation runner failed: ${error instanceof Error ? error.message : String(error)}`;
       }
@@ -119,6 +140,7 @@ export function createRecordValidationTool(
         command: redactToolOutput(args.command, true),
         result,
         safeSummary,
+        ...(artifactRef ? { artifactRef } : {}),
         durationMs: performance.now() - startedAt,
       });
       ctx.ports.publishForSession(
@@ -130,6 +152,8 @@ export function createRecordValidationTool(
           status: result === "passed" ? "validated" : "failed",
           validations: [outcome],
           ...(args.knownGaps ? { knownGaps: args.knownGaps } : {}),
+          recordedAt,
+          environment: `${process.platform}/${process.arch}`,
         }),
       );
       return JSON.stringify({
