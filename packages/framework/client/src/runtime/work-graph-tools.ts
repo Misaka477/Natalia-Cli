@@ -12,9 +12,10 @@ import {
   projectedWorkGraphEdges,
 } from "@natalia/session";
 import type { WorkGraphEdge, WorkGraphNode } from "@natalia/contracts";
+import { activePlanForExec } from "./collaboration/plan-doc-runtime";
 import type { RuntimeContext } from "./context";
 
-const WORK_GRAPH_PAGE_LIMIT = 20;
+const WORK_GRAPH_PAGE_LIMIT = 50;
 
 function resolveExec(
   ctx: RuntimeContext,
@@ -35,9 +36,9 @@ export function createWorkGraphQueryTool(
     name: "work_graph_query",
     description:
       "Query the session's Work Graph — the recorded fact graph of goals, plans, decisions, tool calls, approvals, checkpoints, validations and workspace changes. " +
-        "Decision tree: leave everything empty for the active plan's whole chain; fill exactly one precise query — `path` (a file/plan-document causal chain) or `findingID` (a drift finding's context); " +
+        "Decision tree: leaving everything empty returns the ACTIVE plan's whole chain (or the whole session graph when no plan is active); fill exactly one precise query — `path` (a file/plan-document causal chain) or `findingID` (a drift finding's context); " +
         "narrow with the range filters planID / goalID / checkpointID / nodeKind. " +
-        "Pagination: `limit` (default 20, max 100) and `cursor`; when the result is over the limit the response carries `truncated: true` and a `nextCursor` — pass that cursor back until `truncated` is false. " +
+        "Pagination: `limit` (default 50, max 200) and `cursor`; when the result is over the limit the response carries `truncated: true` and a `nextCursor` — pass that cursor back until `truncated` is false. " +
         "An empty result is `{ nodes: [], truncated: false }` (no matching chain, not an error).",
     requiresApproval: false,
     parameters: {
@@ -89,7 +90,7 @@ export function createWorkGraphQueryTool(
         },
         limit: {
           type: "number",
-          description: `Maximum nodes per page (default ${WORK_GRAPH_PAGE_LIMIT}, max 100).`,
+          description: `Maximum nodes per page (default ${WORK_GRAPH_PAGE_LIMIT}, max 200).`,
         },
         direction: {
           type: "string",
@@ -139,6 +140,21 @@ export function createWorkGraphQueryTool(
         if (!match) return `unknown planID: ${path}`;
         planID = match.planID;
       }
+      // EI §3.9: an unfiltered query means the ACTIVE plan's whole chain, not
+      // every node in the session. A precise query or an explicit range filter
+      // overrides that; with no active plan the whole session graph is returned
+      // (there is no plan to default to, and the model may still be navigating).
+      const precise = Boolean(path || findingID);
+      const narrowed = Boolean(
+        args.planID?.trim() ||
+          args.goalID?.trim() ||
+          args.checkpointID?.trim() ||
+          args.nodeKind,
+      );
+      if (!precise && !narrowed) {
+        const active = activePlanForExec(ctx, exec);
+        if (active) planID = active.planID;
+      }
       const nodes = projectedWorkGraphNodes(exec.session.events);
       const edges = projectedWorkGraphEdges(exec.session.events);
       // A node matches an id filter when it carries the id, or its target /
@@ -169,7 +185,7 @@ export function createWorkGraphQueryTool(
         filtered = filtered.filter((node) => node.kind === args.nodeKind);
       const limit = Math.min(
         Math.max(args.limit ?? WORK_GRAPH_PAGE_LIMIT, 1),
-        100,
+        200,
       );
       const offset = Number(args.cursor ?? "0");
       if (!Number.isFinite(offset) || offset < 0)

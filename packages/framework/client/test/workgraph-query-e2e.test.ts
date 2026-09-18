@@ -202,3 +202,91 @@ test("Phase 3 E2E: work_graph_query returns an empty (not error) result for a no
   expect(byFinding).toMatchObject({ total: 0, truncated: false, nodes: [] });
   await client.dispose?.();
 }, 30_000);
+
+
+test("Phase 3 E2E: an unfiltered work_graph_query defaults to the active plan's chain", async () => {
+  const root = await officialPluginWorkspace("workgraph-query-active-plan");
+  const sessionID = "ses_e2e_wgq_active" as SessionID;
+  const results: string[] = [];
+  let planID = "";
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    permissionMode: "auto",
+    provider: {
+      provider: "test",
+      model: "test",
+      async *stream(request: ProviderStreamRequest) {
+        const toolResult = (
+          request as {
+            messages: Array<{ role: string; content: string; toolCallID?: string }>;
+          }
+        ).messages
+          .filter(
+            (message) =>
+              message.role === "tool" &&
+              String(message.toolCallID ?? "").startsWith("call_graph"),
+          )
+          .at(-1);
+        if (toolResult) {
+          results.push(String(toolResult.content ?? ""));
+          if (results.length === 1) {
+            // Then: the decision node by kind (proves it exists in the graph).
+            yield {
+              type: "tool_call" as const,
+              calls: [
+                {
+                  id: "call_graph",
+                  name: "work_graph_query",
+                  arguments: JSON.stringify({ nodeKind: "decision" }),
+                },
+              ],
+            };
+            yield { type: "done" as const };
+            return;
+          }
+          yield { type: "content" as const, text: "queried" };
+          yield { type: "done" as const };
+          return;
+        }
+        // First: no args -> should default to the ACTIVE plan's chain, not the
+        // whole session graph.
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            { id: "call_graph", name: "work_graph_query", arguments: "{}" },
+          ],
+        };
+        yield { type: "done" as const };
+      },
+    },
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!(sessionID);
+  await client.planDocWrite!({
+    path: "plans/wgq-active.md",
+    content: "# Active plan\n\n- one step\n",
+    title: "Active plan",
+  });
+  const marked = await client.planDocMark!({
+    path: "plans/wgq-active.md",
+    title: "Active plan",
+  });
+  planID = marked.planID;
+  await client.planDocActivate!(planID);
+  // A plain decision: its work-graph node carries no planID, so it is NOT part
+  // of the active plan's chain.
+  await client.recordDecision!(
+    { decision: "an unrelated session-scoped choice" },
+    sessionID,
+  );
+  await client.submitAndWait!("query the graph");
+
+  const unfiltered = JSON.parse(results[0]!) as GraphResult;
+  const byKind = JSON.parse(results[1]!) as GraphResult;
+  // The decision node exists in the session graph...
+  expect(byKind.nodes.some((node) => node.kind === "decision")).toBe(true);
+  // ...but the unfiltered query defaults to the active plan and excludes it.
+  expect(unfiltered.nodes.some((node) => node.kind === "decision")).toBe(false);
+  await client.dispose?.();
+}, 30_000);
