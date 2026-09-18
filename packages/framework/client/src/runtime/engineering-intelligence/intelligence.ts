@@ -785,6 +785,10 @@ export function createIntelligenceSurface(
           summary?: string;
         }>;
         evidenceRefs?: string[];
+        /** EI Phase 2 机制 2: recent action kinds for the no-progress window. */
+        recentActions?: Array<{ kind: import("@natalia/work-ledger").DriftActionKind }>;
+        /** EI Phase 2 机制 2: recent failed tool calls for the failure-loop rule. */
+        recentFailures?: Array<{ toolName: string; key: string }>;
       },
       sessionID?: string,
     ) {
@@ -806,6 +810,8 @@ export function createIntelligenceSurface(
         applicableConstraints: input.applicableConstraints ?? [],
         changes: input.changes ?? [],
         evidenceRefs: input.evidenceRefs ?? [],
+        ...(input.recentActions ? { recentActions: input.recentActions } : {}),
+        ...(input.recentFailures ? { recentFailures: input.recentFailures } : {}),
         ...(contract
           ? {
               contract: {

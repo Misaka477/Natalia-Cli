@@ -429,3 +429,115 @@ test("every finding carries contractVersion and ruleHits (EI §8.6)", () => {
     evidenceGap!.ruleHits!.some((hit) => hit.rule === "evidence_gap"),
   ).toBe(true);
 });
+
+test("no-progress window opens an advisory finding after K actions with no marker", () => {
+  const evaluator = makeEvaluator();
+  // 8 plain tool_call actions, no progress marker.
+  const actions = Array.from({ length: 8 }, () => ({ kind: "tool_call" as const }));
+  const findings = evaluator.evaluate({
+    sessionID: "ses_np",
+    turnID: "t_np",
+    objective: "ship the feature",
+    currentActivity: "reading files",
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+    recentActions: actions,
+  });
+  const finding = findings.find((f) => f.ruleHits?.some((h) => h.rule === "no_progress"));
+  expect(finding).toBeDefined();
+  expect(finding!.severity).toBe("advisory");
+  // Session-scoped: the findingID carries no turnID.
+  expect(finding!.findingID).toBe("drift:no_progress:session:ses_np");
+});
+
+test("no-progress does not fire when a progress marker is in the window", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_np",
+    turnID: "t_np",
+    objective: "ship the feature",
+    currentActivity: "reading files",
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+    recentActions: [
+      ...Array.from({ length: 7 }, () => ({ kind: "tool_call" as const })),
+      { kind: "workspace_change" as const },
+    ],
+  });
+  expect(findings.some((f) => f.ruleHits?.some((h) => h.rule === "no_progress"))).toBe(false);
+});
+
+test("no-progress does not fire before the window is full", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_np",
+    turnID: "t_np",
+    objective: "ship the feature",
+    currentActivity: "reading files",
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+    recentActions: Array.from({ length: 7 }, () => ({ kind: "tool_call" as const })),
+  });
+  expect(findings.some((f) => f.ruleHits?.some((h) => h.rule === "no_progress"))).toBe(false);
+});
+
+test("failure loop opens a warning at the threshold and carries only the tool name + count", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_fl",
+    turnID: "t_fl",
+    objective: "fix the build",
+    currentActivity: "retrying the same command",
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+    recentFailures: [
+      { toolName: "run_shell", key: "abc123" },
+      { toolName: "run_shell", key: "abc123" },
+      { toolName: "run_shell", key: "abc123" },
+    ],
+  });
+  const finding = findings.find((f) => f.ruleHits?.some((h) => h.rule === "failure_loop"));
+  expect(finding).toBeDefined();
+  expect(finding!.severity).toBe("warning");
+  expect(finding!.findingID).toBe("drift:failure_loop:session:ses_fl");
+  // Evidence carries the tool name + count, never the raw key/args.
+  expect(finding!.evidence.some((e) => e.includes("failure_loop:run_shell:3x"))).toBe(true);
+  expect(finding!.evidence.some((e) => e.includes("abc123"))).toBe(false);
+});
+
+test("failure loop does not fire below the threshold or across different keys", () => {
+  const evaluator = makeEvaluator();
+  const below = evaluator.evaluate({
+    sessionID: "ses_fl",
+    turnID: "t_fl",
+    objective: "fix the build",
+    currentActivity: "retrying",
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+    recentFailures: [
+      { toolName: "run_shell", key: "abc123" },
+      { toolName: "run_shell", key: "abc123" },
+    ],
+  });
+  expect(below.some((f) => f.ruleHits?.some((h) => h.rule === "failure_loop"))).toBe(false);
+  const distinct = evaluator.evaluate({
+    sessionID: "ses_fl",
+    turnID: "t_fl",
+    objective: "fix the build",
+    currentActivity: "retrying",
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+    recentFailures: [
+      { toolName: "run_shell", key: "abc123" },
+      { toolName: "run_shell", key: "def456" },
+      { toolName: "run_shell", key: "ghi789" },
+    ],
+  });
+  expect(distinct.some((f) => f.ruleHits?.some((h) => h.rule === "failure_loop"))).toBe(false);
+});

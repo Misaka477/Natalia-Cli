@@ -28,6 +28,7 @@ import {
   projectedWorkContracts,
 } from "@natalia/session";
 import { injectFindingIntoMainAgent } from "../drift-inject";
+import { deriveDriftBehaviorSignals } from "@natalia/work-ledger";
 
 /**
  * Minimal constitution-rule path matching (EI §8.1 a/p/c wiring): a rule
@@ -233,9 +234,12 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           }),
         );
       }
+      const activePlan = activePlanForExec(ctx, target);
+      const objective = activePlan?.title ?? "";
+      // EI Phase 2 机制 2: the L4 behaviour signals (no-progress window, failure
+      // loop) run every turn-end, even when there were no workspace changes.
+      const behavior = deriveDriftBehaviorSignals(target.session.events);
       if (confirmed.length) {
-        const activePlan = activePlanForExec(ctx, target);
-        const objective = activePlan?.title ?? "";
         // EI §8.1: the evaluator needs the R's evidence and constraint keys
         // (a/p/c — attribution/plan/constitution) so validated work is not
         // judged as drift. Wire the session's recorded evidence and the
@@ -270,6 +274,8 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
             action: change.operation,
           })),
           evidenceRefs,
+          recentActions: behavior.recentActions,
+          recentFailures: behavior.recentFailures,
           ...(contract
             ? {
                 contract: {
@@ -293,6 +299,24 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           // the work, or detour_declare. advisory findings are noise-level and
           // are NOT injected. The text carries only the findingID, severity and
           // rule summary — never chain-of-thought.
+          injectFindingIntoMainAgent(ctx, target, finding);
+        }
+      } else {
+        // No workspace changes this turn: still evaluate the behaviour signals so
+        // a spinning or stuck agent opens a no-progress / failure-loop finding.
+        const behaviorFindings = workLedgerController.evaluateBehaviorDrift({
+          sessionID: target.session.id,
+          turnID: target.activeTurnID,
+          objective,
+          currentActivity: "",
+          applicableConstraints: [],
+          changes: [],
+          evidenceRefs: [],
+          recentActions: behavior.recentActions,
+          recentFailures: behavior.recentFailures,
+        });
+        for (const finding of behaviorFindings) {
+          publishForSession(target, finding);
           injectFindingIntoMainAgent(ctx, target, finding);
         }
       }

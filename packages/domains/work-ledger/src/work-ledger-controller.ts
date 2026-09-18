@@ -51,6 +51,7 @@ export function createWorkLedgerController(
     buildPlanDocUpdated,
     buildAuditRequested,
     evaluateDrift: driftEvaluator.evaluate,
+      evaluateBehaviorDrift: driftEvaluator.evaluateBehavior,
     buildDriftFindingUpdate,
     buildWorkContractDrafted,
     buildWorkContractAccepted,

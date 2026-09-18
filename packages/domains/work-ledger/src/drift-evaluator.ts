@@ -77,6 +77,33 @@ function assertSecretSafeDriftFact(fact: Record<string, unknown>): void {
   }
 }
 
+/**
+ * An action kind for the no-progress window (EI Phase 2, 机制 2). A progress
+ * marker is workspace_change / evidence.recorded / plan_step / completion.recorded;
+ * a run of plain tool_call actions with no marker opens an advisory no-progress
+ * finding. Counts only — never content.
+ */
+export type DriftActionKind =
+  | "workspace_change"
+  | "evidence.recorded"
+  | "plan_step"
+  | "completion.recorded"
+  | "tool_call";
+
+/** The action kinds that count as forward progress (EI Phase 2 no-progress). */
+export const DRIFT_PROGRESS_MARKERS: ReadonlySet<DriftActionKind> = new Set([
+  "workspace_change",
+  "evidence.recorded",
+  "plan_step",
+  "completion.recorded",
+]);
+
+/** The no-progress window: this many recent actions with no marker fires it. */
+export const DRIFT_NO_PROGRESS_WINDOW = 8;
+
+/** The failure-loop threshold: this many identical failures fires it. */
+export const DRIFT_FAILURE_LOOP_THRESHOLD = 3;
+
 export type DriftSignal = {
   sessionID?: string;
   episodeID?: string;
@@ -95,6 +122,17 @@ export type DriftSignal = {
   }>;
   /** Completion evidence collected so far (safe refs). */
   evidenceRefs: string[];
+  /**
+   * Recent action kinds, oldest→newest, for the no-progress window (EI Phase 2,
+   * 机制 2 — an L4 runtime behaviour signal that runs even without a contract).
+   */
+  recentActions?: Array<{ kind: DriftActionKind }>;
+  /**
+   * Recent failed tool calls for the failure-loop rule (EI Phase 2, L4): the
+   * same (toolName + normalized key) failing ≥ threshold opens a warning. `key`
+   * is a secret-safe normalized form of the arguments (a hash), never raw args.
+   */
+  recentFailures?: Array<{ toolName: string; key: string }>;
   /**
    * The accepted WorkContract judged against (EI §3.3 铁律): the user-tier R.
    * Absent (no contract, or only a stale draft) → at most an advisory
@@ -217,6 +255,11 @@ function overlap(left: string, right: string): number {
 type Rule = {
   name: string;
   severity: "advisory" | "warning" | "high";
+  /**
+   * Session-scoped rules (the L4 behaviour signals) use a per-session findingID
+   * (no turnID) so a persistent condition is one finding, not one per turn.
+   */
+  sessionScoped?: boolean;
   match: (
     signal: DriftSignal,
   ) => { confidence: number; evidence: string[] } | undefined;
@@ -451,6 +494,70 @@ function unverifiableRule(): Rule {
   };
 }
 
+/**
+ * No-progress window (EI Phase 2, 机制 2 — an L4 runtime behaviour signal that
+ * runs even without a contract). If the last `DRIFT_NO_PROGRESS_WINDOW` actions
+ * carry no progress marker (only plain tool_call actions), the work is spinning
+ * without advancing → an advisory finding. Counts only, never content.
+ */
+function noProgressRule(): Rule {
+  return {
+    name: "no_progress",
+    severity: "advisory",
+    sessionScoped: true,
+    match: (signal) => {
+      const actions = signal.recentActions ?? [];
+      if (actions.length < DRIFT_NO_PROGRESS_WINDOW) return undefined;
+      const tail = actions.slice(-DRIFT_NO_PROGRESS_WINDOW);
+      if (tail.some((action) => DRIFT_PROGRESS_MARKERS.has(action.kind)))
+        return undefined;
+      return {
+        confidence: 0.6,
+        evidence: [
+          `no_progress:last_${DRIFT_NO_PROGRESS_WINDOW}_actions`,
+          "marker:none",
+        ],
+      };
+    },
+  };
+}
+
+/**
+ * Consecutive failure loop (EI Phase 2, 机制 2 — L4). The same
+ * (toolName + normalized key) failing ≥ threshold times means the agent is stuck
+ * retrying the same thing → a warning. The key is secret-safe (a hash); only the
+ * tool name and the count are carried as evidence.
+ */
+function failureLoopRule(): Rule {
+  return {
+    name: "failure_loop",
+    severity: "warning",
+    sessionScoped: true,
+    match: (signal) => {
+      const failures = signal.recentFailures ?? [];
+      const counts = new Map<string, { toolName: string; count: number }>();
+      for (const failure of failures) {
+        const id = `${failure.toolName}::${failure.key}`;
+        const entry = counts.get(id) ?? { toolName: failure.toolName, count: 0 };
+        entry.count += 1;
+        counts.set(id, entry);
+      }
+      for (const entry of counts.values()) {
+        if (entry.count >= DRIFT_FAILURE_LOOP_THRESHOLD) {
+          return {
+            confidence: 0.7,
+            evidence: [
+              `failure_loop:${entry.toolName}:${entry.count}x`,
+              `threshold:${DRIFT_FAILURE_LOOP_THRESHOLD}`,
+            ],
+          };
+        }
+      }
+      return undefined;
+    },
+  };
+}
+
 export function createDriftEvaluator(input: {
   /** Keep findings stable per turn: same signals do not reopen the same finding. */
   openFindingIDs: () => ReadonlySet<string>;
@@ -465,6 +572,8 @@ export function createDriftEvaluator(input: {
     dependencyRule(),
     targetDriftRule(),
     unverifiableRule(),
+    noProgressRule(),
+    failureLoopRule(),
   ];
 
   /**
@@ -474,21 +583,22 @@ export function createDriftEvaluator(input: {
    * D4: a rule result below `minimumConfidence` is not opened (false-positive
    * tuning — weak signals should not spam the ledger).
    */
-  function evaluate(
+  function runRules(
+    rulesToRun: readonly Rule[],
     signal: DriftSignal,
   ): Array<Extract<RuntimeEvent, { type: "drift.finding_opened" }>> {
     const open = input.openFindingIDs();
     const findings: Array<
       Extract<RuntimeEvent, { type: "drift.finding_opened" }>
     > = [];
-    const ruleHits: Array<{ rule: string; confidence: number }> = [];
-    for (const rule of rules) {
+    for (const rule of rulesToRun) {
       const result = rule.match(signal);
       if (!result) continue;
       if (result.confidence < minimumConfidence) continue;
-      const findingID = `drift:${rule.name}:${signal.turnID ?? "session"}:${signal.sessionID ?? ""}`;
+      const findingID = rule.sessionScoped
+        ? `drift:${rule.name}:session:${signal.sessionID ?? ""}`
+        : `drift:${rule.name}:${signal.turnID ?? "session"}:${signal.sessionID ?? ""}`;
       if (open.has(findingID)) continue;
-      ruleHits.push({ rule: rule.name, confidence: result.confidence });
       findings.push(
         buildDriftFinding({
           id: `drift:${Date.now().toString(36)}:${rule.name}`,
@@ -503,7 +613,9 @@ export function createDriftEvaluator(input: {
           evidence: result.evidence,
           applicableConstraints: signal.applicableConstraints,
           contractVersion: DRIFT_CONTRACT_VERSION,
-          ruleHits,
+          // Each finding carries only its own rule hit — a per-rule finding
+          // must not inherit the hits of rules that fired before it.
+          ruleHits: [{ rule: rule.name, confidence: result.confidence }],
           ...(signal.contract?.planID
             ? { planID: signal.contract.planID }
             : {}),
@@ -513,5 +625,26 @@ export function createDriftEvaluator(input: {
     return findings;
   }
 
-  return { evaluate };
+  function evaluate(
+    signal: DriftSignal,
+  ): Array<Extract<RuntimeEvent, { type: "drift.finding_opened" }>> {
+    return runRules(rules, signal);
+  }
+
+  /**
+   * Evaluate only the L4 behaviour signals (no-progress / failure loop) — used
+   * at turn-end when there were no workspace changes, so a spinning agent still
+   * opens a finding without the contract/objective rules firing on an empty
+   * activity.
+   */
+  function evaluateBehavior(
+    signal: DriftSignal,
+  ): Array<Extract<RuntimeEvent, { type: "drift.finding_opened" }>> {
+    return runRules(
+      rules.filter((rule) => rule.sessionScoped),
+      signal,
+    );
+  }
+
+  return { evaluate, evaluateBehavior };
 }

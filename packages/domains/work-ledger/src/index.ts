@@ -4,10 +4,16 @@ export {
   buildDriftFinding,
   buildDriftFindingUpdate,
   createDriftEvaluator,
+  type DriftActionKind,
   type DriftFindingInput,
   type DriftFindingStatus,
   type DriftSignal,
 } from "./drift-evaluator";
+export {
+  deriveDriftBehaviorSignals,
+  DRIFT_SIGNAL_WINDOW,
+  type DriftBehaviorSignals,
+} from "./drift-signals";
 export {
   buildAuditRequested,
   buildPlanDocCreated,

@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { ProviderStreamRequest } from "@natalia/runtime";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createRealRuntimeClient } from "../src";
 import { officialPluginWorkspace } from "./plugin-test-helpers";
 import { createScriptedProvider, waitFor } from "./e2e-harness";
@@ -404,5 +406,82 @@ test("Phase 2 E2E: the main agent's drift_acknowledge moves an open finding to e
   const updated = findings.find((f) => f.findingID === highFinding!.findingID);
   expect(updated?.status).toBe("explained");
 
+  await client.dispose?.();
+}, 30_000);
+
+test("Phase 2 E2E: evaluateDrift opens a no-progress finding from recentActions", async () => {
+  const root = await officialPluginWorkspace("drift-e2e-no-progress-rpc");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [{ text: "standby" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start((event) => events.push(event));
+  await client.sessionAttach!(SESSION);
+
+  // Eight tool_call actions with no progress marker -> the L4 no-progress rule.
+  const result = await client.evaluateDrift!(
+    {
+      objective: "ship the feature",
+      currentActivity: "reading files",
+      recentActions: Array.from({ length: 8 }, () => ({ kind: "tool_call" as const })),
+    },
+    SESSION,
+  );
+  expect(result.opened).toBeGreaterThan(0);
+  const finding = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "drift.finding_opened" }> =>
+      event.type === "drift.finding_opened" &&
+      (event.ruleHits ?? []).some((hit) => hit.rule === "no_progress"),
+  );
+  expect(finding).toBeDefined();
+  expect(finding!.severity).toBe("advisory");
+  expect(finding!.findingID).toBe("drift:no_progress:session:" + SESSION);
+  await client.dispose?.();
+}, 30_000);
+
+test("Phase 2 E2E: evaluateDrift opens a failure-loop finding from recentFailures", async () => {
+  const root = await officialPluginWorkspace("drift-e2e-failure-loop");
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [{ text: "standby" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start((event) => events.push(event));
+  await client.sessionAttach!(SESSION);
+
+  // Three identical failed tool calls -> the L4 failure-loop rule (warning).
+  const result = await client.evaluateDrift!(
+    {
+      objective: "fix the build",
+      currentActivity: "retrying the same command",
+      recentFailures: [
+        { toolName: "run_shell", key: "k1" },
+        { toolName: "run_shell", key: "k1" },
+        { toolName: "run_shell", key: "k1" },
+      ],
+    },
+    SESSION,
+  );
+  expect(result.opened).toBeGreaterThan(0);
+  const finding = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "drift.finding_opened" }> =>
+      event.type === "drift.finding_opened" &&
+      (event.ruleHits ?? []).some((hit) => hit.rule === "failure_loop"),
+  );
+  expect(finding).toBeDefined();
+  expect(finding!.severity).toBe("warning");
   await client.dispose?.();
 }, 30_000);

@@ -3974,6 +3974,17 @@ export type RuntimeClient = {
         summary?: string;
       }>;
       evidenceRefs?: string[];
+      /** EI Phase 2 机制 2: recent action kinds for the no-progress window. */
+      recentActions?: Array<{
+        kind:
+          | "workspace_change"
+          | "evidence.recorded"
+          | "plan_step"
+          | "completion.recorded"
+          | "tool_call";
+      }>;
+      /** EI Phase 2 机制 2: recent failed tool calls for the failure-loop rule. */
+      recentFailures?: Array<{ toolName: string; key: string }>;
     },
     sessionID?: string,
   ): Promise<{ opened: number }>;
