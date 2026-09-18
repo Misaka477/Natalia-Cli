@@ -19,6 +19,7 @@ export type PlanStatus =
   | "executing"
   | "awaiting_audit"
   | "auditing"
+  | "audit_pending"
   | "audit_passed"
   | "audit_gaps"
   | "completed";

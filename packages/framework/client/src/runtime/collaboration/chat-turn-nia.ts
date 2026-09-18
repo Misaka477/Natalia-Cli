@@ -694,6 +694,20 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         text: finalText,
         at: new Date().toISOString(),
       });
+      // EI §3.9 兜底降级: an audit turn that ends without audit_report leaves the
+      // plan stuck in "auditing" forever. Mark it audit_pending so it is visibly
+      // recoverable (re-wake / restart) instead of deadlocked.
+      if (auditIntent && activePlan && !auditReported) {
+        try {
+          await ctx.ports.planDocRuntime.planDocUpdateStatus({
+            planID: activePlan.planID,
+            status: "audit_pending",
+            sessionID: input.exec.session.id,
+          });
+        } catch {
+          // A failed status update must not fail the whole Nia turn.
+        }
+      }
       return { text: output };
     } finally {
       settleThinking();

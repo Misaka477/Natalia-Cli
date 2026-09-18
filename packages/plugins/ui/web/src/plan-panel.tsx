@@ -26,6 +26,7 @@ const PLAN_STATUS_LABELS: Record<string, string> = {
   executing: "执行中",
   awaiting_audit: "待审计",
   auditing: "审计中",
+  audit_pending: "审计待重试",
   audit_gaps: "有缺口",
   completed: "已完成",
   unmarked: "未标记",
