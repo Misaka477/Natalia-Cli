@@ -26,6 +26,7 @@ import {
   projectedConstitutionRules,
   projectedEvidenceRecords,
   projectedWorkContracts,
+  sessionFactEvidenceRecords,
 } from "@natalia/session";
 import {
   injectFindingIntoMainAgent,
@@ -84,6 +85,17 @@ export function deliveredMailboxConstraints(
 
 export function createCollaborationBoundary(ctx: RuntimeContext) {
   const proseStreaks = new Map<string, number>();
+
+  /**
+   * EI §8.4: read the session's evidence ids from the complete fact state when
+   * available (a fast-attach tail would under-report the evidence_gap rule's
+   * only input). Falls back to the projected events for a tail-only attach.
+   */
+  function evidenceRecordsFor(exec?: SessionExecutionState) {
+    if (exec?.factStateComplete === true && exec.factState)
+      return sessionFactEvidenceRecords(exec.factState);
+    return projectedEvidenceRecords(exec?.session.events ?? []);
+  }
 
   function mailboxMessagesFor(exec?: SessionExecutionState) {
     // The hot state is complete even when session.events is a fast-attach tail.
@@ -272,9 +284,9 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         // (a/p/c — attribution/plan/constitution) so validated work is not
         // judged as drift. Wire the session's recorded evidence and the
         // constitution rules that apply to the changed paths.
-        const evidenceRefs = projectedEvidenceRecords(
-          target.session.events,
-        ).map((record) => record.id);
+        const evidenceRefs = evidenceRecordsFor(target).map(
+          (record) => record.id,
+        );
         // EI §3.3 机制 1: a user constraint delivered through the Live Work Chat
         // mailbox is an explicit R constraint, not just context prose — feed
         // the delivered/acknowledged `constraint` intents into the judged
