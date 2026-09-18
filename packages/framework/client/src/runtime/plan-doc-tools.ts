@@ -143,3 +143,60 @@ export function createPlanDocTickTool(ctx: RuntimeContext): RuntimeTool {
     },
   };
 }
+
+/**
+ * `plan_pause` (EI §3.5 correction: 暂停 plan). The user asks for a pause in the
+ * Live Work Chat ("约束 / 改计划 / 暂停走 chat 对话流"), so the main agent owns the
+ * action. Pausing sets the plan's lifecycle status to `paused` (resume returns
+ * it to `executing`); the change is a durable `plan.doc.status` fact, so replay
+ * and the plan panel stay consistent.
+ */
+export function createPlanPauseTool(ctx: RuntimeContext): RuntimeTool {
+  return {
+    name: "plan_pause",
+    description:
+      "Pause or resume a plan at the user's request (El §3.5). paused=true marks the plan 'paused' so it is no longer treated as actively executing; paused=false resumes it to 'executing'. Use it only when the user asks to pause or resume the plan in chat.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        planID: {
+          type: "string",
+          description: "The planID from plan_doc_list.",
+        },
+        paused: {
+          type: "boolean",
+          description: "true = pause; false = resume.",
+        },
+      },
+      required: ["planID", "paused"],
+      additionalProperties: false,
+    },
+    async execute(parsed, context) {
+      const args = parsed as { planID?: string; paused?: boolean };
+      if (!args.planID?.trim()) return "plan_pause requires planID";
+      if (typeof args.paused !== "boolean")
+        return "plan_pause requires paused (boolean)";
+      const status = args.paused ? "paused" : "executing";
+      try {
+        const result = await ctx.ports.planDocRuntime.planDocUpdateStatus({
+          planID: args.planID,
+          status,
+          ...(context.sessionID ? { sessionID: context.sessionID } : {}),
+        });
+        if (!result.updated)
+          return JSON.stringify({
+            ok: false,
+            reason: `no marked plan ${args.planID}`,
+          });
+        return JSON.stringify({
+          ok: true,
+          planID: args.planID,
+          status,
+        });
+      } catch (cause) {
+        return cause instanceof Error ? cause.message : String(cause);
+      }
+    },
+  };
+}

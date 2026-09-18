@@ -24,6 +24,7 @@ type PlanRow = {
 const PLAN_STATUS_LABELS: Record<string, string> = {
   handed_off: "已交接",
   executing: "执行中",
+  paused: "已暂停",
   awaiting_audit: "待审计",
   auditing: "审计中",
   audit_pending: "审计待重试",

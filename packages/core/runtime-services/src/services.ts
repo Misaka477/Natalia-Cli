@@ -917,6 +917,7 @@ export type PlanLifecycleState =
   | "marked"
   | "handed_off"
   | "executing"
+  | "paused"
   | "awaiting_audit"
   | "auditing"
   | "audit_pending"

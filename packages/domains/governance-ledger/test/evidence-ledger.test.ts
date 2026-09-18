@@ -162,6 +162,10 @@ test("evidence status transition policy maps plan lifecycle to effective status"
   expect(evidenceStatusForPlanState("executing", "planned")).toBe(
     "implemented",
   );
+  // A paused plan does not override the recorded evidence status.
+  expect(evidenceStatusForPlanState("paused", "implemented")).toBe(
+    "implemented",
+  );
   expect(evidenceStatusForPlanState("awaiting_audit", "implemented")).toBe(
     "implemented",
   );

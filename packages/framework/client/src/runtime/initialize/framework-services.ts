@@ -33,6 +33,7 @@ import {
   createPlanDocListTool,
   createPlanDocReadTool,
   createPlanDocTickTool,
+  createPlanPauseTool,
 } from "../plan-doc-tools";
 import {
   createConstitutionProposeTool,
@@ -233,6 +234,7 @@ export async function wireFrameworkServices(
     createPlanDocListTool(ctx),
     createPlanDocReadTool(ctx),
     createPlanDocTickTool(ctx),
+    createPlanPauseTool(ctx),
     createPlanProposeTool(ctx),
     createWorkContractReadTool(ctx),
     createDetourDeclareTool(ctx),
