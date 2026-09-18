@@ -32,6 +32,7 @@ import { createSessionHistoryTool } from "../session-history-tool";
 import {
   createPlanDocListTool,
   createPlanDocReadTool,
+  createPlanDocTickTool,
 } from "../plan-doc-tools";
 import {
   createConstitutionProposeTool,
@@ -231,6 +232,7 @@ export async function wireFrameworkServices(
   for (const tool of [
     createPlanDocListTool(ctx),
     createPlanDocReadTool(ctx),
+    createPlanDocTickTool(ctx),
     createPlanProposeTool(ctx),
     createWorkContractReadTool(ctx),
     createDetourDeclareTool(ctx),

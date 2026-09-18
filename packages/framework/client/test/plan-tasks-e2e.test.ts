@@ -79,3 +79,104 @@ test("Phase 4 E2E: plan checkboxes project to evidence-first task states", async
   expect(byText.get("legacy cleanup")).toBe("skipped");
   await client.dispose?.();
 }, 30_000);
+
+test("Phase 4 E2E: the main agent's plan_doc_tick declares a step done and can retract it", async () => {
+  const root = await officialPluginWorkspace("plan-tick-e2e");
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      // The planID is minted by planDocMark, so the scripted tool calls read it
+      // from a closure set after the plan is marked.
+      main: [
+        {
+          tool: () => ({
+            name: "plan_doc_tick",
+            arguments: { planID: planID!, task: "add the parser", done: true },
+          }),
+        },
+        {
+          tool: () => ({
+            name: "plan_doc_tick",
+            arguments: { planID: planID!, task: "add the parser", done: false },
+          }),
+        },
+        { text: "ticked then retracted" },
+      ],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!(SESSION);
+
+  let planID: string | undefined;
+  await client.planDocWrite!({
+    path: "plans/tick-e2e.md",
+    content: [
+      "# Tick E2E",
+      "",
+      "- [ ] add the parser",
+      "- [ ] ship the docs",
+    ].join("\n"),
+    title: "Tick E2E",
+  });
+  const marked = await client.planDocMark!({ path: "plans/tick-e2e.md", title: "Tick E2E" });
+  planID = marked.planID;
+
+  // The main agent's turn ticks then retracts the step via plan_doc_tick.
+  await client.submitAndWait!("mark the parser step done, then retract");
+
+  const doc = await client.planDocRead!({ planID });
+  // After tick-then-retract the marker is back to open, and the label is intact.
+  expect(doc.content).toContain("- [ ] add the parser");
+  expect(doc.content).toContain("- [ ] ship the docs");
+  // No fabricated lines, no landing log (this plan has checkboxes).
+  expect(doc.content).not.toContain("落地日志");
+
+  await client.dispose?.();
+}, 30_000);
+
+test("Phase 4 E2E: plan_doc_tick appends a 落地日志 section to a checkbox-less plan", async () => {
+  const root = await officialPluginWorkspace("plan-tick-log-e2e");
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: SESSION,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [
+        {
+          tool: () => ({
+            name: "plan_doc_tick",
+            arguments: { planID: planID!, task: "wired the parser", done: true },
+          }),
+        },
+        { text: "logged the step" },
+      ],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!(SESSION);
+
+  let planID: string | undefined;
+  await client.planDocWrite!({
+    path: "plans/log-e2e.md",
+    content: ["# Prose plan", "", "A design note with no checkboxes at all.", ""].join("\n"),
+    title: "Prose plan",
+  });
+  const marked = await client.planDocMark!({ path: "plans/log-e2e.md", title: "Prose plan" });
+  planID = marked.planID;
+
+  await client.submitAndWait!("record that the parser is wired");
+
+  const doc = await client.planDocRead!({ planID });
+  expect(doc.content).toContain("## 落地日志");
+  expect(doc.content).toContain("- [x] wired the parser");
+  // The original prose is preserved.
+  expect(doc.content).toContain("A design note with no checkboxes at all.");
+
+  await client.dispose?.();
+}, 30_000);

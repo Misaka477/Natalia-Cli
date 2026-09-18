@@ -9,6 +9,7 @@
  * the runtime context; the正文 never does.
  */
 import type { RuntimeTool } from "@natalia/tools";
+import { applyPlanDocTick } from "@natalia/work-ledger";
 import type { RuntimeContext } from "./context";
 
 /** Lists the workspace plan documents with their stable planIDs and paths. */
@@ -61,6 +62,81 @@ export function createPlanDocReadTool(ctx: RuntimeContext): RuntimeTool {
             ...(args.path ? { path: args.path } : {}),
           }),
         );
+      } catch (cause) {
+        return cause instanceof Error ? cause.message : String(cause);
+      }
+    },
+  };
+}
+
+/**
+ * `plan_doc_tick` — the model's "declare this step done / retract it" action
+ * (EI §4 Phase 4). It flips one checkbox's marker (tick / untick), or — when the
+ * plan carries no matching checkbox — appends the step to a `## 落地日志`
+ * landing-log section (created on first use). It never rewrites any existing
+ * line's text, so the model can declare progress without editing the plan; the
+ * runtime then cross-checks the declaration against recorded evidence.
+ */
+export function createPlanDocTickTool(ctx: RuntimeContext): RuntimeTool {
+  return {
+    name: "plan_doc_tick",
+    description:
+      "Declare a plan step done (tick) or retract it (untick). Reads the plan, flips the matching checkbox marker, and writes it back — only the marker changes, never the step text. For a plan with no checkboxes, it appends the step to a '## 落地日志' landing-log section. Use it as you complete each step; a ticked step with no recorded evidence reads as 'gap'.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        planID: {
+          type: "string",
+          description: "The planID from plan_doc_list.",
+        },
+        task: {
+          type: "string",
+          description:
+            "The exact step label (the checkbox text). Read the plan first to copy it.",
+        },
+        done: {
+          type: "boolean",
+          description: "true = declare done (tick); false = retract (untick).",
+        },
+      },
+      required: ["planID", "task", "done"],
+      additionalProperties: false,
+    },
+    async execute(parsed) {
+      const args = parsed as {
+        planID?: string;
+        task?: string;
+        done?: boolean;
+      };
+      if (!args.planID?.trim())
+        return "plan_doc_tick requires planID";
+      if (typeof args.task !== "string" || !args.task.trim())
+        return "plan_doc_tick requires a non-empty task label";
+      if (typeof args.done !== "boolean")
+        return "plan_doc_tick requires done (boolean)";
+      try {
+        const doc = await ctx.ports.planDocRuntime.planDocRead({
+          planID: args.planID,
+        });
+        const result = applyPlanDocTick(doc.content, {
+          task: args.task,
+          done: args.done,
+        });
+        if (!result.ok) return result.reason;
+        if (result.action !== "unticked" || result.content !== doc.content) {
+          await ctx.ports.planDocRuntime.planDocWrite({
+            path: doc.documentPath,
+            content: result.content,
+            ...(doc.planID ? { planID: doc.planID } : {}),
+          });
+        }
+        return JSON.stringify({
+          ok: true,
+          action: result.action,
+          planID: doc.planID,
+          documentPath: doc.documentPath,
+        });
       } catch (cause) {
         return cause instanceof Error ? cause.message : String(cause);
       }
