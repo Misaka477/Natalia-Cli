@@ -4,6 +4,8 @@ import { FakeCompactor } from "./fixtures";
 import {
   compactContext,
   compactionTrigger,
+  decideCompaction,
+  selectCompactableRange,
   ContextLedger,
   largeToolResultContext,
   preserveRecentWithToolPairs,
@@ -733,4 +735,111 @@ test("recoverContextLimitOnce bounds overflow retries and reports exhaustion", a
     message: expect.stringContaining("retries exhausted (0)"),
   });
   expect(calls).toBe(1);
+});
+
+test("decideCompaction returns none below both thresholds", () => {
+  expect(
+    decideCompaction({
+      requestTokens: 1000,
+      headerTokens: 200,
+      surfaceTokens: 800,
+      max: 100_000,
+      reserved: 4096,
+      thresholdPercent: 85,
+      hasCompactableRange: true,
+    }),
+  ).toBe("none");
+});
+
+test("decideCompaction returns ratio on full-request pressure", () => {
+  expect(
+    decideCompaction({
+      requestTokens: 90_000,
+      headerTokens: 10_000,
+      surfaceTokens: 80_000,
+      max: 100_000,
+      reserved: 4096,
+      thresholdPercent: 85,
+      hasCompactableRange: true,
+    }),
+  ).toBe("ratio");
+});
+
+test("decideCompaction returns reserved when request plus output would not fit", () => {
+  // Below the 85% ratio threshold (85000) but request + reserved (20000) would
+  // exceed the 100k window, so the hard capacity guard fires instead.
+  expect(
+    decideCompaction({
+      requestTokens: 84_000,
+      headerTokens: 5_000,
+      surfaceTokens: 79_000,
+      max: 100_000,
+      reserved: 20_000,
+      thresholdPercent: 85,
+      hasCompactableRange: true,
+    }),
+  ).toBe("reserved");
+});
+
+test("decideCompaction refuses to summarize without a compactable range", () => {
+  // Over pressure, but the only foldable content is already a summary.
+  expect(
+    decideCompaction({
+      requestTokens: 90_000,
+      headerTokens: 10_000,
+      surfaceTokens: 80_000,
+      max: 100_000,
+      reserved: 4096,
+      thresholdPercent: 85,
+      hasCompactableRange: false,
+    }),
+  ).toBe("nothing_to_compact");
+});
+
+test("decideCompaction uses the conservative 32k reserve instead of a flat 20k", () => {
+  // A 32k window reserves 4096, so a ~28k request is under the reserved guard
+  // and only trips at the ratio threshold; a flat 20k reserve would wrongly fire.
+  expect(
+    decideCompaction({
+      requestTokens: 20_000,
+      headerTokens: 4_096,
+      surfaceTokens: 15_904,
+      max: 32_000,
+      reserved: 4096,
+      thresholdPercent: 85,
+      hasCompactableRange: true,
+    }),
+  ).toBe("none");
+});
+
+test("selectCompactableRange splits preserved suffix from compactable prefix", () => {
+  const ledger = new ContextLedger();
+  for (let index = 0; index < 6; index++)
+    ledger.add({
+      id: `m${index}`,
+      role: index % 2 ? "assistant" : "user",
+      content: `message ${index}`,
+    });
+  const range = selectCompactableRange(ledger.snapshot().entries, {
+    recentMessages: 2,
+  });
+  expect(range.preserved.map((entry) => entry.id)).toEqual(["m4", "m5"]);
+  expect(range.compactable.map((entry) => entry.id)).toEqual([
+    "m0",
+    "m1",
+    "m2",
+    "m3",
+  ]);
+  expect(range.hasRange).toBe(true);
+});
+
+test("selectCompactableRange reports no range when only a summary remains", () => {
+  const ledger = new ContextLedger();
+  ledger.add({ id: "s", role: "summary", content: "prior summary" });
+  ledger.add({ id: "u", role: "user", content: "latest" });
+  const range = selectCompactableRange(ledger.snapshot().entries, {
+    recentMessages: 5,
+  });
+  expect(range.compactable).toEqual([]);
+  expect(range.hasRange).toBe(false);
 });

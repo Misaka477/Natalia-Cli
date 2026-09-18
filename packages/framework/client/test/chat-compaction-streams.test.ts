@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { ContextLedger, TokenMeter } from "@natalia/runtime";
+import type { ContextEntry, ProviderMessage } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { compactChatBeforeProviderStep } from "../src/runtime/collaboration/chat-turn-common";
 import {
@@ -15,16 +16,31 @@ test("Navi and Nia compaction retain independent ledgers, providers, and durable
   const naviProvider = { provider: "navi", model: "navi-model" };
   const niaProvider = { provider: "nia", model: "nia-model" };
   const compaction = {
-    async compactBeforeProviderStep(input: {
+    async prepareContextRequest(input: {
       ledger: ContextLedger;
       provider: unknown;
+      rebuildOutbound: (
+        entries: ContextEntry[],
+        phase: "prune" | "compact",
+      ) => ProviderMessage[];
+      outbound: ProviderMessage[];
     }) {
       calls.push({ ledger: input.ledger, provider: input.provider });
       input.ledger.replaceAfterCompaction(
         { id: "summary", role: "summary", content: "summary" },
         [],
       );
-      return { compacted: true };
+      const rebuilt = input.rebuildOutbound(
+        input.ledger.snapshot().entries,
+        "compact",
+      );
+      return {
+        outbound: rebuilt,
+        decision: "ratio",
+        compacted: true,
+        pruned: 0,
+        used: 0,
+      };
     },
   };
   const ctx = {
@@ -98,8 +114,14 @@ test("Navi and Nia compaction retain independent ledgers, providers, and durable
 test("a truncated stream history resets only its own compaction ledger", async () => {
   const ledger = new ContextLedger();
   const compaction = {
-    async compactBeforeProviderStep() {
-      return { compacted: false };
+    async prepareContextRequest(input: { outbound: ProviderMessage[] }) {
+      return {
+        outbound: input.outbound,
+        decision: "none",
+        compacted: false,
+        pruned: 0,
+        used: 0,
+      };
     },
   };
   const ctx = {

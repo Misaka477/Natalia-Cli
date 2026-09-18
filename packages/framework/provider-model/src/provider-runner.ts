@@ -10,6 +10,7 @@ import {
   contextEntriesToProviderMessages,
   contextStatusBuckets,
   contextStatusEvent,
+  DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
   estimateTokens,
   MAX_STEPS_PROMPT,
   memoryTrace,
@@ -18,6 +19,7 @@ import {
   normalizeRawToolCallProtocol,
   requestHeaderKey,
   requireNativeToolCallProtocol,
+  TokenMeter,
   uniqueProviderToolCallIds,
   type ContextEntry,
   type ProviderMessage,
@@ -1263,15 +1265,11 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     activePermissionMode: PermissionMode,
   ) {
     const ledger = input.context();
-    const meter = input.tokenMeter?.();
-    const pruned = ledger.pruneToolResults();
-    if (pruned.pruned > 0) {
-      rebuildMessagesAfterCompaction(messages, ledger, {
-        preserveToolMessages: false,
-      });
-      applyRuntimeContext(messages);
-      publishMainContextStatus(meter, config);
-    }
+    const realMeter = input.tokenMeter?.();
+    // A throwaway meter keeps the shared pipeline measurable when the host did
+    // not wire a TokenMeter; nothing is published in that case (the emit hooks
+    // read the real meter, which is undefined).
+    const meter = realMeter ?? new TokenMeter();
     const system = messages[0]?.role === "system" ? messages[0].content : "";
     // Measure the exact request header (system + advertised tools) about to be
     // sent so the tools bucket and the provider usage anchor stay on the same
@@ -1280,75 +1278,63 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       activePermissionMode,
       activeModelCapabilities,
     );
-    const measured = meter?.measureRequest("main", {
+    const result = await input.compaction.prepareContextRequest({
+      id,
+      step,
+      ledger,
+      meter,
+      scope: "main",
       system,
       tools: stepTools,
-      messages,
       contextWindow: config.max,
-    });
-    const used = Math.max(
-      ledger.effectiveTokens(),
-      estimateProviderMessages(messages),
-      measured?.totalTokens ?? 0,
-    );
-    if (meter) publishMainTokenSnapshot(meter, used);
-    // Log after measuring so the trace carries the numbers that actually decide
-    // whether compaction triggers (the old form only had message counts).
-    memoryTrace("main.compact.before", {
-      step,
-      messages: messages.length,
-      ledgerMessages: ledger.journalStatus().messageCount,
-      usedTokens: used,
-      maxTokens: config.max,
-      thresholdPercent: config.thresholdPercent,
-      reservedTokens: config.reserved,
-    });
-    const compacted = await input.compaction.compactBeforeProviderStep({
-      compactionID: `${id}:preflight:${step}`,
-      ledger,
-      provider: activeProvider,
-      usedTokens: used,
       budget: config,
-      enabled: input.tsRuntimeConfig()?.context.compactionEnabled ?? true,
-      preservedRecentMessages:
-        input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
-      preservedRecentTokens:
-        input.tsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
+      preserve: {
+        recentMessages:
+          input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
+        recentTokens:
+          input.tsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
+      },
+      outbound: messages,
+      rebuildOutbound: (_entries: ContextEntry[], phase: "prune" | "compact") => {
+        rebuildMessagesAfterCompaction(
+          messages,
+          ledger,
+          phase === "prune" ? { preserveToolMessages: false } : undefined,
+        );
+        // The rebuild re-derives messages from the journal, which drops the
+        // per-turn runtime context; re-append a fresh snapshot so the model
+        // keeps seeing environment/collaboration/plan state after the reset.
+        applyRuntimeContext(messages);
+        return messages;
+      },
+      pruneOptions: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
+      provider: activeProvider,
       prefixMessages: messages.filter((message) => message.role === "system"),
       instruction:
         "Compact before the next provider request while preserving the active task.",
+      compactionEnabled:
+        input.tsRuntimeConfig()?.context.compactionEnabled ?? true,
       signal: input.activeAbort()?.signal,
-      onEvent: input.publish,
+      publish: input.publish,
+      emitStatus: () => publishMainContextStatus(realMeter, config),
+      emitSnapshot: (measured: { totalTokens: number }) => {
+        if (realMeter) publishMainTokenSnapshot(realMeter, measured.totalTokens);
+      },
+      onCompacted: () => {
+        memoryTrace("main.compact.after", {
+          step,
+          messages: messages.length,
+          ledgerMessages: ledger.journalStatus().messageCount,
+        });
+        input.publish({
+          type: "context.checkpoint",
+          id: `${id}:preflight:${ledger.journalStatus().journalOffset}`,
+          snapshot: ledger.durableCheckpoint(step),
+        });
+      },
     });
-    if (!compacted.compacted) return;
-    rebuildMessagesAfterCompaction(messages, ledger);
-    // The rebuild re-derives messages from the journal, which drops the
-    // per-turn runtime context; re-append a fresh snapshot so the model keeps
-    // seeing environment/collaboration/plan state after the reset point.
-    applyRuntimeContext(messages);
-    meter?.clear("main");
-    memoryTrace("main.compact.after", {
-      step,
-      messages: messages.length,
-      ledgerMessages: ledger.journalStatus().messageCount,
-    });
-    input.publish({
-      type: "context.checkpoint",
-      id: `${id}:preflight:${ledger.journalStatus().journalOffset}`,
-      snapshot: ledger.durableCheckpoint(step),
-    });
-    // Publish the compacted projection after the status event so the meter is
-    // the last context event the UI applies for this compaction boundary.
-    publishMainContextStatus(meter, config);
-    const compactedSystem =
-      messages[0]?.role === "system" ? messages[0].content : "";
-    meter?.measureRequest("main", {
-      system: compactedSystem,
-      tools: stepTools,
-      messages,
-      contextWindow: config.max,
-    });
-    if (meter) publishMainTokenSnapshot(meter, ledger.effectiveTokens());
+    // rebuildOutbound mutates `messages` in place, so the caller's array is
+    // already the post-prune/compaction surface; nothing more to sync.
   }
 
   function providerMessageStateKey(message: ProviderMessage): string {

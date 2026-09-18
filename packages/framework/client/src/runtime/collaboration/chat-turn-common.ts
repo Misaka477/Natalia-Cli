@@ -9,7 +9,8 @@ import {
 import {
   ContextLedger,
   contextEntriesToProviderMessages,
-  estimateTokens,
+  DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
+  type ContextEntry,
   type ProviderMessage,
   type StreamingProvider,
   type TokenMeter,
@@ -399,120 +400,102 @@ export async function compactChatBeforeProviderStep(
   }
   const runtimeInstruction =
     messages[0]?.role === "system" ? messages[0] : undefined;
-  const usedTokens = messages.reduce(
-    (sum, message) =>
-      sum +
-      estimateTokens(message.content) +
-      (message.toolCalls?.reduce(
-        (inner, call) =>
-          inner + estimateTokens(call.name) + estimateTokens(call.arguments),
-        0,
-      ) ?? 0),
-    0,
-  );
   const system =
     messages[0]?.role === "system" ? messages[0].content : undefined;
-  const measured = stream.meter.measureRequest("stream", {
+
+  // Re-derive the outbound messages from the (possibly rewritten) ledger,
+  // restoring provider-native fields from the pre-compaction surface. On a real
+  // compaction (not a model-free prune) also announce how far the summary
+  // reached through the durable chat history.
+  const rebuildOutbound = (
+    entries: ContextEntry[],
+    phase: "prune" | "compact",
+  ): ProviderMessage[] => {
+    const rebuilt = contextEntriesToProviderMessages(entries);
+    const originalByKey = new Map(
+      messages.map((message) => [providerMessageKey(message), message]),
+    );
+    for (const message of rebuilt) {
+      const original = originalByKey.get(providerMessageKey(message));
+      if (!original) continue;
+      if (original.images?.length) message.images = original.images;
+      if (original.videos?.length) message.videos = original.videos;
+      if (original.reasoningContent !== undefined)
+        message.reasoningContent = original.reasoningContent;
+      if (original.reasoningField)
+        message.reasoningField = original.reasoningField;
+      if (original.reasoningSignature)
+        message.reasoningSignature = original.reasoningSignature;
+      if (original.reasoningRedacted) message.reasoningRedacted = true;
+      if (original.reasoningBlocks?.length)
+        message.reasoningBlocks = original.reasoningBlocks;
+      if (original.contentParts?.length)
+        message.contentParts = original.contentParts;
+      if (original.providerMetadata)
+        message.providerMetadata = original.providerMetadata;
+      if (original.textSignature) message.textSignature = original.textSignature;
+    }
+    if (runtimeInstruction && rebuilt[0]?.content !== runtimeInstruction.content)
+      rebuilt.unshift(runtimeInstruction);
+    if (phase === "compact") {
+      const rebuiltKeys = new Set(
+        rebuilt
+          .filter((message) => message.role !== "system")
+          .map(
+            (message) =>
+              `${message.role === "user" ? "user" : "chat"}\u0000${message.content}`,
+          ),
+      );
+      let compactedThroughMessageID = "";
+      for (const message of stream.durableMessages) {
+        const key = `${message.role}\u0000${message.text}`;
+        if (rebuiltKeys.has(key)) break;
+        compactedThroughMessageID = message.messageID;
+      }
+      const summaryEntry = entries.find((entry) => entry.role === "summary");
+      const summary = summaryEntry?.content ?? "";
+      console.log("[stream-chat-compact] compacted", {
+        sessionID: exec.session.id,
+        compactedThroughMessageID,
+        summaryLength: summary.length,
+      });
+      if (compactedThroughMessageID)
+        stream.publishCompacted(summary, compactedThroughMessageID);
+    }
+    return rebuilt;
+  };
+
+  const result = await compaction.prepareContextRequest({
+    id: stream.compactionID,
+    ledger,
+    meter: stream.meter,
+    scope: "stream",
     system,
     tools: stream.tools,
-    messages,
     contextWindow: budget.max,
-  });
-  const conservativeUsedTokens = Math.max(
-    usedTokens,
-    measured?.totalTokens ?? 0,
-  );
-  const outcome = await compaction.compactBeforeProviderStep({
-    compactionID: stream.compactionID,
-    ledger,
-    provider,
-    usedTokens: conservativeUsedTokens,
     budget,
-    enabled: ctx.ports.getTsRuntimeConfig()?.context.compactionEnabled ?? true,
-    preservedRecentMessages:
-      ctx.ports.getTsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
-    preservedRecentTokens:
-      ctx.ports.getTsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
+    preserve: {
+      recentMessages:
+        ctx.ports.getTsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
+      recentTokens:
+        ctx.ports.getTsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
+    },
+    outbound: messages,
+    rebuildOutbound,
+    // Chat now shares the model-free prune path; the rebuild above carries the
+    // truncated tool results into the real outbound messages, not just the ledger.
+    pruneOptions: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
+    provider,
     instruction: stream.instruction,
+    compactionEnabled:
+      ctx.ports.getTsRuntimeConfig()?.context.compactionEnabled ?? true,
     signal,
-    onEvent: stream.publishCompactionEvent,
+    publish: stream.publishCompactionEvent,
+    emitStatus: () => {},
+    emitSnapshot: () => {},
   });
-  if (!outcome.compacted) {
-    ledgerHistories.set(ledger, [...messages]);
-    return messages;
-  }
-
-  const snapshot = ledger.snapshot().entries;
-  const rebuilt = contextEntriesToProviderMessages(snapshot);
-  const originalByKey = new Map(
-    messages.map((message) => [providerMessageKey(message), message]),
-  );
-  for (const message of rebuilt) {
-    const original = originalByKey.get(providerMessageKey(message));
-    if (!original) continue;
-    if (original.images?.length) message.images = original.images;
-    if (original.videos?.length) message.videos = original.videos;
-    if (original.reasoningContent !== undefined)
-      message.reasoningContent = original.reasoningContent;
-    if (original.reasoningField)
-      message.reasoningField = original.reasoningField;
-    if (original.reasoningSignature)
-      message.reasoningSignature = original.reasoningSignature;
-    if (original.reasoningRedacted) message.reasoningRedacted = true;
-    if (original.reasoningBlocks?.length)
-      message.reasoningBlocks = original.reasoningBlocks;
-    if (original.contentParts?.length)
-      message.contentParts = original.contentParts;
-    if (original.providerMetadata)
-      message.providerMetadata = original.providerMetadata;
-    if (original.textSignature) message.textSignature = original.textSignature;
-  }
-  if (runtimeInstruction && rebuilt[0]?.content !== runtimeInstruction.content)
-    rebuilt.unshift(runtimeInstruction);
-
-  const rebuiltKeys = new Set(
-    rebuilt
-      .filter((message) => message.role !== "system")
-      .map(
-        (message) =>
-          `${message.role === "user" ? "user" : "chat"}\u0000${message.content}`,
-      ),
-  );
-  let compactedThroughMessageID = "";
-  for (const message of stream.durableMessages) {
-    const key = `${message.role}\u0000${message.text}`;
-    if (rebuiltKeys.has(key)) break;
-    compactedThroughMessageID = message.messageID;
-  }
-  const summaryEntry = snapshot.find((entry) => entry.role === "summary");
-  const summary = summaryEntry?.content ?? "";
-  console.log("[stream-chat-compact] compacted", {
-    sessionID: exec.session.id,
-    usedTokens,
-    compactedThroughMessageID,
-    summaryLength: summary.length,
-  });
-  if (compactedThroughMessageID)
-    stream.publishCompacted(summary, compactedThroughMessageID);
-  // Drop the pre-compaction provider anchor before re-measuring. The anchor
-  // described a surface that no longer exists; keeping it can make the UI show
-  // the old pressure even though the ledger was compacted.
-  stream.meter.clear("stream");
-  // Re-measure after the ledger rewrite: callers publish their token snapshot
-  // immediately below, and the meter must reflect the compacted surface rather
-  // than the pre-compaction request.
-  try {
-    stream.meter.measureRequest("stream", {
-      system: rebuilt[0]?.role === "system" ? rebuilt[0].content : undefined,
-      tools: stream.tools,
-      messages: rebuilt,
-      contextWindow: budget.max,
-    });
-  } catch {
-    // Token accounting must never fail the actual chat turn.
-  }
-  ledgerHistories.set(ledger, [...rebuilt]);
-  return rebuilt;
+  ledgerHistories.set(ledger, [...result.outbound]);
+  return result.outbound;
 }
 
 function reasoningLedgerFields(message: ProviderMessage): {

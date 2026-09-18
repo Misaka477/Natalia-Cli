@@ -997,4 +997,6 @@ export type CompactionBudget = {
 export interface CompactionService {
   compactBeforeProviderStep(input: any): Promise<any>;
   runWithContextLimitRecovery(input: any): Promise<any>;
+  /** Identity-free prune -> remeasure -> decide -> summarize preflight. */
+  prepareContextRequest(input: any): Promise<any>;
 }

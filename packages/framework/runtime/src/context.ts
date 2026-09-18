@@ -352,6 +352,82 @@ export function compactionTrigger(input: {
   return undefined;
 }
 
+/**
+ * Outcome of the identity-free preflight compaction decision. `ratio` fires on
+ * full-request pressure reaching the threshold; `reserved` is the hard capacity
+ * guard when the request plus the reserved output budget would not fit;
+ * `nothing_to_compact` means the request is over pressure but there is no
+ * compactable range, so the pipeline must stop without calling the LLM; `none`
+ * means no compaction is needed.
+ */
+export type CompactionDecision =
+  | "none"
+  | "ratio"
+  | "reserved"
+  | "nothing_to_compact";
+
+/**
+ * Pure preflight decision shared by the main, subagent, Navi and Nia paths.
+ * `requestTokens` is the measured full request (header + surface); `headerTokens`
+ * and `surfaceTokens` describe the canonical three-bucket envelope. The decision
+ * never re-derives a budget: it only compares against `max`, `reserved` and
+ * `thresholdPercent`, and refuses to summarize when `hasCompactableRange` is
+ * false instead of inventing a MIN_COMPACTABLE_TOKENS guard.
+ */
+export function decideCompaction(input: {
+  requestTokens: number;
+  headerTokens: number;
+  surfaceTokens: number;
+  max: number;
+  reserved: number;
+  thresholdPercent: number;
+  hasCompactableRange: boolean;
+}): CompactionDecision {
+  const overRatio =
+    input.requestTokens >=
+    Math.floor((input.max * input.thresholdPercent) / 100);
+  const overReserved = input.requestTokens + input.reserved >= input.max;
+  if (!overRatio && !overReserved) return "none";
+  if (!input.hasCompactableRange) return "nothing_to_compact";
+  return overRatio ? "ratio" : "reserved";
+}
+
+export type PreserveOptions = {
+  recentMessages?: number;
+  recentTokens?: number;
+};
+
+export type CompactableRange = {
+  preserved: ContextEntry[];
+  compactable: ContextEntry[];
+  /** True when there is at least one non-summary, non-resource entry to fold. */
+  hasRange: boolean;
+};
+
+/**
+ * Split a ledger surface into the preserved recent suffix (with tool pairs
+ * closed) and the compactable prefix. This is the single source of truth for
+ * "is there anything to compact", shared by the decision and the summarizer so
+ * they can never disagree about the compactable range.
+ */
+export function selectCompactableRange(
+  entries: ContextEntry[],
+  options: PreserveOptions,
+): CompactableRange {
+  const preserved =
+    options.recentTokens && options.recentTokens > 0
+      ? preserveRecentWithToolPairsByTokens(entries, options.recentTokens)
+      : preserveRecentWithToolPairs(entries, options.recentMessages ?? 10);
+  const preservedIDs = new Set(preserved.map((entry) => entry.id));
+  const compactable = entries.filter(
+    (entry) => entry.role !== "resource" && !preservedIDs.has(entry.id),
+  );
+  const hasRange =
+    compactable.length > 0 &&
+    !compactable.every((entry) => entry.role === "summary");
+  return { preserved, compactable, hasRange };
+}
+
 export function resolveReservedOutputTokens(
   input: ReservedResolverInput,
 ): ReservedResolution {

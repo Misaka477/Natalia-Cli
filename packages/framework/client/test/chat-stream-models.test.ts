@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { defaultConfigV3 } from "@natalia/config";
 import { ContextLedger, TokenMeter } from "@natalia/runtime";
+import type { ProviderMessage } from "@natalia/runtime";
 import {
   COMPACTION_SERVICE,
   type ProviderChatTurnInput,
@@ -122,7 +123,18 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
   const wakeInputs: ProviderChatTurnInput[] = [];
   ctx.ports.resolveService = ((name: string) => {
     if (name === COMPACTION_SERVICE)
-      return { compactBeforeProviderStep: async () => ({ compacted: false }) };
+      return {
+        compactBeforeProviderStep: async () => ({ compacted: false }),
+        prepareContextRequest: async (input: {
+          outbound: ProviderMessage[];
+        }) => ({
+          outbound: input.outbound,
+          decision: "none",
+          compacted: false,
+          pruned: 0,
+          used: 0,
+        }),
+      };
     return {
       runNaviChatTurn: async (input: ProviderChatTurnInput) => {
         wakeInputs.push(input);

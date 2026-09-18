@@ -4,8 +4,7 @@ import {
   ContextLedger,
   estimateTokens,
   largeToolResultContext,
-  preserveRecentWithToolPairs,
-  preserveRecentWithToolPairsByTokens,
+  selectCompactableRange,
   type ContextEntry,
 } from "./context";
 import { runWithRetry, type RetryRunnerOptions } from "./retry";
@@ -135,26 +134,17 @@ export async function compactContext(
   }
   const snapshot = ledger.snapshot();
   const expectedRevision = ledger.surfaceRevision();
-  const preserved =
-    options.preservedRecentTokens && options.preservedRecentTokens > 0
-      ? preserveRecentWithToolPairsByTokens(
-          snapshot.entries,
-          options.preservedRecentTokens,
-        )
-      : preserveRecentWithToolPairs(
-          snapshot.entries,
-          options.preservedRecentMessages,
-        );
+  const { preserved, compactable: compactedEntries, hasRange } =
+    selectCompactableRange(snapshot.entries, {
+      ...(options.preservedRecentTokens === undefined
+        ? {}
+        : { recentTokens: options.preservedRecentTokens }),
+      recentMessages: options.preservedRecentMessages,
+    });
+  if (!hasRange)
+    return { compacted: false, skipped: "nothing_to_compact" as const };
   const preservedIDs = new Set(preserved.map((entry) => entry.id));
   const retained = preserved.filter((entry) => entry.role !== "resource");
-  const compactedEntries = snapshot.entries.filter(
-    (entry) => entry.role !== "resource" && !preservedIDs.has(entry.id),
-  );
-  if (
-    !compactedEntries.length ||
-    compactedEntries.every((entry) => entry.role === "summary")
-  )
-    return { compacted: false, skipped: "nothing_to_compact" as const };
   const beforeTokens = options.beforeTokens ?? ledger.effectiveTokens();
   const started = options.now?.() ?? new Date();
   options.onEvent?.({

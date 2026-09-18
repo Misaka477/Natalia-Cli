@@ -14,7 +14,12 @@ import type {
   SubagentSupport,
   SubagentsService,
 } from "../context";
-import { TokenMeter, requestHeaderKey } from "@natalia/runtime";
+import {
+  TokenMeter,
+  contextEntriesToProviderMessages,
+  DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
+  requestHeaderKey,
+} from "@natalia/runtime";
 import { createInitializeRuntime } from "./runtime";
 
 export async function createSubagentSupport(
@@ -340,29 +345,46 @@ export async function createSubagentSupport(
     let result;
     while (true) {
       runner.signal.throwIfAborted();
-      await resolvedCompactionService.compactBeforeProviderStep({
-        compactionID: `${id}:preflight:${step}`,
+      const meter = tokenMeterFor(ledger);
+      const scopeKey = `subagent:${runner.agentId}`;
+      const providerMessages = subagentProviderMessages(ledger);
+      const toolSchemas = subagentToolSchemas(visibleTools);
+      await resolvedCompactionService.prepareContextRequest({
+        id,
         ledger,
-        provider: activeProvider,
+        meter,
+        scope: scopeKey,
+        system:
+          providerMessages[0]?.role === "system"
+            ? providerMessages[0].content
+            : undefined,
+        tools: toolSchemas,
+        contextWindow: activeContextConfig.max,
         budget: activeContextConfig,
-        usedTokens: measureSubagentRequest(
-          ledger,
-          runner,
-          visibleTools,
-          activeContextConfig,
-        ),
-        enabled: scope.tsRuntimeConfig?.context.compactionEnabled ?? true,
-        preservedRecentMessages:
-          scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
-        preservedRecentTokens:
-          scope.tsRuntimeConfig?.context.preservedRecentTokens ?? 0,
+        preserve: {
+          recentMessages:
+            scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
+          recentTokens:
+            scope.tsRuntimeConfig?.context.preservedRecentTokens ?? 0,
+        },
+        outbound: providerMessages,
+        rebuildOutbound: (
+          entries: Parameters<typeof contextEntriesToProviderMessages>[0],
+        ) => contextEntriesToProviderMessages(entries),
+        // Subagents now share the model-free prune path with the main runner.
+        pruneOptions: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
+        provider: activeProvider,
         instruction:
           "Compact before this subagent provider request while preserving the active task.",
+        compactionEnabled:
+          scope.tsRuntimeConfig?.context.compactionEnabled ?? true,
         signal: runner.signal,
-        onEvent: (event: RuntimeEvent) => publishSubagentEvent(runner, event),
+        publish: (event: RuntimeEvent) => publishSubagentEvent(runner, event),
+        emitStatus: () => {},
+        emitSnapshot: () => publishSubagentTokenSnapshot(ledger, runner),
       });
       // Drop the pre-compaction provider anchor before re-measuring.
-      tokenMeterFor(ledger).clear(`subagent:${runner.agentId}`);
+      meter.clear(scopeKey);
       // Publish the compacted projection before the provider request starts.
       measureSubagentRequest(ledger, runner, visibleTools, activeContextConfig);
       result = await resolvedCompactionService.runWithContextLimitRecovery({

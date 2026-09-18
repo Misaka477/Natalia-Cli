@@ -13,6 +13,7 @@ import {
   type ProviderMessage,
   type StreamingProvider,
 } from "@natalia/runtime";
+import { prepareContextRequest } from "./prepare-context-request";
 
 export type CompactionOutcome = Awaited<ReturnType<typeof compactContext>>;
 
@@ -78,6 +79,15 @@ export function createCompactionService(input: {
         })),
         trigger,
       };
+    },
+    async prepareContextRequest(request) {
+      return prepareContextRequest({
+        ...request,
+        retry: {
+          policy: request.retry?.policy ?? input.retry.policy(),
+          signal: request.signal,
+        },
+      });
     },
     async runWithContextLimitRecovery(operation) {
       const maxRetries = Math.max(
