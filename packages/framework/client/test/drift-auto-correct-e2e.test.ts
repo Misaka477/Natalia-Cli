@@ -98,7 +98,7 @@ test("Phase 2 E2E: a contract revision auto-corrects an absorbed target_drift fi
   );
   expect(opened.opened).toBeGreaterThan(0);
   const before = await client.driftFindings!({ sessionID: SESSION });
-  const targetDrift = before.find(
+  const targetDrift = before.items.find(
     (finding) =>
       finding.status === "open" &&
       finding.evidence.some((entry) => entry.startsWith("outside_target:")),
@@ -111,7 +111,7 @@ test("Phase 2 E2E: a contract revision auto-corrects an absorbed target_drift fi
   await client.submitAndWait!("extend the contract to include packages/b");
 
   const after = await client.driftFindings!({ sessionID: SESSION });
-  const corrected = after.find(
+  const corrected = after.items.find(
     (finding) => finding.findingID === targetDrift.findingID,
   )!;
   expect(corrected.status).toBe("corrected");

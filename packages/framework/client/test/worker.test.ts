@@ -846,11 +846,11 @@ test("fact-domain read queries and mailbox writes route through the channel", as
     mailboxList: async () => [],
     mailboxSend: async (input) => ({ queued: true, messageID: "mailbox:1" }),
     mailboxAcknowledge: async () => ({ acknowledged: true }),
-    driftFindings: async () => [],
-    completions: async () => [],
+    driftFindings: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
+    completions: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
     constitutionRules: async () => [],
-    decisionRecords: async () => [],
-    evidenceRecords: async () => [],
+    decisionRecords: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
+    evidenceRecords: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
     chatMessages: async () => [
       { messageID: "chat:m1", role: "user", text: "hi", at: "now" },
     ],
@@ -877,11 +877,11 @@ test("fact-domain read queries and mailbox writes route through the channel", as
   expect(await client.mailboxAcknowledge!("mailbox:1")).toEqual({
     acknowledged: true,
   });
-  expect(await client.driftFindings!()).toEqual([]);
-  expect(await client.completions!()).toEqual([]);
+  expect(await client.driftFindings!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
+  expect(await client.completions!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
   expect(await client.constitutionRules!()).toEqual([]);
-  expect(await client.decisionRecords!()).toEqual([]);
-  expect(await client.evidenceRecords!()).toEqual([]);
+  expect(await client.decisionRecords!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
+  expect(await client.evidenceRecords!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
   expect(await client.chatMessages!()).toEqual([
     { messageID: "chat:m1", role: "user", text: "hi", at: "now" },
   ]);

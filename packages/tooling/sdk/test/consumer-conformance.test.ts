@@ -553,9 +553,24 @@ test("the P0-C route surface answers over HTTP: native terminal, intelligence, c
     expect(constitutionRules.some((rule) => rule.ruleID === "C-TERM-001")).toBe(
       true,
     );
-    expect(await sdk.decisionRecords()).toEqual([]);
-    expect(await sdk.evidenceRecords()).toEqual([]);
-    expect(await sdk.driftFindings()).toEqual([]);
+    expect(await sdk.decisionRecords()).toMatchObject({
+      items: [],
+      returned: 0,
+      total: 0,
+      truncated: false,
+    });
+    expect(await sdk.evidenceRecords()).toMatchObject({
+      items: [],
+      returned: 0,
+      total: 0,
+      truncated: false,
+    });
+    expect(await sdk.driftFindings()).toMatchObject({
+      items: [],
+      returned: 0,
+      total: 0,
+      truncated: false,
+    });
     expect((await sdk.registeredTools()).length).toBeGreaterThan(0);
     // Capability records: the runtime registers real ones (the MCP server, the
     // platform surface), so the shape is the assertion, not emptiness.

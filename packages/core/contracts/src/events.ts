@@ -2607,6 +2607,20 @@ export type RuntimeWorkspaceResourceReadInput = {
   reader?: string;
 };
 
+/**
+ * A paged governance read (EI Phase 1). Mirrors the mailbox_status page shape
+ * (`returned` / `total` / `truncated` / `nextCursor`) so every list surface
+ * paginates identically. `nextCursor` is opaque — pass it back to read the
+ * next page; it is absent when the page is the last.
+ */
+export type GovernancePage<T> = {
+  items: T[];
+  returned: number;
+  total: number;
+  truncated: boolean;
+  nextCursor?: string;
+};
+
 export type RuntimeClient = {
   start(
     onEvent: (event: RuntimeEvent) => void,
@@ -3571,9 +3585,11 @@ export type RuntimeClient = {
       | {
           sessionID?: string;
           scope?: "session" | "workspace" | "all";
+          limit?: number;
+          cursor?: string;
         },
   ): Promise<
-    Array<{
+    GovernancePage<{
       id: string;
       scope: "session" | "workspace";
       decision: string;
@@ -3780,7 +3796,7 @@ export type RuntimeClient = {
     input?: { sessionID?: string; limit?: number; cursor?: string },
     sessionID?: string,
   ): Promise<
-    Array<{
+    GovernancePage<{
       taskID: string;
       objective: string;
       status: string;
@@ -3825,7 +3841,7 @@ export type RuntimeClient = {
     input?: { sessionID?: string; limit?: number; cursor?: string },
     sessionID?: string,
   ): Promise<
-    Array<{
+    GovernancePage<{
       completionID: string;
       taskID: string;
       objective: string;
@@ -3930,7 +3946,7 @@ export type RuntimeClient = {
     input?: { sessionID?: string; limit?: number; cursor?: string },
     sessionID?: string,
   ): Promise<
-    Array<{
+    GovernancePage<{
       findingID: string;
       severity: "advisory" | "warning" | "high";
       confidence: number;

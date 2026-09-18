@@ -176,12 +176,34 @@ function readFactSlice<T>(
 }
 
 /** Pagination for a read surface: cursor is an offset, limit bounded. */
-function paginate<T>(items: T[], limit?: number, cursor?: string): T[] {
-  if (limit === undefined && cursor === undefined) return items;
-  const offset = cursor ? Number(cursor) : 0;
-  if (!Number.isFinite(offset) || offset < 0) return items;
-  const size = limit ?? items.length;
-  return items.slice(offset, offset + Math.max(size, 1));
+/**
+ * The governance list page shape (EI Phase 1, mailbox_status parity): the same
+ * `{ items, returned, total, truncated, nextCursor }` envelope for decisions /
+ * evidence / completions / drift, so every list surface paginates identically.
+ * Called with no limit/cursor it returns the whole set as one page
+ * (`truncated: false`), preserving the pre-pagination read for callers that
+ * want everything.
+ */
+function paginate<T>(
+  items: T[],
+  limit?: number,
+  cursor?: string,
+): import("@natalia/contracts").GovernancePage<T> {
+  const total = items.length;
+  const parsed = cursor ? Number(cursor) : 0;
+  const offset =
+    Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+  const size = limit ?? total;
+  const page = items.slice(offset, offset + Math.max(size, 1));
+  const returned = page.length;
+  const truncated = offset + returned < total;
+  return {
+    items: page,
+    returned,
+    total,
+    truncated,
+    ...(truncated ? { nextCursor: String(offset + returned) } : {}),
+  };
 }
 
 /** The external decision view: the journal fact plus its data scope. */
@@ -340,14 +362,20 @@ export function createIntelligenceSurface(
     async decisionRecords(
       input?:
         | string
-        | { sessionID?: string; scope?: "session" | "workspace" | "all" },
+        | {
+            sessionID?: string;
+            scope?: "session" | "workspace" | "all";
+            limit?: number;
+            cursor?: string;
+          },
     ) {
+      const params = typeof input === "string" ? {} : (input ?? {});
       const sessionID =
         typeof input === "string" ? input : input?.sessionID;
       const scope =
         typeof input === "string" ? "session" : (input?.scope ?? "session");
       const exec = await completeIntelligenceExec(sessionID);
-      if (!exec?.session) return [];
+      if (!exec?.session) return paginate([], params.limit, params.cursor);
       // Session decisions are the default. Legacy facts without a scope are
       // session-scoped; workspace facts carry an explicit scope and must be
       // requested through scope workspace/all.
@@ -358,7 +386,8 @@ export function createIntelligenceSurface(
       )
         .filter((record) => record.scope !== "workspace")
         .map((record) => decisionView(record, "session"));
-      if (scope === "session") return sessionRecords;
+      if (scope === "session")
+        return paginate(sessionRecords, params.limit, params.cursor);
       const instance = loadInstanceGovernance(
         resolveGovernanceRoot(ctx.ports.getWorkspaceRoot()),
       );
@@ -367,7 +396,8 @@ export function createIntelligenceSurface(
       const workspaceRecords = projectedDecisionRecords(instance.events)
         .filter((record) => record.scope !== "session")
         .map((record) => decisionView(record, "workspace"));
-      if (scope === "workspace") return workspaceRecords;
+      if (scope === "workspace")
+        return paginate(workspaceRecords, params.limit, params.cursor);
       const seen = new Set<string>();
       const merged: ReturnType<typeof decisionView>[] = [];
       for (const record of [...workspaceRecords, ...sessionRecords]) {
@@ -375,7 +405,7 @@ export function createIntelligenceSurface(
         seen.add(record.id);
         merged.push(record);
       }
-      return merged;
+      return paginate(merged, params.limit, params.cursor);
     },
     /**
      * The `decision.recorded` production writer. Decisions are durable facts —
@@ -435,7 +465,7 @@ export function createIntelligenceSurface(
     ) {
       const resolvedSessionID = input?.sessionID ?? sessionID;
       const exec = await completeIntelligenceExec(resolvedSessionID);
-      if (!exec?.session) return [];
+      if (!exec?.session) return paginate([], input?.limit, input?.cursor);
       // P2 E3: the effective status of each evidence record is driven by the
       // workspace-level lifecycle of the plan whose task it belongs to (a
       // projection policy — the journal keeps the recorded status; the query
@@ -480,7 +510,7 @@ export function createIntelligenceSurface(
     ) {
       const resolvedSessionID = input?.sessionID ?? sessionID;
       const exec = await completeIntelligenceExec(resolvedSessionID);
-      if (!exec?.session) return [];
+      if (!exec?.session) return paginate([], input?.limit, input?.cursor);
       const completions = readFactSlice(
         exec,
         sessionFactCompletions,
@@ -733,7 +763,7 @@ export function createIntelligenceSurface(
     ) {
       const resolvedSessionID = input?.sessionID ?? sessionID;
       const exec = await completeIntelligenceExec(resolvedSessionID);
-      if (!exec?.session) return [];
+      if (!exec?.session) return paginate([], input?.limit, input?.cursor);
       const findings = readFactSlice(
         exec,
         sessionFactDriftFindings,

@@ -42,7 +42,7 @@ test("Phase 2 E2E: a dismissed drift finding can be reopened by the user and cou
   expect(opened.opened).toBeGreaterThan(0);
   // evaluateDrift publishes the finding synchronously, so it is readable at once.
   const before = await client.driftFindings!({ sessionID: SESSION });
-  const finding = before.find((f) => f.status === "open")!;
+  const finding = before.items.find((f) => f.status === "open")!;
   expect(finding.reopenedCount).toBe(0);
 
   // Dismiss it, then reopen it (user-only 翻案).
@@ -59,7 +59,7 @@ test("Phase 2 E2E: a dismissed drift finding can be reopened by the user and cou
   expect(reopened.reopened).toBe(true);
 
   const afterReopen = await client.driftFindings!({ sessionID: SESSION });
-  const reopenedFinding = afterReopen.find(
+  const reopenedFinding = afterReopen.items.find(
     (f) => f.findingID === finding.findingID,
   )!;
   expect(reopenedFinding.status).toBe("open");
@@ -89,7 +89,7 @@ test("Phase 2 E2E: a corrected drift finding cannot be reopened (its premise is 
     },
     SESSION,
   );
-  const finding = (await client.driftFindings!({ sessionID: SESSION })).find(
+  const finding = (await client.driftFindings!({ sessionID: SESSION })).items.find(
     (f) => f.status === "open",
   )!;
 
@@ -236,7 +236,7 @@ test("Phase 2 E2E: reopening a warning/high finding re-injects it for re-review 
       ),
     { timeoutMs: 10_000 },
   );
-  const finding = (await client.driftFindings!({ sessionID: SESSION })).find(
+  const finding = (await client.driftFindings!({ sessionID: SESSION })).items.find(
     (f) => f.severity === "high",
   )!;
   const injectionsForFinding = () =>
@@ -402,7 +402,7 @@ test("Phase 2 E2E: the main agent's drift_acknowledge moves an open finding to e
   );
 
   // And the read surface the panel consumes agrees the finding is no longer open.
-  const findings = (await client.driftFindings!({ sessionID: SESSION })) as Array<{
+  const findings = (await client.driftFindings!({ sessionID: SESSION })).items as Array<{
     findingID: string;
     status: string;
   }>;

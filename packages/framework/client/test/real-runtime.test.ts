@@ -7404,7 +7404,7 @@ test("recordDecision writes a durable decision fact", async () => {
   });
   expect(outcome).toEqual({ recorded: true });
   const records = await client.decisionRecords!();
-  const recorded = records.find(
+  const recorded = records.items.find(
     (record) =>
       record.decision === "workspace isolation is not container/VM security",
   );
@@ -7510,7 +7510,7 @@ test("constitution rules and decisions survive replay", async () => {
     "C-REL-002",
   ]);
   const decisions = await reopened.decisionRecords!();
-  expect(decisions.map((decision) => decision.decision)).toContain(
+  expect(decisions.items.map((decision) => decision.decision)).toContain(
     "default no commit/push",
   );
   // Replay must not duplicate the seeded rules: the reopened session replays
@@ -7563,13 +7563,13 @@ test("recordValidation runs a command and records durable evidence", async () =>
   expect(failed?.result).toBe("failed");
 
   const records = await client.evidenceRecords!();
-  expect(records).toHaveLength(2);
-  expect(records[0]).toMatchObject({
+  expect(records.items).toHaveLength(2);
+  expect(records.items[0]).toMatchObject({
     taskID: "task_build",
     status: "validated",
     validations: [{ command: "exit 0", result: "passed" }],
   });
-  expect(records[1]).toMatchObject({
+  expect(records.items[1]).toMatchObject({
     status: "failed",
     validations: [{ command: "exit 1", result: "failed" }],
   });
@@ -7604,7 +7604,7 @@ test("recordValidation redacts secrets from the recorded summary", async () => {
     command: 'printf "api_key=supersecretvalue\\n"; exit 0',
   });
   const records = await client.evidenceRecords!();
-  const summary = records[0]?.validations[0]?.safeSummary ?? "";
+  const summary = records.items[0]?.validations[0]?.safeSummary ?? "";
   expect(summary).not.toContain("supersecretvalue");
   expect(JSON.stringify(records)).not.toContain("supersecretvalue");
 });
@@ -7791,7 +7791,7 @@ test("a rejected high-risk promotion leaves the host unchanged and records faile
   // Failed promotion evidence is recorded.
   const records = await client.evidenceRecords!();
   expect(
-    records.some(
+    records.items.some(
       (record) =>
         record.taskID === "sandbox:box" && record.status === "failed",
     ),
@@ -7906,7 +7906,7 @@ test("evidence summary is secret-safe", async () => {
   const records = await client.evidenceRecords!();
   const payload = JSON.stringify(records);
   expect(payload).not.toContain("fakefaketoken");
-  expect(records[0]?.validations[0]?.command).not.toContain("fakefaketoken");
+  expect(records.items[0]?.validations[0]?.command).not.toContain("fakefaketoken");
   await client.dispose?.();
 });
 
@@ -7947,8 +7947,8 @@ test("recordCompletion records a card, its projection and validated_by edges", a
   expect(outcome?.completionID).toBeDefined();
 
   const cards = await client.completions!();
-  expect(cards).toHaveLength(1);
-  expect(cards[0]).toMatchObject({
+  expect(cards.items).toHaveLength(1);
+  expect(cards.items[0]).toMatchObject({
     taskID: "task_build",
     changeSummary: "added the build check",
     validations: [{ command: "npm run typecheck", result: "passed" }],
@@ -8526,8 +8526,8 @@ test("evaluateDrift opens durable findings and driftFindings answers them", asyn
   expect(opened).toEqual({ opened: 1 });
 
   const findings = await client.driftFindings!();
-  expect(findings).toHaveLength(1);
-  expect(findings[0]).toMatchObject({
+  expect(findings.items).toHaveLength(1);
+  expect(findings.items[0]).toMatchObject({
     severity: "advisory",
     originalObjective: "implement user authentication",
     status: "open",
@@ -8577,7 +8577,7 @@ test("evaluateDrift opens a high finding for a forbidden constraint signal", asy
     evidenceRefs: [],
   });
   const findings = await client.driftFindings!();
-  const high = findings.find((finding) => finding.severity === "high");
+  const high = findings.items.find((finding) => finding.severity === "high");
   expect(high).toBeDefined();
   expect(high?.evidence.some((entry) => entry.startsWith("constraint:"))).toBe(
     true,
@@ -8610,8 +8610,8 @@ test("acknowledgeDriftFinding transitions an open finding with a rationale", asy
     evidenceRefs: [],
   });
   const open = await client.driftFindings!();
-  const findingID = open[0]!.findingID;
-  expect(open[0]?.status).toBe("open");
+  const findingID = open.items[0]!.findingID;
+  expect(open.items[0]?.status).toBe("open");
 
   const acked = await client.acknowledgeDriftFinding?.({
     findingID,
@@ -8621,7 +8621,7 @@ test("acknowledgeDriftFinding transitions an open finding with a rationale", asy
   expect(acked).toEqual({ acknowledged: true });
 
   const after = await client.driftFindings!();
-  expect(after[0]?.status).toBe("explained");
+  expect(after.items[0]?.status).toBe("explained");
   expect(
     events.some(
       (event) =>

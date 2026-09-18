@@ -9,6 +9,7 @@ import {
   createConstitutionRuleViaRpc,
   DRIFT_COLLAPSE_LIMIT,
   editConstitutionRuleViaRpc,
+  loadGovernancePage,
   loadGovernanceSlices,
   promoteConstitutionDocRuleViaRpc,
   removeConstitutionRuleViaRpc,
@@ -22,10 +23,30 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
   const filled = {
     constitutionRules: async () => [{ ruleID: "C-1" }],
     constitutionDocRules: async () => [{ id: "constitution:small-prs:1" }],
-    decisionRecords: async () => [{ id: "decision:1" }],
-    evidenceRecords: async () => [{ taskID: "task:1" }],
-    completions: async () => [{ taskID: "task:1" }],
-    driftFindings: async () => [{ findingID: "DF-1" }],
+    decisionRecords: async () => ({
+      items: [{ id: "decision:1" }],
+      returned: 1,
+      total: 1,
+      truncated: false,
+    }),
+    evidenceRecords: async () => ({
+      items: [{ taskID: "task:1" }],
+      returned: 1,
+      total: 1,
+      truncated: false,
+    }),
+    completions: async () => ({
+      items: [{ taskID: "task:1" }],
+      returned: 1,
+      total: 1,
+      truncated: false,
+    }),
+    driftFindings: async () => ({
+      items: [{ findingID: "DF-1" }],
+      returned: 1,
+      total: 1,
+      truncated: false,
+    }),
     notices: async () => [{ noticeID: "notice:1" }],
     workGraphNodes: async () => [{ nodeID: "wg:action:1" }],
     workGraphEdges: async () => [{ sourceID: "a", targetID: "b", kind: "caused" }],
@@ -53,6 +74,12 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
     notices: [],
     workGraphNodes: [],
     workGraphEdges: [],
+    pageInfo: {
+      decisions: { total: 0, truncated: false },
+      evidence: { total: 0, truncated: false },
+      completions: { total: 0, truncated: false },
+      drift: { total: 0, truncated: false },
+    },
     errors: [],
   });
 });
@@ -150,7 +177,12 @@ test("drift click action calls RPC, updates the journal, and reload observes the
     },
   ];
   const runtime = {
-    driftFindings: async () => journal.map((finding) => ({ ...finding })),
+    driftFindings: async () => ({
+      items: journal.map((finding) => ({ ...finding })),
+      returned: journal.length,
+      total: journal.length,
+      truncated: false,
+    }),
     acknowledgeDriftFinding: async (input: {
       findingID: string;
       status: "explained" | "disputed";
@@ -200,7 +232,12 @@ test("drift dismiss then reopen (翻案) round-trips through the RPC and counts 
     },
   ];
   const runtime = {
-    driftFindings: async () => journal.map((finding) => ({ ...finding })),
+    driftFindings: async () => ({
+      items: journal.map((finding) => ({ ...finding })),
+      returned: journal.length,
+      total: journal.length,
+      truncated: false,
+    }),
     acknowledgeDriftFinding: async (input: {
       findingID: string;
       status: string;
@@ -390,16 +427,16 @@ test("the Decisions read requests session scope by default and workspace scope o
   const runtime = {
     decisionRecords: async (input: unknown) => {
       calls.push(input);
-      return [];
+      return { items: [], returned: 0, total: 0, truncated: false };
     },
   } as unknown as RuntimeClient;
 
   await loadGovernanceSlices(runtime, "ses_scope", { decisionScope: "session" });
-  expect(calls[0]).toEqual({ sessionID: "ses_scope", scope: "session" });
+  expect(calls[0]).toMatchObject({ sessionID: "ses_scope", scope: "session" });
   await loadGovernanceSlices(runtime, "ses_scope", {
     decisionScope: "workspace",
   });
-  expect(calls[1]).toEqual({ sessionID: "ses_scope", scope: "workspace" });
+  expect(calls[1]).toMatchObject({ sessionID: "ses_scope", scope: "workspace" });
 });
 
 test("splitActivityRefs trims and drops empty entries from a comma list", () => {
@@ -500,6 +537,8 @@ test("mergeWorkGraphState backfills durable nodes and de-dupes edges by content"
   const liveState = {
     workGraphNodes: {
       "wg:tool:t1:c1": {
+        type: "workgraph.node_added" as const,
+        id: "wg:tool:t1:c1",
         nodeID: "wg:tool:t1:c1",
         kind: "tool_call" as const,
         summary: "read_file done",
@@ -507,6 +546,8 @@ test("mergeWorkGraphState backfills durable nodes and de-dupes edges by content"
     },
     workGraphEdges: {
       "wg:edge:caused:wg:tool:t1:c1": {
+        type: "workgraph.edge_added" as const,
+        id: "wg:edge:caused:wg:tool:t1:c1",
         sourceID: "wg:action:t1",
         targetID: "wg:tool:t1:c1",
         kind: "caused" as const,
@@ -542,10 +583,70 @@ test("mergeWorkGraphState backfills durable nodes and de-dupes edges by content"
 test("mergeWorkGraphState without RPC data keeps the live graph intact", () => {
   const liveState = {
     workGraphNodes: {
-      n1: { nodeID: "n1", kind: "agent_action" as const, summary: "x" },
+      n1: {
+        type: "workgraph.node_added" as const,
+        id: "n1",
+        nodeID: "n1",
+        kind: "agent_action" as const,
+        summary: "x",
+      },
     },
     workGraphEdges: {},
   };
   const merged = mergeWorkGraphState(liveState, [], []);
   expect(Object.keys(merged.workGraphNodes)).toEqual(["n1"]);
+});
+
+test("governance lists paginate: first page + cursor appends the next", async () => {
+  // A 120-row evidence list; the RPC honours limit/cursor and returns the
+  // GovernancePage envelope (EI Phase 1).
+  const all = Array.from({ length: 120 }, (_, i) => ({ taskID: `t${i}` }));
+  const calls: Array<{ limit?: number; cursor?: string }> = [];
+  const runtime = {
+    evidenceRecords: async (input: { limit?: number; cursor?: string } = {}) => {
+      calls.push(input);
+      const offset = input.cursor ? Number(input.cursor) : 0;
+      const size = input.limit ?? all.length;
+      const items = all.slice(offset, offset + size);
+      const truncated = offset + items.length < all.length;
+      return {
+        items,
+        returned: items.length,
+        total: all.length,
+        truncated,
+        ...(truncated ? { nextCursor: String(offset + items.length) } : {}),
+      };
+    },
+  } as unknown as RuntimeClient;
+
+  const first = await loadGovernanceSlices(runtime, "ses_page", {
+    pageSize: 50,
+  });
+  expect(first.evidence).toHaveLength(50);
+  expect(first.pageInfo.evidence).toMatchObject({
+    total: 120,
+    truncated: true,
+    nextCursor: "50",
+  });
+
+  const next = await loadGovernancePage(runtime, "evidence", "ses_page", {
+    cursor: first.pageInfo.evidence!.nextCursor,
+    limit: 50,
+  });
+  expect(calls.at(-1)).toMatchObject({ limit: 50, cursor: "50" });
+  expect(next.items).toHaveLength(50);
+  expect(next.pageInfo).toMatchObject({
+    total: 120,
+    truncated: true,
+    nextCursor: "100",
+  });
+
+  // The last page is untruncated and has no cursor.
+  const last = await loadGovernancePage(runtime, "evidence", "ses_page", {
+    cursor: next.pageInfo.nextCursor,
+    limit: 50,
+  });
+  expect(last.items).toHaveLength(20);
+  expect(last.pageInfo).toMatchObject({ total: 120, truncated: false });
+  expect(last.pageInfo.nextCursor).toBeUndefined();
 });

@@ -2609,9 +2609,8 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     () => selectedSessionID() || state().sessionID,
     async (sessionID) => {
       try {
-        const findings =
-          (await props.ctx.runtime.driftFindings?.({ sessionID })) ?? [];
-        return findings.filter(
+        const page = await props.ctx.runtime.driftFindings?.({ sessionID });
+        return (page?.items ?? []).filter(
           (finding) =>
             finding.status === "open" || finding.status === "disputed",
         ).length;

@@ -1166,10 +1166,14 @@ test("the read surfaces paginate with a cursor (B6)", async () => {
   await client.submitAndWait!("record a completion");
   // A single record: the first page carries it, an offset past it is empty.
   const page = await client.completions?.({ limit: 1 });
-  expect(page).toHaveLength(1);
+  expect(page).toMatchObject({ returned: 1, total: 1, truncated: false });
+  expect(page?.items).toHaveLength(1);
   const empty = await client.completions?.({ limit: 1, cursor: "5" });
-  expect(empty).toEqual([]);
-  // The unfiltered read is unchanged.
-  expect(await client.completions?.()).toHaveLength(1);
+  expect(empty).toMatchObject({ returned: 0, total: 1, truncated: false });
+  expect(empty?.items).toEqual([]);
+  // The unfiltered read returns the whole set as one untruncated page.
+  const all = await client.completions?.();
+  expect(all).toMatchObject({ returned: 1, total: 1, truncated: false });
+  expect(all?.items).toHaveLength(1);
   await client.dispose?.();
 }, 30_000);

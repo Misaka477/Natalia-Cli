@@ -253,7 +253,7 @@ test("workspace proxy intelligence reads await lazy initialization", async () =>
     // These read surfaces may be the first routed call on a fresh workspace.
     await expect(
       client.driftFindings?.({ sessionID: session.id }),
-    ).resolves.toEqual([]);
+    ).resolves.toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
     await expect(client.notices?.(session.id)).resolves.toEqual([]);
   } finally {
     await manager.dispose();

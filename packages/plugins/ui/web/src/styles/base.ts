@@ -5140,6 +5140,13 @@ button.neu-settings-item.neu-settings-item-button:active {
 .constitution-btn[data-danger]:hover {
   background: rgba(220, 90, 90, 0.3);
 }
+/* EI Phase 1 panel pagination: a centered "load more" row under a governance
+   list when older durable pages remain. */
+.governance-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
 /* A release-scope (runtime self-protection) rule: not an empty action slot but
    an explicit label, so the panel explains why it cannot be edited. */
 .constitution-protected {

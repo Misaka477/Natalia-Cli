@@ -129,18 +129,18 @@ test("Phase 0 E2E: record tools land journal facts that agree across projections
   const decisions = await client.decisionRecords!(MAIN_SESSION);
   const evidence = await client.evidenceRecords!({ sessionID: MAIN_SESSION });
   const completions = await client.completions!({ sessionID: MAIN_SESSION });
-  expect(decisions).toHaveLength(1);
-  expect(decisions[0]).toMatchObject({
+  expect(decisions.items).toHaveLength(1);
+  expect(decisions.items[0]).toMatchObject({
     decision: "append runtime context instead of mutating the system prompt",
   });
-  expect(decisions[0]!.id).toStartWith("decision:");
-  expect(evidence).toHaveLength(1);
-  expect(evidence[0]).toMatchObject({
+  expect(decisions.items[0]!.id).toStartWith("decision:");
+  expect(evidence.items).toHaveLength(1);
+  expect(evidence.items[0]).toMatchObject({
     taskID: "plan:e2e:s1",
     status: "validated",
   });
-  expect(completions).toHaveLength(1);
-  expect(completions[0]).toMatchObject({
+  expect(completions.items).toHaveLength(1);
+  expect(completions.items[0]).toMatchObject({
     taskID: "plan:e2e:s1",
     changeSummary: "wired record_decision/validation/completion",
   });
@@ -149,13 +149,13 @@ test("Phase 0 E2E: record tools land journal facts that agree across projections
   // on the same records and work-graph facts.
   const state = reduceRuntimeEvents(events);
   expect(state.decisions.map((record) => record.id)).toEqual(
-    decisions.map((record) => record.id),
+    decisions.items.map((record) => record.id),
   );
   expect(state.evidence.map((record) => record.taskID)).toEqual(
-    evidence.map((record) => record.taskID),
+    evidence.items.map((record) => record.taskID),
   );
   expect(state.completions.map((record) => record.taskID)).toEqual(
-    completions.map((record) => record.taskID),
+    completions.items.map((record) => record.taskID),
   );
   const nodes = Object.values(state.workGraphNodes);
   expect(nodes.some((node) => node.kind === "decision")).toBe(true);
@@ -297,8 +297,8 @@ test("Phase 0 E2E: Nia audit_report writes evidence visible to projection and ru
     status: "validated",
   });
   const evidence = await client.evidenceRecords!({ sessionID: "ses_e2e_audit" });
-  expect(evidence).toHaveLength(1);
-  expect(evidence[0]).toMatchObject({
+  expect(evidence.items).toHaveLength(1);
+  expect(evidence.items[0]).toMatchObject({
     taskID: planID,
     status: "validated",
   });
@@ -326,7 +326,7 @@ test("decisions are session-scoped unless explicitly promoted to workspace scope
   await first.sessionAttach!("ses_scope_a" as SessionID);
   await first.recordDecision!({ decision: "session A private choice" });
   const firstSession = await first.decisionRecords!({ scope: "session" });
-  expect(firstSession).toContainEqual(
+  expect(firstSession.items).toContainEqual(
     expect.objectContaining({
       decision: "session A private choice",
       scope: "session",
@@ -348,7 +348,7 @@ test("decisions are session-scoped unless explicitly promoted to workspace scope
   await second.sessionAttach!("ses_scope_b" as SessionID);
   // A default session read must not leak session A's decision.
   const secondSession = await second.decisionRecords!({ scope: "session" });
-  expect(secondSession).not.toContainEqual(
+  expect(secondSession.items).not.toContainEqual(
     expect.objectContaining({ decision: "session A private choice" }),
   );
 
@@ -358,7 +358,7 @@ test("decisions are session-scoped unless explicitly promoted to workspace scope
     scope: "workspace",
   });
   const shared = await second.decisionRecords!({ scope: "workspace" });
-  expect(shared).toContainEqual(
+  expect(shared.items).toContainEqual(
     expect.objectContaining({
       decision: "workspace shared choice",
       scope: "workspace",
@@ -367,7 +367,7 @@ test("decisions are session-scoped unless explicitly promoted to workspace scope
   // The explicit workspace record does not silently appear in the session
   // default view either.
   const secondSessionAfter = await second.decisionRecords!({ scope: "session" });
-  expect(secondSessionAfter).not.toContainEqual(
+  expect(secondSessionAfter.items).not.toContainEqual(
     expect.objectContaining({ decision: "workspace shared choice" }),
   );
   await first.dispose?.();

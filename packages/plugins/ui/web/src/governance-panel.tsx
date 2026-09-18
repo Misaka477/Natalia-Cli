@@ -91,6 +91,20 @@ export function collapseList<T>(
  * component so a headless host can verify data, empty and failure states
  * without a DOM.
  */
+/** Page metadata for a paginated governance list (EI Phase 1). */
+export type GovernancePageInfo = {
+  nextCursor?: string;
+  total: number;
+  truncated: boolean;
+};
+
+/** The governance tabs whose lists paginate (EI Phase 1). */
+export type GovernanceListTab =
+  | "decisions"
+  | "evidence"
+  | "completions"
+  | "drift";
+
 export type GovernanceSliceBundle = {
   constitution: any[];
   docRules: any[];
@@ -106,8 +120,58 @@ export type GovernanceSliceBundle = {
    */
   workGraphNodes: WorkGraphNodeView[];
   workGraphEdges: WorkGraphEdgeView[];
+  /** Cursor metadata for the first page of each paginated list tab. */
+  pageInfo: Partial<Record<GovernanceListTab, GovernancePageInfo>>;
   errors: string[];
 };
+
+/** The first page size for a governance list (EI Phase 1, mailbox parity). */
+export const GOVERNANCE_PAGE_SIZE = 50;
+
+/**
+ * Load one page of a paginated governance list (EI Phase 1). Shared by the
+ * first-page bundle load and the tab's "load more" so the two never diverge.
+ * An unavailable RPC or a load error yields an empty page, never a throw.
+ */
+export async function loadGovernancePage(
+  runtime: RuntimeClient | undefined,
+  tab: GovernanceListTab,
+  sessionID?: string,
+  options: {
+    decisionScope?: "session" | "workspace" | "all";
+    cursor?: string;
+    limit?: number;
+  } = {},
+): Promise<{ items: any[]; pageInfo: GovernancePageInfo }> {
+  const limit = options.limit ?? GOVERNANCE_PAGE_SIZE;
+  const cursor = options.cursor;
+  const input = {
+    ...(sessionID ? { sessionID } : {}),
+    limit,
+    ...(cursor ? { cursor } : {}),
+  };
+  // Errors propagate to the caller so it can record the failing tab; an
+  // unavailable RPC (undefined method) is simply an empty page.
+  let page: any;
+  if (tab === "decisions")
+    page = await runtime?.decisionRecords?.({
+      ...input,
+      scope: options.decisionScope ?? "session",
+    });
+  else if (tab === "evidence")
+    page = await runtime?.evidenceRecords?.(input);
+  else if (tab === "completions")
+    page = await runtime?.completions?.(input);
+  else page = await runtime?.driftFindings?.(input);
+  return {
+    items: page?.items ?? [],
+    pageInfo: {
+      total: page?.total ?? 0,
+      truncated: page?.truncated ?? false,
+      ...(page?.nextCursor ? { nextCursor: page.nextCursor } : {}),
+    },
+  };
+}
 
 /**
  * Merge the durable RPC Work Graph (a session's event window) with the live
@@ -121,16 +185,30 @@ export function mergeWorkGraphState(
   rpcNodes: readonly WorkGraphNodeView[],
   rpcEdges: readonly WorkGraphEdgeView[],
 ): WorkGraphState {
-  const nodes: Record<string, WorkGraphNodeView> = {};
-  const edges = new Map<string, WorkGraphEdgeView>();
+  // The RPC returns the flat view; the view-store graph is keyed by the durable
+  // event shape. Re-hydrate the event envelope so both sources share one type.
+  type UiNode = AppState["workGraphNodes"][string];
+  type UiEdge = AppState["workGraphEdges"][string];
+  const nodes: AppState["workGraphNodes"] = {};
+  const edges = new Map<string, UiEdge>();
   const edgeKey = (edge: WorkGraphEdgeView) =>
     `${edge.sourceID}|${edge.targetID}|${edge.kind}`;
   for (const node of Object.values(liveState.workGraphNodes ?? {}))
     nodes[node.nodeID] = node;
   for (const edge of Object.values(liveState.workGraphEdges ?? {}))
     edges.set(edgeKey(edge), edge);
-  for (const node of rpcNodes) nodes[node.nodeID] = node;
-  for (const edge of rpcEdges) edges.set(edgeKey(edge), edge);
+  for (const node of rpcNodes)
+    nodes[node.nodeID] = {
+      type: "workgraph.node_added",
+      id: node.nodeID,
+      ...node,
+    } as UiNode;
+  for (const edge of rpcEdges)
+    edges.set(edgeKey(edge), {
+      type: "workgraph.edge_added",
+      id: edgeKey(edge),
+      ...edge,
+    } as UiEdge);
   return {
     workGraphNodes: nodes,
     workGraphEdges: Object.fromEntries(edges),
@@ -139,13 +217,16 @@ export function mergeWorkGraphState(
 
 /**
  * Load every governance read surface independently: one unavailable tab must
- * not blank the others, and the failed label is preserved for the UI.
+ * not blank the others, and the failed label is preserved for the UI. The four
+ * paginated lists load their first page; cursor metadata is returned in
+ * `pageInfo` so a tab can append older pages on demand.
  */
 export async function loadGovernanceSlices(
   runtime: RuntimeClient | undefined,
   sessionID?: string,
   options: {
     decisionScope?: "session" | "workspace" | "all";
+    pageSize?: number;
   } = {},
 ): Promise<GovernanceSliceBundle> {
   const errors: string[] = [];
@@ -162,6 +243,25 @@ export async function loadGovernanceSlices(
       return [];
     }
   };
+  const listLabel: Record<GovernanceListTab, string> = {
+    decisions: "Decisions",
+    evidence: "Evidence",
+    completions: "Completions",
+    drift: "Drift",
+  };
+  const loadList = async (tab: GovernanceListTab) => {
+    try {
+      return await loadGovernancePage(runtime, tab, sessionID, {
+        ...(options.decisionScope ? { decisionScope: options.decisionScope } : {}),
+        ...(options.pageSize ? { limit: options.pageSize } : {}),
+      });
+    } catch (error) {
+      errors.push(
+        `${listLabel[tab]}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { items: [], pageInfo: { total: 0, truncated: false } };
+    }
+  };
   const [
     constitution,
     docRules,
@@ -173,64 +273,53 @@ export async function loadGovernanceSlices(
     workGraphNodes,
     workGraphEdges,
   ] = await Promise.all([
-      loadSlice(
-        "Constitution",
-        () => runtime?.constitutionRules?.(sessionID) ?? Promise.resolve([]),
-      ),
-      loadSlice(
-        "ConstitutionDocs",
-        () =>
-          runtime?.constitutionDocRules?.(sessionID) ?? Promise.resolve([]),
-      ),
-      loadSlice(
-        "Decisions",
-        () =>
-          runtime?.decisionRecords?.({
-            ...(sessionID ? { sessionID } : {}),
-            scope: options.decisionScope ?? "session",
-          }) ?? Promise.resolve([]),
-      ),
-      loadSlice(
-        "Evidence",
-        () => runtime?.evidenceRecords?.({ sessionID }) ?? Promise.resolve([]),
-      ),
-      loadSlice(
-        "Completions",
-        () => runtime?.completions?.({ sessionID }) ?? Promise.resolve([]),
-      ),
-      loadSlice(
-        "Drift",
-        () => runtime?.driftFindings?.({ sessionID }) ?? Promise.resolve([]),
-      ),
-      loadSlice(
-        "Notices",
-        () => runtime?.notices?.(sessionID) ?? Promise.resolve([]),
-      ),
-      loadSlice(
-        "WorkGraphNodes",
-        () =>
-          runtime?.workGraphNodes?.(
-            sessionID ? { sessionID } : undefined,
-          ) ?? Promise.resolve([]),
-      ),
-      loadSlice(
-        "WorkGraphEdges",
-        () =>
-          runtime?.workGraphEdges?.(
-            sessionID ? { sessionID } : undefined,
-          ) ?? Promise.resolve([]),
-      ),
-    ]);
+    loadSlice(
+      "Constitution",
+      () => runtime?.constitutionRules?.(sessionID) ?? Promise.resolve([]),
+    ),
+    loadSlice(
+      "ConstitutionDocs",
+      () => runtime?.constitutionDocRules?.(sessionID) ?? Promise.resolve([]),
+    ),
+    loadList("decisions"),
+    loadList("evidence"),
+    loadList("completions"),
+    loadList("drift"),
+    loadSlice(
+      "Notices",
+      () => runtime?.notices?.(sessionID) ?? Promise.resolve([]),
+    ),
+    loadSlice(
+      "WorkGraphNodes",
+      () =>
+        runtime?.workGraphNodes?.(
+          sessionID ? { sessionID } : undefined,
+        ) ?? Promise.resolve([]),
+    ),
+    loadSlice(
+      "WorkGraphEdges",
+      () =>
+        runtime?.workGraphEdges?.(
+          sessionID ? { sessionID } : undefined,
+        ) ?? Promise.resolve([]),
+    ),
+  ]);
   return {
     constitution,
     docRules,
-    decisions,
-    evidence,
-    completions,
-    drift,
+    decisions: decisions.items,
+    evidence: evidence.items,
+    completions: completions.items,
+    drift: drift.items,
     notices,
     workGraphNodes,
     workGraphEdges,
+    pageInfo: {
+      decisions: decisions.pageInfo,
+      evidence: evidence.pageInfo,
+      completions: completions.pageInfo,
+      drift: drift.pageInfo,
+    },
     errors,
   };
 }
@@ -606,6 +695,11 @@ export function GovernancePane(props: {
   const [liveWorkGraphEdges, setLiveWorkGraphEdges] = createSignal<
     WorkGraphEdgeView[]
   >([]);
+  // EI Phase 1: cursor metadata for the paginated list tabs; a non-empty
+  // nextCursor means "load more" is available for that tab.
+  const [pageInfo, setPageInfo] = createSignal<
+    Partial<Record<GovernanceListTab, GovernancePageInfo>>
+  >({});
   const [loadErrors, setLoadErrors] = createSignal<string[]>([]);
   const [actionNotice, setActionNotice] = createSignal<string | undefined>();
   const [actionBusy, setActionBusy] = createSignal(false);
@@ -653,8 +747,40 @@ export function GovernancePane(props: {
     setLiveNotices(bundle.notices);
     setLiveWorkGraphNodes(bundle.workGraphNodes);
     setLiveWorkGraphEdges(bundle.workGraphEdges);
+    setPageInfo(bundle.pageInfo);
     setLoadErrors(bundle.errors);
   };
+
+  // EI Phase 1 面板分页: append the next durable page for one list tab. The
+  // cursor comes from the first-page bundle; the tab keeps the accumulated list
+  // so scroll/加载更多 appends instead of replacing.
+  async function loadMore(tab: GovernanceListTab) {
+    const info = pageInfo()[tab];
+    if (!info?.nextCursor || actionBusy()) return;
+    setActionBusy(true);
+    try {
+      const { items, pageInfo: next } = await loadGovernancePage(
+        props.runtime,
+        tab,
+        props.sessionID,
+        { decisionScope: decisionScope(), cursor: info.nextCursor },
+      );
+      if (tab === "decisions")
+        setLiveDecisions((current) => [...current, ...items]);
+      else if (tab === "evidence")
+        setLiveEvidence((current) => [...current, ...items]);
+      else if (tab === "completions")
+        setLiveCompletions((current) => [...current, ...items]);
+      else setLiveDrift((current) => [...current, ...items]);
+      setPageInfo((current) => ({ ...current, [tab]: next }));
+    } catch (error) {
+      setActionNotice(
+        `加载更多失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  }
 
   // Reload when the active session changes so the pane follows the session.
   createEffect(() => {
@@ -972,6 +1098,18 @@ export function GovernancePane(props: {
             <div class="neu-gov-empty">
               No drift findings yet. The evaluator opens them from accepted
               contracts, constitution hits or behaviour signals.
+            </div>
+          </Show>
+          <Show when={pageInfo().drift?.nextCursor}>
+            <div class="governance-load-more">
+              <button
+                type="button"
+                class="constitution-btn"
+                disabled={actionBusy()}
+                onClick={() => void loadMore("drift")}
+              >
+                加载更多（共 {pageInfo().drift?.total ?? 0} 条）
+              </button>
             </div>
           </Show>
         </Show>
@@ -1395,6 +1533,18 @@ export function GovernancePane(props: {
               workspace decisions come from an explicit workspace promotion.
             </div>
           </Show>
+          <Show when={pageInfo().decisions?.nextCursor}>
+            <div class="governance-load-more">
+              <button
+                type="button"
+                class="constitution-btn"
+                disabled={actionBusy()}
+                onClick={() => void loadMore("decisions")}
+              >
+                加载更多（共 {pageInfo().decisions?.total ?? 0} 条）
+              </button>
+            </div>
+          </Show>
         </Show>
         <Show when={tab() === "evidence"}>
           <For
@@ -1469,6 +1619,18 @@ export function GovernancePane(props: {
               No evidence.recorded for this session yet. Evidence appears after
               the model runs record_validation / record_completion or Nia
               submits an audit report.
+            </div>
+          </Show>
+          <Show when={pageInfo().evidence?.nextCursor}>
+            <div class="governance-load-more">
+              <button
+                type="button"
+                class="constitution-btn"
+                disabled={actionBusy()}
+                onClick={() => void loadMore("evidence")}
+              >
+                加载更多（共 {pageInfo().evidence?.total ?? 0} 条）
+              </button>
             </div>
           </Show>
         </Show>
@@ -1574,6 +1736,18 @@ export function GovernancePane(props: {
             <div class="neu-gov-empty">
               No completion.recorded yet. A completion card appears after the
               model calls record_completion with its validation matrix.
+            </div>
+          </Show>
+          <Show when={pageInfo().completions?.nextCursor}>
+            <div class="governance-load-more">
+              <button
+                type="button"
+                class="constitution-btn"
+                disabled={actionBusy()}
+                onClick={() => void loadMore("completions")}
+              >
+                加载更多（共 {pageInfo().completions?.total ?? 0} 条）
+              </button>
             </div>
           </Show>
         </Show>
