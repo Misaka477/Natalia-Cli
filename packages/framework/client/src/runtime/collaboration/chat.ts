@@ -11,6 +11,7 @@ import type {
   ChatChannel,
   ChatMessageRow,
   ChatModelProfile,
+  ChatStreamSurface,
   RuntimeEvent,
   RuntimeReasoningEffort,
   SessionID,
@@ -62,6 +63,8 @@ type Surface = Pick<
   | "chatRollback"
   | "chatModelProfile"
   | "setChatModelProfile"
+  | "naviChat"
+  | "niaChat"
 >;
 type SubmitInput = {
   text: string;
@@ -417,7 +420,43 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
 export function createChatSurface(ctx: RuntimeContext): Surface {
   const navi = createNaviChatSurface(ctx);
   const nia = createNiaChatSurface(ctx);
+  const messagesPage = async (
+    channel: "navi" | "nia",
+    input: { sessionID?: string; cursor?: string; limit?: number },
+  ) => {
+    const exec = await streamExec(ctx, input.sessionID);
+    if (!exec) return { data: [], cursor: {} };
+    await ensureSessionFullEvents(ctx, exec);
+    return paginateTranscript(
+      projectChatRows(channel, exec.session.events),
+      input.cursor,
+      input.limit,
+      "chat",
+    );
+  };
+  const naviChat: ChatStreamSurface = {
+    submit: (input) => navi.submit(input),
+    abort: (sessionID) => navi.abort(sessionID),
+    modelProfile: (sessionID) => navi.modelProfile(sessionID),
+    setModelProfile: (profile, sessionID) =>
+      navi.setModelProfile(profile, sessionID),
+    messages: (sessionID) => navi.messages(sessionID),
+    messagesPage: (input) => messagesPage("navi", input),
+    rollback: (input, sessionID) => navi.rollback(input, sessionID),
+  };
+  const niaChat: ChatStreamSurface = {
+    submit: (input) => nia.submit(input),
+    abort: (sessionID) => nia.abort(sessionID),
+    modelProfile: (sessionID) => nia.modelProfile(sessionID),
+    setModelProfile: (profile, sessionID) =>
+      nia.setModelProfile(profile, sessionID),
+    messages: (sessionID) => nia.messages(sessionID),
+    messagesPage: (input) => messagesPage("nia", input),
+    rollback: (input, sessionID) => nia.rollback(input, sessionID),
+  };
   return {
+    naviChat,
+    niaChat,
     chatSubmit: ({ channel, ...input }) =>
       channel === "nia" ? nia.submit(input) : navi.submit(input),
     chatAbort: (channel, sessionID) =>
@@ -425,15 +464,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
     chatMessages: (channel, sessionID) =>
       channel === "nia" ? nia.messages(sessionID) : navi.messages(sessionID),
     async chatMessagesPage(input) {
-      const exec = await streamExec(ctx, input.sessionID);
-      if (!exec) return { data: [], cursor: {} };
-      await ensureSessionFullEvents(ctx, exec);
-      return paginateTranscript(
-        projectChatRows(input.channel ?? "navi", exec.session.events),
-        input.cursor,
-        input.limit,
-        "chat",
-      );
+      return messagesPage(input.channel ?? "navi", input);
     },
     chatRollback: (input, channel, sessionID) =>
       channel === "nia"

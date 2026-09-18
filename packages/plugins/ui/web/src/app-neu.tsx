@@ -853,16 +853,20 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     input: { cursor?: string; limit: number },
   ) {
     if (!sessionID) return Promise.resolve({ data: [], cursor: {} });
-    if (props.ctx.runtime.chatMessagesPage)
-      return props.ctx.runtime.chatMessagesPage({
-        channel,
+    const surface =
+      channel === "navi"
+        ? props.ctx.runtime.naviChat
+        : props.ctx.runtime.niaChat;
+    if (surface?.messagesPage)
+      return surface.messagesPage({
         sessionID,
         limit: input.limit,
         ...(input.cursor ? { cursor: input.cursor } : {}),
       });
-    return Promise.resolve(
-      props.ctx.runtime.chatMessages?.(channel, sessionID),
-    ).then((data) => ({ data: data ?? [], cursor: {} }));
+    return Promise.resolve(surface?.messages?.(sessionID)).then((data) => ({
+      data: data ?? [],
+      cursor: {},
+    }));
   }
 
   function naviChatPageSource(input: { cursor?: string; limit: number }) {
@@ -1847,7 +1851,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       await Promise.allSettled([
         props.ctx.runtime.modelSelection?.(sessionID),
         props.ctx.runtime.reasoningEffort?.(sessionID),
-        props.ctx.runtime.chatModelProfile?.("navi", sessionID),
+        props.ctx.runtime.naviChat?.modelProfile?.(sessionID),
       ]);
     const appliedStart = performance.now();
     if (token !== perSessionLoadToken) return;
@@ -2417,7 +2421,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   async function updateChatProfile(next: ChatModelProfile) {
     setChatProfile(next);
     const sessionID = selectedSessionID() || state().sessionID;
-    await props.ctx.runtime.setChatModelProfile?.(next, "navi", sessionID);
+    await props.ctx.runtime.naviChat?.setModelProfile?.(next, sessionID);
   }
   function formatValue(value: unknown): string {
     if (value === null) return "null";
@@ -4153,8 +4157,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                     busy={Boolean(naviChatActivity())}
                     onInput={setChatDraft}
                     onStop={() =>
-                      void props.ctx.runtime.chatAbort?.(
-                        "navi",
+                      void props.ctx.runtime.naviChat?.abort?.(
                         selectedSessionID() || state().sessionID,
                       )
                     }
@@ -4180,7 +4183,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
                             (item) => item.path,
                           ),
                         });
-                        const result = props.ctx.runtime.chatSubmit?.({
+                        const result = props.ctx.runtime.naviChat?.submit?.({
                           text,
                           sessionID: selectedSessionID() || state().sessionID,
                           ...(chatAttachments().length

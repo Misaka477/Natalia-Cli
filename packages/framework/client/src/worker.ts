@@ -144,6 +144,20 @@ export const WORKER_ROUTE_MEMBERS = {
   "chat.rollback": "chatRollback",
   "chat.model.profile": "chatModelProfile",
   "chat.model.profile.set": "setChatModelProfile",
+  "navi.chat.submit": "naviChat",
+  "navi.chat.abort": "naviChat",
+  "navi.chat.messages": "naviChat",
+  "navi.chat.messages.page": "naviChat",
+  "navi.chat.rollback": "naviChat",
+  "navi.chat.model.profile": "naviChat",
+  "navi.chat.model.profile.set": "naviChat",
+  "nia.chat.submit": "niaChat",
+  "nia.chat.abort": "niaChat",
+  "nia.chat.messages": "niaChat",
+  "nia.chat.messages.page": "niaChat",
+  "nia.chat.rollback": "niaChat",
+  "nia.chat.model.profile": "niaChat",
+  "nia.chat.model.profile.set": "niaChat",
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
 /** The member names this channel routes, for reachability reporting. */
@@ -282,6 +296,20 @@ type WorkerRequest = {
     | "chat.rollback"
     | "chat.model.profile"
     | "chat.model.profile.set"
+    | "navi.chat.submit"
+    | "navi.chat.abort"
+    | "navi.chat.messages"
+    | "navi.chat.messages.page"
+    | "navi.chat.rollback"
+    | "navi.chat.model.profile"
+    | "navi.chat.model.profile.set"
+    | "nia.chat.submit"
+    | "nia.chat.abort"
+    | "nia.chat.messages"
+    | "nia.chat.messages.page"
+    | "nia.chat.rollback"
+    | "nia.chat.model.profile"
+    | "nia.chat.model.profile.set"
     | "command.catalog"
     | "command.execute";
   value?: unknown;
@@ -391,6 +419,56 @@ export function createWorkerRuntimeClient(
       }
     });
   };
+  const chatStreamSurface = (
+    stream: "navi" | "nia",
+  ): NonNullable<RuntimeClient["naviChat"]> => ({
+    async submit(input) {
+      return (await request(`${stream}.chat.submit`, input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["naviChat"]>["submit"]>
+      >;
+    },
+    async abort(sessionID) {
+      return (await request(`${stream}.chat.abort`, { sessionID })) as Awaited<
+        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["abort"]>>
+      >;
+    },
+    async messages(sessionID) {
+      return (await request(`${stream}.chat.messages`, {
+        sessionID,
+      })) as Awaited<
+        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["messages"]>>
+      >;
+    },
+    async messagesPage(input) {
+      return (await request(`${stream}.chat.messages.page`, input)) as Awaited<
+        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["messagesPage"]>>
+      >;
+    },
+    async rollback(input, sessionID) {
+      return (await request(`${stream}.chat.rollback`, {
+        input,
+        sessionID,
+      })) as Awaited<
+        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["rollback"]>>
+      >;
+    },
+    async modelProfile(sessionID) {
+      return (await request(`${stream}.chat.model.profile`, {
+        sessionID,
+      })) as Awaited<
+        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["modelProfile"]>>
+      >;
+    },
+    async setModelProfile(profile, sessionID) {
+      return (await request(`${stream}.chat.model.profile.set`, {
+        profile,
+        sessionID,
+      })) as Awaited<
+        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["setModelProfile"]>>
+      >;
+    },
+  });
+
   return {
     start(onEvent) {
       sink = onEvent;
@@ -1023,6 +1101,9 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["setChatModelProfile"]>>
       >;
     },
+    naviChat: chatStreamSurface("navi"),
+    niaChat: chatStreamSurface("nia"),
+
     async dispose() {
       await request("dispose");
       port.removeEventListener("message", onMessage);
@@ -1693,6 +1774,91 @@ export async function handleWorkerRequest(
       value.sessionID,
     );
   }
+  if (
+    request.method === "navi.chat.submit" ||
+    request.method === "nia.chat.submit"
+  ) {
+    const surface =
+      request.method === "navi.chat.submit"
+        ? client.naviChat
+        : client.niaChat;
+    return await surface?.submit?.(request.value as never);
+  }
+  if (
+    request.method === "navi.chat.abort" ||
+    request.method === "nia.chat.abort"
+  ) {
+    const surface =
+      request.method === "navi.chat.abort"
+        ? client.naviChat
+        : client.niaChat;
+    return await surface?.abort?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  }
+  if (
+    request.method === "navi.chat.messages" ||
+    request.method === "nia.chat.messages"
+  ) {
+    const surface =
+      request.method === "navi.chat.messages"
+        ? client.naviChat
+        : client.niaChat;
+    return await surface?.messages?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  }
+  if (
+    request.method === "navi.chat.messages.page" ||
+    request.method === "nia.chat.messages.page"
+  ) {
+    const surface =
+      request.method === "navi.chat.messages.page"
+        ? client.naviChat
+        : client.niaChat;
+    return await surface?.messagesPage?.(request.value as never);
+  }
+  if (
+    request.method === "navi.chat.rollback" ||
+    request.method === "nia.chat.rollback"
+  ) {
+    const surface =
+      request.method === "navi.chat.rollback"
+        ? client.naviChat
+        : client.niaChat;
+    const value = request.value as {
+      input: { toMessageID: string };
+      sessionID?: string;
+    };
+    return await surface?.rollback?.(value.input, value.sessionID);
+  }
+  if (
+    request.method === "navi.chat.model.profile" ||
+    request.method === "nia.chat.model.profile"
+  ) {
+    const surface =
+      request.method === "navi.chat.model.profile"
+        ? client.naviChat
+        : client.niaChat;
+    return await surface?.modelProfile?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  }
+  if (
+    request.method === "navi.chat.model.profile.set" ||
+    request.method === "nia.chat.model.profile.set"
+  ) {
+    const surface =
+      request.method === "navi.chat.model.profile.set"
+        ? client.naviChat
+        : client.niaChat;
+    const value = request.value as {
+      profile: import("@natalia/contracts").ChatModelProfile;
+      sessionID?: string;
+    };
+    return await surface?.setModelProfile?.(value.profile, value.sessionID);
+  }
+
   if (request.method === "approval")
     return client.respondApproval(request.value as ApprovalResponse);
   if (request.method === "question")

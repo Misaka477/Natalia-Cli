@@ -2714,6 +2714,32 @@ export type GovernancePage<T> = {
   nextCursor?: string;
 };
 
+export type ChatStreamSurface = {
+  submit(input: {
+    text: string;
+    model?: { modelID?: string; variant?: string };
+    reasoningEffort?: RuntimeReasoningEffort;
+    attachments?: string[];
+    sessionID?: string;
+  }): Promise<{ messageID: string }>;
+  abort?(sessionID?: string): Promise<{ aborted: boolean }>;
+  modelProfile?(sessionID?: string): Promise<ChatModelProfile>;
+  setModelProfile?(
+    profile: ChatModelProfile,
+    sessionID?: string,
+  ): Promise<{ saved: boolean }>;
+  messages?(sessionID?: string): Promise<ChatMessageRow[]>;
+  messagesPage?(input: {
+    sessionID?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<TranscriptPage<ChatMessageRow>>;
+  rollback?(
+    input: { toMessageID: string },
+    sessionID?: string,
+  ): Promise<{ rolledBackTo: string; removed: number }>;
+};
+
 export type RuntimeClient = {
   start(
     onEvent: (event: RuntimeEvent) => void,
@@ -4286,6 +4312,11 @@ export type RuntimeClient = {
    * stream-owned `${channel}.chat.message.delta` and settles with
    * `${channel}.chat.message.added`.
    */
+  /** Navi-owned stream surface. No shared channel parameter. */
+  naviChat?: ChatStreamSurface;
+  /** Nia-owned stream surface. No shared channel parameter. */
+  niaChat?: ChatStreamSurface;
+
   chatSubmit?(input: {
     text: string;
     /** Optional per-turn Chat model override (normal or expert profile). */

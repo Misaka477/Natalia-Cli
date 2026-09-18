@@ -520,6 +520,14 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "aborted",
     note: "stops the in-flight Chat turn; false means nothing was running",
   },
+  naviChat: {
+    refusal: "none",
+    note: "Navi-owned stream surface; refusal semantics live on its nested methods",
+  },
+  niaChat: {
+    refusal: "none",
+    note: "Nia-owned stream surface; refusal semantics live on its nested methods",
+  },
 
   // --- observability ---
   runtimeStatus: { refusal: "none", note: "pure read" },

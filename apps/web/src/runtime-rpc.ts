@@ -692,6 +692,40 @@ export function createWebRuntimeClient(
     }
   }
 
+  const chatStream = (
+    stream: "navi" | "nia",
+  ): NonNullable<RuntimeClient["naviChat"]> => ({
+    async submit(input) {
+      return (await call(`${stream}.chat.submit`, input)) as never;
+    },
+    async abort(sessionID) {
+      return (await call(`${stream}.chat.abort`, { sessionID })) as never;
+    },
+    async messages(sessionID) {
+      return (await call(`${stream}.chat.messages`, { sessionID })) as never;
+    },
+    async messagesPage(input) {
+      return (await call(`${stream}.chat.messages.page`, input)) as never;
+    },
+    async rollback(input, sessionID) {
+      return (await call(`${stream}.chat.rollback`, {
+        input,
+        sessionID,
+      })) as never;
+    },
+    async modelProfile(sessionID) {
+      return (await call(`${stream}.chat.model.profile`, {
+        sessionID,
+      })) as never;
+    },
+    async setModelProfile(profile, sessionID) {
+      return (await call(`${stream}.chat.model.profile.set`, {
+        profile,
+        sessionID,
+      })) as never;
+    },
+  });
+
   const impl: RuntimeClient = {
     start,
     async eventWindow(options) {
@@ -756,6 +790,8 @@ export function createWebRuntimeClient(
         ...(sessionID ? { sessionID } : {}),
       })) as never;
     },
+    naviChat: chatStream("navi"),
+    niaChat: chatStream("nia"),
     async chatRollback(input, channel?, sessionID?) {
       return (await call("chat.rollback", {
         ...input,

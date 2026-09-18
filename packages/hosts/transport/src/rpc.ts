@@ -301,6 +301,20 @@ export const RPC_ROUTE_MEMBERS = {
   "chat.submit": "chatSubmit",
   "chat.abort": "chatAbort",
   "chat.rollback": "chatRollback",
+  "navi.chat.submit": "naviChat",
+  "navi.chat.abort": "naviChat",
+  "navi.chat.messages": "naviChat",
+  "navi.chat.messages.page": "naviChat",
+  "navi.chat.rollback": "naviChat",
+  "navi.chat.model.profile": "naviChat",
+  "navi.chat.model.profile.set": "naviChat",
+  "nia.chat.submit": "niaChat",
+  "nia.chat.abort": "niaChat",
+  "nia.chat.messages": "niaChat",
+  "nia.chat.messages.page": "niaChat",
+  "nia.chat.rollback": "niaChat",
+  "nia.chat.model.profile": "niaChat",
+  "nia.chat.model.profile.set": "niaChat",
   // P0-G: the flow write surface, previously CLI-only.
 } as const satisfies Readonly<Record<string, keyof RuntimeClient | null>>;
 
@@ -3612,6 +3626,133 @@ export async function handleRPCMessage(
         result: await client.chatRollback({ toMessageID }, channel, sessionID),
       };
     }
+    if (
+      body.method.startsWith("navi.chat.") ||
+      body.method.startsWith("nia.chat.")
+    ) {
+      const stream = body.method.startsWith("navi.") ? "navi" : "nia";
+      const operation = body.method.slice(`${stream}.chat.`.length);
+      const member = stream === "navi" ? "naviChat" : "niaChat";
+      optionsGuard(client, member);
+      const surface = stream === "navi" ? client.naviChat : client.niaChat;
+      if (!surface)
+        return {
+          jsonrpc: "2.0",
+          id: body.id ?? null,
+          error: {
+            code: -32601,
+            message: `${stream}.chat surface is not available`,
+          },
+        };
+      const params = body.params;
+      let result: unknown;
+      switch (operation) {
+        case "submit": {
+          if (!params || typeof params !== "object")
+            throw invalidParams(`${body.method}.params must be an object`);
+          const text = (params as { text?: unknown }).text;
+          if (typeof text !== "string")
+            throw invalidParams(`${body.method}.params.text must be a string`);
+          result = await surface.submit({
+            text,
+            ...(typeof (params as { model?: unknown }).model === "object"
+              ? {
+                  model: (
+                    params as { model?: { modelID?: string; variant?: string } }
+                  ).model,
+                }
+              : {}),
+            ...(typeof (
+              params as {
+                reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+              }
+            ).reasoningEffort !== "undefined"
+              ? {
+                  reasoningEffort: (
+                    params as {
+                      reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+                    }
+                  ).reasoningEffort,
+                }
+              : {}),
+            ...(typeof (params as { sessionID?: string }).sessionID === "string"
+              ? { sessionID: (params as { sessionID?: string }).sessionID }
+              : {}),
+          });
+          break;
+        }
+        case "abort":
+          result = await surface.abort?.(
+            (params as { sessionID?: string } | undefined)?.sessionID,
+          );
+          break;
+        case "messages":
+          result = await surface.messages?.(
+            (params as { sessionID?: string } | undefined)?.sessionID,
+          );
+          break;
+        case "messages.page":
+          if (
+            params !== undefined &&
+            (typeof params !== "object" || Array.isArray(params))
+          )
+            throw invalidParams(`${body.method}.params must be an object`);
+          result = await surface.messagesPage?.(
+            (params ?? {}) as {
+              sessionID?: string;
+              cursor?: string;
+              limit?: number;
+            },
+          );
+          break;
+        case "rollback": {
+          if (!params || typeof params !== "object")
+            throw invalidParams(`${body.method}.params must be an object`);
+          const input = (params as { input?: unknown }).input;
+          const toMessageID =
+            input && typeof input === "object"
+              ? (input as { toMessageID?: unknown }).toMessageID
+              : undefined;
+          if (typeof toMessageID !== "string")
+            throw invalidParams(
+              `${body.method}.params.input.toMessageID must be a string`,
+            );
+          result = await surface.rollback?.(
+            { toMessageID },
+            (params as { sessionID?: string }).sessionID,
+          );
+          break;
+        }
+        case "model.profile":
+          result = await surface.modelProfile?.(
+            (params as { sessionID?: string } | undefined)?.sessionID,
+          );
+          break;
+        case "model.profile.set": {
+          if (!params || typeof params !== "object")
+            throw invalidParams(`${body.method}.params must be an object`);
+          const profile = (params as { profile?: unknown }).profile;
+          if (!profile || typeof profile !== "object")
+            throw invalidParams(`${body.method}.params.profile must be an object`);
+          result = await surface.setModelProfile?.(
+            profile as import("@natalia/contracts").ChatModelProfile,
+            (params as { sessionID?: string }).sessionID,
+          );
+          break;
+        }
+        default:
+          return {
+            jsonrpc: "2.0",
+            id: body.id ?? null,
+            error: {
+              code: -32601,
+              message: `unknown ${stream}.chat method: ${operation}`,
+            },
+          };
+      }
+      return { jsonrpc: "2.0", id: body.id ?? null, result };
+    }
+
     // --- P0-G follow-up: the config write surface (previously TUI-only) ---
     if (body.method === "config.update") {
       const params = body.params;

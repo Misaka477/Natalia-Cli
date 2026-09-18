@@ -312,6 +312,8 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "chatRollback",
     "chatModelProfile",
     "setChatModelProfile",
+    "naviChat",
+    "niaChat",
   ],
 } as const satisfies Record<string, readonly (keyof RuntimeClient)[]>;
 

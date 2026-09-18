@@ -152,10 +152,7 @@ export function NiaPanel(props: {
     const token = ++profileLoadToken;
     const requestedSessionID = props.sessionID;
     try {
-      const profile = await props.runtime?.chatModelProfile?.(
-        "nia",
-        requestedSessionID,
-      );
+      const profile = await props.runtime?.niaChat?.modelProfile?.(requestedSessionID);
       if (token !== profileLoadToken || requestedSessionID !== props.sessionID)
         return;
       setModelID(profile?.normal?.modelID ?? "");
@@ -169,10 +166,8 @@ export function NiaPanel(props: {
     modelID?: string;
     reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
   }) {
-    const current = await props.runtime
-      ?.chatModelProfile?.("nia", props.sessionID)
-      .catch(() => undefined);
-    await props.runtime?.setChatModelProfile?.(
+    const current = await props.runtime?.niaChat?.modelProfile?.(props.sessionID).catch(() => undefined);
+    await props.runtime?.niaChat?.setModelProfile?.(
       {
         ...(current ?? {}),
         normal: {
@@ -183,7 +178,6 @@ export function NiaPanel(props: {
             : {}),
         },
       },
-      "nia",
       props.sessionID,
     );
   }
@@ -237,13 +231,9 @@ export function NiaPanel(props: {
     setDraft("");
     setAttachments([]);
     try {
-      const profile = await props.runtime?.chatModelProfile?.(
-        "nia",
-        props.sessionID,
-      );
-      await props.runtime?.chatSubmit?.({
+      const profile = await props.runtime?.niaChat?.modelProfile?.(props.sessionID);
+      await props.runtime?.niaChat?.submit?.({
         text,
-        channel: "nia",
         sessionID: props.sessionID,
         ...(pendingAttachments.length
           ? { attachments: pendingAttachments.map((item) => item.path) }
@@ -390,7 +380,7 @@ export function NiaPanel(props: {
           placeholder="向 Nia 提问…"
           busy={Boolean(active()) || busy()}
           onInput={setDraft}
-          onStop={() => void props.runtime?.chatAbort?.("nia", props.sessionID)}
+          onStop={() => void props.runtime?.niaChat?.abort?.(props.sessionID)}
           attachments={attachments()}
           onRemoveAttachment={(path) =>
             setAttachments(attachments().filter((item) => item.path !== path))
