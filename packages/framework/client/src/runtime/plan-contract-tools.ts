@@ -451,6 +451,13 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
           ? [`constraints +: ${args.constraintDelta.join("; ")}`]
           : []),
         `→ new contract v${contract.version + 1}`,
+        // EI Open Question "Nia 绕路 gate 留痕提示": the gate fires the moment
+        // Nia is woken, so her opinion is asynchronous. Tell the user at the
+        // decision point that approving now may land without her review, and
+        // that a no-opinion approval is recorded as such on the journal
+        // (detour.reviewed: unavailable) — the 事后 record already exists,
+        // this is the 事前知情 line.
+        "Nia 异步独立审核中（仅参考，批准权在你）；若你决定前她的看法未到达，本次批准将记录为无看法批准",
       ];
       const response = await ctx.ports.getInteractive().requirePlanAcceptance({
         approvalID: `detour:${detourID}`,

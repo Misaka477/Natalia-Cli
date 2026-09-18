@@ -84,6 +84,15 @@ test("Phase 2 E2E: an approved detour absorbs its deltas into a new accepted con
     scope: ["packages/a", "packages/b"],
     verification: ["bun test packages/a"],
   });
+  // EI Open Question "Nia 绕路 gate 留痕提示": the gate card tells the user, at
+  // the decision point, that Nia's review is asynchronous and a no-opinion
+  // approval is recorded as unavailable.
+  const detourGate = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
+      event.type === "approval.request" && event.scope === "detour",
+  );
+  expect(detourGate).toBeDefined();
+  expect(detourGate!.preview).toContain("无看法批准");
   // Nia was woken to review but did not weigh in before the user decided, so
   // her opinion is recorded as unavailable (the gate proceeded without it).
   const niaReview = events.find(
