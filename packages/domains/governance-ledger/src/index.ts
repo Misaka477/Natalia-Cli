@@ -20,6 +20,7 @@ export {
 export {
   boundValidationOutcome,
   buildCompletionRecorded,
+  buildHumanValidation,
   buildEvidenceRecorded,
   evidenceStatusForPlanState,
   type EvidenceInput,

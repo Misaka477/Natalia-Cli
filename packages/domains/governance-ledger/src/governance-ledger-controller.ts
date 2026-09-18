@@ -12,6 +12,7 @@ import {
   boundValidationOutcome,
   buildCompletionRecorded,
   buildEvidenceRecorded,
+  buildHumanValidation,
   evidenceStatusForPlanState,
 } from "./evidence-ledger";
 import type { GovernanceLedgerController } from "@natalia/runtime-services";
@@ -23,6 +24,7 @@ export function createGovernanceLedgerController(): GovernanceLedgerController {
     boundValidationOutcome,
     buildCompletionRecorded,
     buildEvidenceRecorded,
+    buildHumanValidation,
     evidenceStatusForPlanState,
     validateConstitutionRuleProposal,
     buildProposedConstitutionRule,

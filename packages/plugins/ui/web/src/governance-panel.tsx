@@ -782,6 +782,34 @@ export function GovernancePane(props: {
     }
   }
 
+  // EI Phase 0: the user records a human validation note on a completion card
+  // ("用户走 UI 补 humanValidation").
+  async function recordHumanValidation(taskID: string) {
+    const note = window.prompt(
+      `为 ${taskID} 记录人工验收（写入 completion 卡片，用户为准）：`,
+    );
+    if (!note?.trim()) return;
+    setActionBusy(true);
+    try {
+      const result = await props.runtime?.recordHumanValidation?.(
+        { taskID, validation: note.trim() },
+        props.sessionID,
+      );
+      setActionNotice(
+        result?.recorded
+          ? "已记录人工验收"
+          : `失败：${result?.reason ?? "未知原因"}`,
+      );
+      if (result?.recorded) await load();
+    } catch (error) {
+      setActionNotice(
+        `失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   // Reload when the active session changes so the pane follows the session.
   createEffect(() => {
     void props.state.sessionID;
@@ -1649,6 +1677,14 @@ export function GovernancePane(props: {
                     {record.taskID}
                   </span>
                   <span class="gov-card-meta">{record.recordedAt}</span>
+                  <button
+                    type="button"
+                    class="constitution-btn"
+                    disabled={actionBusy()}
+                    onClick={() => void recordHumanValidation(record.taskID)}
+                  >
+                    记录人工验收
+                  </button>
                 </div>
                 <div class="gov-card-section">
                   <div class="gov-card-label">Target</div>

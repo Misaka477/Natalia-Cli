@@ -929,6 +929,7 @@ export interface GovernanceLedgerController {
   seedConstitutionRules: ServiceOperation;
   recordDecision: ServiceOperation;
   boundValidationOutcome: ServiceOperation;
+  buildHumanValidation: ServiceOperation;
   buildCompletionRecorded: ServiceOperation;
   buildEvidenceRecorded: ServiceOperation;
   evidenceStatusForPlanState: ServiceOperation;

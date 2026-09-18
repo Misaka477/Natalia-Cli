@@ -124,6 +124,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "mailbox.acknowledge": "mailboxAcknowledge",
   "drift.list": "driftFindings",
   completions: "completions",
+  "completion.human_validation": "recordHumanValidation",
   "plan.task.states": "planTaskStates",
   "workgraph.integrity": "workGraphIntegrity",
   "workgraph.unattributed": "unattributedChanges",
@@ -261,6 +262,7 @@ type WorkerRequest = {
     | "mailbox.acknowledge"
     | "drift.list"
     | "completions"
+    | "completion.human_validation"
     | "plan.task.states"
     | "workgraph.integrity"
     | "workgraph.unattributed"
@@ -1563,6 +1565,10 @@ export async function handleWorkerRequest(
       request.value as
         | { sessionID?: string; limit?: number; cursor?: string }
         | undefined,
+    );
+  if (request.method === "completion.human_validation")
+    return await client.recordHumanValidation?.(
+      request.value as { taskID: string; validation: string },
     );
   if (request.method === "plan.task.states")
     return await client.planTaskStates?.(

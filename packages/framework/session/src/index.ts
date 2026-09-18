@@ -365,6 +365,7 @@ export {
   sessionFactDriftFindings,
   sessionFactEvidenceRecords,
   sessionFactCompletions,
+  sessionFactHumanValidation,
   sessionFactMailboxMessages,
   sessionFactDecisionRecords,
   sessionFactLatestSnapshot,

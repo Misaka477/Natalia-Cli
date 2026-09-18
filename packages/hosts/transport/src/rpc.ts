@@ -238,6 +238,7 @@ export const RPC_ROUTE_MEMBERS = {
   "evidence.records": "evidenceRecords",
   "evidence.record": "recordValidation",
   "completion.records": "completions",
+  "completion.human_validation": "recordHumanValidation",
   "plan.task.states": "planTaskStates",
   "workgraph.integrity": "workGraphIntegrity",
   "workgraph.unattributed": "unattributedChanges",
@@ -2250,6 +2251,31 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.notices?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "completion.human_validation") {
+      optionsGuard(client, "recordHumanValidation");
+      const params = body.params as Record<string, unknown> | undefined;
+      if (
+        !params ||
+        typeof params.taskID !== "string" ||
+        params.taskID.trim().length === 0 ||
+        typeof params.validation !== "string" ||
+        params.validation.trim().length === 0
+      )
+        throw invalidParams(
+          "completion.human_validation requires taskID and validation strings",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.recordHumanValidation?.(
+          {
+            taskID: params.taskID,
+            validation: params.validation,
+          },
           optionalStringParam(body.params, "sessionID"),
         ),
       };

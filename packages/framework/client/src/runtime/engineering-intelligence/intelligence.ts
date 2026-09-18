@@ -27,6 +27,7 @@ import {
   sessionFactConstitutionRules,
   sessionFactCompletions,
   sessionFactDecisionRecords,
+  sessionFactHumanValidation,
   sessionFactDriftFindings,
   sessionFactEvidenceRecords,
 } from "@natalia/session";
@@ -77,6 +78,7 @@ type Surface = Pick<
   | "recordValidation"
   | "completions"
   | "recordCompletion"
+  | "recordHumanValidation"
   | "driftFindings"
   | "evaluateDrift"
   | "acknowledgeDriftFinding"
@@ -518,24 +520,69 @@ export function createIntelligenceSurface(
         sessionFactCompletions,
         () => projectedCompletions(exec.session.events),
       );
+      // EI Phase 0: a user-recorded human validation on the card overrides the
+      // model's own (the user has the last word on acceptance).
+      const humanValidation =
+        exec.factStateComplete === true && exec.factState
+          ? sessionFactHumanValidation(exec.factState)
+          : new Map<string, string>();
       return paginate(
-        completions.map((c) => ({
+        completions.map((c) => {
+          const validated = humanValidation.get(c.taskID) ?? c.humanValidation;
+          return {
           completionID: c.id,
           taskID: c.taskID,
           objective: c.objective,
           changeSummary: c.changeSummary,
           ...(c.behaviorImpact ? { behaviorImpact: c.behaviorImpact } : {}),
           validations: c.validations,
-          ...(c.humanValidation ? { humanValidation: c.humanValidation } : {}),
+          ...(validated ? { humanValidation: validated } : {}),
           knownGaps: c.knownGaps ?? [],
           externalSideEffects: c.externalSideEffects ?? [],
           ...(c.rollbackState ? { rollbackState: c.rollbackState } : {}),
           evidenceIDs: c.evidenceIDs ?? [],
           recordedAt: c.recordedAt,
-        })),
+          };
+        }),
         input?.limit,
         input?.cursor,
       );
+    },
+    /**
+     * EI Phase 0: the user records a human validation note on a completion card
+     * ("用户走 UI 补 humanValidation"). Durable; `completions` merges the latest
+     * note per task onto the card.
+     */
+    async recordHumanValidation(
+      input: { taskID: string; validation: string },
+      sessionID?: string,
+    ) {
+      const exec = await intelligenceExecWindow(sessionID);
+      if (!exec?.session)
+        return { recorded: false as const, reason: "no session" };
+      const taskID = input.taskID?.trim();
+      const validation = input.validation?.trim();
+      if (!taskID || !validation)
+        return {
+          recorded: false as const,
+          reason: "recordHumanValidation requires taskID and validation",
+        };
+      const governanceLedger = requireGovernanceLedger();
+      if (!governanceLedger)
+        return {
+          recorded: false as const,
+          reason: "governance ledger unavailable",
+        };
+      ctx.ports.publishForSession(
+        exec,
+        governanceLedger.buildHumanValidation({
+          id: `human_validation:${taskID}:${Date.now().toString(36)}:${ctx.ports.nextDecisionSequence()}`,
+          taskID,
+          validation: redactToolOutput(validation, true),
+          recordedAt: new Date().toISOString(),
+        }),
+      );
+      return { recorded: true as const };
     },
     /**
      * The plan task state machine (EI §4 Phase 4): reads the plan document's

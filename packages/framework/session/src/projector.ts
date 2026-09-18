@@ -1808,6 +1808,12 @@ export type SessionIntelligenceFactState = {
     | Extract<RuntimeEvent, { type: "evidence.recorded" }>
     | Extract<RuntimeEvent, { type: "completion.recorded" }>
   >;
+  /**
+   * EI Phase 0: the latest human validation note per completion taskID. The
+   * user records it from the Completions tab; the read surface merges it onto
+   * the completion card (last write wins).
+   */
+  humanValidationByTask: Map<string, string>;
 };
 
 export type SessionIntelligenceFacts = {
@@ -1826,6 +1832,7 @@ export function emptySessionIntelligenceFactState(): SessionIntelligenceFactStat
     terminalActions: new Map(),
     sandboxStatuses: new Map(),
     journalEvents: [],
+    humanValidationByTask: new Map(),
   };
 }
 
@@ -1844,6 +1851,10 @@ export function applySessionIntelligenceFact(
   }
   if (event.type === "completion.recorded") {
     state.journalEvents.push(event);
+    return;
+  }
+  if (event.type === "completion.human_validation") {
+    state.humanValidationByTask.set(event.taskID, event.validation);
     return;
   }
   if (event.type === "content.done") {
@@ -2039,6 +2050,13 @@ export function sessionFactCompletions(
     (event): event is Extract<RuntimeEvent, { type: "completion.recorded" }> =>
       event.type === "completion.recorded",
   );
+}
+
+/** EI Phase 0: the latest human validation note per completion taskID. */
+export function sessionFactHumanValidation(
+  state: SessionFactState,
+): ReadonlyMap<string, string> {
+  return state.intelligence.humanValidationByTask;
 }
 
 export function sessionFactMailboxMessages(

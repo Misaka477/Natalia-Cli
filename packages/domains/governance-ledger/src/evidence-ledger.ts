@@ -53,6 +53,27 @@ export type EvidenceInput = {
  * journal. Empty validation lists are omitted rather than emitted as `[]` so a
  * consumer can tell "no validation recorded" from "recorded as skipped".
  */
+/**
+ * EI Phase 0: a human's validation note on a completion card (the user's UI
+ * entry point for humanValidation). Durable; the read surface merges the latest
+ * one per task onto the completion card. The note is safe prose (redacted by
+ * the caller before this runs).
+ */
+export function buildHumanValidation(input: {
+  id: string;
+  taskID: string;
+  validation: string;
+  recordedAt: string;
+}): Extract<RuntimeEvent, { type: "completion.human_validation" }> {
+  return {
+    type: "completion.human_validation",
+    id: input.id,
+    taskID: input.taskID,
+    validation: input.validation,
+    recordedAt: input.recordedAt,
+  };
+}
+
 export function buildEvidenceRecorded(
   input: EvidenceInput,
 ): Extract<RuntimeEvent, { type: "evidence.recorded" }> {

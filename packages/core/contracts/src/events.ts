@@ -1136,6 +1136,18 @@ type RuntimeEventData =
     }
   | {
       /**
+       * A human's validation note on a completion card (EI Phase 0: "用户走 UI 补
+       * humanValidation"). Durable and append-only; the `completions` read surface
+       * merges the latest one for a task onto its completion card.
+       */
+      type: "completion.human_validation";
+      id: string;
+      taskID: string;
+      validation: string;
+      recordedAt: string;
+    }
+  | {
+      /**
        * A model-drafted WorkContract (EI §8.2): the scope/verification/constraints
        * the proposer extracted from the plan document, bound to the plan version
        * it was extracted from. Repeatable — a rejected draft is re-proposed with
@@ -3867,6 +3879,15 @@ export type RuntimeClient = {
       recordedAt: string;
     }>
   >;
+  /**
+   * EI Phase 0: the user records a human validation note on a completion card
+   * ("用户走 UI 补 humanValidation"). Durable; merged onto the card by
+   * `completions`.
+   */
+  recordHumanValidation?(
+    input: { taskID: string; validation: string },
+    sessionID?: string,
+  ): Promise<{ recorded: boolean; reason?: string }>;
   /**
    * The plan task state machine (EI §4 Phase 4): the plan document's markdown
    * checkboxes (declaration source) projected against the session's recorded

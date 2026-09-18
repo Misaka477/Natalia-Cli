@@ -555,6 +555,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "recorded",
     note: "records a completion card; changeSummary is safe prose, never a diff or file content",
   },
+  recordHumanValidation: {
+    refusal: "value",
+    expressedBy: "recorded",
+    note: "records the user's human validation note on a completion card; the note is safe prose, redacted before it reaches the journal",
+  },
   recordValidation: {
     refusal: "value",
     expressedBy: "recorded",
