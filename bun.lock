@@ -153,6 +153,10 @@
         "@natalia/contracts": "workspace:*",
       },
     },
+    "packages/framework/agent-prompts": {
+      "name": "@natalia/agent-prompts",
+      "version": "0.0.0-m13",
+    },
     "packages/framework/attachments": {
       "name": "@natalia/attachments",
       "version": "0.0.0-m13",
@@ -176,6 +180,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/agent": "workspace:*",
+        "@natalia/agent-prompts": "workspace:*",
         "@natalia/attachments": "workspace:*",
         "@natalia/capability": "workspace:*",
         "@natalia/checkpoint": "workspace:*",
@@ -208,6 +213,7 @@
       },
       "devDependencies": {
         "@natalia/installer": "workspace:*",
+        "@natalia/view-store": "workspace:*",
       },
     },
     "packages/framework/collaboration": {
@@ -251,6 +257,7 @@
       "name": "@natalia/provider-model",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/agent-prompts": "workspace:*",
         "@natalia/attachments": "workspace:*",
         "@natalia/compaction": "workspace:*",
         "@natalia/config": "workspace:*",
@@ -883,6 +890,8 @@
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "https://registry.npmmirror.com/@napi-rs/lzma-linux-x64-gnu/-/lzma-linux-x64-gnu-1.5.1.tgz", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 
     "@natalia/agent": ["@natalia/agent@workspace:packages/framework/agent"],
+
+    "@natalia/agent-prompts": ["@natalia/agent-prompts@workspace:packages/framework/agent-prompts"],
 
     "@natalia/attachments": ["@natalia/attachments@workspace:packages/framework/attachments"],
 
