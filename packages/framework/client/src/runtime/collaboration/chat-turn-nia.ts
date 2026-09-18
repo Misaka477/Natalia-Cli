@@ -73,7 +73,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           ctx.ports.modelRefKeyForSelection(undefined, chatModel),
         )
       : input.exec.runtimeContextConfig;
-    input.exec.tokenMeter.setContextWindow(`chat:nia`, activeContextBudget.max);
+    input.exec.niaTokenMeter.setContextWindow("stream", activeContextBudget.max);
     const reportAttachmentDiagnostic = (message: string) =>
       ctx.ports.publishForSession(input.exec, {
         type: "diagnostic",
@@ -103,10 +103,9 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
       event: Extract<ConcreteRuntimeEvent, { type: `nia.chat.${string}` }>,
     ) => publishForSession(input.exec, streamEvent(event));
     const publishTokenSnapshot = () => {
-      const projection = input.exec.tokenMeter.project("chat:nia");
+      const projection = input.exec.niaTokenMeter.project("stream");
       publishForSession(input.exec, {
-        type: "context.snapshot",
-        channel: "nia",
+        type: "nia.context.snapshot",
         usedTokens:
           projection.projectedTokens ??
           projection.pressureTokens ??
@@ -444,9 +443,8 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           // Chat turns call the provider directly, so mirror it here or the
           // session usage dashboard silently excludes Navi/Nia.
           publishForSession(input.exec, {
-            type: "runtime.step_usage",
+            type: "nia.runtime.step_usage",
             id: `${input.responseMessageID}:usage:${nextChatSequence()}`,
-            channel: "nia",
             inputTokens: providerUsage.inputTokens,
             outputTokens: providerUsage.outputTokens,
             ...(providerUsage.cacheCreationInputTokens === undefined
@@ -459,16 +457,16 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
               ? {}
               : { cacheReadInputTokens: providerUsage.cacheReadInputTokens }),
           });
-          const scope = "chat:nia";
+          const scope = "stream";
           const system =
             messages[0]?.role === "system" ? messages[0].content : undefined;
-          input.exec.tokenMeter.setContextWindow(
+          input.exec.niaTokenMeter.setContextWindow(
             scope,
             activeContextBudget.max,
           );
-          input.exec.tokenMeter.recordUsage(scope, providerUsage, {
+          input.exec.niaTokenMeter.recordUsage(scope, providerUsage, {
             headerKey: JSON.stringify({ system, tools: toolSchemas }),
-            surfaceTokens: input.exec.tokenMeter.observeSurface(
+            surfaceTokens: input.exec.niaTokenMeter.observeSurface(
               scope,
               messages,
             ),

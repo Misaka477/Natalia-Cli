@@ -71,8 +71,8 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           ctx.ports.modelRefKeyForSelection(undefined, chatModel),
         )
       : input.exec.runtimeContextConfig;
-    input.exec.tokenMeter.setContextWindow(
-      `chat:navi`,
+    input.exec.naviTokenMeter.setContextWindow(
+      "stream",
       activeContextBudget.max,
     );
     const reportAttachmentDiagnostic = (message: string) =>
@@ -103,10 +103,9 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
       event: Extract<ConcreteRuntimeEvent, { type: `navi.chat.${string}` }>,
     ) => publishForSession(input.exec, streamEvent(event));
     const publishTokenSnapshot = () => {
-      const projection = input.exec.tokenMeter.project("chat:navi");
+      const projection = input.exec.naviTokenMeter.project("stream");
       publishForSession(input.exec, {
-        type: "context.snapshot",
-        channel: "navi",
+        type: "navi.context.snapshot",
         usedTokens:
           projection.projectedTokens ??
           projection.pressureTokens ??
@@ -423,9 +422,8 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           // Chat turns call the provider directly, so mirror it here or the
           // session usage dashboard silently excludes Navi/Nia.
           publishForSession(input.exec, {
-            type: "runtime.step_usage",
+            type: "navi.runtime.step_usage",
             id: `${input.responseMessageID}:usage:${nextChatSequence()}`,
-            channel: "navi",
             inputTokens: providerUsage.inputTokens,
             outputTokens: providerUsage.outputTokens,
             ...(providerUsage.cacheCreationInputTokens === undefined
@@ -438,16 +436,16 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
               ? {}
               : { cacheReadInputTokens: providerUsage.cacheReadInputTokens }),
           });
-          const scope = "chat:navi";
+          const scope = "stream";
           const system =
             messages[0]?.role === "system" ? messages[0].content : undefined;
-          input.exec.tokenMeter.setContextWindow(
+          input.exec.naviTokenMeter.setContextWindow(
             scope,
             activeContextBudget.max,
           );
-          input.exec.tokenMeter.recordUsage(scope, providerUsage, {
+          input.exec.naviTokenMeter.recordUsage(scope, providerUsage, {
             headerKey: JSON.stringify({ system, tools: toolSchemas }),
-            surfaceTokens: input.exec.tokenMeter.observeSurface(
+            surfaceTokens: input.exec.naviTokenMeter.observeSurface(
               scope,
               messages,
             ),

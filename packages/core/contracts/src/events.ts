@@ -1281,6 +1281,34 @@ type RuntimeEventData =
       toolMs?: number;
     }
   | {
+      /** Navi-owned provider step usage; replaces the shared channel tag. */
+      type: "navi.runtime.step_usage";
+      id: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadInputTokens?: number;
+      cacheCreationInputTokens?: number;
+      llmMs?: number;
+      ttftMs?: number;
+      decodeTokens?: number;
+      decodeMs?: number;
+      toolMs?: number;
+    }
+  | {
+      /** Nia-owned provider step usage; replaces the shared channel tag. */
+      type: "nia.runtime.step_usage";
+      id: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadInputTokens?: number;
+      cacheCreationInputTokens?: number;
+      llmMs?: number;
+      ttftMs?: number;
+      decodeTokens?: number;
+      decodeMs?: number;
+      toolMs?: number;
+    }
+  | {
       type: "constitution.check";
       id: string;
       ruleID: string;
@@ -1546,6 +1574,46 @@ type RuntimeEventData =
       /** Durable shared TokenMeter projection for one stream. */
       type: "context.snapshot";
       channel?: ChatChannel;
+      usedTokens: number;
+      pressureTokens?: number;
+      projectedTokens?: number;
+      contextWindow?: number;
+      source: "estimate" | "provider_usage";
+      at: string;
+    }
+  | {
+      /** Navi-owned context status. */
+      type: "navi.context.status";
+      used: number;
+      max: number;
+      source: ContextStatusSource;
+      thresholdPercent: number;
+      reserved: number;
+      trigger?: CompactionTrigger;
+    }
+  | {
+      /** Nia-owned context status. */
+      type: "nia.context.status";
+      used: number;
+      max: number;
+      source: ContextStatusSource;
+      thresholdPercent: number;
+      reserved: number;
+      trigger?: CompactionTrigger;
+    }
+  | {
+      /** Navi-owned TokenMeter projection. */
+      type: "navi.context.snapshot";
+      usedTokens: number;
+      pressureTokens?: number;
+      projectedTokens?: number;
+      contextWindow?: number;
+      source: "estimate" | "provider_usage";
+      at: string;
+    }
+  | {
+      /** Nia-owned TokenMeter projection. */
+      type: "nia.context.snapshot";
       usedTokens: number;
       pressureTokens?: number;
       projectedTokens?: number;

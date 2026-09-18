@@ -37,18 +37,40 @@ export function createSessionAttach(ctx: RuntimeContext) {
     // truly needs older snapshots must call the shared full-event escape hatch
     // explicitly; attach must not force a full journal load on every switch.
     const meter = exec.tokenMeter;
+    type SnapshotRecord = {
+      channel?: "navi" | "nia";
+      agentID?: string;
+      usedTokens: number;
+      pressureTokens?: number;
+      projectedTokens?: number;
+      contextWindow?: number;
+      source: "estimate" | "provider_usage";
+    };
     const latestSnapshot = (
       channel: "navi" | "nia" | undefined,
       agentID?: string,
-    ) => {
+    ): SnapshotRecord | undefined => {
       for (let index = exec.session.events.length - 1; index >= 0; index -= 1) {
         const event = exec.session.events[index];
+        if (!event) continue;
+        const streamMatches =
+          channel === "navi"
+            ? event.type === "navi.context.snapshot" ||
+              (event.type === "context.snapshot" &&
+                event.channel === "navi")
+            : channel === "nia"
+              ? event.type === "nia.context.snapshot" ||
+                (event.type === "context.snapshot" &&
+                  event.channel === "nia")
+              : event.type === "context.snapshot" &&
+                event.channel === undefined;
         if (
-          event?.type === "context.snapshot" &&
-          event.channel === channel &&
-          event.agentID === agentID
+          streamMatches &&
+          "usedTokens" in event &&
+          "source" in event &&
+          (event as { agentID?: string }).agentID === agentID
         )
-          return event;
+          return event as SnapshotRecord;
       }
       return undefined;
     };
@@ -61,11 +83,26 @@ export function createSessionAttach(ctx: RuntimeContext) {
       contextWindow?: number;
       source: "estimate" | "provider_usage";
     }) => {
-      ctx.ports.publishForSession(exec, {
-        type: "context.snapshot",
-        ...data,
-        at: new Date().toISOString(),
-      });
+      const at = new Date().toISOString();
+      const { channel, ...payload } = data;
+      if (channel === "navi")
+        ctx.ports.publishForSession(exec, {
+          type: "navi.context.snapshot",
+          ...payload,
+          at,
+        });
+      else if (channel === "nia")
+        ctx.ports.publishForSession(exec, {
+          type: "nia.context.snapshot",
+          ...payload,
+          at,
+        });
+      else
+        ctx.ports.publishForSession(exec, {
+          type: "context.snapshot",
+          ...payload,
+          at,
+        });
     };
     const publishExistingSnapshot = (snapshot: {
       channel?: "navi" | "nia";

@@ -182,16 +182,24 @@ test("Navi and Nia provider usage feeds the session usage dashboard", async () =
   try {
     await client.chatSubmit!({ channel: "navi", text: "navi usage" });
     await client.chatSubmit!({ channel: "nia", text: "nia usage" });
-    const usage = events.filter(
-      (
-        event,
-      ): event is Extract<RuntimeEvent, { type: "runtime.step_usage" }> =>
-        event.type === "runtime.step_usage",
+    const naviUsage = events.filter(
+      (event) => event.type === "navi.runtime.step_usage",
     );
-    expect(usage).toHaveLength(2);
-    expect(usage.map((event) => event.channel)).toEqual(["navi", "nia"]);
-    expect(usage.map((event) => event.inputTokens)).toEqual([11, 11]);
-    expect(usage.map((event) => event.outputTokens)).toEqual([7, 7]);
+    const niaUsage = events.filter(
+      (event) => event.type === "nia.runtime.step_usage",
+    );
+    expect(naviUsage).toHaveLength(1);
+    expect(niaUsage).toHaveLength(1);
+    expect(naviUsage[0]).toMatchObject({
+      type: "navi.runtime.step_usage",
+      inputTokens: 11,
+      outputTokens: 7,
+    });
+    expect(niaUsage[0]).toMatchObject({
+      type: "nia.runtime.step_usage",
+      inputTokens: 11,
+      outputTokens: 7,
+    });
   } finally {
     await client.dispose?.();
   }

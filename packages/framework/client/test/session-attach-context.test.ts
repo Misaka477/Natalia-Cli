@@ -66,27 +66,18 @@ test("same-id attach restores stream context snapshots without full event replay
     while (
       Date.now() < deadline &&
       !(
-        events.some(
-          (event) =>
-            event.type === "context.snapshot" && event.channel === "navi",
-        ) &&
-        events.some(
-          (event) =>
-            event.type === "context.snapshot" && event.channel === "nia",
-        )
+        events.some((event) => event.type === "navi.context.snapshot") &&
+        events.some((event) => event.type === "nia.context.snapshot")
       )
     )
       await Bun.sleep(20);
 
-    // Existing durable snapshot: republished to the live sink verbatim.
+    // Existing durable snapshot: republished to the live sink as a Navi-owned
+    // event, no shared channel identity.
     expect(
-      events.find(
-        (event) =>
-          event.type === "context.snapshot" && event.channel === "navi",
-      ),
+      events.find((event) => event.type === "navi.context.snapshot"),
     ).toMatchObject({
-      type: "context.snapshot",
-      channel: "navi",
+      type: "navi.context.snapshot",
       usedTokens: 42,
       pressureTokens: 42,
       projectedTokens: 42,
@@ -94,19 +85,12 @@ test("same-id attach restores stream context snapshots without full event replay
     });
     // Legacy stream with no durable snapshot: seeded from projected history.
     expect(
-      events.find(
-        (event) =>
-          event.type === "context.snapshot" && event.channel === "nia",
-      ),
+      events.find((event) => event.type === "nia.context.snapshot"),
     ).toMatchObject({
-      type: "context.snapshot",
-      channel: "nia",
+      type: "nia.context.snapshot",
     });
     expect(
-      events.some(
-        (event) =>
-          event.type === "context.snapshot" && event.channel === "nia",
-      ),
+      events.some((event) => event.type === "nia.context.snapshot"),
     ).toBe(true);
   } finally {
     await client.dispose?.();

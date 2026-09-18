@@ -22,9 +22,20 @@ import {
   type AppState,
 } from "./state";
 
+type UsageEvent = {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  llmMs?: number;
+  toolMs?: number;
+  ttftMs?: number;
+  decodeMs?: number;
+};
+
 function accumulateUsage(
   target: import("./state").SessionUsageStats,
-  event: Extract<RuntimeEvent, { type: "runtime.step_usage" }>,
+  event: UsageEvent,
 ) {
   target.steps += 1;
   target.inputTokens += event.inputTokens ?? 0;
@@ -55,6 +66,20 @@ export function applyStatusEvent(
       if (!state.usageByChannel[channel])
         state.usageByChannel[channel] = emptySessionUsageStats();
       accumulateUsage(state.usageByChannel[channel], event);
+      return true;
+    }
+    case "navi.runtime.step_usage": {
+      accumulateUsage(state.sessionUsage, event);
+      if (!state.usageByChannel.navi)
+        state.usageByChannel.navi = emptySessionUsageStats();
+      accumulateUsage(state.usageByChannel.navi, event);
+      return true;
+    }
+    case "nia.runtime.step_usage": {
+      accumulateUsage(state.sessionUsage, event);
+      if (!state.usageByChannel.nia)
+        state.usageByChannel.nia = emptySessionUsageStats();
+      accumulateUsage(state.usageByChannel.nia, event);
       return true;
     }
     case "work_contract.drafted":
@@ -134,6 +159,54 @@ export function applyStatusEvent(
       if (event.channel === "navi") state.navi.context = usage;
       else if (event.channel === "nia") state.nia.context = usage;
       else state.context = usage;
+      return true;
+    }
+    case "navi.context.status": {
+      state.navi.context = {
+        used: event.used,
+        max: event.max,
+        source: event.source,
+        thresholdPercent: event.thresholdPercent,
+        reserved: event.reserved,
+        ...(event.trigger === undefined ? {} : { trigger: event.trigger }),
+      };
+      return true;
+    }
+    case "nia.context.status": {
+      state.nia.context = {
+        used: event.used,
+        max: event.max,
+        source: event.source,
+        thresholdPercent: event.thresholdPercent,
+        reserved: event.reserved,
+        ...(event.trigger === undefined ? {} : { trigger: event.trigger }),
+      };
+      return true;
+    }
+    case "navi.context.snapshot": {
+      state.navi.context = {
+        used: event.projectedTokens ?? event.pressureTokens ?? event.usedTokens,
+        ...(event.contextWindow === undefined
+          ? {}
+          : { max: event.contextWindow }),
+        source: event.source,
+        contextWindow: event.contextWindow,
+        pressureTokens: event.pressureTokens,
+        projectedTokens: event.projectedTokens,
+      };
+      return true;
+    }
+    case "nia.context.snapshot": {
+      state.nia.context = {
+        used: event.projectedTokens ?? event.pressureTokens ?? event.usedTokens,
+        ...(event.contextWindow === undefined
+          ? {}
+          : { max: event.contextWindow }),
+        source: event.source,
+        contextWindow: event.contextWindow,
+        pressureTokens: event.pressureTokens,
+        projectedTokens: event.projectedTokens,
+      };
       return true;
     }
     case "context.checkpoint":
