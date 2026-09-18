@@ -5140,6 +5140,19 @@ button.neu-settings-item.neu-settings-item-button:active {
 .constitution-btn[data-danger]:hover {
   background: rgba(220, 90, 90, 0.3);
 }
+/* A release-scope (runtime self-protection) rule: not an empty action slot but
+   an explicit label, so the panel explains why it cannot be edited. */
+.constitution-protected {
+  flex: none;
+  align-self: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  cursor: help;
+  user-select: none;
+}
 .neu-goal-action {
   display: inline-flex;
   align-items: center;

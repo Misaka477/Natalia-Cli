@@ -4,6 +4,7 @@ import { applyEvent, initialState, type AppState } from "@natalia/view-store";
 import {
   acknowledgeDriftFindingViaRpc,
   collapseList,
+  constitutionRuleAffordance,
   createConstitutionRuleViaRpc,
   DRIFT_COLLAPSE_LIMIT,
   editConstitutionRuleViaRpc,
@@ -469,4 +470,14 @@ test("updateConstitutionDocRuleViaRpc forwards the edit (id + fields) to the RPC
       sessionID: "ses_doc",
     },
   ]);
+});
+
+test("constitution rows: release scope is protected, user rules stay editable", () => {
+  // EI §3.8 P-1.c: release = runtime self-protection (UI + RPC refuse edits);
+  // project/package = user-owned (编辑/停用/删除 available).
+  expect(constitutionRuleAffordance({ scope: "release" })).toBe("protected");
+  expect(constitutionRuleAffordance({ scope: "project" })).toBe("editable");
+  expect(constitutionRuleAffordance({ scope: "package" })).toBe("editable");
+  // A rule without a scope is treated as user-owned, never silently protected.
+  expect(constitutionRuleAffordance({})).toBe("editable");
 });

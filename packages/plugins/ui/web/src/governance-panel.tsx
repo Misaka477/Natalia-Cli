@@ -227,6 +227,21 @@ export async function removeConstitutionRuleViaRpc(
   return runtime?.removeConstitutionRule?.({ ruleID }, sessionID);
 }
 
+/**
+ * Which row affordance a constitution rule gets (EI §3.8 P-1.c). `release` is
+ * runtime self-protection: C-TERM-001/002/003 are enforced by the hard-coded
+ * SELF_PROTECTION_PATTERNS in the tool-execution path and C-REL-* are runtime
+ * policy, so the RPC refuses UI edits (`isReleaseRule`) and the panel shows a
+ * "系统保护" label instead of an empty action slot. `project`/`package` rules
+ * are user-owned and keep 编辑/停用/删除. Pure so it is unit-testable without
+ * a DOM.
+ */
+export function constitutionRuleAffordance(rule: {
+  scope?: string;
+}): "editable" | "protected" {
+  return rule.scope === "release" ? "protected" : "editable";
+}
+
 /** The RPC action behind a constitution document-rule promote click. */
 export async function promoteConstitutionDocRuleViaRpc(
   runtime: RuntimeClient | undefined,
@@ -994,7 +1009,7 @@ export function GovernancePane(props: {
                     {rule.scope} · {rule.enforcement}
                   </span>
                 </div>
-                <Show when={rule.scope !== "release"}>
+                <Show when={constitutionRuleAffordance(rule) === "editable"}>
                   <div class="constitution-row-actions">
                     <button
                       type="button"
@@ -1042,6 +1057,24 @@ export function GovernancePane(props: {
                       删除
                     </button>
                   </div>
+                </Show>
+                {/*
+                  Release scope is runtime self-protection (EI §3.8 P-1.c):
+                  C-TERM-001/002/003 are enforced by the hard-coded
+                  SELF_PROTECTION_PATTERNS in the tool-execution path
+                  (execute-calls.ts), so the journal row mirrors a guarantee a
+                  panel click cannot remove; C-REL-* are runtime policy. The
+                  RPC refuses UI edits for these (isReleaseRule), so the panel
+                  must SAY so instead of rendering an empty action slot that
+                  reads as "broken".
+                */}
+                <Show when={constitutionRuleAffordance(rule) === "protected"}>
+                  <span
+                    class="constitution-protected"
+                    title="Runtime 自保护规则（release scope）：由执行路径强制，面板不可编辑/停用/删除；模型也只能提案、不能修改。"
+                  >
+                    系统保护
+                  </span>
                 </Show>
               </div>
             )}
