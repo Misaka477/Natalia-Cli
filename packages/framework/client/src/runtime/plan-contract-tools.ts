@@ -13,10 +13,13 @@
  * document change raises on an unapproved draft.
  */
 import {
+  projectedConstitutionRules,
   projectedWorkContracts,
+  sessionFactConstitutionRules,
   sessionFactWorkContracts,
 } from "@natalia/session";
 import { ensureCompleteSessionFactState } from "./session-full-events";
+import { checkContractAgainstConstitution } from "./contract-constitution-check";
 import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   PROVIDER_MODEL_CONTROLLER_SERVICE,
@@ -49,6 +52,22 @@ function requireWorkLedger(
 }
 
 /**
+ * The effective constitution rules for a session (EI Open Question: 契约
+ * handoff 撞 constitution). Read from the complete fact state when available
+ * so rules added before a fast-attach window are not missed, falling back to
+ * the projected hot events.
+ */
+async function sessionConstitutionRules(
+  ctx: RuntimeContext,
+  exec: SessionExecutionState,
+) {
+  await ensureCompleteSessionFactState(ctx, exec);
+  return exec.factState
+    ? sessionFactConstitutionRules(exec.factState)
+    : projectedConstitutionRules(exec.session.events);
+}
+
+/**
  * The proposal tool: validate → draft → user gate → accept (EI §8.4).
  *
  * Repeatable: a rejected draft leaves the draft in the journal and returns the
@@ -61,7 +80,7 @@ export function createPlanProposeTool(ctx: RuntimeContext): RuntimeTool {
   return {
     name: "plan_propose",
     description:
-      "Propose the WorkContract (scope/verification/constraints) for a marked plan document and request the user's approval. Extract the fields from the plan you just wrote — grounding, not invention. Placeholder entries (single characters or pure generic words like all/everything/相关) are rejected; an all-empty proposal is accepted as unverifiable (advisory-only). This tool blocks until the user Allow / Reject; on Reject you get the feedback and can re-propose. When accepted, hand the plan off with mailbox_send next_plan_handoff.",
+      "Propose the WorkContract (scope/verification/constraints) for a marked plan document and request the user's approval. Extract the fields from the plan you just wrote — grounding, not invention. Placeholder entries (single characters or pure generic words like all/everything/相关) are rejected; an all-empty proposal is accepted as unverifiable (advisory-only). A scope entry that names a path a deny constitution rule covers is also rejected before the gate — re-propose within the rule. This tool blocks until the user Allow / Reject; on Reject you get the feedback and can re-propose. When accepted, hand the plan off with mailbox_send next_plan_handoff.",
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -124,6 +143,25 @@ export function createPlanProposeTool(ctx: RuntimeContext): RuntimeTool {
           problems,
           reason:
             "the draft carried placeholder or empty entries; re-propose with concrete entries extracted from the plan document",
+        });
+      // EI Open Question "契约 handoff 撞 constitution" — decided: 拦在 propose
+      // (事前). A scope entry naming a path a deny rule covers is a contract
+      // the runtime will never allow to execute; refuse it here, inside the
+      // existing re-propose loop, so the user gate never fires for a contract
+      // that cannot be carried out (and the handoff never dead-ends on it).
+      const constitutionConflicts = checkContractAgainstConstitution({
+        entries: fields.scope ?? [],
+        rules: await sessionConstitutionRules(ctx, exec),
+      });
+      if (constitutionConflicts.length)
+        return JSON.stringify({
+          accepted: false,
+          problems: constitutionConflicts.map(
+            (conflict) =>
+              `scope entry "${conflict.entry.slice(0, 60)}" names ${conflict.path}, which the deny constitution rule ${conflict.ruleID} covers`,
+          ),
+          reason:
+            "the scope conflicts with a deny constitution rule; re-propose within the rule, or ask the user to change the rule first",
         });
       // A draft with no extractable fields is still proposeable — it lands as
       // an unverifiable acceptance (advisory-only judgment).
@@ -265,7 +303,7 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
   return {
     name: "detour_declare",
     description:
-      "Declare a detour: work outside the accepted WorkContract's scope, with the scope/verification/constraint increments you need. currentVersion is the accepted contract version (optimistic lock). The scopeDelta must not overlap the committed scope. This blocks until the user Allow/Reject; on Allow a new accepted contract (v+1) absorbs the deltas, on Reject you get feedback. Nia reviews it asynchronously but the approval is always the user's.",
+      "Declare a detour: work outside the accepted WorkContract's scope, with the scope/verification/constraint increments you need. currentVersion is the accepted contract version (optimistic lock). The scopeDelta must not overlap the committed scope, and a scopeDelta entry naming a path a deny constitution rule covers is rejected before the gate — re-declare within the rule. This blocks until the user Allow/Reject; on Allow a new accepted contract (v+1) absorbs the deltas, on Reject you get feedback. Nia reviews it asynchronously but the approval is always the user's.",
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -347,6 +385,24 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
           accepted: false,
           problems,
           reason: "the detour failed validation; fix the problems and re-declare",
+        });
+      // EI Open Question "契约 handoff 撞 constitution" — same 事前 check as
+      // plan_propose: a scopeDelta naming a path a deny rule covers would
+      // dead-end the detour after the user approved it, so refuse it before
+      // the gate fires.
+      const constitutionConflicts = checkContractAgainstConstitution({
+        entries: args.scopeDelta ?? [],
+        rules: await sessionConstitutionRules(ctx, exec),
+      });
+      if (constitutionConflicts.length)
+        return JSON.stringify({
+          accepted: false,
+          problems: constitutionConflicts.map(
+            (conflict) =>
+              `scopeDelta entry "${conflict.entry.slice(0, 60)}" names ${conflict.path}, which the deny constitution rule ${conflict.ruleID} covers`,
+          ),
+          reason:
+            "the detour scope conflicts with a deny constitution rule; re-declare within the rule, or ask the user to change the rule first",
         });
       const now = new Date().toISOString();
       const detourID = `${planID}:detour:${ctx.ports.nextPlanSequence()}`;

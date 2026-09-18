@@ -22,6 +22,33 @@
 import type { RuntimeEvent } from "@natalia/contracts";
 
 /**
+ * Minimal constitution-rule path matching (EI §8.1 a/p/c wiring; the static
+ * contract pre-check for the "契约 handoff 撞 constitution" open question
+ * shares this one implementation): a rule's `appliesTo.paths` pattern matches
+ * a path when the glob covers it. `*` matches within a segment, `**` matches
+ * across segments; a bare directory pattern matches everything under it.
+ * Pure and deterministic.
+ */
+export function constitutionPathMatch(pattern: string, path: string): boolean {
+  const normalizedPattern = pattern.replace(/\\/gu, "/").replace(/^\.\//u, "");
+  const normalizedPath = path.replace(/\\/gu, "/").replace(/^\.\//u, "");
+  // Escape regex metacharacters, then expand `**/`, `**` and `*`.
+  const GLOBSTAR = "\u0000";
+  const source = normalizedPattern
+    .replace(/[.+^${}()|[\]\\]/gu, "\\$&")
+    .replace(/\*\*\//gu, GLOBSTAR)
+    .replace(/\*\*/gu, ".*")
+    .replace(/\*/gu, "[^/]*");
+  const regex = new RegExp(`^${source.split(GLOBSTAR).join("(?:.*/)?")}$`, "u");
+  if (regex.test(normalizedPath)) return true;
+  // A directory pattern ("src/") also matches everything under it.
+  return (
+    normalizedPattern.endsWith("/") &&
+    normalizedPath.startsWith(normalizedPattern)
+  );
+}
+
+/**
  * The built-in runtime self-protection rules, migrated verbatim from the
  * runtime's hard-coded matcher. This is the single source of truth for the rule
  * metadata; the runtime tool-execution path keeps the regex matcher and looks these up.

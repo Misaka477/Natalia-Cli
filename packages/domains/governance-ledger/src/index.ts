@@ -11,6 +11,7 @@ export {
   buildConstitutionRuleRemoved,
   buildPromotedConstitutionRule,
   buildProposedConstitutionRule,
+  constitutionPathMatch,
   recordDecision,
   seedConstitutionRules,
   validateConstitutionRuleProposal,
