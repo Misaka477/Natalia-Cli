@@ -472,12 +472,16 @@ test("updateConstitutionDocRuleViaRpc forwards the edit (id + fields) to the RPC
   ]);
 });
 
-test("constitution rows: release scope is protected, user rules stay editable", () => {
-  // EI §3.8 P-1.c: release = runtime self-protection (UI + RPC refuse edits);
-  // project/package = user-owned (编辑/停用/删除 available).
-  expect(constitutionRuleAffordance({ scope: "release" })).toBe("protected");
-  expect(constitutionRuleAffordance({ scope: "project" })).toBe("editable");
-  expect(constitutionRuleAffordance({ scope: "package" })).toBe("editable");
-  // A rule without a scope is treated as user-owned, never silently protected.
+test("constitution rows: only hard-protected rules lock, everything else edits", () => {
+  // Per the user's decision: 硬保护不能删，其余用户可删改. Only the C-TERM-*
+  // rules backed by hard-coded SELF_PROTECTION_PATTERNS are locked.
+  expect(constitutionRuleAffordance({ ruleID: "C-TERM-001" })).toBe("protected");
+  expect(constitutionRuleAffordance({ ruleID: "C-TERM-002" })).toBe("protected");
+  expect(constitutionRuleAffordance({ ruleID: "C-TERM-003" })).toBe("protected");
+  // Release-scope runtime-policy rules are user-editable, not locked.
+  expect(constitutionRuleAffordance({ ruleID: "C-REL-001" })).toBe("editable");
+  expect(constitutionRuleAffordance({ ruleID: "C-REL-002" })).toBe("editable");
+  expect(constitutionRuleAffordance({ ruleID: "P-USER-abc" })).toBe("editable");
+  // A rule without an id is never silently protected.
   expect(constitutionRuleAffordance({})).toBe("editable");
 });

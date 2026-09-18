@@ -31,6 +31,7 @@ import {
   sessionFactEvidenceRecords,
 } from "@natalia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
+import { isHardProtectedConstitutionRule } from "@natalia/contracts";
 import type { EpisodeID } from "@natalia/contracts";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -206,23 +207,15 @@ function decisionView(
  * it cannot be edited or removed by any UI action, only bypassed through the
  * explicit override path.
  */
-async function isReleaseRule(
-  ctx: import("../context").RuntimeContext,
-  exec: {
-    session: { events: import("@natalia/contracts").RuntimeEvent[] };
-    factStateComplete?: boolean;
-    factState?: import("@natalia/session").SessionFactState;
-  },
-  ruleID: string,
-): Promise<boolean> {
-  await ensureCompleteSessionFactState(ctx as never, exec as never);
-  const rules =
-    exec.factStateComplete === true && exec.factState
-      ? sessionFactConstitutionRules(exec.factState)
-      : projectedConstitutionRules(exec.session.events);
-  return rules.some(
-    (rule) => rule.ruleID === ruleID && rule.scope === "release",
-  );
+/**
+ * EI §3.8 P-1.c, per the user's decision (硬保护不能删，其余用户可删改): only the
+ * rules backed by the tool-execution `SELF_PROTECTION_PATTERNS` are locked from
+ * UI edits; release-scope runtime-policy rules (C-REL-*) and user rules are
+ * editable/disableable/deletable. The shared set lives in @natalia/contracts so
+ * the runtime and the governance UI agree on exactly which rules are protected.
+ */
+function isHardProtectedRule(ruleID: string): boolean {
+  return isHardProtectedConstitutionRule(ruleID);
 }
 
 export function createIntelligenceSurface(
@@ -1023,9 +1016,10 @@ export function createIntelligenceSurface(
       const exec = await intelligenceExecWindow(sessionID);
       if (!exec?.session || !input.ruleID.trim())
         return { updated: false as const };
-      // Runtime self-protection: release-scope rules cannot be edited by a UI
-      // action either (EI §3.8 P-1.c).
-      if (await isReleaseRule(ctx, exec, input.ruleID))
+      // Hard-coded runtime self-protection (C-TERM-*): the guarantee survives
+      // a journal edit, so the panel must not pretend it can be changed. Every
+      // other rule (C-REL-*, user rules) is user-editable (EI §3.8 P-1.c).
+      if (isHardProtectedRule(input.ruleID))
         return { updated: false as const };
       const governanceLedger = requireGovernanceLedger();
       if (!governanceLedger) return { updated: false as const };
@@ -1072,8 +1066,10 @@ export function createIntelligenceSurface(
       const exec = await intelligenceExecWindow(sessionID);
       if (!exec?.session || !input.ruleID.trim())
         return { removed: false as const };
-      // Runtime self-protection: release-scope rules are never removable.
-      if (await isReleaseRule(ctx, exec, input.ruleID))
+      // Hard-coded runtime self-protection (C-TERM-*): the guarantee cannot
+      // be removed by deleting the journal row, so deletion is refused. Every
+      // other rule (C-REL-*, user rules) is user-removable.
+      if (isHardProtectedRule(input.ruleID))
         return { removed: false as const };
       const governanceLedger = requireGovernanceLedger();
       if (!governanceLedger) return { removed: false as const };

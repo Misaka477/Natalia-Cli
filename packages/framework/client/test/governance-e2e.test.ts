@@ -662,3 +662,65 @@ test("Phase -1 E2E: a user edits a soft constitution doc rule and it is written 
 
   await client.dispose?.();
 }, 30_000);
+
+
+test("Phase -1 E2E: hard-protected rules refuse edits, other release rules stay user-editable", async () => {
+  const root = await officialPluginWorkspace("governance-e2e-constitution-protection");
+  const sessionID = "ses_e2e_constitution_protection" as SessionID;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    permissionMode: "auto",
+    provider: createScriptedProvider({
+      main: [{ text: "standby" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start(() => undefined);
+  await client.sessionAttach!(sessionID);
+
+  // The five seeded self-protection rules are present.
+  const seeded = await client.constitutionRules!(sessionID);
+  expect(seeded.find((rule) => rule.ruleID === "C-TERM-001")).toMatchObject({
+    scope: "release",
+    enforcement: "deny",
+  });
+  expect(seeded.find((rule) => rule.ruleID === "C-REL-001")).toMatchObject({
+    scope: "release",
+    enforcement: "approval",
+  });
+
+  // Hard-coded runtime protection (C-TERM-*): the guarantee survives a journal
+  // edit, so the runtime refuses both editing and deleting the rule.
+  const termEdit = await client.updateConstitutionRule!(
+    { ruleID: "C-TERM-001", statement: "loosen it" },
+    sessionID,
+  );
+  expect(termEdit.updated).toBe(false);
+  const termRemove = await client.removeConstitutionRule!(
+    { ruleID: "C-TERM-002" },
+    sessionID,
+  );
+  expect(termRemove.removed).toBe(false);
+
+  // Other release-scope rules are runtime policy, not hard-coded: the user can
+  // edit and delete them (per the decision 硬保护不能删，其余用户可删改).
+  const relEdit = await client.updateConstitutionRule!(
+    { ruleID: "C-REL-001", statement: "git writes need approval (edited)" },
+    sessionID,
+  );
+  expect(relEdit.updated).toBe(true);
+  let rules = await client.constitutionRules!(sessionID);
+  expect(rules.find((rule) => rule.ruleID === "C-REL-001")).toMatchObject({
+    statement: "git writes need approval (edited)",
+  });
+  const relRemove = await client.removeConstitutionRule!(
+    { ruleID: "C-REL-002" },
+    sessionID,
+  );
+  expect(relRemove.removed).toBe(true);
+  rules = await client.constitutionRules!(sessionID);
+  expect(rules.some((rule) => rule.ruleID === "C-REL-002")).toBe(false);
+  await client.dispose?.();
+}, 30_000);
