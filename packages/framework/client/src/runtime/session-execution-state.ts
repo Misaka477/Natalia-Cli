@@ -74,6 +74,12 @@ export type SessionExecutionState = {
    * active rules, pending mailbox) must not trust an incomplete state.
    */
   factStateComplete?: boolean;
+  /**
+   * EI Phase 1 "降档": true when terminal facts were evicted from the bounded
+   * hot state. A read that needs the evicted entries reconstructs them from the
+   * durable store instead of trusting the (now bounded) hot state.
+   */
+  factStateTerminalEvicted?: boolean;
   /** Memoized session projection for snapshot/intelligence reads at one event revision. */
   snapshotProjection?: {
     eventCount: number;

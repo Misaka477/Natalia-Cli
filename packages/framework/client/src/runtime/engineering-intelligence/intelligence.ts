@@ -32,6 +32,10 @@ import {
   sessionFactEvidenceRecords,
 } from "@natalia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
+import {
+  SESSION_STORE_CONTROLLER_SERVICE,
+  type SessionStoreController,
+} from "@natalia/runtime-services";
 import { isHardProtectedConstitutionRule } from "@natalia/contracts";
 import type { EpisodeID } from "@natalia/contracts";
 import { readFile } from "node:fs/promises";
@@ -47,7 +51,7 @@ import {
   unattributedChangeNodes,
   verifyWorkGraphIntegrity,
 } from "@natalia/work-ledger";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext, SessionExecutionState } from "../context";
 import { requestAuditAfterCompletion } from "../audit-request";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import { injectFindingIntoMainAgent } from "../drift-inject";
@@ -167,6 +171,34 @@ async function runSessionProjectionWithFallback(
  * fall back to the projected-events path for a tail-only attach. Returns the
  * fact-state slice and whether it was used.
  */
+/**
+ * EI Phase 1 "降档": when the bounded hot state evicted terminal facts, a read
+ * that needs the complete set reconstructs it by paging the durable log (降档≠
+ * 丢失). Falls back to the live events when no store can page.
+ */
+async function readCompleteFacts<T>(
+  ctx: RuntimeContext,
+  exec: SessionExecutionState,
+  project: (events: import("@natalia/contracts").RuntimeEvent[]) => T[],
+): Promise<T[]> {
+  const store = ctx.ports.resolveService<SessionStoreController>(
+    SESSION_STORE_CONTROLLER_SERVICE,
+  );
+  if (!store) return project(exec.session.events);
+  const events: import("@natalia/contracts").RuntimeEvent[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await store.history(exec.session.id, exec.session.events, {
+      offset,
+      limit: 2_000,
+    });
+    for (const entry of page.events) events.push(entry.event);
+    if (!page.hasMore || page.events.length === 0) break;
+    offset += page.events.length;
+  }
+  return project(events);
+}
+
 function readFactSlice<T>(
   exec: { factStateComplete?: boolean; factState?: SessionFactState },
   select: (state: SessionFactState) => T[],
@@ -383,11 +415,14 @@ export function createIntelligenceSurface(
       // Session decisions are the default. Legacy facts without a scope are
       // session-scoped; workspace facts carry an explicit scope and must be
       // requested through scope workspace/all.
-      const sessionRecords = readFactSlice(
-        exec,
-        sessionFactDecisionRecords,
-        () => projectedDecisionRecords(exec.session.events),
-      )
+      const sessionDecisionRecords = exec.factStateTerminalEvicted
+        ? await readCompleteFacts(ctx, exec, projectedDecisionRecords)
+        : readFactSlice(
+            exec,
+            sessionFactDecisionRecords,
+            () => projectedDecisionRecords(exec.session.events),
+          );
+      const sessionRecords = sessionDecisionRecords
         .filter((record) => record.scope !== "workspace")
         .map((record) => decisionView(record, "session"));
       if (scope === "session")
@@ -483,11 +518,13 @@ export function createIntelligenceSurface(
       // B6: the hot fact state is authoritative after the complete-history
       // check above; the projected-events path is the fallback for a
       // tail-only attach.
-      const evidence = readFactSlice(
-        exec,
-        sessionFactEvidenceRecords,
-        () => projectedEvidenceRecords(exec.session.events),
-      ) as ReturnType<typeof projectedEvidenceRecords>;
+      const evidence = (exec.factStateTerminalEvicted
+        ? await readCompleteFacts(ctx, exec, projectedEvidenceRecords)
+        : readFactSlice(
+            exec,
+            sessionFactEvidenceRecords,
+            () => projectedEvidenceRecords(exec.session.events),
+          )) as ReturnType<typeof projectedEvidenceRecords>;
       return paginate(
         evidence.map((r) => ({
           taskID: r.taskID,
@@ -515,11 +552,13 @@ export function createIntelligenceSurface(
       const resolvedSessionID = input?.sessionID ?? sessionID;
       const exec = await completeIntelligenceExec(resolvedSessionID);
       if (!exec?.session) return paginate([], input?.limit, input?.cursor);
-      const completions = readFactSlice(
-        exec,
-        sessionFactCompletions,
-        () => projectedCompletions(exec.session.events),
-      );
+      const completions = exec.factStateTerminalEvicted
+        ? await readCompleteFacts(ctx, exec, projectedCompletions)
+        : readFactSlice(
+            exec,
+            sessionFactCompletions,
+            () => projectedCompletions(exec.session.events),
+          );
       // EI Phase 0: a user-recorded human validation on the card overrides the
       // model's own (the user has the last word on acceptance).
       const humanValidation =
@@ -813,11 +852,13 @@ export function createIntelligenceSurface(
       const resolvedSessionID = input?.sessionID ?? sessionID;
       const exec = await completeIntelligenceExec(resolvedSessionID);
       if (!exec?.session) return paginate([], input?.limit, input?.cursor);
-      const findings = readFactSlice(
-        exec,
-        sessionFactDriftFindings,
-        () => projectedDriftFindings(exec.session.events),
-      );
+      const findings = exec.factStateTerminalEvicted
+        ? await readCompleteFacts(ctx, exec, projectedDriftFindings)
+        : readFactSlice(
+            exec,
+            sessionFactDriftFindings,
+            () => projectedDriftFindings(exec.session.events),
+          );
       return paginate(
         findings.map((f) => ({
           findingID: f.findingID,

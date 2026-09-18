@@ -18,6 +18,7 @@
 import {
   applySessionFactEvent,
   emptySessionFactState,
+  evictTerminalFacts,
   sessionFactStateFromEvents,
   type SessionFactState,
 } from "@natalia/session";
@@ -111,6 +112,10 @@ export async function completeSessionFactState(
   }
   exec.factState = state;
   exec.factStateComplete = true;
+  // EI Phase 1 "降档": after the complete history is folded, bound the
+  // terminal entries so hot memory does not grow with the whole session. The
+  // journal keeps everything; a read reconstructs on demand.
+  exec.factStateTerminalEvicted = evictTerminalFacts(state);
   return true;
 }
 

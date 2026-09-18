@@ -366,6 +366,8 @@ export {
   sessionFactEvidenceRecords,
   sessionFactCompletions,
   sessionFactHumanValidation,
+  evictTerminalFacts,
+  FACT_TERMINAL_LIMIT,
   sessionFactMailboxMessages,
   sessionFactDecisionRecords,
   sessionFactLatestSnapshot,

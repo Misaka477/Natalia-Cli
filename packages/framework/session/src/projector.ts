@@ -2052,6 +2052,89 @@ export function sessionFactCompletions(
   );
 }
 
+/** The terminal-keep count for the hot fact state (EI Phase 1 "降档"). */
+export const FACT_TERMINAL_LIMIT = 200;
+
+const ACTIVE_EVIDENCE_STATUS = new Set([
+  "planned",
+  "implemented",
+  "validated",
+]);
+
+/**
+ * EI Phase 1 "降档" (RINA boundary): bound the hot fact state's *terminal*
+ * entries so memory does not grow with the whole session. `降档≠丢失` — the
+ * entries are not deleted from the journal; a read that needs them pages the
+ * durable store (the intelligence surface reconstructs when
+ * `factStateTerminalEvicted` is set).
+ *
+ * - evidence: active statuses (planned/implemented/validated) kept in full;
+ *   terminal kept to the most recent `limit`.
+ * - completion: kept to the most recent `limit`.
+ * - decision: kept to the most recent `limit`.
+ * - drift: open/disputed kept in full (their dedup depends on the open set);
+ *   terminal kept to the most recent `limit`.
+ *
+ * Mutates `state` and returns whether anything was evicted. Pure otherwise.
+ */
+export function evictTerminalFacts(
+  state: SessionFactState,
+  limit = FACT_TERMINAL_LIMIT,
+): boolean {
+  let evicted = false;
+  const journal = state.intelligence.journalEvents;
+  const evidence = journal.filter((event) => event.type === "evidence.recorded");
+  const completions = journal.filter(
+    (event) => event.type === "completion.recorded",
+  );
+  const activeEvidence = evidence.filter((event) =>
+    ACTIVE_EVIDENCE_STATUS.has(event.status),
+  );
+  const terminalEvidence = evidence.filter(
+    (event) => !ACTIVE_EVIDENCE_STATUS.has(event.status),
+  );
+  const keptEvidence = new Set([
+    ...activeEvidence,
+    ...terminalEvidence.slice(-limit),
+  ]);
+  const keptCompletions = new Set(completions.slice(-limit));
+  if (
+    keptEvidence.size !== evidence.length ||
+    keptCompletions.size !== completions.length
+  ) {
+    state.intelligence.journalEvents = journal.filter((event) =>
+      event.type === "evidence.recorded"
+        ? keptEvidence.has(event)
+        : event.type === "completion.recorded"
+          ? keptCompletions.has(event)
+          : true,
+    );
+    evicted = true;
+  }
+  if (state.decisions.records.length > limit) {
+    state.decisions.records = state.decisions.records.slice(-limit);
+    evicted = true;
+  }
+  const findings = [...state.drift.findings.values()];
+  const isOpen = (status: string) => status === "open" || status === "disputed";
+  const openFindings = findings.filter((finding) => isOpen(finding.status));
+  const terminalFindings = findings.filter(
+    (finding) => !isOpen(finding.status),
+  );
+  if (terminalFindings.length > limit) {
+    const keep = new Set([
+      ...openFindings,
+      ...terminalFindings.slice(-limit),
+    ]);
+    for (const [id, finding] of state.drift.findings)
+      if (!keep.has(finding)) {
+        state.drift.findings.delete(id);
+        evicted = true;
+      }
+  }
+  return evicted;
+}
+
 /** EI Phase 0: the latest human validation note per completion taskID. */
 export function sessionFactHumanValidation(
   state: SessionFactState,
