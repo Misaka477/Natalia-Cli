@@ -14,11 +14,13 @@
  */
 import {
   projectedConstitutionRules,
+  projectedDriftFindings,
   projectedWorkContracts,
   sessionFactConstitutionRules,
   sessionFactWorkContracts,
 } from "@natalia/session";
 import { ensureCompleteSessionFactState } from "./session-full-events";
+import { targetDriftAbsorbedByScope } from "@natalia/work-ledger";
 import { checkContractAgainstConstitution } from "./contract-constitution-check";
 import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
@@ -65,6 +67,36 @@ async function sessionConstitutionRules(
   return exec.factState
     ? sessionFactConstitutionRules(exec.factState)
     : projectedConstitutionRules(exec.session.events);
+}
+
+/**
+ * EI §3.4 auto-correction: when a contract revision is accepted (plan_propose
+ * or a detour's v+1), any open target_drift finding whose flagged paths are now
+ * inside the revised scope loses its premise — the reference frame moved to
+ * meet the work, exactly like an approved detour. Close it as `corrected` so it
+ * cannot stay open against a scope that now covers it.
+ */
+function correctAbsorbedDrift(
+  ctx: RuntimeContext,
+  ledger: WorkLedgerController,
+  exec: SessionExecutionState,
+  planID: string,
+  scope: readonly string[],
+) {
+  for (const finding of projectedDriftFindings(exec.session.events)) {
+    if (finding.status !== "open") continue;
+    if (!targetDriftAbsorbedByScope({ finding, planID, scope })) continue;
+    ctx.ports.publishForSession(
+      exec,
+      ledger.buildDriftFindingUpdate({
+        id: `drift:corrected:${finding.findingID}`,
+        findingID: finding.findingID,
+        status: "corrected",
+        rationale:
+          "the accepted contract revision absorbs this path into its scope",
+      }),
+    );
+  }
 }
 
 /**
@@ -222,6 +254,7 @@ export function createPlanProposeTool(ctx: RuntimeContext): RuntimeTool {
           ...(unverifiable ? { unverifiable: true } : {}),
         }),
       );
+      correctAbsorbedDrift(ctx, ledger, exec, planID, fields.scope ?? []);
       return JSON.stringify({
         accepted: true,
         planID,
@@ -521,6 +554,7 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
           acceptedAt: new Date().toISOString(),
         }),
       );
+      correctAbsorbedDrift(ctx, ledger, exec, planID, merged.scope ?? []);
       return JSON.stringify({
         accepted: true,
         detourID,

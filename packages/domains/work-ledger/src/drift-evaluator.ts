@@ -436,6 +436,39 @@ function dependencyRule(): Rule {
  * quoted path segments — and the R's committed scope — are the expected
  * targets.
  */
+/**
+ * True when `path` sits inside one of the scope targets (equal, or nested
+ * under it). Shared by the target_drift rule and the contract-revision
+ * auto-correction so the two never disagree about what "inside the scope"
+ * means.
+ */
+export function pathInScope(path: string, scope: readonly string[]): boolean {
+  return scope.some(
+    (target) =>
+      Boolean(target) &&
+      (path === target || path.startsWith(`${target}/`)),
+  );
+}
+
+/**
+ * EI §3.4 auto-correction: a target_drift finding is corrected when a contract
+ * revision absorbs every path it flagged into the new scope — the reference
+ * frame moved to meet the work, so the finding's premise is gone (the same way
+ * an approved detour does). Pure; the caller owns the journal write.
+ */
+export function targetDriftAbsorbedByScope(input: {
+  finding: { evidence?: readonly string[]; planID?: string };
+  planID: string;
+  scope: readonly string[];
+}): boolean {
+  if (input.finding.planID !== input.planID) return false;
+  const outside = (input.finding.evidence ?? [])
+    .filter((entry) => entry.startsWith("outside_target:"))
+    .map((entry) => entry.slice("outside_target:".length));
+  if (!outside.length) return false;
+  return outside.every((changedPath) => pathInScope(changedPath, input.scope));
+}
+
 function targetDriftRule(): Rule {
   return {
     name: "target_drift",
@@ -449,12 +482,7 @@ function targetDriftRule(): Rule {
       ];
       if (!targets.length || !signal.changes.length) return undefined;
       const outside = signal.changes.filter(
-        (change) =>
-          change.path &&
-          !targets.some(
-            (target) =>
-              change.path === target || change.path?.startsWith(`${target}/`),
-          ),
+        (change) => change.path && !pathInScope(change.path, targets),
       );
       if (!outside.length) return undefined;
       return {

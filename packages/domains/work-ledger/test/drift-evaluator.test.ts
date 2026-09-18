@@ -4,7 +4,9 @@ import {
   createDriftEvaluator,
   DRIFT_CONTRACT_VERSION,
   DRIFT_FINDING_WRITER_OWNER,
+  pathInScope,
   proseRelevanceQuestion,
+  targetDriftAbsorbedByScope,
 } from "../src";
 
 function makeEvaluator(open: ReadonlySet<string> = new Set()) {
@@ -587,4 +589,82 @@ test("a warn/approval constitution hit does not open a conflict finding", () => 
       (f.ruleHits ?? []).some((h) => h.rule === "constitution_conflict"),
     ),
   ).toBe(false);
+});
+
+test("pathInScope matches the target itself and anything nested under it", () => {
+  expect(pathInScope("packages/a", ["packages/a"])).toBe(true);
+  expect(pathInScope("packages/a/x.ts", ["packages/a"])).toBe(true);
+  expect(pathInScope("packages/b/x.ts", ["packages/a"])).toBe(false);
+  // A prefix without a path boundary is not a scope hit.
+  expect(pathInScope("packages/ab/x.ts", ["packages/a"])).toBe(false);
+});
+
+test("a target_drift finding is auto-corrected only when the scope absorbs it", () => {
+  const finding = {
+    planID: "plan_1",
+    evidence: ["outside_target:packages/b/x.ts", "outside_target:packages/b/y.ts"],
+  };
+  // The revised scope covers every flagged path -> the premise is gone.
+  expect(
+    targetDriftAbsorbedByScope({
+      finding,
+      planID: "plan_1",
+      scope: ["packages/a", "packages/b"],
+    }),
+  ).toBe(true);
+  // One path left outside -> not corrected.
+  expect(
+    targetDriftAbsorbedByScope({
+      finding: { planID: "plan_1", evidence: ["outside_target:packages/b/x.ts"] },
+      planID: "plan_1",
+      scope: ["packages/a"],
+    }),
+  ).toBe(false);
+  // A different plan, a non-target_drift finding, or a planless finding: never.
+  expect(
+    targetDriftAbsorbedByScope({
+      finding,
+      planID: "plan_2",
+      scope: ["packages/b"],
+    }),
+  ).toBe(false);
+  expect(
+    targetDriftAbsorbedByScope({
+      finding: { planID: "plan_1", evidence: ["reference:no_accepted_contract"] },
+      planID: "plan_1",
+      scope: ["packages/b"],
+    }),
+  ).toBe(false);
+  expect(
+    targetDriftAbsorbedByScope({
+      finding: { evidence: ["outside_target:packages/b/x.ts"] },
+      planID: "plan_1",
+      scope: ["packages/b"],
+    }),
+  ).toBe(false);
+});
+
+test("target_drift evidence shape matches the auto-correction parser", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_td",
+    turnID: "t_td",
+    objective: "ship it",
+    currentActivity: "modify:packages/b/x.ts",
+    applicableConstraints: [],
+    changes: [{ path: "packages/b/x.ts", action: "modified" }],
+    evidenceRefs: [],
+    contract: { planID: "plan_1", scope: ["packages/a"] },
+  });
+  const targetDrift = findings.find((f) =>
+    (f.ruleHits ?? []).some((h) => h.rule === "target_drift"),
+  );
+  expect(targetDrift).toBeDefined();
+  expect(Array.isArray(targetDrift!.evidence)).toBe(true);
+  expect(
+    targetDrift!.evidence.some((entry) =>
+      entry.startsWith("outside_target:"),
+    ),
+  ).toBe(true);
+  expect(targetDrift!.planID).toBe("plan_1");
 });
