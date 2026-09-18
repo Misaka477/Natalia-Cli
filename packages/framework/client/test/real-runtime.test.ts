@@ -3935,7 +3935,7 @@ test("workspace governance decisions do not leak across workspace roots", async 
   await second.submitAndWait!("hello again");
   await pollHistoryForFinished(second);
   const records = await second.decisionRecords!({ scope: "workspace" });
-  expect(records).not.toContainEqual(
+  expect(records.items).not.toContainEqual(
     expect.objectContaining({ decision: "workspace A release rule" }),
   );
   await second.dispose?.();
@@ -7674,7 +7674,7 @@ test("promote records evidence when validation passes", async () => {
   );
   expect(await readFile(join(root, "promoted.txt"), "utf8")).toBe("landed");
   const records = await client.evidenceRecords!();
-  expect(records).toContainEqual(
+  expect(records.items).toContainEqual(
     expect.objectContaining({
       taskID: "sandbox:box",
       status: "promoted",
@@ -7685,7 +7685,7 @@ test("promote records evidence when validation passes", async () => {
   );
   expect(JSON.stringify(records)).not.toContain("stdout");
   const cards = await client.completions!();
-  expect(cards).toContainEqual(
+  expect(cards.items).toContainEqual(
     expect.objectContaining({
       taskID: "sandbox:box",
       rollbackState: "available",
@@ -7864,7 +7864,7 @@ test("failed validation records failed evidence and does not promote", async () 
     readFile(join(root, "blocked.txt"), "utf8"),
   ).rejects.toMatchObject({ code: "ENOENT" });
   const records = await client.evidenceRecords!();
-  expect(records).toContainEqual(
+  expect(records.items).toContainEqual(
     expect.objectContaining({
       taskID: "sandbox:box",
       status: "failed",
@@ -8549,7 +8549,7 @@ test("evaluateDrift opens durable findings and driftFindings answers them", asyn
     evidenceRefs: [],
   });
   expect(again).toEqual({ opened: 0 });
-  expect(await client.driftFindings!()).toHaveLength(1);
+  expect((await client.driftFindings!()).items).toHaveLength(1);
 });
 
 test("evaluateDrift opens a high finding for a forbidden constraint signal", async () => {
