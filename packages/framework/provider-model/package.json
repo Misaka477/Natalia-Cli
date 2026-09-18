@@ -17,6 +17,7 @@
     "@natalia/retry": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/tools": "workspace:*",
+    "@natalia/agent-prompts": "workspace:*"
   }
 }

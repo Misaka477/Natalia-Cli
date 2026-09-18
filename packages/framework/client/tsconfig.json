@@ -107,6 +107,9 @@
     },
     {
       "path": "../../hosts/view-store"
+    },
+    {
+      "path": "../agent-prompts"
     }
   ]
 }

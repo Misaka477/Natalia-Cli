@@ -4,7 +4,10 @@
   "compilerOptions": {
     "rootDir": "../../.."
   },
-  "include": ["src", "test"],
+  "include": [
+    "src",
+    "test"
+  ],
   "references": [
     {
       "path": "../../core/runtime-services"
@@ -32,6 +35,9 @@
     },
     {
       "path": "../../core/tools"
+    },
+    {
+      "path": "../agent-prompts"
     }
   ]
 }

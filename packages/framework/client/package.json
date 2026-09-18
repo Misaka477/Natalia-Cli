@@ -38,7 +38,8 @@
     "@natalia/ui-model": "workspace:*",
     "@natalia/work-ledger": "workspace:*",
     "@natalia/workspace": "workspace:*",
-    "@natalia/goal": "workspace:*"
+    "@natalia/goal": "workspace:*",
+    "@natalia/agent-prompts": "workspace:*"
   },
   "devDependencies": {
     "@natalia/installer": "workspace:*",

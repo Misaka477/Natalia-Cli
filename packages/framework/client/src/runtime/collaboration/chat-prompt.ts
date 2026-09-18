@@ -22,7 +22,7 @@ import {
 } from "@natalia/session";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
-import { agentSystemPrompt } from "../agent-prompts";
+import { agentSystemPrompt } from "@natalia/agent-prompts";
 import type { SessionExecutionState } from "../context";
 import { activePlanForExec } from "./plan-doc-runtime";
 

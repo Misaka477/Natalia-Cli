@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   agentPromptPreamble,
   agentSystemPrompt,
-} from "../src/runtime/agent-prompts";
+} from "../src/index";
 
 test("agentSystemPrompt prepends the shared preamble then the persona", () => {
   const navi = agentSystemPrompt("navi");
@@ -18,6 +18,7 @@ test("agentSystemPrompt prepends the shared preamble then the persona", () => {
 
 test("each agent gets its own persona under the same preamble", () => {
   for (const [agent, tag] of [
+    ["natalia", "<natalia_cli_persona>"],
     ["navi", "<navi_chat_persona>"],
     ["nia", "<nia_chat_persona>"],
   ] as const) {
