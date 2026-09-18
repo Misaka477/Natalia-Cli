@@ -62,6 +62,9 @@ test("a proposed constitution rule still gates in auto mode (no auto-grant)", as
   expect(proposed).toMatchObject({
     enforcement: "deny",
     source: "agent_proposed",
+    // EI §3.7.5 provenance: the rule is agent-proposed and user-approved.
+    proposedBy: "agent",
+    approvedBy: "user",
   });
   await client.dispose?.();
 }, 30_000);

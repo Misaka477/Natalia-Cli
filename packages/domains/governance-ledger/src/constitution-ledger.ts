@@ -282,6 +282,8 @@ export function buildProposedConstitutionRule(input: {
   ruleID: string;
   proposal: ConstitutionRuleProposal;
   priority?: "critical" | "high" | "medium" | "low";
+  /** EI §3.7.5: the proposing agent (default: the main agent). */
+  proposedBy?: "agent" | "navi";
 }): Extract<RuntimeEvent, { type: "constitution.rule_added" }> {
   return {
     type: "constitution.rule_added",
@@ -293,6 +295,10 @@ export function buildProposedConstitutionRule(input: {
     source: "agent_proposed",
     enforcement: input.proposal.enforcement,
     overridePolicy: "user_explicit",
+    // EI §3.7.5: the builder runs only after the user gate Allow, so the rule
+    // is user-approved by construction; provenance records who proposed it.
+    proposedBy: input.proposedBy ?? "agent",
+    approvedBy: "user",
     ...(input.proposal.appliesTo
       ? { appliesTo: input.proposal.appliesTo }
       : {}),

@@ -357,6 +357,8 @@ export function createIntelligenceSurface(
         enforcement: r.enforcement,
         overridePolicy: r.overridePolicy,
         ...(r.appliesTo ? { appliesTo: r.appliesTo } : {}),
+        ...(r.proposedBy ? { proposedBy: r.proposedBy } : {}),
+        ...(r.approvedBy ? { approvedBy: r.approvedBy } : {}),
       }));
     },
     async decisionRecords(

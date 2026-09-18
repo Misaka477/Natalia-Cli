@@ -1292,6 +1292,10 @@ type RuntimeEventData =
         commandPattern?: string;
       };
       evidenceRefs?: string[];
+      /** EI §3.7.5 provenance: who proposed an `agent_proposed` rule. */
+      proposedBy?: "agent" | "navi";
+      /** EI §3.7.5 provenance: a model-proposed rule always lands user-approved. */
+      approvedBy?: "user";
     }
   | {
       type: "constitution.override_granted";
@@ -3571,6 +3575,9 @@ export type RuntimeClient = {
         paths?: string[];
         commandPattern?: string;
       };
+      /** EI §3.7.5 provenance for an agent-proposed rule. */
+      proposedBy?: "agent" | "navi";
+      approvedBy?: "user";
     }>
   >;
   /**
