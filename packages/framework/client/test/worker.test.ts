@@ -851,10 +851,18 @@ test("fact-domain read queries and mailbox writes route through the channel", as
     constitutionRules: async () => [],
     decisionRecords: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
     evidenceRecords: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
-    chatMessages: async () => [
-      { messageID: "chat:m1", role: "user", text: "hi", at: "now" },
-    ],
-    chatRollback: async () => ({ rolledBackTo: "chat:m1", removed: 1 }),
+    naviChat: {
+      submit: async () => ({ messageID: "chat:m1" }),
+      messages: async () => [
+        { messageID: "chat:m1", role: "user", text: "hi", at: "now" },
+      ],
+      rollback: async () => ({ rolledBackTo: "chat:m1", removed: 1 }),
+    },
+    niaChat: {
+      submit: async () => ({ messageID: "chat:n1" }),
+      messages: async () => [],
+      rollback: async () => ({ rolledBackTo: "chat:n1", removed: 0 }),
+    },
   };
   attachRuntimeClientWorker(channel.port1, host);
   const client = createWorkerRuntimeClient(channel.port2);
@@ -882,10 +890,10 @@ test("fact-domain read queries and mailbox writes route through the channel", as
   expect(await client.constitutionRules!()).toEqual([]);
   expect(await client.decisionRecords!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
   expect(await client.evidenceRecords!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
-  expect(await client.chatMessages!()).toEqual([
+  expect(await client.naviChat!.messages!()).toEqual([
     { messageID: "chat:m1", role: "user", text: "hi", at: "now" },
   ]);
-  expect(await client.chatRollback!({ toMessageID: "chat:m1" })).toEqual({
+  expect(await client.naviChat!.rollback!({ toMessageID: "chat:m1" })).toEqual({
     rolledBackTo: "chat:m1",
     removed: 1,
   });

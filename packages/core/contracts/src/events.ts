@@ -4317,48 +4317,6 @@ export type RuntimeClient = {
   /** Nia-owned stream surface. No shared channel parameter. */
   niaChat?: ChatStreamSurface;
 
-  chatSubmit?(input: {
-    text: string;
-    /** Optional per-turn Chat model override (normal or expert profile). */
-    model?: { modelID?: string; variant?: string };
-    reasoningEffort?: RuntimeReasoningEffort;
-    attachments?: string[];
-    channel?: ChatChannel;
-    sessionID?: string;
-  }): Promise<{ messageID: string }>;
-  chatAbort?(
-    channel?: ChatChannel,
-    sessionID?: string,
-  ): Promise<{ aborted: boolean }>;
-  chatModelProfile?(
-    channel?: ChatChannel,
-    sessionID?: string,
-  ): Promise<ChatModelProfile>;
-  setChatModelProfile?(
-    profile: ChatModelProfile,
-    channel?: ChatChannel,
-    sessionID?: string,
-  ): Promise<{ saved: boolean }>;
-  /**
-   * The durable stream-owned Chat conversation, oldest first. A stream-owned
-   * `*.chat.rollback` truncates it at a message boundary, so the projection
-   * returns the effective history.
-   */
-  chatMessages?(
-    channel?: ChatChannel,
-    sessionID?: string,
-  ): Promise<ChatMessageRow[]>;
-  /**
-   * Paged Chat conversation. Prefer this over `chatMessages` for UI readers:
-   * it returns one bounded page plus opaque cursors, so long Chat histories do
-   * not force every panel to hold the full stream.
-   */
-  chatMessagesPage?(input: {
-    channel?: ChatChannel;
-    sessionID?: string;
-    cursor?: string;
-    limit?: number;
-  }): Promise<TranscriptPage<ChatMessageRow>>;
   /**
    * Current subagent views for the active session. The runtime keeps subagent
    * records in its own persistent registry, so this is a lazy read surface; it
@@ -4376,17 +4334,6 @@ export type RuntimeClient = {
     cursor?: string;
     limit?: number;
   }): Promise<TranscriptPage<RuntimeSubagentView>>;
-  /**
-   * Rolls the Chat conversation back to a message boundary — the only rollback
-   * the Chat may issue, and it never touches workspace/checkpoint state.
-   */
-  chatRollback?(
-    input: {
-      toMessageID: string;
-    },
-    channel?: ChatChannel,
-    sessionID?: string,
-  ): Promise<{ rolledBackTo: string; removed: number }>;
 };
 
 export type ChatModelProfile = {

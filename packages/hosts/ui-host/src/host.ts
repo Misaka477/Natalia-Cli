@@ -501,13 +501,13 @@ async function executeRuntimeCommand(
 ): Promise<unknown> {
   if (name === "runtime.submit") return runtime.submit(String(args ?? ""));
   if (name === "runtime.chatSubmit") {
-    if (!runtime.chatSubmit)
+    if (!runtime.naviChat?.submit)
       throw new Error("runtime command execution unavailable");
     const text =
       typeof args === "object" && args && "text" in args
         ? String((args as { text: unknown }).text)
         : String(args ?? "");
-    return runtime.chatSubmit({ text });
+    return runtime.naviChat.submit({ text });
   }
   if (name === "runtime.cancel") {
     runtime.cancel(typeof args === "string" ? args : undefined);

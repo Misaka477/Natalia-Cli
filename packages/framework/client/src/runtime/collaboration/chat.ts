@@ -54,18 +54,7 @@ async function removedAfterMessage(
 }
 import { streamEvent } from "./chat-turn-common";
 
-type Surface = Pick<
-  RuntimeServiceClient,
-  | "chatSubmit"
-  | "chatAbort"
-  | "chatMessages"
-  | "chatMessagesPage"
-  | "chatRollback"
-  | "chatModelProfile"
-  | "setChatModelProfile"
-  | "naviChat"
-  | "niaChat"
->;
+type Surface = Pick<RuntimeServiceClient, "naviChat" | "niaChat">;
 type SubmitInput = {
   text: string;
   model?: { modelID?: string; variant?: string };
@@ -76,21 +65,33 @@ type SubmitInput = {
 type StreamSurface = {
   messages(
     sessionID?: string,
-  ): ReturnType<NonNullable<RuntimeClientSurface["chatMessages"]>>;
+  ): ReturnType<
+    NonNullable<NonNullable<RuntimeClientSurface["naviChat"]>["messages"]>
+  >;
   rollback(
     input: { toMessageID: string },
     sessionID?: string,
-  ): ReturnType<NonNullable<RuntimeClientSurface["chatRollback"]>>;
+  ): ReturnType<
+    NonNullable<NonNullable<RuntimeClientSurface["naviChat"]>["rollback"]>
+  >;
   modelProfile(
     sessionID?: string,
-  ): ReturnType<NonNullable<RuntimeClientSurface["chatModelProfile"]>>;
+  ): ReturnType<
+    NonNullable<NonNullable<RuntimeClientSurface["naviChat"]>["modelProfile"]>
+  >;
   setModelProfile(
     profile: ChatModelProfile,
     sessionID?: string,
-  ): ReturnType<NonNullable<RuntimeClientSurface["setChatModelProfile"]>>;
+  ): ReturnType<
+    NonNullable<
+      NonNullable<RuntimeClientSurface["naviChat"]>["setModelProfile"]
+    >
+  >;
   abort(
     sessionID?: string,
-  ): ReturnType<NonNullable<RuntimeClientSurface["chatAbort"]>>;
+  ): ReturnType<
+    NonNullable<NonNullable<RuntimeClientSurface["naviChat"]>["abort"]>
+  >;
   submit(input: SubmitInput): Promise<{ messageID: string }>;
 };
 type RuntimeClientSurface = RuntimeServiceClient;
@@ -457,26 +458,5 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
   return {
     naviChat,
     niaChat,
-    chatSubmit: ({ channel, ...input }) =>
-      channel === "nia" ? nia.submit(input) : navi.submit(input),
-    chatAbort: (channel, sessionID) =>
-      channel === "nia" ? nia.abort(sessionID) : navi.abort(sessionID),
-    chatMessages: (channel, sessionID) =>
-      channel === "nia" ? nia.messages(sessionID) : navi.messages(sessionID),
-    async chatMessagesPage(input) {
-      return messagesPage(input.channel ?? "navi", input);
-    },
-    chatRollback: (input, channel, sessionID) =>
-      channel === "nia"
-        ? nia.rollback(input, sessionID)
-        : navi.rollback(input, sessionID),
-    chatModelProfile: (channel, sessionID) =>
-      channel === "nia"
-        ? nia.modelProfile(sessionID)
-        : navi.modelProfile(sessionID),
-    setChatModelProfile: (profile, channel, sessionID) =>
-      channel === "nia"
-        ? nia.setModelProfile(profile, sessionID)
-        : navi.setModelProfile(profile, sessionID),
   };
 }

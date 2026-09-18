@@ -868,7 +868,7 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (21 groups · 185 optional members)
+### Capability groups (21 groups · 178 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -892,9 +892,9 @@ Deployment notes:
 | planDocs       | `planDocList` · `planDocRead` · `planDocWrite` · `planDocMark` · `planDocDelete` · `planDocStatus` · `planDocUpdateStatus` · `planDocActive` · `planDocActivate` · `planDocDeactivate`                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | goals          | `goalControl` · `goalEdit`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | attachments    | `uploadAttachment` · `attachmentDataUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| chat           | `chatSubmit` · `chatAbort` · `chatMessages` · `chatMessagesPage` · `chatRollback` · `chatModelProfile` · `setChatModelProfile` · `naviChat` · `niaChat`                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| chat           | `naviChat` · `niaChat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-### RPC route table (202 methods → members)
+### RPC route table (195 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -1079,13 +1079,6 @@ Deployment notes:
 | `input.remove`                       | `removeInput`                       | turnControl      | write |
 | `input.replace`                      | `replaceInput`                      | turnControl      | write |
 | `input.promote`                      | `promoteInput`                      | turnControl      | write |
-| `chat.messages`                      | `chatMessages`                      | chat             | read  |
-| `chat.messages.page`                 | `chatMessagesPage`                  | chat             | read  |
-| `chat.model.profile`                 | `chatModelProfile`                  | chat             | read  |
-| `chat.model.profile.set`             | `setChatModelProfile`               | chat             | read  |
-| `chat.submit`                        | `chatSubmit`                        | chat             | read  |
-| `chat.abort`                         | `chatAbort`                         | chat             | read  |
-| `chat.rollback`                      | `chatRollback`                      | chat             | read  |
 | `navi.chat.submit`                   | `naviChat`                          | chat             | read  |
 | `navi.chat.abort`                    | `naviChat`                          | chat             | read  |
 | `navi.chat.messages`                 | `naviChat`                          | chat             | read  |
@@ -1208,8 +1201,6 @@ Deployment notes:
 | `agentDelete`                | `deleted`            | the default agent refuses deletion; an unknown name is an idempotent success                                                                                       |
 | `approveOverride`            | `approved`           | records the user's approval response for a pending constitution override                                                                                           |
 | `canReloadConfig`            | `allowed`            | advisory precheck; the action re-checks for itself                                                                                                                 |
-| `chatAbort`                  | `aborted`            | stops the in-flight Chat turn; false means nothing was running                                                                                                     |
-| `chatRollback`               | `removed`            | rolls the Chat conversation back to a message boundary; reports the count removed                                                                                  |
 | `createConstitutionRule`     | `created`            | adds a user-owned constitution rule (release scope rejected; a deny/approval rule needs an appliesTo anchor)                                                       |
 | `evaluateDrift`              | `opened`             | runs the DriftEvaluator against safe signals and publishes findings; the evaluator has no write power, a finding only escalates to an approval/Chat/mailbox prompt |
 | `goalControl`                | `ok`                 | pause/resume/clear the current goal; refusal is expressed by ok:false plus a message                                                                               |
@@ -1255,7 +1246,6 @@ Deployment notes:
 | `selectAgent`                | `outcome`            | three real outcomes exist in the runtime — applied, deferred until the turn ends, unknown agent — and the caller could see none of them                            |
 | `sessionArchive`             | `archived`           | archiving an archived session answers archived:true; an unknown session is an argument error                                                                       |
 | `sessionNew`                 | `created`            | creating an existing id answers created:false with the existing summary                                                                                            |
-| `setChatModelProfile`        | `saved`              | saves the Chat model profile for this runtime                                                                                                                      |
 | `setDefaultModel`            | `saved`              | sets the global default model reference                                                                                                                            |
 | `updateConfig`               | `applied`            | the file may be written while a running turn prevents application, and that is an ordinary answer                                                                  |
 | `updateConstitutionDocRule`  | `updated`            | edits a constitution/AGENTS document section in place and writes it back (user-owned; a deny/approval rule needs an appliesTo anchor)                              |

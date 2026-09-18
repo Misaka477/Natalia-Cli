@@ -203,16 +203,11 @@ export const RPC_METHOD_ROUTES: Record<string, string> = {
   removeInput: "input.remove",
   replaceInput: "input.replace",
   promoteInput: "input.promote",
-  chatMessages: "chat.messages",
-  chatMessagesPage: "chat.messages.page",
   subagents: "session.subagents",
   subagentHistory: "subagent.history",
   subagentHistoryPage: "subagent.history.page",
   uploadAttachment: "attachment.upload",
   attachmentDataUrl: "attachment.dataUrl",
-  chatSubmit: "chat.submit",
-  chatAbort: "chat.abort",
-  chatRollback: "chat.rollback",
 };
 
 const RPC_PARAM_NAMES: Record<string, string[]> = {
@@ -765,40 +760,8 @@ export function createWebRuntimeClient(
         throw cause;
       }
     },
-    async chatSubmit(input) {
-      console.log("[web-runtime] chatSubmit", input);
-      try {
-        const result = await call("chat.submit", {
-          ...(input as Record<string, unknown>),
-        });
-        console.log("[web-runtime] chatSubmit result", result);
-        return result as { messageID: string };
-      } catch (cause) {
-        console.error("[web-runtime] chatSubmit failed", cause);
-        throw cause;
-      }
-    },
-    async chatAbort(channel?, sessionID?) {
-      return (await call("chat.abort", {
-        ...(channel ? { channel } : {}),
-        ...(sessionID ? { sessionID } : {}),
-      })) as { aborted: boolean };
-    },
-    async chatMessages(channel?, sessionID?) {
-      return (await call("chat.messages", {
-        ...(channel ? { channel } : {}),
-        ...(sessionID ? { sessionID } : {}),
-      })) as never;
-    },
     naviChat: chatStream("navi"),
     niaChat: chatStream("nia"),
-    async chatRollback(input, channel?, sessionID?) {
-      return (await call("chat.rollback", {
-        ...input,
-        ...(channel ? { channel } : {}),
-        ...(sessionID ? { sessionID } : {}),
-      })) as never;
-    },
     cancel(reason, sessionID) {
       void call("cancel", { reason, ...(sessionID ? { sessionID } : {}) });
     },
@@ -896,19 +859,6 @@ export function createWebRuntimeClient(
     async requestOverride(input, sessionID?) {
       return (await call("constitution.override.request", {
         ...(input as Record<string, unknown>),
-        ...(sessionID ? { sessionID } : {}),
-      })) as never;
-    },
-    async chatModelProfile(channel?, sessionID?) {
-      return (await call<ChatModelProfile>("chat.model.profile", {
-        ...(channel ? { channel } : {}),
-        ...(sessionID ? { sessionID } : {}),
-      })) as never;
-    },
-    async setChatModelProfile(profile, channel?, sessionID?) {
-      return (await call("chat.model.profile.set", {
-        profile,
-        ...(channel ? { channel } : {}),
         ...(sessionID ? { sessionID } : {}),
       })) as never;
     },

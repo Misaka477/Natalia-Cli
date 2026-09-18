@@ -59,17 +59,19 @@ function runtimeFixture() {
         sha256: "x",
       };
     },
-    async chatSubmit(input: { text: string }) {
-      chat.push(input.text);
-      sink?.({
-        type: "navi.chat.message.added",
-        id: "chat_1",
-        messageID: "msg_1",
-        role: "user",
-        text: input.text,
-        at: "now",
-      });
-      return { messageID: "msg_1" };
+    naviChat: {
+      async submit(input: { text: string }) {
+        chat.push(input.text);
+        sink?.({
+          type: "navi.chat.message.added",
+          id: "chat_1",
+          messageID: "msg_1",
+          role: "user",
+          text: input.text,
+          at: "now",
+        });
+        return { messageID: "msg_1" };
+      },
     },
     cancel() {},
   } as unknown as RuntimeClient;

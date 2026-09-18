@@ -553,7 +553,7 @@ test("the handoff refuses without an accepted contract (Navi mailbox_send path)"
   await client.planDocActivate!(marked.planID);
 
   // Navi tries to hand off the plan without any accepted contract.
-  await client.chatSubmit!({ text: "hand off the plan" });
+  await client.naviChat!.submit({ text: "hand off the plan" });
   const toolUses = events.filter(
     (event) =>
       event.type === "navi.chat.tool.used" && event.toolName === "mailbox_send",
@@ -881,7 +881,7 @@ test("audit_report writes an evidence record for every round (EI §8.1)", async 
   });
   planID = marked.planID;
   await client.planDocActivate!(marked.planID);
-  await client.chatSubmit!({ channel: "nia", text: "audit the plan" });
+  await client.niaChat!.submit({ text: "audit the plan" });
   const evidence = events.filter((event) => event.type === "evidence.recorded");
   expect(evidence).toHaveLength(1);
   expect(evidence[0]).toMatchObject({

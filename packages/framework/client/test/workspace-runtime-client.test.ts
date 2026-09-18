@@ -151,10 +151,10 @@ for (const useSqliteStore of [false, true]) {
       ).toBe(recent.id);
       const restored = manager.get(workspace.workspaceID)!.client;
       expect(
-        (await restored.chatMessages?.("navi"))?.map((row) => row.text),
+        (await restored.naviChat?.messages?.())?.map((row) => row.text),
       ).toEqual(["Navi restored"]);
       expect(
-        (await restored.chatMessages?.("nia"))?.map((row) => row.text),
+        (await restored.niaChat?.messages?.())?.map((row) => row.text),
       ).toEqual(["Nia restored"]);
       expect(
         JSON.parse(await readFile(settingsPath, "utf8")).toolSettings
@@ -217,12 +217,12 @@ test("workspace proxy chat messages await lazy runtime initialization", async ()
     // only kicked initialization off in the background, so chatMessages must
     // wait for ready instead of racing `ensureExecution`.
     expect(
-      (await client.chatMessages?.("navi", session.id))?.map(
+      (await client.naviChat?.messages?.(session.id))?.map(
         (row) => row.text,
       ),
     ).toEqual(["Navi ready"]);
     expect(
-      (await client.chatMessages?.("nia", session.id))?.map((row) => row.text),
+      (await client.niaChat?.messages?.(session.id))?.map((row) => row.text),
     ).toEqual(["Nia ready"]);
   } finally {
     await manager.dispose();
@@ -308,19 +308,17 @@ test("chat history survives after the newest event window", async () => {
     await manager.add({ path: root });
     const client = createWorkspaceRuntimeClient(manager);
     expect(
-      (await client.chatMessages?.("navi", session.id))?.map(
+      (await client.naviChat?.messages?.(session.id))?.map(
         (row) => row.text,
       ),
     ).toEqual(["old navi 1", "old navi 2"]);
-    const page = await client.chatMessagesPage?.({
-      channel: "navi",
+    const page = await client.naviChat?.messagesPage?.({
       sessionID: session.id,
       limit: 1,
     });
     expect(page?.data.map((row) => row.text)).toEqual(["old navi 2"]);
     expect(page?.cursor.previous).toBeDefined();
-    const older = await client.chatMessagesPage?.({
-      channel: "navi",
+    const older = await client.naviChat?.messagesPage?.({
       sessionID: session.id,
       cursor: page?.cursor.previous,
       limit: 1,

@@ -162,8 +162,8 @@ test("Nia and Navi prompts see workspace plans but only the session active plan"
     });
     await client.planDocActivate!(marked.planID);
 
-    await client.chatSubmit!({ channel: "nia", text: "ping" });
-    await client.chatSubmit!({ channel: "navi", text: "ping" });
+    await client.niaChat!.submit({ text: "ping" });
+    await client.naviChat!.submit({  text: "ping" });
     await client.submitAndWait!("main ping");
     expect(prompts.main.join("\n")).toContain("<next_plan_handoff>");
     expect(prompts.main.join("\n")).toContain(marked.planID);
@@ -180,7 +180,7 @@ test("Nia and Navi prompts see workspace plans but only the session active plan"
 
     const second = await client.sessionNew!();
     await client.sessionAttach!(second.sessionID);
-    await client.chatSubmit!({ channel: "nia", text: "ping" });
+    await client.niaChat!.submit({ text: "ping" });
     await client.submitAndWait!("main without active plan");
     const niaPromptWithoutActive = prompts.nia.at(-1) ?? "";
     expect(niaPromptWithoutActive).toContain("Active plan: none");
@@ -189,7 +189,7 @@ test("Nia and Navi prompts see workspace plans but only the session active plan"
 
     await client.sessionAttach!(firstSessionID);
     await client.planDocDeactivate!();
-    await client.chatSubmit!({ channel: "nia", text: "ping" });
+    await client.niaChat!.submit({ text: "ping" });
     const niaPromptAfterDeactivate = prompts.nia.at(-1) ?? "";
     expect(niaPromptAfterDeactivate).toContain("Active plan: none");
     expect(niaPromptAfterDeactivate).toContain(marked.planID);
@@ -274,8 +274,7 @@ test("Nia can update the Markdown plan document without gaining project write ac
     });
     await client.planDocActivate!(marked.planID, sessionID);
 
-    await client.chatSubmit!({
-      channel: "nia",
+    await client.niaChat!.submit({
       text: "update the plan document with the latest notes",
     });
 

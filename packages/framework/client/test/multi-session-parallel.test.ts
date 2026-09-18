@@ -186,20 +186,18 @@ test("two sessions chat concurrently without cross-channel mixing", async () => 
   client.start(() => undefined);
   const createdA = await client.sessionNew?.();
   const createdB = await client.sessionNew?.();
-  const a = await client.chatSubmit?.({
+  const a = await client.naviChat?.submit?.({
     text: "chat a",
-    channel: "navi",
     sessionID: createdA?.sessionID,
   });
-  const b = await client.chatSubmit?.({
+  const b = await client.naviChat?.submit?.({
     text: "chat b",
-    channel: "navi",
     sessionID: createdB?.sessionID,
   });
   expect(a?.messageID).toBeTruthy();
   expect(b?.messageID).toBeTruthy();
-  const rowsA = await client.chatMessages?.("navi", createdA?.sessionID);
-  const rowsB = await client.chatMessages?.("navi", createdB?.sessionID);
+  const rowsA = await client.naviChat?.messages?.(createdA?.sessionID);
+  const rowsB = await client.naviChat?.messages?.(createdB?.sessionID);
   expect(rowsA?.some((row) => row.text.includes("chat a"))).toBe(true);
   expect(rowsB?.some((row) => row.text.includes("chat b"))).toBe(true);
   expect(rowsA?.some((row) => row.text.includes("chat b"))).toBe(false);

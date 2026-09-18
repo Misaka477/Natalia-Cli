@@ -789,15 +789,10 @@ export function createWorkspaceRuntimeClient(
     "planDocDelete",
     "planDocStatus",
     "planDocActivate",
-    "chatAbort",
-    "chatModelProfile",
-    "chatMessages",
   ]);
 
   const sessionIDThirdArg = new Set([
     "selectModel",
-    "setChatModelProfile",
-    "chatRollback",
     "mailboxDefer",
     "mailboxSupersede",
   ]);
@@ -819,8 +814,6 @@ export function createWorkspaceRuntimeClient(
     "planDocWrite",
     "planDocMark",
     "planDocUpdateStatus",
-    "chatSubmit",
-    "chatMessagesPage",
     "subagentHistoryPage",
     "pendingInteractive",
     "commandExecute",
@@ -1125,6 +1118,56 @@ export function createWorkspaceRuntimeClient(
           manager.invalidateSessionCache(owner.workspaceID);
           return result;
         };
+      }
+      if (prop === "naviChat" || prop === "niaChat") {
+        const stream = prop;
+        const sessionForMethod = (method: string, args: unknown[]) => {
+          if (method === "submit" || method === "messagesPage") {
+            const first = args[0];
+            return first && typeof first === "object"
+              ? (first as { sessionID?: string }).sessionID
+              : undefined;
+          }
+          if (method === "rollback" || method === "setModelProfile")
+            return typeof args[1] === "string" ? args[1] : undefined;
+          return typeof args[0] === "string" ? args[0] : undefined;
+        };
+        const surface: Record<
+          string,
+          (...args: unknown[]) => Promise<unknown>
+        > = {};
+        for (const method of [
+          "submit",
+          "abort",
+          "messages",
+          "messagesPage",
+          "rollback",
+          "modelProfile",
+          "setModelProfile",
+        ]) {
+          surface[method] = async (...args: unknown[]) => {
+            const sessionID = sessionForMethod(method, args);
+            const owner = sessionID
+              ? ((await manager.findWorkspaceForSession(sessionID)) ??
+                manager.getActive())
+              : manager.getActive();
+            if (!owner) return undefined;
+            startWorkspaceClient(owner);
+            const target = (
+              owner.client as unknown as Record<
+                string,
+                Record<string, unknown> | undefined
+              >
+            )[stream];
+            const fn = target?.[method];
+            return typeof fn === "function"
+              ? await (
+                  fn as (...call: unknown[]) => Promise<unknown>
+                ).apply(target, args)
+              : undefined;
+          };
+        }
+        return surface;
       }
       if (typeof prop === "string" && routableMethods.has(prop)) {
         return async (...args: unknown[]) => {

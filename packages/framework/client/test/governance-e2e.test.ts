@@ -222,7 +222,7 @@ test("Phase -1 E2E: Navi plan_propose lands a user accepted WorkContract read by
   });
   planID = marked.planID;
   await client.planDocActivate!(planID);
-  await client.chatSubmit!({ channel: "navi", text: "propose the contract" });
+  await client.naviChat!.submit({  text: "propose the contract" });
   await waitFor(
     () => events.some((event) => event.type === "work_contract.accepted"),
     { timeoutMs: 10_000 },
@@ -284,7 +284,7 @@ test("Phase 0 E2E: Nia audit_report writes evidence visible to projection and ru
   });
   planID = marked.planID;
   await client.planDocActivate!(planID);
-  await client.chatSubmit!({ channel: "nia", text: "audit the plan" });
+  await client.niaChat!.submit({ text: "audit the plan" });
   await waitFor(
     () => events.some((event) => event.type === "evidence.recorded"),
     { timeoutMs: 10_000 },

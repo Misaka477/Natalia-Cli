@@ -137,13 +137,6 @@ export const WORKER_ROUTE_MEMBERS = {
   "constitution.docRules": "constitutionDocRules",
   "constitution.docRule.promote": "promoteConstitutionDocRule",
   "constitution.docRule.update": "updateConstitutionDocRule",
-  "chat.messages": "chatMessages",
-  "chat.messages.page": "chatMessagesPage",
-  "chat.submit": "chatSubmit",
-  "chat.abort": "chatAbort",
-  "chat.rollback": "chatRollback",
-  "chat.model.profile": "chatModelProfile",
-  "chat.model.profile.set": "setChatModelProfile",
   "navi.chat.submit": "naviChat",
   "navi.chat.abort": "naviChat",
   "navi.chat.messages": "naviChat",
@@ -1030,17 +1023,6 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["approveOverride"]>>
       >;
     },
-    async chatMessages(channel, sessionID) {
-      return (await request("chat.messages", {
-        channel,
-        sessionID,
-      })) as Awaited<ReturnType<NonNullable<RuntimeClient["chatMessages"]>>>;
-    },
-    async chatMessagesPage(input) {
-      return (await request("chat.messages.page", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["chatMessagesPage"]>>
-      >;
-    },
     async subagents(sessionID) {
       return (await request(
         "session.subagents",
@@ -1065,40 +1047,6 @@ export function createWorkerRuntimeClient(
     async attachmentDataUrl(input) {
       return (await request("attachment.dataUrl", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["attachmentDataUrl"]>>
-      >;
-    },
-    async chatSubmit(input) {
-      return (await request("chat.submit", input)) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["chatSubmit"]>>
-      >;
-    },
-    async chatAbort(channel, sessionID) {
-      return (await request("chat.abort", { channel, sessionID })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["chatAbort"]>>
-      >;
-    },
-    async chatRollback(input, channel, sessionID) {
-      return (await request("chat.rollback", {
-        input,
-        channel,
-        sessionID,
-      })) as Awaited<ReturnType<NonNullable<RuntimeClient["chatRollback"]>>>;
-    },
-    async chatModelProfile(channel, sessionID) {
-      return (await request("chat.model.profile", {
-        channel,
-        sessionID,
-      })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["chatModelProfile"]>>
-      >;
-    },
-    async setChatModelProfile(profile, channel, sessionID) {
-      return (await request("chat.model.profile.set", {
-        profile,
-        channel,
-        sessionID,
-      })) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["setChatModelProfile"]>>
       >;
     },
     naviChat: chatStreamSurface("navi"),
@@ -1707,73 +1655,6 @@ export async function handleWorkerRequest(
         sessionID?: string;
       },
     );
-  if (request.method === "chat.messages") {
-    const value = request.value as
-      | {
-          channel?: import("@natalia/contracts").ChatChannel;
-          sessionID?: string;
-        }
-      | undefined;
-    return await client.chatMessages?.(value?.channel, value?.sessionID);
-  }
-  if (request.method === "chat.messages.page")
-    return await client.chatMessagesPage?.(request.value as never);
-  if (request.method === "session.subagents")
-    return await client.subagents?.(
-      (request.value as { sessionID?: string } | undefined)?.sessionID,
-    );
-  if (request.method === "subagent.history")
-    return await client.subagentHistory?.(request.value as never);
-  if (request.method === "subagent.history.page")
-    return await client.subagentHistoryPage?.(request.value as never);
-  if (request.method === "attachment.upload")
-    return await client.uploadAttachment?.(request.value as never);
-  if (request.method === "attachment.dataUrl")
-    return await client.attachmentDataUrl?.(request.value as never);
-  if (request.method === "chat.submit")
-    return await client.chatSubmit?.(request.value as never);
-  if (request.method === "chat.abort") {
-    const value = request.value as
-      | {
-          channel?: import("@natalia/contracts").ChatChannel;
-          sessionID?: string;
-        }
-      | undefined;
-    return await client.chatAbort?.(value?.channel, value?.sessionID);
-  }
-  if (request.method === "chat.rollback") {
-    const value = request.value as {
-      input: { toMessageID: string };
-      channel?: import("@natalia/contracts").ChatChannel;
-      sessionID?: string;
-    };
-    return await client.chatRollback?.(
-      value.input,
-      value.channel,
-      value.sessionID,
-    );
-  }
-  if (request.method === "chat.model.profile") {
-    const value = request.value as
-      | {
-          channel?: import("@natalia/contracts").ChatChannel;
-          sessionID?: string;
-        }
-      | undefined;
-    return await client.chatModelProfile?.(value?.channel, value?.sessionID);
-  }
-  if (request.method === "chat.model.profile.set") {
-    const value = request.value as {
-      profile: import("@natalia/contracts").ChatModelProfile;
-      channel?: import("@natalia/contracts").ChatChannel;
-      sessionID?: string;
-    };
-    return await client.setChatModelProfile?.(
-      value.profile,
-      value.channel,
-      value.sessionID,
-    );
-  }
   if (
     request.method === "navi.chat.submit" ||
     request.method === "nia.chat.submit"

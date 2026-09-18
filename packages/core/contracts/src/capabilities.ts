@@ -305,13 +305,6 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   attachments: ["uploadAttachment", "attachmentDataUrl"],
   /** The always-available Live Work Chat conversation (P8 Phase C2). */
   chat: [
-    "chatSubmit",
-    "chatAbort",
-    "chatMessages",
-    "chatMessagesPage",
-    "chatRollback",
-    "chatModelProfile",
-    "setChatModelProfile",
     "naviChat",
     "niaChat",
   ],

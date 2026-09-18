@@ -489,37 +489,6 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     note: "the contributed command either enters the session execution queue or is rejected",
   },
   capabilities: { refusal: "none", note: "pure read" },
-  chatMessages: {
-    refusal: "none",
-    note: "pure read of the durable Chat conversation",
-  },
-  chatMessagesPage: {
-    refusal: "none",
-    note: "pure paged read of the durable Chat conversation",
-  },
-  chatModelProfile: {
-    refusal: "none",
-    note: "reads the Chat model profile",
-  },
-  setChatModelProfile: {
-    refusal: "value",
-    expressedBy: "saved",
-    note: "saves the Chat model profile for this runtime",
-  },
-  chatRollback: {
-    refusal: "value",
-    expressedBy: "removed",
-    note: "rolls the Chat conversation back to a message boundary; reports the count removed",
-  },
-  chatSubmit: {
-    refusal: "error",
-    note: "a Chat message either enters the conversation or does not; a rejected submission has no partial value to report",
-  },
-  chatAbort: {
-    refusal: "value",
-    expressedBy: "aborted",
-    note: "stops the in-flight Chat turn; false means nothing was running",
-  },
   naviChat: {
     refusal: "none",
     note: "Navi-owned stream surface; refusal semantics live on its nested methods",

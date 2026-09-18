@@ -11929,8 +11929,8 @@ test("the live work chat read and rollback surface a durable conversation", asyn
   // Slice A data plane: a fresh conversation is empty and an unknown rollback
   // boundary is a no-op (removed 0), never a crash. The full message flow is
   // covered once the Chat execution slice lands (chatSubmit).
-  expect(await client.chatMessages!()).toEqual([]);
-  expect(await client.chatRollback!({ toMessageID: "chat:nope" })).toEqual({
+  expect(await client.naviChat!.messages!()).toEqual([]);
+  expect(await client.naviChat!.rollback!({ toMessageID: "chat:nope" })).toEqual({
     rolledBackTo: "chat:nope",
     removed: 0,
   });
@@ -11964,11 +11964,11 @@ test("chat submit runs a live work chat turn and persists the conversation", asy
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  const outcome = await client.chatSubmit!({
+  const outcome = await client.naviChat!.submit({
     text: "what is the agent doing",
   });
   expect(outcome.messageID.length).toBeGreaterThan(0);
-  const history = await client.chatMessages!();
+  const history = await client.naviChat!.messages!();
   expect(history).toHaveLength(2);
   expect(history[0]).toMatchObject({
     role: "user",
@@ -11994,7 +11994,7 @@ test("chat submit runs a live work chat turn and persists the conversation", asy
       stopReason: "done",
     }),
   ]);
-  await client.chatSubmit!({ text: "and now" });
+  await client.naviChat!.submit({ text: "and now" });
   // ADR D2: the live work context is an appended `<runtime_context>` user
   // message directly before the turn's request; the conversation history
   // itself is unchanged.
@@ -12056,7 +12056,7 @@ test("chat tool calls surface as conversation actions", async () => {
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
-  await client.chatSubmit!({ text: "do not install that dependency" });
+  await client.naviChat!.submit({ text: "do not install that dependency" });
   const actions = events.filter(
     (event) => event.type === "navi.chat.tool.used",
   );
@@ -12144,7 +12144,7 @@ test("chat mailbox_send refuses a planless handoff and mailbox_cancel drops queu
     },
   });
   client.start(() => undefined);
-  await client.chatSubmit!({ text: "send the plan to Natalia" });
+  await client.naviChat!.submit({ text: "send the plan to Natalia" });
   const mailbox = await client.mailboxList!();
   expect(
     mailbox.some((message) => message.intent === "next_plan_handoff"),
@@ -12196,7 +12196,7 @@ test("chat reserves its configured final step and preserves XML-like text", asyn
   });
   client.start(() => undefined);
 
-  await client.chatSubmit!({ text: "send a notice" });
+  await client.naviChat!.submit({ text: "send a notice" });
 
   expect(requests).toHaveLength(2);
   expect(requests[0]?.tools?.length).toBeGreaterThan(0);
@@ -12206,7 +12206,7 @@ test("chat reserves its configured final step and preserves XML-like text", asyn
       message.content.includes("MAXIMUM STEPS REACHED"),
     ),
   ).toBe(true);
-  expect((await client.chatMessages!()).at(-1)?.text).toContain(
+  expect((await client.naviChat!.messages!()).at(-1)?.text).toContain(
     "<function=mailbox_send>",
   );
   await client.dispose?.();
@@ -12238,12 +12238,12 @@ test("chat ignores structured calls on its final step and emits fallback text", 
   });
   client.start((event) => events.push(event));
 
-  await client.chatSubmit!({ text: "send a notice" });
+  await client.naviChat!.submit({ text: "send a notice" });
 
   expect(events.some((event) => event.type === "navi.chat.tool.used")).toBe(
     false,
   );
-  expect((await client.chatMessages!()).at(-1)?.text).toContain(
+  expect((await client.naviChat!.messages!()).at(-1)?.text).toContain(
     "Tool execution completed",
   );
   await client.dispose?.();
@@ -12285,7 +12285,7 @@ test("the chat context includes the main agent's recent activity", async () => {
   client.start(() => undefined);
   await client.submitAndWait!("replace the wrapper");
   await pollHistoryForFinished(client);
-  await client.chatSubmit!({ text: "what did the main agent just say" });
+  await client.naviChat!.submit({ text: "what did the main agent just say" });
   // The Chat shares the main agent's recent exchange — the user's prompt and
   // the reply — so it can answer the question instead of only seeing the
   // status card (§8.3 shared context).
@@ -12350,7 +12350,7 @@ test("chat answers with live main context while the main turn is still running",
   // Chat has its own task and provider stream, so it settles before the parked
   // Main turn. Its prompt is built from the current in-memory stream, not only
   // the last durable content.done event.
-  const chatResult = await client.chatSubmit!({
+  const chatResult = await client.naviChat!.submit({
     text: "what is the main agent doing right now",
   });
   expect(chatResult.messageID).not.toBe("");
@@ -12458,8 +12458,8 @@ test("a chat tool parameter error returns the usage to the model for retry", asy
     },
   });
   client.start(() => undefined);
-  await client.chatSubmit!({ text: "read the file" });
-  const history = await client.chatMessages!();
+  await client.naviChat!.submit({ text: "read the file" });
+  const history = await client.naviChat!.messages!();
   expect(history.at(-1)?.text).toContain("I read the file");
   // The bad call came back as a tool result carrying the correct calling
   // convention, so the model could retry on the next step.
@@ -12533,7 +12533,7 @@ test("the chat can query the main agent's live status with session_snapshot", as
     },
   });
   client.start(() => undefined);
-  await client.chatSubmit!({ text: "what is the main agent doing" });
+  await client.naviChat!.submit({ text: "what is the main agent doing" });
   // The read-only snapshot tool returned the live status to the model.
   expect(snapshotToolResult).toContain("agentStatus");
   expect(finalStepAssistantTexts).toEqual([
@@ -12646,7 +12646,7 @@ test("the collaboration channel round-robins between Navi and the main agent", a
     },
   });
   client.start((event) => rrEvents.push(event));
-  await client.chatSubmit!({ text: "suggest echo" });
+  await client.naviChat!.submit({ text: "suggest echo" });
   // The suggestion wakes the idle main agent, whose wake turn already carries
   // the suggestion (the 轮巡) — no extra user submission needed.
   await waitForAsync(async () => mainPrompt.length > 0, 10000);
@@ -12667,7 +12667,7 @@ test("the collaboration channel round-robins between Navi and the main agent", a
       ),
     10000,
   );
-  await client.chatSubmit!({ text: "what did she decide" });
+  await client.naviChat!.submit({ text: "what did she decide" });
   await waitForAsync(async () => chatPrompt2.includes("adopted"), 10000);
   // Navi sees the outcome without the user prompting her.
   expect(chatPrompt2).toContain("Outcomes of your suggestions to Natalia");
