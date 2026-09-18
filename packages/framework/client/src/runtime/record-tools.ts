@@ -281,7 +281,7 @@ export function createRecordCompletionTool(
       // record so the model can close the gaps instead of claiming done.
       const card = requireWorkLedger(ctx)!.evaluateCompletionCard({
         objective: args.objective.trim(),
-        ...(args.changePaths?.length ? { scope: args.changePaths } : {}),
+        ...(args.changePaths?.length ? { changes: args.changePaths } : {}),
         evidenceRefs: args.evidenceIDs ?? [],
         validations: args.validations ?? [],
       });

@@ -258,6 +258,62 @@ export const MINIMUM_EVIDENCE_MATRIX: Record<
   },
 };
 
+/**
+ * A change's path class (EI §8.8 / Phase 4 E3): inferred from the file path,
+ * never from agent self-report or plan metadata — zero declaration, zero false
+ * positive. Drives the minimum-evidence matrix.
+ */
+export type PathClass = "source" | "test" | "docs" | "config" | "other";
+
+/** Classify one path by extension / layout. */
+function pathClassOf(path: string): PathClass {
+  const p = path.toLowerCase().replace(/\\/gu, "/");
+  if (/\.(test|spec)\.[cm]?[jt]sx?$|__tests__\/|\/tests?\//iu.test(p)) return "test";
+  if (/\.(md|mdx|txt|rst|adoc)$/iu.test(p)) return "docs";
+  if (/(^|\/)(package\.json|package-lock\.json|bun\.lockb?|yarn\.lock|pnpm-lock\.ya?ml|tsconfig[^/]*\.json|deno\.json|\.env[^/]*)$/iu.test(p) || /\.(ya?ml|toml|ini|cfg|conf)$/iu.test(p))
+    return "config";
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|rs|go|py|rb|java|kt|kts|scala|c|cc|cpp|cxx|h|hpp|cs|swift|zig|nim|lua|php|ex|exs|erl|hs|ml|clj|dart)$/iu.test(p))
+    return "source";
+  return "other";
+}
+
+/**
+ * Classify a change set into one path class (EI §8.8). The highest-evidence
+ * requirement wins, so a mixed source+docs change is treated as source (it must
+ * still be validated). An empty set is "other".
+ */
+export function classifyPathClass(paths: readonly string[]): PathClass {
+  if (!paths.length) return "other";
+  const classes = paths.map(pathClassOf);
+  if (classes.includes("test")) return "test";
+  if (classes.includes("source")) return "source";
+  if (classes.includes("config")) return "config";
+  if (classes.includes("docs")) return "docs";
+  return "other";
+}
+
+/**
+ * The path-class minimum-evidence matrix (EI §8.8 / Phase 4 E3): a source or
+ * test change must show at least one passing validation; docs / config / other
+ * need none (unverified is acceptable and labelled).
+ */
+export const PATH_CLASS_EVIDENCE: Record<
+  PathClass,
+  { requires: string[]; note: string }
+> = {
+  source: {
+    requires: ["validation:any"],
+    note: "a source change must show at least one passing validation",
+  },
+  test: {
+    requires: ["validation:test"],
+    note: "a test change must show the test-run evidence",
+  },
+  docs: { requires: [], note: "a docs change needs no runtime validation" },
+  config: { requires: [], note: "a config change needs no runtime validation" },
+  other: { requires: [], note: "no runtime validation required" },
+};
+
 /** Classifies an objective (+ optional committed scope) into a task kind. */
 export function classifyTaskKind(
   objective: string,
@@ -279,6 +335,8 @@ export function classifyTaskKind(
 export function evaluateCompletionCard(input: {
   objective: string;
   scope?: string[];
+  /** The changed paths — the primary (path-based) classification source. */
+  changes?: string[];
   evidenceRefs: string[];
   validations?: Array<{
     command?: string;
@@ -286,19 +344,29 @@ export function evaluateCompletionCard(input: {
     safeSummary?: string;
   }>;
 }): {
-  kind: TaskKind;
+  kind: TaskKind | PathClass;
+  classifiedBy: "path" | "objective";
   requires: string[];
   missing: string[];
   judgeable: boolean;
   note: string;
 } {
-  const kind = classifyTaskKind(input.objective, input.scope ?? []);
-  const matrix = MINIMUM_EVIDENCE_MATRIX[kind];
+  // Path-based classification is primary (EI §8.8: zero declaration, zero false
+  // positive); the objective/scope text classifier is the fallback when no
+  // change paths are known.
+  const pathClass = input.changes?.length
+    ? classifyPathClass(input.changes)
+    : undefined;
+  const kind: TaskKind | PathClass = pathClass ?? classifyTaskKind(input.objective, input.scope ?? []);
+  const matrix = pathClass
+    ? PATH_CLASS_EVIDENCE[pathClass]
+    : MINIMUM_EVIDENCE_MATRIX[kind as TaskKind];
   const present = new Set<string>();
   for (const reference of input.evidenceRefs) present.add(reference);
   for (const validation of input.validations ?? []) {
     const command = validation.command?.toLowerCase() ?? "";
     if (validation.result !== "passed") continue;
+    present.add("validation:any");
     if (/bun install|npm install|pnpm install|yarn install/iu.test(command))
       present.add("validation:install");
     if (/tsc|typecheck/iu.test(command)) present.add("validation:typecheck");
@@ -311,6 +379,7 @@ export function evaluateCompletionCard(input: {
   const missing = matrix.requires.filter((entry) => !present.has(entry));
   return {
     kind,
+    classifiedBy: pathClass ? "path" : "objective",
     requires: matrix.requires,
     missing,
     judgeable: missing.length === 0,

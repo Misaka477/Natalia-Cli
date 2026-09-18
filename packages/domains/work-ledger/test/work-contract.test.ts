@@ -10,6 +10,7 @@ import {
   buildDetourReviewed,
   buildWorkContractAccepted,
   buildWorkContractDrafted,
+  classifyPathClass,
   classifyTaskKind,
   evaluateCompletionCard,
   isPlaceholderContractValue,
@@ -462,4 +463,62 @@ test("mergeDetourIntoContract unions the deltas into the next version", () => {
     { scopeDelta: ["packages/a", "packages/b"] },
   );
   expect(deduped.scope).toEqual(["packages/a", "packages/b"]);
+});
+
+test("classifyPathClass infers the class from the file path, not the objective", () => {
+  expect(classifyPathClass(["packages/framework/client/src/foo.ts"])).toBe("source");
+  expect(classifyPathClass(["packages/kernel/src/lib.rs"])).toBe("source");
+  expect(classifyPathClass(["packages/kernel/test/lib.test.ts"])).toBe("test");
+  expect(classifyPathClass(["docs/api-reference.md"])).toBe("docs");
+  expect(classifyPathClass(["package.json", "bun.lock"])).toBe("config");
+  expect(classifyPathClass(["tsconfig.json"])).toBe("config");
+  expect(classifyPathClass(["assets/logo.png"])).toBe("other");
+  // A substring "test" in a source path must NOT be misread as a test change.
+  expect(classifyPathClass(["src/contest/entry.ts"])).toBe("source");
+  // The highest-evidence class wins in a mixed set.
+  expect(classifyPathClass(["docs/readme.md", "src/a.ts"])).toBe("source");
+  expect(classifyPathClass([])).toBe("other");
+});
+
+test("evaluateCompletionCard classifies by change path and requires validation for source", () => {
+  // A source change with no passing validation -> gap (missing validation:any).
+  const gap = evaluateCompletionCard({
+    objective: "whatever the model says",
+    changes: ["packages/framework/client/src/foo.ts"],
+    evidenceRefs: [],
+    validations: [],
+  });
+  expect(gap.classifiedBy).toBe("path");
+  expect(gap.kind).toBe("source");
+  expect(gap.judgeable).toBe(false);
+  expect(gap.missing).toContain("validation:any");
+
+  // The same source change with a passing validation -> judge-able.
+  const done = evaluateCompletionCard({
+    objective: "whatever the model says",
+    changes: ["packages/framework/client/src/foo.ts"],
+    evidenceRefs: [],
+    validations: [{ command: "bun test", result: "passed", safeSummary: "green" }],
+  });
+  expect(done.judgeable).toBe(true);
+  expect(done.missing).toEqual([]);
+
+  // A docs change needs no validation, even with none recorded.
+  const docs = evaluateCompletionCard({
+    objective: "update the readme",
+    changes: ["docs/readme.md"],
+    evidenceRefs: [],
+    validations: [],
+  });
+  expect(docs.kind).toBe("docs");
+  expect(docs.judgeable).toBe(true);
+
+  // No change paths -> falls back to the objective classifier.
+  const fallback = evaluateCompletionCard({
+    objective: "bump the runtime dependencies",
+    evidenceRefs: [],
+    validations: [],
+  });
+  expect(fallback.classifiedBy).toBe("objective");
+  expect(fallback.kind).toBe("dependency");
 });
