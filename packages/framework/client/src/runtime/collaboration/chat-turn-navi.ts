@@ -5,6 +5,7 @@ import {
   nativeToolCallCorrection,
   normalizeRawToolCallProtocol,
   providerForModel,
+  requestHeaderKey,
   requireNativeToolCallProtocol,
 } from "@natalia/runtime";
 import type {
@@ -119,6 +120,15 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         ...(projection.contextWindow === undefined
           ? {}
           : { contextWindow: projection.contextWindow }),
+        ...(projection.systemTokens === undefined
+          ? {}
+          : { systemTokens: projection.systemTokens }),
+        ...(projection.toolsTokens === undefined
+          ? {}
+          : { toolsTokens: projection.toolsTokens }),
+        ...(projection.messageTokens === undefined
+          ? {}
+          : { messageTokens: projection.messageTokens }),
         source: projection.source,
         at: new Date().toISOString(),
       });
@@ -444,7 +454,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
             activeContextBudget.max,
           );
           input.exec.naviTokenMeter.recordUsage(scope, providerUsage, {
-            headerKey: JSON.stringify({ system, tools: toolSchemas }),
+            headerKey: requestHeaderKey({ system, tools: toolSchemas }),
             surfaceTokens: input.exec.naviTokenMeter.observeSurface(
               scope,
               messages,

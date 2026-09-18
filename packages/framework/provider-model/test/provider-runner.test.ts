@@ -94,6 +94,7 @@ function makeHarness(
     maxSteps?: number;
     workspaceRoot?: string;
     permissionMode?: "ask" | "auto" | "read_only";
+    tools?: ToolRegistry;
     runtimeContextConfig?: {
       max: number;
       thresholdPercent: number;
@@ -124,7 +125,7 @@ function makeHarness(
     provider: () => provider,
     session: () => undefined,
     context: () => ledger,
-    tools: () => new ToolRegistry(),
+    tools: () => options?.tools ?? new ToolRegistry(),
     attachmentReferences: () => new Map(),
     attachments: createAttachmentService("/tmp/ws"),
     compaction: createCompactionService({ retry }),
@@ -1780,4 +1781,57 @@ test("provider usage commits the last step instead of summing every step", async
     inputTokens: 120,
     outputTokens: 7,
   });
+});
+
+test("main-path request metering counts advertised tools and exposes the three buckets", async () => {
+  const registry = new ToolRegistry();
+  registry.set("big_tool", {
+    name: "big_tool",
+    requiresApproval: false,
+    description: "d".repeat(4000),
+    parameters: {
+      type: "object",
+      properties: {
+        payload: { type: "string", description: "p".repeat(4000) },
+      },
+    },
+    execute: async () => "ok",
+  });
+  const meter = new TokenMeter();
+  const { runner, events } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield content("done");
+        yield usage(120, 7);
+      },
+    },
+    { tools: registry, tokenMeter: meter },
+  );
+  await runner.runTurn(turn);
+
+  const snapshot = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "context.snapshot" }> =>
+      event.type === "context.snapshot",
+  );
+  expect(snapshot).toBeDefined();
+  // The advertised tool schema is part of the request header and must be
+  // measured as its own bucket, not folded into the message surface.
+  expect(snapshot!.toolsTokens).toBeGreaterThan(0);
+  expect(snapshot!.systemTokens).toBeGreaterThan(0);
+  expect(snapshot!.messageTokens).toBeGreaterThanOrEqual(0);
+
+  const status = events.find(
+    (event): event is Extract<RuntimeEvent, { type: "context.status" }> =>
+      event.type === "context.status" &&
+      event.toolsTokens !== undefined,
+  );
+  expect(status).toBeDefined();
+  expect(status!.headerTokens).toBe(
+    (status!.systemTokens ?? 0) + (status!.toolsTokens ?? 0),
+  );
+  expect(status!.requestTokens).toBe(
+    (status!.headerTokens ?? 0) + (status!.surfaceTokens ?? 0),
+  );
 });

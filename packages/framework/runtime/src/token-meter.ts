@@ -32,13 +32,51 @@ export interface TokenMeterMessage {
   toolCallID?: string;
 }
 
+/**
+ * Canonical provider request envelope shared by compaction, token metering and
+ * the runtime status/snapshot surfaces. The hard rule is that `system` and
+ * `tools` live only in the header, never duplicated into `messages`, so the
+ * three-bucket accounting (system / tools / messages) stays additive and every
+ * path derives the same header key from the same envelope.
+ */
+export interface RequestEnvelope {
+  /** Static/runtime system prompt. Counted once in the header only. */
+  system?: string;
+  /** Tool definitions advertised for this request. Counted once in the header. */
+  tools?: unknown;
+  /** Model-visible message/tool surface with the system prompt removed. */
+  messages: readonly TokenMeterMessage[];
+  /** Capacity of the route/model selected for this scope. */
+  contextWindow?: number;
+}
+
+/**
+ * Stable identity of a request header (system + tools). Both `recordUsage` and
+ * `measureRequest` derive this from the same envelope so a provider usage
+ * sample is only reused when the header it priced is still current, and the
+ * system prompt is never double-counted between header and messages.
+ */
+export function requestHeaderKey(input: {
+  system?: string;
+  tools?: unknown;
+}): string {
+  return JSON.stringify({
+    system: input.system ?? "",
+    tools: input.tools ?? null,
+  });
+}
+
 export interface TokenMeasurement {
-  /** Conservative request total: prompt envelope plus model-visible surface. */
-  totalTokens: number;
-  /** Heuristic tokens for system prompt plus tools. */
-  headerTokens: number;
+  /** Heuristic tokens for the system prompt alone. */
+  systemTokens: number;
+  /** Heuristic tokens for the tool definitions alone. */
+  toolsTokens: number;
   /** Heuristic tokens for the model-visible message/tool surface. */
-  surfaceTokens: number;
+  messageTokens: number;
+  /** systemTokens + toolsTokens. */
+  headerTokens: number;
+  /** Conservative request total: header plus model-visible surface. */
+  totalTokens: number;
   /** Provider prompt-side sample: input plus cache reads/writes. */
   pressureTokens?: number;
   /**
@@ -58,6 +96,8 @@ interface ScopeState {
   pressureTokens?: number;
   usage?: ProviderUsageView;
   contextWindow?: number;
+  /** Last three-bucket header breakdown observed by measureRequest. */
+  lastBuckets?: { systemTokens: number; toolsTokens: number };
 }
 
 export function estimateTokenText(text: string): number {
@@ -151,13 +191,6 @@ function promptPressure(usage: ProviderUsageView): number {
   );
 }
 
-function canonicalHeaderKey(
-  system: string | undefined,
-  tools: unknown,
-): string {
-  return JSON.stringify({ system: system ?? "", tools: tools ?? null });
-}
-
 /** Per-scope replay-aware request/surface token account. */
 export class TokenMeter {
   private readonly states = new Map<string, ScopeState>();
@@ -235,24 +268,18 @@ export class TokenMeter {
    * mirrors DSH's conservative anchor rule: stale or smaller samples never
    * make compaction believe the request is cheaper than the local estimate.
    */
-  measureRequest(
-    scope: string,
-    input: {
-      system?: string;
-      tools?: unknown;
-      messages: readonly TokenMeterMessage[];
-      contextWindow?: number;
-    },
-  ): TokenMeasurement {
+  measureRequest(scope: string, envelope: RequestEnvelope): TokenMeasurement {
     const state = this.state(scope);
-    state.surfaceTokens = this.estimateMessages(input.messages);
-    if (input.contextWindow !== undefined)
-      this.setContextWindow(scope, input.contextWindow);
+    state.surfaceTokens = this.estimateMessages(envelope.messages);
+    if (envelope.contextWindow !== undefined)
+      this.setContextWindow(scope, envelope.contextWindow);
 
-    const headerTokens =
-      estimateTokenText(input.system ?? "") + estimateUnknown(input.tools);
+    const systemTokens = estimateTokenText(envelope.system ?? "");
+    const toolsTokens = estimateUnknown(envelope.tools);
+    const headerTokens = systemTokens + toolsTokens;
     const estimatedTotal = headerTokens + state.surfaceTokens;
-    const headerKey = canonicalHeaderKey(input.system, input.tools);
+    const headerKey = requestHeaderKey(envelope);
+    state.lastBuckets = { systemTokens, toolsTokens };
     const exact =
       state.usage !== undefined &&
       state.sampledHeaderKey !== undefined &&
@@ -261,9 +288,11 @@ export class TokenMeter {
         : undefined;
     const useProviderUsage = exact !== undefined && exact >= estimatedTotal;
     return {
-      totalTokens: useProviderUsage ? exact : estimatedTotal,
+      systemTokens,
+      toolsTokens,
+      messageTokens: state.surfaceTokens,
       headerTokens,
-      surfaceTokens: state.surfaceTokens,
+      totalTokens: useProviderUsage ? exact : estimatedTotal,
       ...(state.pressureTokens === undefined
         ? {}
         : { pressureTokens: state.pressureTokens }),
@@ -282,6 +311,9 @@ export class TokenMeter {
     pressureTokens?: number;
     projectedTokens?: number;
     contextWindow?: number;
+    systemTokens?: number;
+    toolsTokens?: number;
+    messageTokens?: number;
     source: "estimate" | "provider_usage";
   } {
     const state = this.state(scope);
@@ -295,6 +327,13 @@ export class TokenMeter {
       ...(state.contextWindow === undefined
         ? {}
         : { contextWindow: state.contextWindow }),
+      ...(state.lastBuckets === undefined
+        ? {}
+        : {
+            systemTokens: state.lastBuckets.systemTokens,
+            toolsTokens: state.lastBuckets.toolsTokens,
+            messageTokens: state.surfaceTokens,
+          }),
       source: state.usage === undefined ? "estimate" : "provider_usage",
     };
   }

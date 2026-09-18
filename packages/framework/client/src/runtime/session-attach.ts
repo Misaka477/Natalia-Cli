@@ -44,6 +44,9 @@ export function createSessionAttach(ctx: RuntimeContext) {
       pressureTokens?: number;
       projectedTokens?: number;
       contextWindow?: number;
+      systemTokens?: number;
+      toolsTokens?: number;
+      messageTokens?: number;
       source: "estimate" | "provider_usage";
     };
     const latestSnapshot = (
@@ -81,6 +84,9 @@ export function createSessionAttach(ctx: RuntimeContext) {
       pressureTokens?: number;
       projectedTokens?: number;
       contextWindow?: number;
+      systemTokens?: number;
+      toolsTokens?: number;
+      messageTokens?: number;
       source: "estimate" | "provider_usage";
     }) => {
       const at = new Date().toISOString();
@@ -111,6 +117,9 @@ export function createSessionAttach(ctx: RuntimeContext) {
       pressureTokens?: number;
       projectedTokens?: number;
       contextWindow?: number;
+      systemTokens?: number;
+      toolsTokens?: number;
+      messageTokens?: number;
       source: "estimate" | "provider_usage";
     }) =>
       publishSnapshot({
@@ -126,6 +135,15 @@ export function createSessionAttach(ctx: RuntimeContext) {
         ...(snapshot.contextWindow === undefined
           ? {}
           : { contextWindow: snapshot.contextWindow }),
+        ...(snapshot.systemTokens === undefined
+          ? {}
+          : { systemTokens: snapshot.systemTokens }),
+        ...(snapshot.toolsTokens === undefined
+          ? {}
+          : { toolsTokens: snapshot.toolsTokens }),
+        ...(snapshot.messageTokens === undefined
+          ? {}
+          : { messageTokens: snapshot.messageTokens }),
         source: snapshot.source,
       });
     const chatContextWindow = async (channel: "navi" | "nia") => {

@@ -14,7 +14,7 @@ import type {
   SubagentSupport,
   SubagentsService,
 } from "../context";
-import { TokenMeter } from "@natalia/runtime";
+import { TokenMeter, requestHeaderKey } from "@natalia/runtime";
 import { createInitializeRuntime } from "./runtime";
 
 export async function createSubagentSupport(
@@ -201,6 +201,15 @@ export async function createSubagentSupport(
       ...(projection.contextWindow === undefined
         ? {}
         : { contextWindow: projection.contextWindow }),
+      ...(projection.systemTokens === undefined
+        ? {}
+        : { systemTokens: projection.systemTokens }),
+      ...(projection.toolsTokens === undefined
+        ? {}
+        : { toolsTokens: projection.toolsTokens }),
+      ...(projection.messageTokens === undefined
+        ? {}
+        : { messageTokens: projection.messageTokens }),
       source: projection.source,
       at: new Date().toISOString(),
     });
@@ -301,7 +310,7 @@ export async function createSubagentSupport(
                 : undefined;
             meter.setContextWindow(scopeKey, activeContextConfig.max);
             meter.recordUsage(scopeKey, providerUsage, {
-              headerKey: JSON.stringify({ system, tools: toolSchemas }),
+              headerKey: requestHeaderKey({ system, tools: toolSchemas }),
               surfaceTokens: meter.observeSurface(scopeKey, providerMessages),
             });
             publishSubagentTokenSnapshot(ledger, runner);

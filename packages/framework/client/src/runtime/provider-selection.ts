@@ -31,13 +31,26 @@ import type { RealRuntimeClientOptions } from "./options";
 import { perfLog } from "@natalia/runtime-services";
 
 export function defaultContextStatusConfig(): RuntimeContextStatusConfig {
+  const max = Math.max(
+    32_000,
+    Number(process.env.NATALIA_CONTEXT_WINDOW ?? 32_000),
+  );
+  // A 32k-class window must not reserve a flat 20k output budget: that would
+  // trip the reserved-capacity compaction guard on ordinary multi-step turns.
+  // Derive the reserve from the same conservative formula the resolved path
+  // uses (min(20000, max(4096, window*0.1))) unless an explicit override is set.
+  const envReserved = process.env.NATALIA_CONTEXT_RESERVED;
+  const reserved = resolveReservedOutputTokens({
+    contextWindow: max,
+    configuredReserved:
+      envReserved === undefined || envReserved === ""
+        ? "auto"
+        : Number(envReserved),
+  });
   return {
-    max: Math.max(32_000, Number(process.env.NATALIA_CONTEXT_WINDOW ?? 32_000)),
+    max,
     thresholdPercent: Number(process.env.NATALIA_CONTEXT_THRESHOLD ?? 85),
-    reserved: Math.max(
-      1,
-      Number(process.env.NATALIA_CONTEXT_RESERVED ?? 20_000),
-    ),
+    reserved: Math.max(1, reserved.tokens),
   };
 }
 

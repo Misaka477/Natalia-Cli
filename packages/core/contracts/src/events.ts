@@ -1569,6 +1569,16 @@ type RuntimeEventData =
       thresholdPercent: number;
       reserved: number;
       trigger?: CompactionTrigger;
+        /** Model-visible message/tool surface tokens (the message bucket). */
+        surfaceTokens?: number;
+        /** Conservative full-request tokens (header + surface). */
+        requestTokens?: number;
+        /** systemTokens + toolsTokens. */
+        headerTokens?: number;
+        /** System-prompt tokens, counted once in the header only. */
+        systemTokens?: number;
+        /** Tool-definition tokens, counted once in the header only. */
+        toolsTokens?: number;
     }
   | {
       /** Durable shared TokenMeter projection for one stream. */
@@ -1580,6 +1590,10 @@ type RuntimeEventData =
       contextWindow?: number;
       source: "estimate" | "provider_usage";
       at: string;
+        /** Three-bucket header breakdown, when the request was measured. */
+        systemTokens?: number;
+        toolsTokens?: number;
+        messageTokens?: number;
     }
   | {
       /** Navi-owned context status. */
@@ -1590,6 +1604,16 @@ type RuntimeEventData =
       thresholdPercent: number;
       reserved: number;
       trigger?: CompactionTrigger;
+        /** Model-visible message/tool surface tokens (the message bucket). */
+        surfaceTokens?: number;
+        /** Conservative full-request tokens (header + surface). */
+        requestTokens?: number;
+        /** systemTokens + toolsTokens. */
+        headerTokens?: number;
+        /** System-prompt tokens, counted once in the header only. */
+        systemTokens?: number;
+        /** Tool-definition tokens, counted once in the header only. */
+        toolsTokens?: number;
     }
   | {
       /** Nia-owned context status. */
@@ -1600,6 +1624,16 @@ type RuntimeEventData =
       thresholdPercent: number;
       reserved: number;
       trigger?: CompactionTrigger;
+        /** Model-visible message/tool surface tokens (the message bucket). */
+        surfaceTokens?: number;
+        /** Conservative full-request tokens (header + surface). */
+        requestTokens?: number;
+        /** systemTokens + toolsTokens. */
+        headerTokens?: number;
+        /** System-prompt tokens, counted once in the header only. */
+        systemTokens?: number;
+        /** Tool-definition tokens, counted once in the header only. */
+        toolsTokens?: number;
     }
   | {
       /** Navi-owned TokenMeter projection. */
@@ -1610,6 +1644,10 @@ type RuntimeEventData =
       contextWindow?: number;
       source: "estimate" | "provider_usage";
       at: string;
+        /** Three-bucket header breakdown, when the request was measured. */
+        systemTokens?: number;
+        toolsTokens?: number;
+        messageTokens?: number;
     }
   | {
       /** Nia-owned TokenMeter projection. */
@@ -1620,6 +1658,10 @@ type RuntimeEventData =
       contextWindow?: number;
       source: "estimate" | "provider_usage";
       at: string;
+        /** Three-bucket header breakdown, when the request was measured. */
+        systemTokens?: number;
+        toolsTokens?: number;
+        messageTokens?: number;
     }
   | {
       type: "compaction.begin";

@@ -8,6 +8,7 @@ import type {
 import {
   ContextLedger,
   contextEntriesToProviderMessages,
+  contextStatusBuckets,
   contextStatusEvent,
   estimateTokens,
   MAX_STEPS_PROMPT,
@@ -15,6 +16,7 @@ import {
   MISSING_FINAL_RESPONSE_FALLBACK,
   nativeToolCallCorrection,
   normalizeRawToolCallProtocol,
+  requestHeaderKey,
   requireNativeToolCallProtocol,
   uniqueProviderToolCallIds,
   type ContextEntry,
@@ -405,6 +407,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           activeProvider,
           activeContextConfig,
           applyRuntimeContext,
+          activeModelCapabilities,
+          activePermissionMode,
         );
         const result = await runProviderStepWithRecovery(
           id,
@@ -519,13 +523,17 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               : "";
           meter.setContextWindow("main", input.runtimeContextConfig().max);
           meter.recordUsage("main", providerUsage, {
-            headerKey: JSON.stringify({ system: systemAtSample, tools: null }),
+            headerKey: requestHeaderKey({
+              system: systemAtSample,
+              tools: currentStepToolDefinitions(
+                activePermissionMode,
+                activeModelCapabilities,
+              ),
+            }),
             surfaceTokens: meter.observeSurface("main", messagesAtSample),
           });
         }
-        input.publish(
-          contextStatusEvent(ledger.status(input.runtimeContextConfig())),
-        );
+        publishMainContextStatus(meter, input.runtimeContextConfig());
         if (meter) publishMainTokenSnapshot(meter, ledger.effectiveTokens());
       }
       input.publish({
@@ -589,6 +597,39 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       input.setActiveModelCapabilities(undefined);
     }
   }
+
+    /**
+     * The advertised tool definitions for the current provider step, derived
+     * once so token metering (measureRequest) and the provider usage anchor
+     * (recordUsage) price the exact same request header. Tools are part of the
+     * request envelope header and must be measured as their own bucket.
+     */
+    function currentStepToolDefinitions(
+      activePermissionMode: PermissionMode,
+      activeModelCapabilities: ModelCapabilities,
+    ) {
+      if (!activeModelCapabilities.toolCall) return undefined;
+      const agent = input.selectedAgent();
+      const skill = input.activeSkill();
+      const advertised = new Map(
+        [...input.tools()].filter(
+          ([name, tool]) =>
+            input.isToolAllowed(name) &&
+            (activePermissionMode !== "read_only" || !tool.requiresApproval) &&
+            (!agent?.mcpServers.length ||
+              !name.startsWith("mcp_") ||
+              agent.mcpServers.some((server) =>
+                name.startsWith(`mcp_${server}_`),
+              )) &&
+            (!skill ||
+              input.skillService?.()?.authorizeTool(skill, tool.name, {
+                mode: "default",
+              }) !== false),
+        ),
+      );
+      return materializeTools(input.tools(), advertised).definitions;
+    }
+
 
   async function runProviderStep(
     id: string,
@@ -1145,6 +1186,10 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         meter?.clear("main");
         meter?.measureRequest("main", {
           system,
+          tools: currentStepToolDefinitions(
+            activePermissionMode,
+            activeModelCapabilities,
+          ),
           messages,
           contextWindow: contextConfig.max,
         });
@@ -1153,6 +1198,27 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       },
     });
   }
+
+  /**
+   * Publish context.status for the main path with the three-bucket view merged
+   * from the meter so `used` stays the legacy message face while the canonical
+   * system / tools / messages accounting is exposed alongside it.
+   */
+  function publishMainContextStatus(
+    meter: ReturnType<NonNullable<ProviderRunnerInput["tokenMeter"]>> | undefined,
+    config: { max: number; thresholdPercent: number; reserved: number },
+  ) {
+    const buckets = meter
+      ? contextStatusBuckets(meter.project("main"))
+      : undefined;
+    input.publish(
+      contextStatusEvent({
+        ...input.context().status(config),
+        ...(buckets ?? {}),
+      }),
+    );
+  }
+
 
   function publishMainTokenSnapshot(
     meter: ReturnType<NonNullable<ProviderRunnerInput["tokenMeter"]>>,
@@ -1172,6 +1238,15 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       ...(projection.contextWindow === undefined
         ? {}
         : { contextWindow: projection.contextWindow }),
+      ...(projection.systemTokens === undefined
+        ? {}
+        : { systemTokens: projection.systemTokens }),
+      ...(projection.toolsTokens === undefined
+        ? {}
+        : { toolsTokens: projection.toolsTokens }),
+      ...(projection.messageTokens === undefined
+        ? {}
+        : { messageTokens: projection.messageTokens }),
       source: projection.source,
       at: new Date().toISOString(),
     });
@@ -1184,20 +1259,30 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     activeProvider: StreamingProvider,
     config: { max: number; thresholdPercent: number; reserved: number },
     applyRuntimeContext: (messages: ProviderMessage[]) => void,
+    activeModelCapabilities: ModelCapabilities,
+    activePermissionMode: PermissionMode,
   ) {
     const ledger = input.context();
+    const meter = input.tokenMeter?.();
     const pruned = ledger.pruneToolResults();
     if (pruned.pruned > 0) {
       rebuildMessagesAfterCompaction(messages, ledger, {
         preserveToolMessages: false,
       });
       applyRuntimeContext(messages);
-      input.publish(contextStatusEvent(ledger.status(config)));
+      publishMainContextStatus(meter, config);
     }
-    const meter = input.tokenMeter?.();
     const system = messages[0]?.role === "system" ? messages[0].content : "";
+    // Measure the exact request header (system + advertised tools) about to be
+    // sent so the tools bucket and the provider usage anchor stay on the same
+    // account as recordUsage.
+    const stepTools = currentStepToolDefinitions(
+      activePermissionMode,
+      activeModelCapabilities,
+    );
     const measured = meter?.measureRequest("main", {
       system,
+      tools: stepTools,
       messages,
       contextWindow: config.max,
     });
@@ -1254,11 +1339,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     });
     // Publish the compacted projection after the status event so the meter is
     // the last context event the UI applies for this compaction boundary.
-    input.publish(contextStatusEvent(ledger.status(config)));
+    publishMainContextStatus(meter, config);
     const compactedSystem =
       messages[0]?.role === "system" ? messages[0].content : "";
     meter?.measureRequest("main", {
       system: compactedSystem,
+      tools: stepTools,
       messages,
       contextWindow: config.max,
     });

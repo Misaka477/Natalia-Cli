@@ -69,6 +69,16 @@ export type ContextStatus = {
   thresholdPercent: number;
   reserved: number;
   trigger?: CompactionTrigger;
+  /** Model-visible message/tool surface tokens (the message bucket). */
+  surfaceTokens?: number;
+  /** Conservative full-request tokens (header + surface, provider-anchored). */
+  requestTokens?: number;
+  /** systemTokens + toolsTokens. */
+  headerTokens?: number;
+  /** System-prompt tokens, counted once in the header only. */
+  systemTokens?: number;
+  /** Tool-definition tokens, counted once in the header only. */
+  toolsTokens?: number;
 };
 
 export type ResourceSnapshot = {
@@ -386,6 +396,42 @@ export function resolveReservedOutputTokens(
 
 export function contextStatusEvent(status: ContextStatus): RuntimeEvent {
   return { type: "context.status", ...status };
+}
+
+/**
+ * Builds the three-bucket view for a context.status event from a TokenMeter
+ * projection, so `used` stays the legacy message face while `surfaceTokens`,
+ * `requestTokens`, `headerTokens`, `systemTokens` and `toolsTokens` expose the
+ * canonical system / tools / messages accounting. Returns undefined until the
+ * request envelope has been measured at least once for that scope.
+ */
+export function contextStatusBuckets(projection: {
+  systemTokens?: number;
+  toolsTokens?: number;
+  messageTokens?: number;
+}): Pick<
+  ContextStatus,
+  | "surfaceTokens"
+  | "requestTokens"
+  | "headerTokens"
+  | "systemTokens"
+  | "toolsTokens"
+> | undefined {
+  const { systemTokens, toolsTokens, messageTokens } = projection;
+  if (
+    systemTokens === undefined ||
+    toolsTokens === undefined ||
+    messageTokens === undefined
+  )
+    return undefined;
+  const headerTokens = systemTokens + toolsTokens;
+  return {
+    surfaceTokens: messageTokens,
+    requestTokens: headerTokens + messageTokens,
+    headerTokens,
+    systemTokens,
+    toolsTokens,
+  };
 }
 
 function closeToolPairs(
