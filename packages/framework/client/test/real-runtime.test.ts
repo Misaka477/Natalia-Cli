@@ -9153,6 +9153,10 @@ test("subagent honors configured step limits above twenty", async () => {
       version: 3,
       defaultAgent: "long_running",
       agents: { long_running: { description: "Long running", maxSteps: 21 } },
+      // This test pins the STEP limit exactly at 21; keep the context small so
+      // the tool schema never trips the compaction threshold and adds an
+      // auxiliary provider call the scripted provider does not script.
+      context: { compactionEnabled: false },
     }),
   );
   for (let step = 0; step < 21; step++)
