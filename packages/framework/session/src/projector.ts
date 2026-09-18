@@ -773,7 +773,6 @@ export type ProjectedChatMessage = {
   role: "user" | "chat" | "system";
   text: string;
   at: string;
-  channel: ChatChannel;
   kind?: "message" | "thinking" | "tool" | "compaction" | "collab";
   attachments?: import("@natalia/contracts").LocalAttachment[];
   tool?: {
@@ -789,11 +788,27 @@ export type ProjectedChatMessage = {
   };
 };
 
+/**
+ * Legacy `chat.*` compatibility projection needs the old channel discriminator
+ * internally. It is stripped at the public boundary; new producers use
+ * `navi.chat.*` / `nia.chat.*` and never expose a channel field.
+ */
+type InternalProjectedChatMessage = ProjectedChatMessage & {
+  channel: ChatChannel;
+};
+
+function stripChatChannel(
+  message: InternalProjectedChatMessage,
+): ProjectedChatMessage {
+  const { channel: _channel, ...rest } = message;
+  return rest;
+}
+
 export function projectedChatMessages(
   events: RuntimeEvent[],
 ): ProjectedChatMessage[] {
-  const messages: ProjectedChatMessage[] = [];
-  const thinkingByMessage = new Map<string, ProjectedChatMessage>();
+  const messages: InternalProjectedChatMessage[] = [];
+  const thinkingByMessage = new Map<string, InternalProjectedChatMessage>();
   for (const event of events) {
     const channel = chatEventChannel(event);
     if (!channel) continue;
@@ -803,7 +818,7 @@ export function projectedChatMessages(
       if (existing) {
         existing.text += event.text;
       } else {
-        const thinking: ProjectedChatMessage = {
+        const thinking: InternalProjectedChatMessage = {
           messageID: event.messageID,
           role: "chat",
           text: event.text,
@@ -826,7 +841,7 @@ export function projectedChatMessages(
         // live-only delta captured by a caller that projects both streams.
         existing.text = event.text;
       } else {
-        const thinking: ProjectedChatMessage = {
+        const thinking: InternalProjectedChatMessage = {
           messageID: event.messageID,
           role: "chat",
           text: event.text,
@@ -923,7 +938,7 @@ ${event.summary}`,
       });
     }
   }
-  return messages;
+  return messages.map(stripChatChannel);
 }
 
 export function projectedNaviChatMessages(
@@ -953,7 +968,7 @@ function projectNiaChatMessages(
 function collabChatRow(
   event: RuntimeEvent,
   channel: ChatChannel,
-): ProjectedChatMessage | undefined {
+): InternalProjectedChatMessage | undefined {
   const message = normalizeCollaborationEvent(event);
   if (!message) return undefined;
   if (channel === "navi" && message.from !== "live_chat") return undefined;
@@ -989,8 +1004,8 @@ function projectChatStream(
   channel: ChatChannel,
   owns: (event: RuntimeEvent) => boolean,
 ): ProjectedChatMessage[] {
-  const messages: ProjectedChatMessage[] = [];
-  const thinkingByMessage = new Map<string, ProjectedChatMessage>();
+  const messages: InternalProjectedChatMessage[] = [];
+  const thinkingByMessage = new Map<string, InternalProjectedChatMessage>();
   for (const event of events) {
     const collab = collabChatRow(event, channel);
     if (collab) {
@@ -1095,7 +1110,7 @@ function projectChatStream(
       });
     }
   }
-  return messages;
+  return messages.map(stripChatChannel);
 }
 
 function isNaviChatEvent(event: RuntimeEvent): boolean {

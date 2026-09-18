@@ -7,7 +7,7 @@
  * events, and trigger session snapshots and safe-boundary settlement. Reads
  * everything it needs from `RuntimeContext` at call time.
  */
-import { appendSessionEvent, projectedChatMessages } from "@natalia/session";
+import { appendSessionEvent, projectedNiaChatMessages } from "@natalia/session";
 import {
   markRuntimeEventSessionSeq,
   runtimeEventDurability,
@@ -530,9 +530,9 @@ export function createEventSink(
       event.stopReason === "done" &&
       exec?.session
     ) {
-      const niaMessages = projectedChatMessages(exec.session.events).filter(
-        (message) => message.channel === "nia" && message.kind === "message",
-      );
+      const niaMessages = projectedNiaChatMessages(
+        exec.session.events,
+      ).filter((message) => message.kind === "message");
       const last = niaMessages[niaMessages.length - 1];
       const niaAuditWake = exec.session.events.some(
         (candidate) =>

@@ -1154,7 +1154,6 @@ test("chat replay keeps identical Navi and Nia message IDs and thinking isolated
       role: "user",
       text: "Navi question",
       at: "2026-08-14T00:00:00.000Z",
-      channel: "navi",
       kind: "message",
     },
     {
@@ -1162,7 +1161,6 @@ test("chat replay keeps identical Navi and Nia message IDs and thinking isolated
       role: "user",
       text: "Nia question",
       at: "2026-08-14T00:00:01.000Z",
-      channel: "nia",
       kind: "message",
     },
     {
@@ -1170,7 +1168,6 @@ test("chat replay keeps identical Navi and Nia message IDs and thinking isolated
       role: "chat",
       text: "Navi thinks. Still Navi.",
       at: "",
-      channel: "navi",
       kind: "thinking",
     },
     {
@@ -1178,7 +1175,6 @@ test("chat replay keeps identical Navi and Nia message IDs and thinking isolated
       role: "chat",
       text: "Nia thinks. ",
       at: "",
-      channel: "nia",
       kind: "thinking",
     },
     {
@@ -1186,7 +1182,6 @@ test("chat replay keeps identical Navi and Nia message IDs and thinking isolated
       role: "chat",
       text: "Nia answer",
       at: "2026-08-14T00:00:02.000Z",
-      channel: "nia",
       kind: "message",
     },
   ]);
@@ -1263,7 +1258,6 @@ test("durable chat thinking replaces live deltas and restores done-only streams"
       role: "chat",
       text: "complete Navi reasoning",
       at: "",
-      channel: "navi",
       kind: "thinking",
     },
     {
@@ -1271,7 +1265,6 @@ test("durable chat thinking replaces live deltas and restores done-only streams"
       role: "chat",
       text: "complete Nia reasoning",
       at: "",
-      channel: "nia",
       kind: "thinking",
     },
   ]);
@@ -1303,7 +1296,6 @@ test("namespaced chat replay ignores stale channel payloads", () => {
       role: "user",
       text: "Navi remains Navi",
       at: "t1",
-      channel: "navi",
       kind: "message",
     },
     {
@@ -1311,7 +1303,6 @@ test("namespaced chat replay ignores stale channel payloads", () => {
       role: "chat",
       text: "Nia remains Nia",
       at: "",
-      channel: "nia",
       kind: "thinking",
     },
   ]);
@@ -1371,7 +1362,6 @@ test("legacy persisted chat records retain isolated channel histories", () => {
       role: "user",
       text: "Legacy Navi",
       at: "t1",
-      channel: "navi",
       kind: "message",
     },
     {
@@ -1379,7 +1369,6 @@ test("legacy persisted chat records retain isolated channel histories", () => {
       role: "user",
       text: "Legacy Nia",
       at: "t2",
-      channel: "nia",
       kind: "message",
     },
     {
@@ -1387,7 +1376,6 @@ test("legacy persisted chat records retain isolated channel histories", () => {
       role: "chat",
       text: "Legacy Navi later",
       at: "t3",
-      channel: "navi",
       kind: "message",
     },
   ]);
