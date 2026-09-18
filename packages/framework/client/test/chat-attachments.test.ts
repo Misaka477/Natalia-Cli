@@ -105,6 +105,8 @@ async function makeHarness(
     // fact-state completion path there is no store page left to fetch.
     fullEventsLoaded: true,
     tokenMeter: new TokenMeter(),
+    naviTokenMeter: new TokenMeter(),
+    niaTokenMeter: new TokenMeter(),
     naviChatLedger: new ContextLedger(),
     niaChatLedger: new ContextLedger(),
     naviPendingQueue: [],

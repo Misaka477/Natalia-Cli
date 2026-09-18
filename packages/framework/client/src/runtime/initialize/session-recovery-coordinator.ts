@@ -165,6 +165,8 @@ export class SessionRecoveryCoordinator {
       naviChatLedger: new ContextLedger(),
       niaChatLedger: new ContextLedger(),
       tokenMeter: new TokenMeter(),
+      naviTokenMeter: new TokenMeter(),
+      niaTokenMeter: new TokenMeter(),
       naviPendingQueue: [],
       niaPendingQueue: [],
       naviAbortWakePending: false,

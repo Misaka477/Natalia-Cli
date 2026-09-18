@@ -12,6 +12,7 @@ import {
   estimateTokens,
   type ProviderMessage,
   type StreamingProvider,
+  type TokenMeter,
 } from "@natalia/runtime";
 import { resolveEffectiveModel } from "@natalia/config";
 import {
@@ -205,31 +206,39 @@ export function promptData(value: string): string {
 }
 
 /**
- * The channel transcript, folded from the incremental hot state when it is
- * complete and from the resident event log otherwise. The state's channel event
- * lists hold exactly the events the chat projector consumes, so the result is
- * identical while the whole journal stays out of memory.
+ * Navi transcript, folded from hot state when complete, otherwise projected
+ * from the resident event log.
  */
-function chatMessagesForHistory(
-  exec: SessionExecutionState,
-  channel: "navi" | "nia",
-) {
+function naviChatMessagesForHistory(exec: SessionExecutionState) {
   const state = exec.factStateComplete === true ? exec.factState : undefined;
-  if (state)
-    return channel === "navi"
-      ? sessionFactNaviChatMessages(state)
-      : sessionFactNiaChatMessages(state);
-  return channel === "navi"
-    ? projectedNaviChatMessages(exec.session.events)
+  return state
+    ? sessionFactNaviChatMessages(state)
+    : projectedNaviChatMessages(exec.session.events);
+}
+
+/** Nia transcript; same fold, separate stream. */
+function niaChatMessagesForHistory(exec: SessionExecutionState) {
+  const state = exec.factStateComplete === true ? exec.factState : undefined;
+  return state
+    ? sessionFactNiaChatMessages(state)
     : projectedNiaChatMessages(exec.session.events);
 }
 
-export function chatProviderMessagesFromHistory(
+export function naviChatProviderMessagesFromHistory(
   exec: SessionExecutionState,
-  channel: "navi" | "nia",
 ): ProviderMessage[] {
-  const history = chatMessagesForHistory(exec, channel);
-  return history
+  return naviChatMessagesForHistory(exec)
+    .filter((message) => message.kind !== "thinking")
+    .map((message) => ({
+      role: message.role === "user" ? "user" : "assistant",
+      content: message.text,
+    }));
+}
+
+export function niaChatProviderMessagesFromHistory(
+  exec: SessionExecutionState,
+): ProviderMessage[] {
+  return niaChatMessagesForHistory(exec)
     .filter((message) => message.kind !== "thinking")
     .map((message) => ({
       role: message.role === "user" ? "user" : "assistant",
@@ -250,7 +259,7 @@ export function naviChatHistory(
     text: string;
   }>;
 } {
-  const history = chatMessagesForHistory(exec, "navi").filter(
+  const history = naviChatMessagesForHistory(exec).filter(
     (message) =>
       message.messageID !== responseMessageID && message.kind !== "thinking",
   );
@@ -278,7 +287,7 @@ export function niaChatHistory(
     text: string;
   }>;
 } {
-  const history = chatMessagesForHistory(exec, "nia").filter(
+  const history = niaChatMessagesForHistory(exec).filter(
     (message) =>
       message.messageID !== responseMessageID && message.kind !== "thinking",
   );
@@ -312,7 +321,8 @@ export async function compactChatBeforeProviderStep(
   messages: ProviderMessage[],
   signal: AbortSignal,
   stream: {
-    channel: "navi" | "nia";
+    /** Stream-owned meter; no channel identity is used by compaction. */
+    meter: TokenMeter;
     tools?: unknown;
     contextWindow?: number;
     compactionID: string;
@@ -402,7 +412,7 @@ export async function compactChatBeforeProviderStep(
   );
   const system =
     messages[0]?.role === "system" ? messages[0].content : undefined;
-  const measured = exec.tokenMeter?.measureRequest(`chat:${stream.channel}`, {
+  const measured = stream.meter.measureRequest("stream", {
     system,
     tools: stream.tools,
     messages,
@@ -487,12 +497,12 @@ export async function compactChatBeforeProviderStep(
   // Drop the pre-compaction provider anchor before re-measuring. The anchor
   // described a surface that no longer exists; keeping it can make the UI show
   // the old pressure even though the ledger was compacted.
-  exec.tokenMeter?.clear(`chat:${stream.channel}`);
+  stream.meter.clear("stream");
   // Re-measure after the ledger rewrite: callers publish their token snapshot
   // immediately below, and the meter must reflect the compacted surface rather
   // than the pre-compaction request.
   try {
-    exec.tokenMeter?.measureRequest(`chat:${stream.channel}`, {
+    stream.meter.measureRequest("stream", {
       system: rebuilt[0]?.role === "system" ? rebuilt[0].content : undefined,
       tools: stream.tools,
       messages: rebuilt,

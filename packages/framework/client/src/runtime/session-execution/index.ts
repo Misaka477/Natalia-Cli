@@ -353,6 +353,8 @@ export function createSessionExecution(
       naviChatLedger: new ContextLedger(),
       niaChatLedger: new ContextLedger(),
       tokenMeter: new TokenMeter(),
+      naviTokenMeter: new TokenMeter(),
+      niaTokenMeter: new TokenMeter(),
       naviChatModelProfile: (
         recovery?.chatModelProfile ?? projection.chatModelProfile
       )?.navi,

@@ -304,7 +304,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           messages,
           signal,
           {
-            channel: "navi",
+            meter: input.exec.naviTokenMeter,
             tools: toolSchemas,
             contextWindow: activeContextBudget.max,
             compactionID: `navi-chat:${input.exec.session.id}`,

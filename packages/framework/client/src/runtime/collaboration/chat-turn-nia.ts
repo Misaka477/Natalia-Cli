@@ -325,7 +325,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           messages,
           signal,
           {
-            channel: "nia",
+            meter: input.exec.niaTokenMeter,
             tools: toolSchemas,
             contextWindow: activeContextBudget.max,
             compactionID: `nia-chat:${input.exec.session.id}`,

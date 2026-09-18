@@ -51,7 +51,10 @@ export type SessionExecutionState = {
   pauseWaiters: Array<() => void>;
   naviChatLedger: ContextLedger;
   niaChatLedger: ContextLedger;
+  /** Main/Natalia request meter. Chat streams own their own meters below. */
   tokenMeter: TokenMeter;
+  naviTokenMeter: TokenMeter;
+  niaTokenMeter: TokenMeter;
   naviChatModelProfile?: import("@natalia/contracts").ChatModelProfile;
   niaChatModelProfile?: import("@natalia/contracts").ChatModelProfile;
   advisorPending?: boolean;

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ContextLedger } from "@natalia/runtime";
+import { ContextLedger, TokenMeter } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { compactChatBeforeProviderStep } from "../src/runtime/collaboration/chat-turn-common";
 import {
@@ -55,7 +55,7 @@ test("Navi and Nia compaction retain independent ledgers, providers, and durable
       messages,
       new AbortController().signal,
       {
-        channel: type,
+        meter: new TokenMeter(),
         compactionID: `${type}:ses_compaction`,
         instruction: `${type} instruction`,
         durableMessages: [
@@ -113,7 +113,7 @@ test("a truncated stream history resets only its own compaction ledger", async (
     runtimeContextConfig: { max: 9999, thresholdPercent: 90, reserved: 0 },
   } as never;
   const stream = {
-    channel: "navi" as const,
+    meter: new TokenMeter(),
     compactionID: "navi:ses_rollback",
     instruction: "Navi instruction",
     durableMessages: [],

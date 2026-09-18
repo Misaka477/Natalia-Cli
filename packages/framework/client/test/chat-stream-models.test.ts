@@ -60,6 +60,8 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
     // This harness owns the complete live event array, not a tail.
     fullEventsLoaded: true,
     tokenMeter: new TokenMeter(),
+    naviTokenMeter: new TokenMeter(),
+    niaTokenMeter: new TokenMeter(),
     naviChatLedger: new ContextLedger(),
     niaChatLedger: new ContextLedger(),
     naviPendingQueue: [],

@@ -19,7 +19,10 @@ import {
 } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
-import { chatProviderMessagesFromHistory } from "./collaboration/chat-turn-common";
+import {
+  naviChatProviderMessagesFromHistory,
+  niaChatProviderMessagesFromHistory,
+} from "./collaboration/chat-turn-common";
 import { perfLog } from "@natalia/runtime-services";
 
 export function createSessionAttach(ctx: RuntimeContext) {
@@ -118,22 +121,26 @@ export function createSessionAttach(ctx: RuntimeContext) {
         publishExistingSnapshot(existing);
         continue;
       }
-      const messages = chatProviderMessagesFromHistory(exec, channel);
+      const messages =
+        channel === "navi"
+          ? naviChatProviderMessagesFromHistory(exec)
+          : niaChatProviderMessagesFromHistory(exec);
       if (!messages.length) continue;
-      const scope = `chat:${channel}`;
+      const streamMeter =
+        channel === "navi" ? exec.naviTokenMeter : exec.niaTokenMeter;
       const contextWindow = await chatContextWindow(channel);
-      meter.measureRequest(scope, {
+      streamMeter.measureRequest("stream", {
         tools: undefined,
         messages,
         contextWindow,
       });
-      const projection = meter.project(scope);
+      const projection = streamMeter.project("stream");
       publishSnapshot({
         channel,
         usedTokens:
           projection.projectedTokens ??
           projection.pressureTokens ??
-          meter.estimateMessages(messages),
+          streamMeter.estimateMessages(messages),
         ...(projection.pressureTokens === undefined
           ? {}
           : { pressureTokens: projection.pressureTokens }),
