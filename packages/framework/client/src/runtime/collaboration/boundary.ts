@@ -62,6 +62,26 @@ export function lastAssistantNarration(
  */
 const GOAL_QUESTION_STREAK = 3;
 
+/**
+ * EI §3.3 机制 1: the delivered/acknowledged `constraint` intents from the Live
+ * Work Chat mailbox, as explicit R constraint sentences. A queued/deferred/
+ * superseded message is not yet (or no longer) binding, so it is excluded.
+ * Pure so the selection is unit-testable without a boundary.
+ */
+export function deliveredMailboxConstraints(
+  messages: readonly import("@natalia/session").ProjectedMailboxMessage[],
+): string[] {
+  return messages
+    .filter(
+      (message) =>
+        message.intent === "constraint" &&
+        (message.status === "delivered" ||
+          message.status === "acknowledged"),
+    )
+    .map((message) => message.safeSummary)
+    .filter((summary) => summary.trim().length > 0);
+}
+
 export function createCollaborationBoundary(ctx: RuntimeContext) {
   const proseStreaks = new Map<string, number>();
 
@@ -255,15 +275,23 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         const evidenceRefs = projectedEvidenceRecords(
           target.session.events,
         ).map((record) => record.id);
-        const applicableConstraints = projectedConstitutionRules(
-          target.session.events,
-        )
-          .filter((rule) =>
-            rule.appliesTo?.paths?.some((pattern) =>
-              confirmed.some((change) => globPathMatch(pattern, change.path)),
-            ),
-          )
-          .map((rule) => rule.ruleID);
+        // EI §3.3 机制 1: a user constraint delivered through the Live Work Chat
+        // mailbox is an explicit R constraint, not just context prose — feed
+        // the delivered/acknowledged `constraint` intents into the judged
+        // constraint set alongside the constitution rules that match the paths.
+        const mailboxConstraints = deliveredMailboxConstraints(
+          mailboxMessagesFor(target),
+        );
+        const applicableConstraints = [
+          ...projectedConstitutionRules(target.session.events)
+            .filter((rule) =>
+              rule.appliesTo?.paths?.some((pattern) =>
+                confirmed.some((change) => globPathMatch(pattern, change.path)),
+              ),
+            )
+            .map((rule) => rule.ruleID),
+          ...mailboxConstraints,
+        ];
         // EI Phase 2: the same matched rules, carrying enforcement, so a deny
         // hit opens a high constitution_conflict finding.
         const constitutionHits = projectedConstitutionRules(target.session.events)
