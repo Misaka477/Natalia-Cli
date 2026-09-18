@@ -262,6 +262,18 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
             ),
           )
           .map((rule) => rule.ruleID);
+        // EI Phase 2: the same matched rules, carrying enforcement, so a deny
+        // hit opens a high constitution_conflict finding.
+        const constitutionHits = projectedConstitutionRules(target.session.events)
+          .filter((rule) =>
+            rule.appliesTo?.paths?.some((pattern) =>
+              confirmed.some((change) => globPathMatch(pattern, change.path)),
+            ),
+          )
+          .map((rule) => ({
+            ruleID: rule.ruleID,
+            enforcement: rule.enforcement ?? "warn",
+          }));
         // EI §8.6: the R is the accepted WorkContract — the evaluator judges
         // against the user-tier commitment when one exists.
         const contract = projectedWorkContracts(target.session.events).find(
@@ -282,6 +294,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           evidenceRefs,
           recentActions: behavior.recentActions,
           recentFailures: behavior.recentFailures,
+          constitutionHits,
           ...(contract
             ? {
                 contract: {

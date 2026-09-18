@@ -549,3 +549,42 @@ test("failure loop does not fire below the threshold or across different keys", 
   });
   expect(distinct.some((f) => f.ruleHits?.some((h) => h.rule === "failure_loop"))).toBe(false);
 });
+
+test("a change matching a deny constitution rule opens a high constitution_conflict finding", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_cc",
+    turnID: "t_cc",
+    objective: "ship the change",
+    currentActivity: "edit:secrets.env",
+    applicableConstraints: [],
+    changes: [{ path: "secrets.env", action: "modified" }],
+    evidenceRefs: [],
+    constitutionHits: [{ ruleID: "C-TERM-001", enforcement: "deny" }],
+  });
+  const finding = findings.find((f) =>
+    (f.ruleHits ?? []).some((h) => h.rule === "constitution_conflict"),
+  );
+  expect(finding).toBeDefined();
+  expect(finding!.severity).toBe("high");
+  expect(finding!.evidence).toContain("constitution:C-TERM-001");
+});
+
+test("a warn/approval constitution hit does not open a conflict finding", () => {
+  const evaluator = makeEvaluator();
+  const findings = evaluator.evaluate({
+    sessionID: "ses_cc",
+    turnID: "t_cc",
+    objective: "ship the change",
+    currentActivity: "edit:foo.ts",
+    applicableConstraints: [],
+    changes: [{ path: "foo.ts", action: "modified" }],
+    evidenceRefs: [],
+    constitutionHits: [{ ruleID: "C-X", enforcement: "warn" }],
+  });
+  expect(
+    findings.some((f) =>
+      (f.ruleHits ?? []).some((h) => h.rule === "constitution_conflict"),
+    ),
+  ).toBe(false);
+});

@@ -144,6 +144,15 @@ export type DriftSignal = {
     verification?: string[];
     constraints?: string[];
   };
+  /**
+   * Constitution rules the changes touch (EI Phase 2 判定矩阵): a change that
+   * matches a deny rule's anchor is an L0 constitution conflict (high). Counts
+   * and rule ids only — never the rule statement or change content.
+   */
+  constitutionHits?: Array<{
+    ruleID: string;
+    enforcement: "deny" | "approval" | "warn";
+  }>;
 };
 
 export type DriftFindingInput = {
@@ -541,6 +550,29 @@ function failureLoopRule(): Rule {
   };
 }
 
+/**
+ * Constitution conflict (EI Phase 2 判定矩阵, L0 high/判): a change that matches
+ * a deny constitution rule is the strongest divergence signal. The approval
+ * layer already intercepts the tool call; this finding records the conflict for
+ * the audit trail / Work Graph / Nia audit.
+ */
+function constitutionConflictRule(): Rule {
+  return {
+    name: "constitution_conflict",
+    severity: "high",
+    match: (signal) => {
+      const denyHits = (signal.constitutionHits ?? []).filter(
+        (hit) => hit.enforcement === "deny",
+      );
+      if (!denyHits.length) return undefined;
+      return {
+        confidence: 0.9,
+        evidence: denyHits.map((hit) => `constitution:${hit.ruleID}`),
+      };
+    },
+  };
+}
+
 export function createDriftEvaluator(input: {
   /** Keep findings stable per turn: same signals do not reopen the same finding. */
   openFindingIDs: () => ReadonlySet<string>;
@@ -556,6 +588,7 @@ export function createDriftEvaluator(input: {
     unverifiableRule(),
     noProgressRule(),
     failureLoopRule(),
+    constitutionConflictRule(),
   ];
 
   /**
