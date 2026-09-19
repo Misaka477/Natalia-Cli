@@ -18,6 +18,10 @@ import { requestAuditAfterCompletion } from "./audit-request";
 import type { GovernanceLedgerController } from "./context";
 import { redactToolOutput } from "./engineering-intelligence/redaction";
 import { runValidationCommand } from "./engineering-intelligence/validation";
+import {
+  captureManifestRef,
+  captureRepositoryRefsSync,
+} from "./repository-refs";
 import type { RuntimeContext, SessionExecutionState } from "./context";
 
 function resolveExec(
@@ -143,6 +147,10 @@ export function createRecordValidationTool(
         ...(artifactRef ? { artifactRef } : {}),
         durationMs: performance.now() - startedAt,
       });
+      const repoRefs = captureRepositoryRefsSync(ctx.ports.getWorkspaceRoot());
+      const manifestRef = await captureManifestRef(
+        ctx.ports.getWorkspaceRoot(),
+      );
       ctx.ports.publishForSession(
         exec,
         ledger.buildEvidenceRecorded({
@@ -154,6 +162,11 @@ export function createRecordValidationTool(
           ...(args.knownGaps ? { knownGaps: args.knownGaps } : {}),
           recordedAt,
           environment: `${process.platform}/${process.arch}`,
+          ...(repoRefs.repositoryVersion
+            ? { repositoryVersion: repoRefs.repositoryVersion }
+            : {}),
+          ...(repoRefs.commit ? { commit: repoRefs.commit } : {}),
+          ...(manifestRef ? { manifestRef } : {}),
         }),
       );
       return JSON.stringify({

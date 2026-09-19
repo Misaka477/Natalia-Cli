@@ -542,6 +542,11 @@ export function createIntelligenceSurface(
           knownGaps: r.knownGaps ?? [],
           ...(r.recordedAt ? { recordedAt: r.recordedAt } : {}),
           ...(r.environment ? { environment: r.environment } : {}),
+          ...(r.repositoryVersion
+            ? { repositoryVersion: r.repositoryVersion }
+            : {}),
+          ...(r.commit ? { commit: r.commit } : {}),
+          ...(r.manifestRef ? { manifestRef: r.manifestRef } : {}),
         })),
         input?.limit,
         input?.cursor,

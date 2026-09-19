@@ -51,6 +51,12 @@ export type EvidenceInput = {
   recordedAt?: string;
   /** EI E2: a safe environment summary (platform/arch). */
   environment?: string;
+  /** EI E2: repository version the evidence was recorded against. */
+  repositoryVersion?: string;
+  /** EI E2: git commit hash the evidence was recorded against (safe, public). */
+  commit?: string;
+  /** EI E2: a safe manifest ref (catalog/plugin-store id, never a path). */
+  manifestRef?: string;
 };
 
 /**
@@ -100,6 +106,11 @@ export function buildEvidenceRecorded(
       : {}),
     ...(input.recordedAt ? { recordedAt: input.recordedAt } : {}),
     ...(input.environment ? { environment: input.environment } : {}),
+    ...(input.repositoryVersion
+      ? { repositoryVersion: input.repositoryVersion }
+      : {}),
+    ...(input.commit ? { commit: input.commit } : {}),
+    ...(input.manifestRef ? { manifestRef: input.manifestRef } : {}),
   };
 }
 
