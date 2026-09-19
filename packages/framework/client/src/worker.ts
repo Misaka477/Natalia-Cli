@@ -1755,5 +1755,17 @@ export async function handleWorkerRequest(
     );
   if (request.method === "command.execute")
     return await client.commandExecute?.(request.value as never);
+  if (request.method === "session.subagents")
+    return await client.subagents?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  if (request.method === "subagent.history")
+    return await client.subagentHistory?.(request.value as string | undefined);
+  if (request.method === "subagent.history.page")
+    return await client.subagentHistoryPage?.(request.value as never);
+  if (request.method === "attachment.upload")
+    return await client.uploadAttachment?.(request.value as never);
+  if (request.method === "attachment.dataUrl")
+    return await client.attachmentDataUrl?.(request.value as never);
   throw new Error(`worker channel does not route ${request.method}`);
 }
