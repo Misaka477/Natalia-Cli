@@ -13,9 +13,13 @@ import type { SessionRecord } from "./index";
 import { normalizeDelivery, type AdmittedSessionInput } from "./inbox";
 import {
   decodeMessageCursor,
+  deserializeProjectionState,
   encodeMessageCursor,
+  PROJECTION_STATE_VERSION,
   projectSessionMessages,
   projectTurnMessages,
+  serializeProjectionState,
+  type ProjectionState,
 } from "./projector";
 
 const SCHEMA = `
@@ -133,6 +137,13 @@ CREATE TABLE IF NOT EXISTS context_epochs (
   session_id TEXT PRIMARY KEY REFERENCES sessions(id),
   baseline_seq INTEGER NOT NULL,
   snapshot TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS projection_checkpoints (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+  state_version INTEGER NOT NULL,
+  last_seq INTEGER NOT NULL,
+  state TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS deleted_sessions (
@@ -991,6 +1002,49 @@ export class SqliteSessionStore {
       )
       .all(sessionID, after) as { event: string }[];
     return rows.map((row) => JSON.parse(row.event) as RuntimeEvent);
+  }
+
+  /**
+   * Persists a per-session projection checkpoint stamped with the current max
+   * event sequence, so a later attach can resume by folding only the tail.
+   */
+  saveProjectionCheckpoint(sessionID: SessionID, state: ProjectionState) {
+    const row = this.db
+      .query(`SELECT MAX(seq) AS m FROM events WHERE session_id = ?`)
+      .get(sessionID) as { m: number | null } | undefined;
+    const lastSeq = row?.m ?? 0;
+    this.run(
+      `INSERT INTO projection_checkpoints(session_id, state_version, last_seq, state)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET
+         state_version = excluded.state_version,
+         last_seq = excluded.last_seq,
+         state = excluded.state`,
+      [sessionID, state.version, lastSeq, serializeProjectionState(state)],
+    );
+    return lastSeq;
+  }
+
+  /**
+   * Loads a persisted projection checkpoint. A row written by an older
+   * `PROJECTION_STATE_VERSION` (or a corrupt payload) is discarded (returns
+   * undefined) so the caller fails soft to a full projection.
+   */
+  loadProjectionCheckpoint(
+    sessionID: SessionID,
+  ): { state: ProjectionState; lastSeq: number } | undefined {
+    const row = this.db
+      .query(
+        `SELECT state_version, last_seq, state FROM projection_checkpoints WHERE session_id = ?`,
+      )
+      .get(sessionID) as
+      | { state_version: number; last_seq: number; state: string }
+      | undefined;
+    if (!row) return undefined;
+    if (row.state_version !== PROJECTION_STATE_VERSION) return undefined;
+    const state = deserializeProjectionState(row.state);
+    if (!state) return undefined;
+    return { state, lastSeq: row.last_seq };
   }
 
   loadEventPage(

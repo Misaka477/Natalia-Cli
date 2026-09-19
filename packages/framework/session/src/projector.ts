@@ -163,6 +163,51 @@ export function foldProjection(
   return viewProjection(state, inbox);
 }
 
+/** JSON shape of a persisted projection checkpoint. */
+export type SerializedProjectionState = {
+  version: number;
+  events: RuntimeEvent[];
+  activeTurnIDs: string[];
+  completedTurnIDs: string[];
+  goal?: GoalView;
+};
+
+export function serializeProjectionState(state: ProjectionState): string {
+  const payload: SerializedProjectionState = {
+    version: state.version,
+    events: state.events,
+    activeTurnIDs: [...state.activeTurnIDs],
+    completedTurnIDs: [...state.completedTurnIDs],
+    ...(state.goal === undefined ? {} : { goal: state.goal }),
+  };
+  return JSON.stringify(payload);
+}
+
+/**
+ * Restores a persisted projection checkpoint. A row written by an older
+ * `PROJECTION_STATE_VERSION` (or a corrupt payload) is discarded so the caller
+ * fails soft to a full projection instead of mis-replaying stale state.
+ */
+export function deserializeProjectionState(
+  json: string,
+): ProjectionState | undefined {
+  let payload: SerializedProjectionState;
+  try {
+    payload = JSON.parse(json) as SerializedProjectionState;
+  } catch {
+    return undefined;
+  }
+  if (payload.version !== PROJECTION_STATE_VERSION) return undefined;
+  if (!Array.isArray(payload.events)) return undefined;
+  return {
+    version: payload.version,
+    events: payload.events,
+    activeTurnIDs: new Set(payload.activeTurnIDs ?? []),
+    completedTurnIDs: new Set(payload.completedTurnIDs ?? []),
+    goal: payload.goal,
+  };
+}
+
 
 function belongsToInterruptedTurn(event: RuntimeEvent, active: Set<string>) {
   if (!("id" in event) || typeof event.id !== "string") return false;

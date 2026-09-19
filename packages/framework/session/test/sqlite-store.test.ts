@@ -4,7 +4,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import { projectSessionMessages, SqliteSessionStore } from "../src";
+import {
+  initProjection,
+  applyProjection,
+  viewProjection,
+  foldProjection,
+  projectSessionMessages,
+  SqliteSessionStore,
+} from "../src";
 import { createSessionRecord } from "../src";
 
 test("SQLite auto titles preserve manual titles and unrelated metadata", () => {
@@ -871,6 +878,76 @@ test("recovery projects the current goal and its admitted rounds", () => {
       } as RuntimeEvent,
     ]);
     expect(store.loadRecoveryProjection(sessionID).goal).toBeUndefined();
+  } finally {
+    store.close();
+    rmSync(path, { force: true });
+  }
+});
+
+test("projection checkpoint + tail replay matches a full projection", () => {
+  const path = join(tmpdir(), `natalia-projection-cache-${crypto.randomUUID()}.db`);
+  const store = new SqliteSessionStore(path);
+  const sessionID = "ses_projection_cache" as SessionID;
+  try {
+    store.create(sessionID, "Projection cache");
+    const events: RuntimeEvent[] = [];
+    const push = (event: RuntimeEvent) => {
+      events.push(event);
+      store.appendEvent(sessionID, event);
+    };
+    // A completed turn with a scalar selection, then an interrupted turn.
+    push({ type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
+    push({ type: "agent.selection", name: "reviewer", pending: false });
+    push({ type: "model.selection", modelID: "alpha", variant: "fast" });
+    push({ type: "turn.finished", id: "t1", stopReason: "done" });
+    push({ type: "turn.submitted", id: "t2", text: "b", byteLength: 1, lineCount: 1, sha256: "y" });
+
+    // Checkpoint after the first five events.
+    const state = initProjection();
+    for (const event of events) applyProjection(state, event);
+    const lastSeq = store.saveProjectionCheckpoint(sessionID, state);
+    expect(lastSeq).toBe(5);
+
+    // Append a tail that changes the projection.
+    push({ type: "tool.update", id: "t2:call_1", name: "read_file", callID: "call_1", status: "succeeded", summary: "read", result: "ok" });
+    push({ type: "model.selection", modelID: "beta", variant: "careful" });
+    push({ type: "turn.finished", id: "t2", stopReason: "done" });
+
+    const loaded = store.loadProjectionCheckpoint(sessionID);
+    expect(loaded).toBeDefined();
+    expect(loaded!.lastSeq).toBe(5);
+    for (const event of store.loadEventsAfter(sessionID, loaded!.lastSeq))
+      applyProjection(loaded!.state, event);
+    const resumed = viewProjection(loaded!.state);
+
+    const full = foldProjection(events);
+    expect(resumed).toEqual(full);
+    expect(resumed.selectedModel).toEqual({ modelID: "beta", variant: "careful" });
+    expect(resumed.completedTurnIDs.sort()).toEqual(["t1", "t2"]);
+    expect(resumed.activeTurnIDs).toEqual([]);
+  } finally {
+    store.close();
+    rmSync(path, { force: true });
+  }
+});
+
+test("a projection checkpoint from an older state version is discarded", () => {
+  const path = join(tmpdir(), `natalia-projection-stale-${crypto.randomUUID()}.db`);
+  const store = new SqliteSessionStore(path);
+  const sessionID = "ses_projection_stale" as SessionID;
+  try {
+    store.create(sessionID, "Stale cache");
+    store.appendEvent(sessionID, { type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
+    const state = initProjection();
+    applyProjection(state, { type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
+    store.saveProjectionCheckpoint(sessionID, state);
+    // Simulate a checkpoint written by a future/older fold shape.
+    const db = store as unknown as { db: { run: (sql: string, params: unknown[]) => void } };
+    db.db.run(
+      `UPDATE projection_checkpoints SET state_version = state_version + 999 WHERE session_id = ?`,
+      [sessionID],
+    );
+    expect(store.loadProjectionCheckpoint(sessionID)).toBeUndefined();
   } finally {
     store.close();
     rmSync(path, { force: true });
