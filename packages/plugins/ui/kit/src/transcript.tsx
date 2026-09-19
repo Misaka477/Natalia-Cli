@@ -125,7 +125,9 @@ export function Transcript(props: TranscriptProps) {
     const cached = estimateCache.get(message.id);
     if (cached !== undefined && cached.signature === signature)
       return cached.height;
-    const height = estimateMessageHeight(message);
+    // The virtualizer uses the deterministic fixed-height row model, so the
+    // estimate is the rendered height and no DOM measurement is needed.
+    const height = fixedRowHeight(message);
     estimateCache.set(message.id, { signature, height });
     if (estimateCache.size > 4096) {
       const oldest = estimateCache.keys().next().value;
@@ -713,7 +715,6 @@ export function Transcript(props: TranscriptProps) {
                     loadAttachmentUrl={props.loadAttachmentUrl}
                     onFork={props.onFork}
                     onRollback={props.onRollback}
-                    rowRef={virtualizer.measureElement}
                   />
                 )
               }
@@ -820,6 +821,61 @@ export function estimateMessageHeight(message: Message): number {
   return Math.max(MESSAGE_BASE_HEIGHT, Math.ceil(height));
 }
 
+/**
+ * DSH-style fixed-height row model (scroll Phase 5). Unlike the refining
+ * `estimateMessageHeight`, this computes a deterministic, *bounded* height: the
+ * markdown/code body is clamped to a fixed line budget and the total to a hard
+ * ceiling, and large tool output is always collapsed to its preview. Because
+ * the height depends only on clamped content, the rendered row matches it
+ * exactly, so the virtualizer no longer needs to measure the DOM
+ * (`measureElement`) to stay anchored.
+ */
+const MAX_MARKDOWN_BODY_LINES = 40;
+const MAX_ROW_HEIGHT = 1200;
+
+/** Wrapped line count of a body, capped at a fixed line budget. */
+function clampedBodyLines(text: string, maxLines: number): number {
+  let lines = 0;
+  let inFence = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*```/u.test(line)) {
+      lines += 1;
+      inFence = !inFence;
+      if (lines >= maxLines) return maxLines;
+      continue;
+    }
+    lines += inFence ? 1 : Math.max(1, Math.ceil(line.length / 96));
+    if (lines >= maxLines) return maxLines;
+  }
+  return lines;
+}
+
+export function fixedRowHeight(message: Message): number {
+  let height = MESSAGE_BASE_HEIGHT;
+  const bodyLines = clampedBodyLines(message.content, MAX_MARKDOWN_BODY_LINES);
+  if (message.thinking)
+    height += THINKING_BLOCK_HEIGHT + bodyLines * MESSAGE_LINE_HEIGHT;
+  else if (message.content !== "") height += bodyLines * MESSAGE_LINE_HEIGHT;
+  for (const toolCall of message.toolCalls ?? []) {
+    const output = toolCall.output ?? toolCall.summary ?? "";
+    const outputLines = wrappedLineCount(output, 110);
+    const collapsible =
+      outputLines > TOOL_OUTPUT_COLLAPSE_LINES || output.length > 2_000;
+    height +=
+      TOOL_CARD_BASE_HEIGHT +
+      (collapsible
+        ? 16 + TOOL_OUTPUT_PREVIEW_LINES * TOOL_OUTPUT_LINE_HEIGHT + 28
+        : outputLines * TOOL_OUTPUT_LINE_HEIGHT);
+  }
+  for (const attachment of message.attachments ?? [])
+    height += estimateAttachmentHeight(attachment) + ATTACHMENT_GAP;
+  return Math.max(
+    MESSAGE_BASE_HEIGHT,
+    Math.min(MAX_ROW_HEIGHT, Math.ceil(height)),
+  );
+}
+
+
 function MessageGroup(props: {
   message: Message;
   virtualIndex?: number;
@@ -833,7 +889,8 @@ function MessageGroup(props: {
 }) {
   const setRowRef = (el: HTMLDivElement) => {
     // Solid can call the ref before dynamic data-* attributes are patched.
-    // TanStack needs data-index synchronously when measureElement runs.
+    // data-index is kept for diagnostics and tests; rows are no longer
+    // DOM-measured (the fixed-height row model is the rendered height).
     if (props.virtualIndex !== undefined) {
       el.setAttribute("data-index", String(props.virtualIndex));
     }

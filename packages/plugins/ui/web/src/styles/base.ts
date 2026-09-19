@@ -5316,6 +5316,14 @@ button.neu-settings-item.neu-settings-item-button:active {
   max-width: 100%;
   overflow-wrap: break-word;
 }
+/* Scroll Phase 5: the markdown body is clamped to the fixed-height row model's
+   line budget (MAX_MARKDOWN_BODY_LINES) so the rendered row matches the
+   deterministic fixedRowHeight estimate and the virtualizer needs no DOM
+   measurement. Overflow scrolls within the bounded row. */
+.natalia-message-text {
+  max-height: 860px;
+  overflow-y: auto;
+}
 .natalia-message-header,
 .natalia-message-meta,
 .natalia-tool-header {

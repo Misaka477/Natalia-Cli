@@ -1,6 +1,11 @@
 export { ContextMenu, contextMenuStyles } from "./context-menu";
 export type { ContextMenuItem, ContextMenuProps } from "./context-menu";
-export { Transcript, MessageRow, estimateMessageHeight } from "./transcript";
+export {
+  Transcript,
+  MessageRow,
+  estimateMessageHeight,
+  fixedRowHeight,
+} from "./transcript";
 export type { TranscriptHandle, TranscriptProps } from "./transcript";
 export { ContextMeter } from "./context-meter";
 export type { ContextUsageView } from "./context-meter";

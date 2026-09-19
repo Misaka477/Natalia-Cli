@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   TailScrollController,
   estimateMessageHeight,
+  fixedRowHeight,
   type Message,
 } from "@natalia/ui-kit";
 
@@ -200,4 +201,47 @@ test("tool output estimates account for the payload instead of content length", 
   // bounded instead of reserving space for the full 10k-character payload.
   expect(huge).toBeGreaterThan(200);
   expect(huge).toBeLessThan(600);
+});
+
+test("fixedRowHeight is deterministic and bounded regardless of content size", () => {
+  const small: Message = { id: "s", role: "assistant", content: "hi" };
+  // A huge markdown body is clamped to the fixed line budget, so the height is
+  // bounded and identical whether the body is 40 lines or 40,000.
+  const fortyLines: Message = {
+    ...small,
+    id: "forty",
+    content: Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n"),
+  };
+  const fortyThousandLines: Message = {
+    ...small,
+    id: "huge",
+    content: Array.from({ length: 40_000 }, (_, i) => `line ${i}`).join("\n"),
+  };
+  expect(fixedRowHeight(fortyLines)).toBe(fixedRowHeight(fortyThousandLines));
+  expect(fixedRowHeight(fortyThousandLines)).toBeLessThanOrEqual(1200);
+  // The refining estimate grows unbounded with the body; the fixed model does not.
+  expect(estimateMessageHeight(fortyThousandLines)).toBeGreaterThan(
+    fixedRowHeight(fortyThousandLines),
+  );
+});
+
+test("fixedRowHeight collapses large tool output to its preview height", () => {
+  const base: Message = { id: "b", role: "assistant", content: "" };
+  const small: Message = {
+    ...base,
+    id: "small-out",
+    toolCalls: [{ name: "shell", output: "ok", status: "done" }],
+  };
+  const huge: Message = {
+    ...base,
+    id: "huge-out",
+    toolCalls: [
+      { name: "shell", output: "x".repeat(50_000), status: "done" },
+    ],
+  };
+  // Same message -> same height (deterministic, no DOM measurement).
+  expect(fixedRowHeight(huge)).toBe(fixedRowHeight(huge));
+  // Large output is collapsed to a bounded preview, not the full payload.
+  expect(fixedRowHeight(huge)).toBeGreaterThan(fixedRowHeight(small));
+  expect(fixedRowHeight(huge)).toBeLessThan(600);
 });
