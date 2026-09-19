@@ -101,6 +101,17 @@ test("the RPC route table is the dispatch code, not a second list", () => {
       ...ROUTE_TABLE_SOURCE.matchAll(/(?:body|request)\.method === "([^"]+)"/g),
     ].map((match) => match[1]!),
   );
+  // The navi/nia chat surfaces dispatch dynamically: `body.method.startsWith(
+  // "navi.chat.")` then a `switch (operation)`. Recognize each operation as
+  // navi.chat.<op> / nia.chat.<op> so the dynamic dispatch counts as covering
+  // the table rows.
+  const chatSwitch = ROUTE_TABLE_SOURCE.match(
+    /switch \(operation\) \{([\s\S]*?)\n      \}/u,
+  );
+  if (chatSwitch)
+    for (const op of chatSwitch[1]!.matchAll(/case "([^"]+)":/gu))
+      for (const stream of ["navi", "nia"])
+        dispatchMethods.add(`${stream}.chat.${op[1]}`);
   for (const method of Object.keys(RPC_ROUTE_MEMBERS))
     expect(
       dispatchMethods,
