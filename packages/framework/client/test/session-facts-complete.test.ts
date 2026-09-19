@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
+  applyProjection,
+  initProjection,
+  serializeProjectionState,
   sessionFactConstitutionRules,
   sessionFactMailboxMessages,
   sessionFactStateFromEvents,
@@ -121,4 +124,50 @@ test("completeSessionFactState is a no-op once the state is complete", async () 
   const before = calls();
   expect(await completeSessionFactState(ctx, exec)).toBe(true);
   expect(calls()).toBe(before);
+});
+
+test("completeSessionFactState completes from a persisted projection checkpoint (B tier)", async () => {
+  const all = log();
+  // A checkpoint carrying the durable prefix (first 100 events); the tail is
+  // read via eventsAfter. Folding prefix + tail must equal a full fold, and it
+  // must not page the history at all.
+  const prefix = all.slice(0, 100);
+  const projection = initProjection();
+  for (const event of prefix) applyProjection(projection, event);
+  const serializedState = serializeProjectionState(projection);
+  const lastSeq = prefix.length;
+
+  let historyCalls = 0;
+  const store = {
+    flush: () => Promise.resolve(),
+    loadProjectionCheckpoint: () => ({ serializedState, lastSeq }),
+    eventsAfter: (_id: string, after: number) => all.slice(after),
+    history: () => {
+      historyCalls += 1;
+      return Promise.resolve({ events: [], hasMore: false });
+    },
+  };
+  const ctx = {
+    ports: {
+      resolveService: () => store,
+      getSessionPersistenceForSession: () => Promise.resolve(undefined),
+    },
+  } as unknown as RuntimeContext;
+  const exec = {
+    session: { id: "ses_cold_fold", events: all.slice(-2) },
+    fullEventsLoaded: false,
+  } as unknown as SessionExecutionState;
+
+  await completeSessionFactState(ctx, exec);
+
+  // B tier: folded from the checkpoint + tail, never paged the journal.
+  expect(historyCalls).toBe(0);
+  expect(exec.factStateComplete).toBe(true);
+  const full = sessionFactStateFromEvents(all);
+  expect(sessionFactConstitutionRules(exec.factState!)).toEqual(
+    sessionFactConstitutionRules(full),
+  );
+  expect(sessionFactMailboxMessages(exec.factState!)).toEqual(
+    sessionFactMailboxMessages(full),
+  );
 });

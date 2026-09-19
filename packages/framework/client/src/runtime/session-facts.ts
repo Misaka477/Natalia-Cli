@@ -17,6 +17,7 @@
  */
 import {
   applySessionFactEvent,
+  deserializeProjectionState,
   emptySessionFactState,
   evictTerminalFacts,
   sessionFactStateFromEvents,
@@ -88,6 +89,43 @@ export async function completeSessionFactState(
     .catch(() => undefined);
   await store.flush(exec.session.id).catch(() => undefined);
 
+  const commitFactState = (state: SessionFactState) => {
+    exec.factState = state;
+    exec.factStateComplete = true;
+    // EI Phase 1 "降档": after the complete history is folded, bound the
+    // terminal entries so hot memory does not grow with the whole session. The
+    // journal keeps everything; a read reconstructs on demand.
+    exec.factStateTerminalEvicted = evictTerminalFacts(state);
+  };
+
+  // B tier: complete from the persisted projection checkpoint + its tail instead
+  // of paging the whole history. The checkpoint carries the durable event log
+  // folded so far; eventsAfter(lastSeq) plus any newer live events fold the rest.
+  // A missing, stale-versioned, or corrupt checkpoint fails soft to paging (C).
+  const checkpoint = store.loadProjectionCheckpoint?.(exec.session.id);
+  if (checkpoint) {
+    const projection = deserializeProjectionState(
+      checkpoint.serializedState,
+    );
+    if (projection) {
+      const state = emptySessionFactState();
+      for (const event of projection.events)
+        applySessionFactEvent(state, event);
+      for (const event of store.eventsAfter?.(
+        exec.session.id,
+        checkpoint.lastSeq,
+      ) ?? [])
+        applySessionFactEvent(state, event);
+      for (const event of exec.session.events) {
+        const seq = runtimeEventSessionSeq(event);
+        if (seq !== undefined && seq > checkpoint.lastSeq)
+          applySessionFactEvent(state, event);
+      }
+      commitFactState(state);
+      return true;
+    }
+  }
+
   const state = emptySessionFactState();
   let offset = 0;
   let maxSeq = 0;
@@ -110,12 +148,7 @@ export async function completeSessionFactState(
     const seq = runtimeEventSessionSeq(event);
     if (seq !== undefined && seq > maxSeq) applySessionFactEvent(state, event);
   }
-  exec.factState = state;
-  exec.factStateComplete = true;
-  // EI Phase 1 "降档": after the complete history is folded, bound the
-  // terminal entries so hot memory does not grow with the whole session. The
-  // journal keeps everything; a read reconstructs on demand.
-  exec.factStateTerminalEvicted = evictTerminalFacts(state);
+  commitFactState(state);
   return true;
 }
 
