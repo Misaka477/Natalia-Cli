@@ -279,3 +279,71 @@ test("every code we answer with maps to exactly one kind", async () => {
   for (const code of codes) expect(failureKindOfCode(code)).toBeString();
   expect(failureKindOfCode(-1)).toBeUndefined();
 });
+
+test("navi.chat / nia.chat routes reach the object surface, not a function-only guard", async () => {
+  // naviChat / niaChat are object surfaces (methods on an object), so the
+  // function-only requireMember guard must not be applied to them. This is the
+  // exact drift that made a live web UI see "this runtime does not support
+  // naviChat" while the runtime did implement the surface.
+  const calls: Array<{ stream: string; input: unknown }> = [];
+  const client = stubClient({
+    naviChat: {
+      async messagesPage(input: unknown) {
+        calls.push({ stream: "navi", input });
+        return { data: [], cursor: {} };
+      },
+    } as never,
+    niaChat: {
+      async messagesPage(input: unknown) {
+        calls.push({ stream: "nia", input });
+        return { data: [], cursor: {} };
+      },
+    } as never,
+  });
+
+  const navi = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "navi.chat.messages.page",
+      params: { sessionID: "ses_navi", limit: 5 },
+    },
+    client,
+  );
+  expect(navi.error).toBeUndefined();
+  expect(navi.result).toEqual({ data: [], cursor: {} });
+  expect(calls[0]).toEqual({
+    stream: "navi",
+    input: { sessionID: "ses_navi", limit: 5 },
+  });
+
+  const nia = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "nia.chat.messages.page",
+      params: { sessionID: "ses_nia" },
+    },
+    client,
+  );
+  expect(nia.error).toBeUndefined();
+  expect(calls[1]).toEqual({
+    stream: "nia",
+    input: { sessionID: "ses_nia" },
+  });
+});
+
+test("navi.chat with no surface answers method-not-available (-32601), not -32000", async () => {
+  const client = stubClient();
+  const response = await handleRPCMessage(
+    {
+      jsonrpc: "2.0",
+      id: 3,
+      method: "navi.chat.messages.page",
+      params: { sessionID: "ses_missing" },
+    },
+    client,
+  );
+  expect(response.error?.code).toBe(-32601);
+  expect(response.error?.message).toContain("navi.chat surface is not available");
+});

@@ -3473,8 +3473,9 @@ export async function handleRPCMessage(
     ) {
       const stream = body.method.startsWith("navi.") ? "navi" : "nia";
       const operation = body.method.slice(`${stream}.chat.`.length);
-      const member = stream === "navi" ? "naviChat" : "niaChat";
-      optionsGuard(client, member);
+      // naviChat / niaChat are object surfaces with methods, not functions, so
+      // the function-only requireMember guard does not apply. The surface-presence
+      // check below is the correct guard (and returns -32601 when missing).
       const surface = stream === "navi" ? client.naviChat : client.niaChat;
       if (!surface)
         return {
