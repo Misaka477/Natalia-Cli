@@ -7,7 +7,7 @@
  * running. Reads and writes host state through `RuntimeContext` ports.
  */
 import { contextStatusEvent, type TokenMeterMessage } from "@natalia/runtime";
-import { projectSession } from "@natalia/session";
+import { restoreProjection } from "@natalia/session";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
@@ -378,7 +378,14 @@ export function createSessionAttach(ctx: RuntimeContext) {
     applyAgentPolicy();
     applyAgentProvider(exec);
 
-    const projection = projectSession(exec.session);
+    // Cold-read ladder: prefer a persisted projection checkpoint replayed
+    // over the durable tail, and fail soft to a full projection when no
+    // usable checkpoint exists.
+    const projection = restoreProjection(
+      exec.session.id,
+      exec.session,
+      sessionStore,
+    );
     const diagnostics =
       getRuntimeDiagnosticsBySession().get(exec.session.id) ?? [];
     for (const event of projection.replayableEvents) {

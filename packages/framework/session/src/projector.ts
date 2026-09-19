@@ -163,6 +163,35 @@ export function foldProjection(
   return viewProjection(state, inbox);
 }
 
+/**
+ * Restores a session projection through the cold-read ladder: prefer a persisted
+ * disk checkpoint replayed over the tail (B), and fail soft to a full projection
+ * (C) when no usable checkpoint exists. The in-memory tier (A) is the caller's
+ * already-loaded exec; this helper owns the disk+tail and full-fallback tiers so
+ * a missing, stale-versioned, or corrupt checkpoint never regresses attach.
+ */
+export function restoreProjection(
+  sessionID: string,
+  session: SessionRecord,
+  store: {
+    loadProjectionCheckpoint(
+      id: string,
+    ): { serializedState: string; lastSeq: number } | undefined;
+    eventsAfter(id: string, after: number): RuntimeEvent[];
+  },
+): SessionProjection {
+  const checkpoint = store.loadProjectionCheckpoint(sessionID);
+  if (checkpoint) {
+    const state = deserializeProjectionState(checkpoint.serializedState);
+    if (state) {
+      for (const event of store.eventsAfter(sessionID, checkpoint.lastSeq))
+        applyProjection(state, event);
+      return viewProjection(state, session.inbox ?? []);
+    }
+  }
+  return projectSession(session);
+}
+
 /** JSON shape of a persisted projection checkpoint. */
 export type SerializedProjectionState = {
   version: number;

@@ -4,11 +4,14 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { SessionRecord } from "../src";
 import {
   initProjection,
   applyProjection,
   viewProjection,
   foldProjection,
+  restoreProjection,
+  serializeProjectionState,
   projectSessionMessages,
   SqliteSessionStore,
 } from "../src";
@@ -948,6 +951,58 @@ test("a projection checkpoint from an older state version is discarded", () => {
       [sessionID],
     );
     expect(store.loadProjectionCheckpoint(sessionID)).toBeUndefined();
+  } finally {
+    store.close();
+    rmSync(path, { force: true });
+  }
+});
+
+test("restoreProjection uses a disk checkpoint + tail and fails soft to full", () => {
+  const path = join(tmpdir(), `natalia-restore-ladder-${crypto.randomUUID()}.db`);
+  const store = new SqliteSessionStore(path);
+  const sessionID = "ses_restore_ladder" as SessionID;
+  try {
+    store.create(sessionID, "Restore ladder");
+    const events: RuntimeEvent[] = [];
+    const push = (event: RuntimeEvent) => {
+      events.push(event);
+      store.appendEvent(sessionID, event);
+    };
+    push({ type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
+    push({ type: "model.selection", modelID: "alpha", variant: "fast" });
+
+    const full = { id: sessionID, events } as unknown as SessionRecord;
+    const adapter = {
+      loadProjectionCheckpoint: (id: string) => {
+        const loaded = store.loadProjectionCheckpoint(id as SessionID);
+        return loaded
+          ? {
+              serializedState: serializeProjectionState(loaded.state),
+              lastSeq: loaded.lastSeq,
+            }
+          : undefined;
+      },
+      eventsAfter: (id: string, after: number) =>
+        store.loadEventsAfter(id as SessionID, after),
+    };
+
+    // No checkpoint yet: fail soft to a full projection (no regression).
+    expect(restoreProjection(sessionID, full, adapter)).toEqual(
+      foldProjection(events),
+    );
+
+    // Checkpoint after the first two events (lastSeq = 2).
+    const checkpointState = initProjection();
+    applyProjection(checkpointState, events[0]!);
+    applyProjection(checkpointState, events[1]!);
+    expect(store.saveProjectionCheckpoint(sessionID, checkpointState)).toBe(2);
+
+    // Append the tail, then restore: checkpoint + tail replay.
+    push({ type: "turn.finished", id: "t1", stopReason: "done" });
+    const resumed = restoreProjection(sessionID, full, adapter);
+    expect(resumed).toEqual(foldProjection(events));
+    expect(resumed.completedTurnIDs).toEqual(["t1"]);
+    expect(resumed.selectedModel).toEqual({ modelID: "alpha", variant: "fast" });
   } finally {
     store.close();
     rmSync(path, { force: true });

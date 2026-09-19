@@ -13,7 +13,10 @@ import {
   JsonSessionStore,
   SqliteSessionStore,
   createSessionRecord,
+  deserializeProjectionState,
   projectSessionMessages,
+  serializeProjectionState,
+  type ProjectionState,
   type SessionMetadata,
   type SessionRecord,
   type SessionRow,
@@ -349,6 +352,30 @@ export function createSessionStoreController(input: {
     return epoch && sqliteStore
       ? sqliteStore.loadEventsAfter(id, epoch.baselineSeq)
       : undefined;
+  }
+
+  function eventsAfter(id: SessionID, after: number): RuntimeEvent[] {
+    return sqliteStore ? sqliteStore.loadEventsAfter(id, after) : [];
+  }
+
+  function saveProjectionCheckpoint(
+    id: SessionID,
+    serializedState: string,
+  ): number {
+    if (!sqliteStore) return 0;
+    const state = deserializeProjectionState(serializedState);
+    if (!state) return 0;
+    return sqliteStore.saveProjectionCheckpoint(id, state);
+  }
+
+  function loadProjectionCheckpoint(id: SessionID) {
+    if (!sqliteStore) return undefined;
+    const loaded = sqliteStore.loadProjectionCheckpoint(id);
+    if (!loaded) return undefined;
+    return {
+      serializedState: serializeProjectionState(loaded.state),
+      lastSeq: loaded.lastSeq,
+    };
   }
 
   function writeContextEpoch(
@@ -757,6 +784,9 @@ export function createSessionStoreController(input: {
     appendEvents,
     updateMetadata,
     contextEventsAfter,
+    eventsAfter,
+    saveProjectionCheckpoint,
+    loadProjectionCheckpoint,
     writeContextEpoch,
     ensureMessageIndex,
     ensureMessageIndexAsync,

@@ -355,6 +355,7 @@ export {
   foldProjection,
   serializeProjectionState,
   deserializeProjectionState,
+  restoreProjection,
   settleInterruptedTurns,
   settleInterruptedTurnIDs,
   selectedAgentFromEvents,

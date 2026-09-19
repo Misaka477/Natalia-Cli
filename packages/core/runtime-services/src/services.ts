@@ -239,6 +239,22 @@ export interface SessionStoreController {
     events: Array<{ seq: number; event: RuntimeEvent }>;
   }>;
   close(): Promise<void>;
+  /**
+   * Persist a serialized projection checkpoint stamped with the current max
+   * event sequence, so a later attach can resume by folding only the tail.
+   * Returns the stamped last sequence.
+   */
+  saveProjectionCheckpoint(id: SessionID, serializedState: string): number;
+  /**
+   * Load a serialized projection checkpoint. Returns undefined when absent,
+   * written by an older state version, or corrupt, so the caller fails soft to
+   * a full projection.
+   */
+  loadProjectionCheckpoint(
+    id: SessionID,
+  ): { serializedState: string; lastSeq: number } | undefined;
+  /** Durable events after a sequence, for tail-replaying a checkpoint. */
+  eventsAfter(id: SessionID, after: number): RuntimeEvent[];
 }
 
 export type TurnControllerInput = {
