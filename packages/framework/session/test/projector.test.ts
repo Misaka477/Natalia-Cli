@@ -23,6 +23,7 @@ import {
   projectedWorkGraphEdges,
   projectSessionMessages,
   projectSession,
+  foldProjection,
   settleInterruptedTurns,
   selectedAgentFromEvents,
   selectedModelFromEvents,
@@ -1641,4 +1642,132 @@ test("attempt-stamped thinking.done is not treated as historical late settlement
     "content.done",
     "turn.finished",
   ]);
+});
+
+test("foldable projection unit reproduces projectSession for a mixed log", () => {
+  const session = createSessionRecord("ses_projection_unit", "Projection Unit");
+  // Completed turn with scalar selections and a tool call.
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_a",
+    text: "a",
+    byteLength: 1,
+    lineCount: 1,
+    sha256: "x",
+  });
+  appendSessionEvent(session, {
+    type: "agent.selection",
+    name: "reviewer",
+    pending: false,
+  });
+  appendSessionEvent(session, {
+    type: "model.selection",
+    modelID: "alpha",
+    variant: "fast",
+  });
+  appendSessionEvent(session, {
+    type: "model.reasoning.set",
+    reasoningEffort: "high",
+  });
+  appendSessionEvent(session, {
+    type: "session.permission.mode",
+    mode: "auto",
+    profile: "default",
+  });
+  appendSessionEvent(session, {
+    type: "tool.update",
+    id: "turn_a:call_1",
+    name: "read_file",
+    callID: "call_1",
+    status: "succeeded",
+    summary: "read",
+    result: "ok",
+  });
+  appendSessionEvent(session, {
+    type: "turn.finished",
+    id: "turn_a",
+    stopReason: "done",
+  });
+  // Interrupted turn (submitted, never finished) with its own tool output.
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_b",
+    text: "b",
+    byteLength: 1,
+    lineCount: 1,
+    sha256: "y",
+  });
+  appendSessionEvent(session, {
+    type: "tool.update",
+    id: "turn_b:call_2",
+    name: "read_file",
+    callID: "call_2",
+    status: "succeeded",
+    summary: "read",
+    result: "orphaned",
+  });
+  // A later model selection that survives (not part of the interrupted turn).
+  appendSessionEvent(session, {
+    type: "model.selection",
+    modelID: "beta",
+    variant: "careful",
+  });
+  // A pending input that must appear in the projection.
+  admitInput(session, {
+    id: "input_pending",
+    text: "queued",
+    delivery: "next-turn",
+  });
+
+  const full = projectSession(session);
+  const folded = foldProjection(session.events, session.inbox ?? []);
+  expect(folded).toEqual(full);
+  expect(folded.activeTurnIDs).toEqual(["turn_b"]);
+  expect(folded.completedTurnIDs).toEqual(["turn_a"]);
+  expect(folded.selectedModel).toEqual({ modelID: "beta", variant: "careful" });
+  expect(folded.pendingInputs.map((input) => input.id)).toEqual([
+    "input_pending",
+  ]);
+});
+
+test("foldable projection unit folds a goal incrementally to the same view", () => {
+  const session = createSessionRecord("ses_projection_goal", "Projection Goal");
+  appendSessionEvent(session, {
+    type: "turn.submitted",
+    id: "turn_g",
+    text: "g",
+    byteLength: 1,
+    lineCount: 1,
+    sha256: "x",
+  });
+  appendSessionEvent(session, {
+    type: "goal.changed",
+    id: "goal:create:1",
+    operation: "create",
+    at: "2026-01-01T00:00:00.000Z",
+    roundsStarted: 0,
+    snapshot: {
+      goalID: "goal_1",
+      revision: 1,
+      objective: "ship the thing",
+      phase: "active",
+      maxGoalRounds: 0,
+    },
+  });
+  appendSessionEvent(session, {
+    type: "goal.round",
+    id: "goal:round:1",
+    goalID: "goal_1",
+    revision: 1,
+    round: 1,
+    at: "2026-01-01T00:01:00.000Z",
+  });
+  appendSessionEvent(session, {
+    type: "turn.finished",
+    id: "turn_g",
+    stopReason: "done",
+  });
+
+  expect(foldProjection(session.events)).toEqual(projectSession(session));
+  expect(foldProjection(session.events).goal?.roundsStarted).toBe(1);
 });

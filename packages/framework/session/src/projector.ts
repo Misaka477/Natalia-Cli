@@ -6,7 +6,7 @@ import type {
   RuntimeProjectedMessage,
   RuntimeProjectedMessageRowKind,
 } from "@natalia/contracts";
-import { foldGoal, type GoalView } from "@natalia/goal";
+import { foldGoal, foldGoalStep, type GoalView } from "@natalia/goal";
 import { admittedInputs, type AdmittedSessionInput } from "./inbox";
 import type { SessionRecord } from "./index";
 
@@ -75,6 +75,94 @@ export function projectSession(session: SessionRecord): SessionProjection {
     permissionProfile: permissionProfileFromEvents(replayable),
   };
 }
+
+/**
+ * Version of the durable projection fold. Bump this whenever the fold's state
+ * shape or semantics change so a persisted checkpoint from an older build is
+ * discarded rather than mis-replayed.
+ */
+export const PROJECTION_STATE_VERSION = 1;
+
+/**
+ * Foldable session projection state. The same shape can be advanced one event
+ * at a time (`applyProjection`), persisted as a per-session checkpoint, and
+ * resumed from a stored sequence number by folding only the tail. `view` always
+ * reproduces the full `projectSession` result for the events folded so far.
+ */
+export type ProjectionState = {
+  version: number;
+  /** Every event folded so far; the source for the replayable filter. */
+  events: RuntimeEvent[];
+  activeTurnIDs: Set<string>;
+  completedTurnIDs: Set<string>;
+  /** Same-session goal, folded strictly from all events (never event-filtered). */
+  goal?: GoalView;
+};
+
+export function initProjection(): ProjectionState {
+  return {
+    version: PROJECTION_STATE_VERSION,
+    events: [],
+    activeTurnIDs: new Set(),
+    completedTurnIDs: new Set(),
+    goal: undefined,
+  };
+}
+
+/** Folds one event into the projection state in place and returns it. */
+export function applyProjection(
+  state: ProjectionState,
+  event: RuntimeEvent,
+): ProjectionState {
+  state.events.push(event);
+  if (event.type === "turn.submitted") state.activeTurnIDs.add(event.id);
+  else if (event.type === "turn.finished") {
+    state.activeTurnIDs.delete(event.id);
+    state.completedTurnIDs.add(event.id);
+  }
+  state.goal = foldGoalStep(state.goal, event);
+  return state;
+}
+
+/**
+ * Materializes the view from a folded state. `inbox` carries the pending-input
+ * slice (session state, not event-derived). Scalar selections are read from the
+ * replayable surface exactly as `projectSession` does, so a checkpoint resumed
+ * from a stored sequence plus a tail replay is indistinguishable from a full
+ * projection.
+ */
+export function viewProjection(
+  state: ProjectionState,
+  inbox: AdmittedSessionInput[] = [],
+): SessionProjection {
+  const replayable = state.events.filter(
+    (event) => !belongsToInterruptedTurn(event, state.activeTurnIDs),
+  );
+  return {
+    activeTurnIDs: [...state.activeTurnIDs],
+    completedTurnIDs: [...state.completedTurnIDs],
+    pendingInputs: inbox.filter((input) => !input.promotedAt),
+    replayableEvents: replayable,
+    goal: state.goal,
+    selectedAgent: selectedAgentFromEvents(replayable),
+    selectedModel: selectedModelFromEvents(replayable),
+    reasoningEffort: reasoningEffortFromEvents(replayable),
+    chatModelProfile: chatModelProfileFromEvents(replayable),
+    permissionMode: permissionModeFromEvents(replayable),
+    permissionProfile: permissionProfileFromEvents(replayable),
+  };
+}
+
+/** Convenience: fold a full event log in one call (equivalent to projectSession). */
+export function foldProjection(
+  events: readonly RuntimeEvent[],
+  inbox: AdmittedSessionInput[] = [],
+): SessionProjection {
+  const state = initProjection();
+  for (const event of events) applyProjection(state, event);
+  return viewProjection(state, inbox);
+}
+
 
 function belongsToInterruptedTurn(event: RuntimeEvent, active: Set<string>) {
   if (!("id" in event) || typeof event.id !== "string") return false;

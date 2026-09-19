@@ -135,63 +135,68 @@ function assertTransition(
  * goal is current. The result is always `disarmed`: process-local continuation
  * authority is never reconstructed by replay.
  */
+/**
+ * One strict step of the goal fold. Extracted so a durable projection can carry
+ * the goal forward incrementally (O(1) per event) instead of rescanning the log;
+ * `foldGoal` is defined in terms of it so the two can never drift.
+ */
+export function foldGoalStep(
+  current: GoalView | undefined,
+  event: RuntimeEvent,
+): GoalView | undefined {
+  if (event.type === "goal.changed") {
+    if (event.operation === "clear") {
+      if (event.cleared === undefined)
+        throw new Error("goal clear is missing its cleared identity");
+      if (event.snapshot !== undefined)
+        throw new Error("goal clear must not carry a snapshot");
+      if (current === undefined || current.goalID !== event.cleared.goalID)
+        throw new Error("goal clear does not match the current goal");
+      return undefined;
+    }
+    const snapshot = event.snapshot;
+    if (snapshot === undefined)
+      throw new Error(`goal ${event.operation} is missing its snapshot`);
+    assertGoalSnapshot(snapshot);
+    if (
+      current !== undefined &&
+      current.goalID === snapshot.goalID &&
+      event.roundsStarted < current.roundsStarted
+    )
+      throw new Error("goal roundsStarted must not go backwards");
+    assertTransition(current, event.operation, snapshot, event.roundsStarted);
+    const sameGoal = current !== undefined && current.goalID === snapshot.goalID;
+    return {
+      ...snapshot,
+      roundsStarted: event.roundsStarted,
+      createdAt: sameGoal ? current!.createdAt : event.at,
+      updatedAt: event.at,
+      // Replay never arms continuation.
+      activation: "disarmed",
+    };
+  }
+  if (event.type === "goal.round") {
+    if (current === undefined) return current;
+    // A round for a superseded revision is ignored, not charged.
+    if (event.goalID !== current.goalID || event.revision !== current.revision)
+      return current;
+    if (event.round !== current.roundsStarted + 1)
+      throw new Error(
+        `goal round ${event.round} is out of sequence (expected ${current.roundsStarted + 1})`,
+      );
+    if (current.maxGoalRounds !== 0 && event.round > current.maxGoalRounds)
+      throw new Error(
+        `goal round ${event.round} exceeds maxGoalRounds ${current.maxGoalRounds}`,
+      );
+    return { ...current, roundsStarted: event.round };
+  }
+  return current;
+}
+
 export function foldGoal(
   events: readonly RuntimeEvent[],
 ): GoalView | undefined {
   let current: GoalView | undefined;
-  for (const event of events) {
-    if (event.type === "goal.changed") {
-      if (event.operation === "clear") {
-        if (event.cleared === undefined)
-          throw new Error("goal clear is missing its cleared identity");
-        if (event.snapshot !== undefined)
-          throw new Error("goal clear must not carry a snapshot");
-        if (current === undefined || current.goalID !== event.cleared.goalID)
-          throw new Error("goal clear does not match the current goal");
-        current = undefined;
-        continue;
-      }
-      const snapshot = event.snapshot;
-      if (snapshot === undefined)
-        throw new Error(`goal ${event.operation} is missing its snapshot`);
-      assertGoalSnapshot(snapshot);
-      if (
-        current !== undefined &&
-        current.goalID === snapshot.goalID &&
-        event.roundsStarted < current.roundsStarted
-      )
-        throw new Error("goal roundsStarted must not go backwards");
-      assertTransition(current, event.operation, snapshot, event.roundsStarted);
-      const sameGoal =
-        current !== undefined && current.goalID === snapshot.goalID;
-      current = {
-        ...snapshot,
-        roundsStarted: event.roundsStarted,
-        createdAt: sameGoal ? current!.createdAt : event.at,
-        updatedAt: event.at,
-        // Replay never arms continuation.
-        activation: "disarmed",
-      };
-      continue;
-    }
-    if (event.type === "goal.round") {
-      if (current === undefined) continue;
-      // A round for a superseded revision is ignored, not charged.
-      if (
-        event.goalID !== current.goalID ||
-        event.revision !== current.revision
-      )
-        continue;
-      if (event.round !== current.roundsStarted + 1)
-        throw new Error(
-          `goal round ${event.round} is out of sequence (expected ${current.roundsStarted + 1})`,
-        );
-      if (current.maxGoalRounds !== 0 && event.round > current.maxGoalRounds)
-        throw new Error(
-          `goal round ${event.round} exceeds maxGoalRounds ${current.maxGoalRounds}`,
-        );
-      current = { ...current, roundsStarted: event.round };
-    }
-  }
+  for (const event of events) current = foldGoalStep(current, event);
   return current;
 }
