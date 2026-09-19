@@ -333,7 +333,12 @@ export async function acknowledgeDriftFindingViaRpc(
   runtime: RuntimeClient | undefined,
   sessionID: string | undefined,
   findingID: string,
-  status: "explained" | "disputed" | "dismissed",
+  status:
+    | "explained"
+    | "disputed"
+    | "dismissed"
+    | "corrected"
+    | "detour_declared",
   rationale?: string,
 ) {
   return runtime?.acknowledgeDriftFinding?.(
@@ -476,7 +481,12 @@ function DriftCard(props: {
   actionBusy: () => boolean;
   onAcknowledge: (
     findingID: string,
-    status: "explained" | "disputed" | "dismissed",
+    status:
+      | "explained"
+      | "disputed"
+      | "dismissed"
+      | "corrected"
+      | "detour_declared",
     rationale?: string,
   ) => void;
   onReopen: (findingID: string) => void;
@@ -606,7 +616,17 @@ function DriftCard(props: {
             type="button"
             class="drift-card-btn"
             disabled={props.actionBusy()}
-            onClick={() => props.onAcknowledge(finding().findingID, "explained")}
+            onClick={() => {
+              // An explanation is only auditable with a rationale; prompt for
+              // one and skip the acknowledgement if it is empty.
+              const rationale = window.prompt("解释这条发现，给出理由：");
+              if (rationale?.trim())
+                props.onAcknowledge(
+                  finding().findingID,
+                  "explained",
+                  rationale.trim(),
+                );
+            }}
           >
             解释
           </button>
@@ -637,6 +657,47 @@ function DriftCard(props: {
             }
           >
             忽略
+          </button>
+          <button
+            type="button"
+            class="drift-card-btn"
+            data-kind="correct"
+            disabled={props.actionBusy()}
+            onClick={() => {
+              // Correcting realigns the work: capture the correction plan so the
+              // rationale is auditable.
+              const plan = window.prompt(
+                "生成纠正 plan，说明如何让工作回到目标：",
+              );
+              if (plan?.trim())
+                props.onAcknowledge(
+                  finding().findingID,
+                  "corrected",
+                  plan.trim(),
+                );
+            }}
+          >
+            纠正
+          </button>
+          <button
+            type="button"
+            class="drift-card-btn"
+            data-kind="detour"
+            disabled={props.actionBusy()}
+            onClick={() => {
+              // A detour is an explicit, sanctioned pause; capture why.
+              const reason = window.prompt(
+                "声明这是有意绕行，给出理由（会显式暂停）：",
+              );
+              if (reason?.trim())
+                props.onAcknowledge(
+                  finding().findingID,
+                  "detour_declared",
+                  reason.trim(),
+                );
+            }}
+          >
+            绕行
           </button>
         </div>
       </Show>
@@ -838,7 +899,12 @@ export function GovernancePane(props: {
 
   async function acknowledgeFinding(
     findingID: string,
-    status: "explained" | "disputed" | "dismissed",
+    status:
+      | "explained"
+      | "disputed"
+      | "dismissed"
+      | "corrected"
+      | "detour_declared",
     rationale?: string,
   ) {
     setActionBusy(true);

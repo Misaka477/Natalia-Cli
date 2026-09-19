@@ -650,3 +650,100 @@ test("governance lists paginate: first page + cursor appends the next", async ()
   expect(last.pageInfo).toMatchObject({ total: 120, truncated: false });
   expect(last.pageInfo.nextCursor).toBeUndefined();
 });
+
+test("drift six interactions (explained/disputed/dismissed/corrected/detour_declared + reopen) round-trip", async () => {
+  const journal: any[] = [
+    {
+      findingID: "DF-SIX",
+      severity: "warning" as const,
+      confidence: 0.7,
+      originalObjective: "stay on scope",
+      currentActivity: "testing another package",
+      evidence: [],
+      applicableConstraints: [],
+      status: "open" as const,
+      contractVersion: 1,
+    },
+  ];
+  const runtime = {
+    driftFindings: async () => ({
+      items: journal.map((finding) => ({ ...finding })),
+      returned: journal.length,
+      total: journal.length,
+      truncated: false,
+    }),
+    acknowledgeDriftFinding: async (input: {
+      findingID: string;
+      status:
+        | "explained"
+        | "disputed"
+        | "dismissed"
+        | "corrected"
+        | "detour_declared";
+      rationale?: string;
+    }) => {
+      const finding = journal.find(
+        (candidate) => candidate.findingID === input.findingID,
+      );
+      // Only an open finding may be acknowledged into any of the five states.
+      if (!finding || finding.status !== "open")
+        return { acknowledged: false };
+      finding.status = input.status;
+      if (input.rationale) finding.rationale = input.rationale;
+      return { acknowledged: true };
+    },
+    reopenDriftFinding: async (input: { findingID: string }) => {
+      const finding = journal.find(
+        (candidate) => candidate.findingID === input.findingID,
+      );
+      if (
+        !finding ||
+        (finding.status !== "dismissed" && finding.status !== "explained")
+      )
+        return { reopened: false };
+      finding.status = "open";
+      finding.reopenedCount = (finding.reopenedCount ?? 0) + 1;
+      return { reopened: true };
+    },
+  } as unknown as RuntimeClient;
+
+  const cases: Array<{
+    status:
+      | "explained"
+      | "disputed"
+      | "dismissed"
+      | "corrected"
+      | "detour_declared";
+    rationale?: string;
+  }> = [
+    { status: "explained", rationale: "audit: scope was formally extended" },
+    { status: "disputed", rationale: "false positive: expected churn" },
+    { status: "dismissed" },
+    { status: "corrected", rationale: "plan: revert and re-scope the change" },
+    { status: "detour_declared", rationale: "sanctioned detour: alt approach" },
+  ];
+  for (const { status, rationale } of cases) {
+    // Each review starts from an open finding.
+    journal[0].status = "open";
+    delete journal[0].rationale;
+    const result = await acknowledgeDriftFindingViaRpc(
+      runtime,
+      "ses_six",
+      "DF-SIX",
+      status,
+      rationale,
+    );
+    expect(result).toMatchObject({ acknowledged: true });
+    const after = await loadGovernanceSlices(runtime, "ses_six");
+    expect(after.drift[0].status).toBe(status);
+    if (rationale) expect(after.drift[0].rationale).toBe(rationale);
+  }
+
+  // The sixth interaction: reopen a dismissed finding back to open.
+  journal[0].status = "dismissed";
+  const reopened = await reopenDriftFindingViaRpc(runtime, "ses_six", "DF-SIX");
+  expect(reopened).toMatchObject({ reopened: true });
+  expect(
+    (await loadGovernanceSlices(runtime, "ses_six")).drift[0],
+  ).toMatchObject({ status: "open", reopenedCount: 1 });
+});
