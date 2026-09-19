@@ -193,6 +193,59 @@ export function buildWorkGraphNavigation(
   };
 }
 
+/**
+ * The independent graph-navigation entry point (WG5): start from a file path
+ * and answer "why did this change" (backward causal chain) and "what does this
+ * touch" (forward chain), unioned across every graph node whose target is that
+ * file. A path with no matching node returns empty slices rather than a
+ * fabricated cause, matching the forest's missing-edge invariant.
+ */
+export type WorkGraphFileNavigation = {
+  filePath: string;
+  /** Every graph node whose target is the file (usually one workspace_change). */
+  matches: WorkGraphNodeView[];
+  /** Deduped backward "why changed" branches across all matching nodes. */
+  whyChanged: WorkGraphTreeNode[];
+  /** Deduped forward "what this touches" branches across all matching nodes. */
+  whatChanged: WorkGraphTreeNode[];
+};
+
+export function buildWorkGraphFileNavigation(
+  state: WorkGraphState,
+  filePath: string,
+): WorkGraphFileNavigation {
+  const needle = filePath.trim();
+  const matches = needle
+    ? Object.values(state.workGraphNodes).filter((node) => {
+        const target = node.target;
+        if (!target) return false;
+        return (
+          target === needle ||
+          target.endsWith(`/${needle}`) ||
+          target.endsWith(needle)
+        );
+      })
+    : [];
+  const whyChanged: WorkGraphTreeNode[] = [];
+  const whatChanged: WorkGraphTreeNode[] = [];
+  const seenWhy = new Set<string>();
+  const seenWhat = new Set<string>();
+  for (const match of matches) {
+    const nav = buildWorkGraphNavigation(state, match.nodeID);
+    for (const node of nav.backward)
+      if (!seenWhy.has(node.node.nodeID)) {
+        seenWhy.add(node.node.nodeID);
+        whyChanged.push(node);
+      }
+    for (const node of nav.forward)
+      if (!seenWhat.has(node.node.nodeID)) {
+        seenWhat.add(node.node.nodeID);
+        whatChanged.push(node);
+      }
+  }
+  return { filePath, matches, whyChanged, whatChanged };
+}
+
 /** The causal slice for one plan (its committed scope, via the planID
  * provenance on nodes) plus every edge between those nodes. */
 export function selectWorkGraphByPlan(

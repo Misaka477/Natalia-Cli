@@ -4702,6 +4702,22 @@ button.neu-settings-item.neu-settings-item-button:active {
   gap: 1px;
   font-size: 12px;
 }
+.wg-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.wg-view-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.wg-view-toggle .constitution-btn[data-active="true"] {
+  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark),
+    inset -2px -2px 4px var(--neu-shadow-light);
+  color: var(--neu-accent);
+}
 .wg-search {
   display: flex;
   align-items: center;

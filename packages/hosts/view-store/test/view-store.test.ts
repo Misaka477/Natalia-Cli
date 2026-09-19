@@ -10,6 +10,7 @@ import {
   hydrateProjectedMessages,
   hydrateRuntimeNotices,
   buildWorkGraphForest,
+  buildWorkGraphFileNavigation,
   deriveSessionUsageView,
   initialState,
   projectEvents,
@@ -2871,4 +2872,47 @@ test("per-channel token usage accumulates on the root state, not the agent sub-s
   expect(state.usageByChannel.nia.llmMs).toBe(100);
   // The main channel is untouched by navi/nia turns.
   expect(state.usageByChannel.main.turns).toBe(0);
+});
+
+test("buildWorkGraphFileNavigation answers why-changed from a file path (WG5)", () => {
+  const sessionID = "ses_wg5";
+  const turnID = "turn_1";
+  const callID = "call_1";
+  const path = "packages/x/src/app.ts";
+  const goalNode = "wg:goal:g1";
+  const actionNode = `wg:action:${turnID}`;
+  const toolNode = `wg:tool:${turnID}:${callID}`;
+  const changeNode = `wg:change:${turnID}:${path}`;
+  const events = [
+    { type: "workgraph.node_added", id: goalNode, nodeID: goalNode, kind: "goal", summary: "ship feature", sessionID },
+    { type: "workgraph.node_added", id: actionNode, nodeID: actionNode, kind: "agent_action", summary: "agent acted", sessionID, turnID },
+    { type: "workgraph.edge_added", id: `e:toward:${actionNode}`, sourceID: goalNode, targetID: actionNode, kind: "toward" },
+    { type: "workgraph.node_added", id: toolNode, nodeID: toolNode, kind: "tool_call", summary: "run_shell succeeded", sessionID, turnID },
+    { type: "workgraph.edge_added", id: `e:caused:${toolNode}`, sourceID: actionNode, targetID: toolNode, kind: "caused" },
+    { type: "workgraph.node_added", id: changeNode, nodeID: changeNode, kind: "workspace_change", summary: "run_shell changed", target: path, sessionID, turnID },
+    { type: "workgraph.edge_added", id: `e:modified:${changeNode}`, sourceID: toolNode, targetID: changeNode, kind: "modified" },
+  ] as unknown as RuntimeEvent[];
+
+  const state = projectEvents(events);
+
+  // From the file path, the backward "why changed" chain walks
+  // change <- tool_call <- agent_action <- goal (nested as branch trees).
+  const flatten = (trees: any[]): string[] =>
+    trees.flatMap((tree) => [tree.node.nodeID, ...flatten(tree.children)]);
+  const nav = buildWorkGraphFileNavigation(state, path);
+  expect(nav.filePath).toBe(path);
+  expect(nav.matches.map((node) => node.nodeID)).toEqual([changeNode]);
+  const whyIDs = flatten(nav.whyChanged);
+  expect(whyIDs).toContain(toolNode);
+  expect(whyIDs).toContain(actionNode);
+  expect(whyIDs).toContain(goalNode);
+
+  // A suffix match on the basename also resolves the same node.
+  expect(buildWorkGraphFileNavigation(state, "app.ts").matches.map((n) => n.nodeID)).toEqual([changeNode]);
+
+  // An unknown path returns no matches and no fabricated cause.
+  const missing = buildWorkGraphFileNavigation(state, "does/not/exist.ts");
+  expect(missing.matches).toEqual([]);
+  expect(missing.whyChanged).toEqual([]);
+  expect(missing.whatChanged).toEqual([]);
 });

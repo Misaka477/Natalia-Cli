@@ -142,11 +142,13 @@ export {
 } from "./conversation";
 export {
   buildWorkGraphForest,
+  buildWorkGraphFileNavigation,
   buildWorkGraphNavigation,
   selectWorkGraphByPlan,
   selectUnattributedWorkGraphNodes,
   selectWorkGraphNeighborhood,
   deriveSessionUsageView,
+  type WorkGraphFileNavigation,
   type WorkGraphSlice,
   type WorkGraphState,
   type WorkGraphTreeNode,

@@ -7,6 +7,7 @@ import type {
 import { isHardProtectedConstitutionRule } from "@natalia/contracts";
 import type { AppState, WorkGraphState } from "@natalia/view-store";
 import { WorkGraphTree } from "./components/WorkGraphTree";
+import { WorkGraphGraph } from "./components/WorkGraphGraph";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 
 export type GovernanceTab =
@@ -738,6 +739,9 @@ export function GovernancePane(props: {
   initialTab?: GovernanceTab;
 }) {
   const [tab, setTab] = createSignal<Tab>(props.initialTab ?? "drift");
+  const [workGraphView, setWorkGraphView] = createSignal<"tree" | "graph">(
+    "tree",
+  );
   const [liveConstitution, setLiveConstitution] = createSignal<any[]>([]);
   const [liveDocRules, setLiveDocRules] = createSignal<any[]>([]);
   const [liveDecisions, setLiveDecisions] = createSignal<any[]>([]);
@@ -1854,7 +1858,27 @@ export function GovernancePane(props: {
           </Show>
         </Show>
         <Show when={tab() === "workgraph"}>
-          <WorkGraphTree state={workGraphState()} />
+          <div class="wg-view-toggle">
+            <button
+              type="button"
+              class="constitution-btn"
+              data-active={workGraphView() === "tree"}
+              onClick={() => setWorkGraphView("tree")}
+            >
+              因果树
+            </button>
+            <button
+              type="button"
+              class="constitution-btn"
+              data-active={workGraphView() === "graph"}
+              onClick={() => setWorkGraphView("graph")}
+            >
+              图导航
+            </button>
+          </div>
+          <Show when={workGraphView() === "tree"} fallback={<WorkGraphGraph state={workGraphState()} />}>
+            <WorkGraphTree state={workGraphState()} />
+          </Show>
         </Show>
         <Show when={tab() === "notices"}>
           <div class="neu-gov-section-title">Runtime Notices</div>
