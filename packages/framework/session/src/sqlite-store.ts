@@ -15,6 +15,8 @@ import {
   decodeMessageCursor,
   deserializeProjectionState,
   encodeMessageCursor,
+  initProjection,
+  applyProjection,
   PROJECTION_STATE_VERSION,
   projectSessionMessages,
   projectTurnMessages,
@@ -211,6 +213,12 @@ export class SqliteSessionStore {
   >();
   private closed = false;
   private insertEventStatement: ReturnType<Database["prepare"]>;
+  /**
+   * Live per-session projection fold, advanced on every append and persisted as
+   * a checkpoint on durable flush barriers. Cleared on rollback/delete/close so
+   * a stale fold is never replayed.
+   */
+  private readonly projectionStates = new Map<SessionID, ProjectionState>();
 
   constructor(path: string) {
     this.db = new Database(path);
@@ -257,6 +265,7 @@ export class SqliteSessionStore {
     this.scheduledFlushes.clear();
     for (const timer of this.flushTimers.values()) clearTimeout(timer);
     this.flushTimers.clear();
+    this.projectionStates.clear();
     this.checkpoint();
     this.closed = true;
     // `db.close()` calls sqlite3_close_v2, which only *defers* deallocation
@@ -465,6 +474,12 @@ export class SqliteSessionStore {
          ON CONFLICT(session_id) DO UPDATE SET indexed_events = excluded.indexed_events`,
         [sessionID, afterSeq],
       );
+      // A rollback rewrites the durable log; drop the live fold and the
+      // checkpoint so the next append re-folds and no stale cache is replayed.
+      this.projectionStates.delete(sessionID);
+      this.run(`DELETE FROM projection_checkpoints WHERE session_id = ?`, [
+        sessionID,
+      ]);
     })();
   }
 
@@ -476,9 +491,11 @@ export class SqliteSessionStore {
       this.run(`DELETE FROM message_index_state WHERE session_id = ?`, [id]);
       this.run(`DELETE FROM session_inputs WHERE session_id = ?`, [id]);
       this.run(`DELETE FROM events WHERE session_id = ?`, [id]);
+      this.run(`DELETE FROM projection_checkpoints WHERE session_id = ?`, [id]);
       this.run(`DELETE FROM sessions WHERE id = ?`, [id]);
       this.markDeleted(id);
     })();
+    this.projectionStates.delete(id);
   }
 
   wasDeleted(id: SessionID): boolean {
@@ -1295,8 +1312,24 @@ export class SqliteSessionStore {
     return inserted;
   }
 
+  private projectionStateFor(sessionID: SessionID): ProjectionState {
+    let state = this.projectionStates.get(sessionID);
+    if (state === undefined) {
+      state = initProjection();
+      for (const event of this.loadEvents(sessionID))
+        applyProjection(state, event);
+      this.projectionStates.set(sessionID, state);
+    }
+    return state;
+  }
+
   private appendEventInTransaction(sessionID: SessionID, event: RuntimeEvent) {
+    // Advance the live projection fold before inserting so the lazy init reads
+    // only the prior events; then fold this event and persist a checkpoint on
+    // durable flush barriers so a later attach can resume from the tail.
+    const projection = this.projectionStateFor(sessionID);
     const inserted = this.insertEvent(sessionID, event);
+    applyProjection(projection, event);
     this.applyRecoveryEvent(sessionID, event);
     if (event.type === "context.checkpoint")
       this.run(
@@ -1315,6 +1348,14 @@ export class SqliteSessionStore {
       ]);
     if (event.type === "turn.cancelled")
       this.run(`UPDATE sessions SET cancelled = 1 WHERE id = ?`, [sessionID]);
+    if (isDurableFlushBarrier(event)) this.persistProjectionCheckpoint(sessionID);
+  }
+
+  /** Writes the live projection fold for a session as a durable checkpoint. */
+  private persistProjectionCheckpoint(sessionID: SessionID) {
+    const projection = this.projectionStates.get(sessionID);
+    if (!projection) return;
+    this.saveProjectionCheckpoint(sessionID, projection);
   }
 
   private scheduleFlush(sessionID: SessionID) {

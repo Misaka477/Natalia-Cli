@@ -12,6 +12,7 @@ import {
   foldProjection,
   restoreProjection,
   serializeProjectionState,
+  deserializeProjectionState,
   projectSessionMessages,
   SqliteSessionStore,
 } from "../src";
@@ -887,7 +888,7 @@ test("recovery projects the current goal and its admitted rounds", () => {
   }
 });
 
-test("projection checkpoint + tail replay matches a full projection", () => {
+test("auto-saved checkpoint + tail replay matches a full projection", () => {
   const path = join(tmpdir(), `natalia-projection-cache-${crypto.randomUUID()}.db`);
   const store = new SqliteSessionStore(path);
   const sessionID = "ses_projection_cache" as SessionID;
@@ -898,27 +899,23 @@ test("projection checkpoint + tail replay matches a full projection", () => {
       events.push(event);
       store.appendEvent(sessionID, event);
     };
-    // A completed turn with a scalar selection, then an interrupted turn.
+    // A durable barrier auto-saves the checkpoint here (seq 4).
     push({ type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
     push({ type: "agent.selection", name: "reviewer", pending: false });
     push({ type: "model.selection", modelID: "alpha", variant: "fast" });
     push({ type: "turn.finished", id: "t1", stopReason: "done" });
+
+    const checkpoint = store.loadProjectionCheckpoint(sessionID);
+    expect(checkpoint).toBeDefined();
+    expect(checkpoint!.lastSeq).toBe(4);
+
+    // A non-barrier tail: the checkpoint stays at the barrier sequence.
     push({ type: "turn.submitted", id: "t2", text: "b", byteLength: 1, lineCount: 1, sha256: "y" });
-
-    // Checkpoint after the first five events.
-    const state = initProjection();
-    for (const event of events) applyProjection(state, event);
-    const lastSeq = store.saveProjectionCheckpoint(sessionID, state);
-    expect(lastSeq).toBe(5);
-
-    // Append a tail that changes the projection.
     push({ type: "tool.update", id: "t2:call_1", name: "read_file", callID: "call_1", status: "succeeded", summary: "read", result: "ok" });
     push({ type: "model.selection", modelID: "beta", variant: "careful" });
-    push({ type: "turn.finished", id: "t2", stopReason: "done" });
 
     const loaded = store.loadProjectionCheckpoint(sessionID);
-    expect(loaded).toBeDefined();
-    expect(loaded!.lastSeq).toBe(5);
+    expect(loaded!.lastSeq).toBe(4);
     for (const event of store.loadEventsAfter(sessionID, loaded!.lastSeq))
       applyProjection(loaded!.state, event);
     const resumed = viewProjection(loaded!.state);
@@ -926,8 +923,8 @@ test("projection checkpoint + tail replay matches a full projection", () => {
     const full = foldProjection(events);
     expect(resumed).toEqual(full);
     expect(resumed.selectedModel).toEqual({ modelID: "beta", variant: "careful" });
-    expect(resumed.completedTurnIDs.sort()).toEqual(["t1", "t2"]);
-    expect(resumed.activeTurnIDs).toEqual([]);
+    expect(resumed.completedTurnIDs.sort()).toEqual(["t1"]);
+    expect(resumed.activeTurnIDs).toEqual(["t2"]);
   } finally {
     store.close();
     rmSync(path, { force: true });
@@ -1003,6 +1000,43 @@ test("restoreProjection uses a disk checkpoint + tail and fails soft to full", (
     expect(resumed).toEqual(foldProjection(events));
     expect(resumed.completedTurnIDs).toEqual(["t1"]);
     expect(resumed.selectedModel).toEqual({ modelID: "alpha", variant: "fast" });
+  } finally {
+    store.close();
+    rmSync(path, { force: true });
+  }
+});
+
+test("appending durable events auto-saves a projection checkpoint", () => {
+  const path = join(tmpdir(), `natalia-projection-autosave-${crypto.randomUUID()}.db`);
+  const store = new SqliteSessionStore(path);
+  const sessionID = "ses_projection_autosave" as SessionID;
+  try {
+    store.create(sessionID, "Autosave");
+    // A non-barrier event does not persist a checkpoint yet.
+    store.appendEvent(sessionID, { type: "model.selection", modelID: "alpha", variant: "fast" });
+    expect(store.loadProjectionCheckpoint(sessionID)).toBeUndefined();
+
+    // A durable barrier (turn.finished) flushes a checkpoint.
+    store.appendEvent(sessionID, { type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
+    store.appendEvent(sessionID, { type: "turn.finished", id: "t1", stopReason: "done" });
+    const checkpoint = store.loadProjectionCheckpoint(sessionID);
+    expect(checkpoint).toBeDefined();
+    expect(checkpoint!.lastSeq).toBe(3);
+    expect([...checkpoint!.state.completedTurnIDs]).toEqual(["t1"]);
+    expect(viewProjection(checkpoint!.state).selectedModel).toEqual({
+      modelID: "alpha",
+      variant: "fast",
+    });
+
+    // A rollback drops the checkpoint and the live fold.
+    store.truncateAfter(sessionID, 2);
+    expect(store.loadProjectionCheckpoint(sessionID)).toBeUndefined();
+    // A new durable barrier re-saves a checkpoint reflecting the truncated log
+    // (turn.submitted survived, so t1 completes again).
+    store.appendEvent(sessionID, { type: "turn.finished", id: "t1", stopReason: "done" });
+    const afterRollback = store.loadProjectionCheckpoint(sessionID);
+    expect(afterRollback).toBeDefined();
+    expect([...afterRollback!.state.completedTurnIDs]).toEqual(["t1"]);
   } finally {
     store.close();
     rmSync(path, { force: true });
