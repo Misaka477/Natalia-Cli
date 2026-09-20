@@ -62,6 +62,10 @@ export function applyStatusEvent(
       // actually produced the step. Absent fields contribute nothing; a step
       // without provider usage still counts and carries timing.
       accumulateUsage(state.sessionUsage, event);
+      // Legacy shared-event replay only: live writers emit
+      // navi./nia.runtime.step_usage with no channel tag. `channel` is the
+      // journal-compatibility discriminator for events written before the
+      // namespaced events existed.
       const channel = event.channel ?? "main";
       if (!state.usageByChannel[channel])
         state.usageByChannel[channel] = emptySessionUsageStats();
@@ -129,6 +133,8 @@ export function applyStatusEvent(
       ];
       return true;
     case "context.status": {
+      // Legacy journal replay only: live writers emit navi./nia.context.status.
+      // `channel` is the journal-compatibility discriminator.
       const usage: import("./state").ContextUsageView = {
         used: event.used,
         max: event.max,
@@ -146,6 +152,8 @@ export function applyStatusEvent(
       return true;
     }
     case "context.snapshot": {
+      // Legacy journal replay only: live writers emit
+      // navi./nia.context.snapshot.
       const usage: import("./state").ContextUsageView = {
         used: event.projectedTokens ?? event.pressureTokens ?? event.usedTokens,
         ...(event.contextWindow === undefined

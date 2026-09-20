@@ -6,6 +6,7 @@ import type {
   WorkGraphNodeView,
 } from "./state";
 import type { WorkGraphEdgeKind, WorkGraphNodeKind } from "@natalia/contracts";
+import { cacheHitRate, totalInputTokens } from "@natalia/contracts";
 
 export type WorkGraphSlice = {
   focusID: string;
@@ -320,19 +321,18 @@ export function selectUnattributedWorkGraphNodes(
  * data interface): total input including cache traffic, cache hit rate, average
  * first-token latency, and decode throughput. Pure — never mutates the state,
  * so any UI (or a future TUI) computes the same figures from the same sums.
+ *
+ * The two cache figures come from the shared `@natalia/contracts` helpers so a
+ * session bar and the provider trace can never report different rates for the
+ * same tokens.
  */
 export function deriveSessionUsageView(
   stats: SessionUsageStats,
 ): SessionUsageView {
-  const totalInputTokens =
-    stats.inputTokens +
-    stats.cacheReadInputTokens +
-    stats.cacheCreationInputTokens;
   return {
     ...stats,
-    totalInputTokens,
-    cacheHitRate:
-      totalInputTokens > 0 ? stats.cacheReadInputTokens / totalInputTokens : 0,
+    totalInputTokens: totalInputTokens(stats),
+    cacheHitRate: cacheHitRate(stats),
     avgTtftMs: stats.ttftSteps > 0 ? stats.ttftMs / stats.ttftSteps : 0,
     tokensPerSecond:
       stats.decodeMs > 0 ? (stats.outputTokens / stats.decodeMs) * 1000 : 0,

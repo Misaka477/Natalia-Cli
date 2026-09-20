@@ -1752,6 +1752,10 @@ test("foldable projection unit folds a goal incrementally to the same view", () 
       objective: "ship the thing",
       phase: "active",
       maxGoalRounds: 0,
+      maxGoalTokens: 0,
+      maxGoalWallClockMs: 0,
+      spentGoalTokens: 0,
+      goalWallClockMs: 0,
     },
   });
   appendSessionEvent(session, {
