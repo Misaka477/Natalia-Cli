@@ -2,14 +2,6 @@ import { createSignal, For, Show, onMount } from "solid-js";
 import type { PluginStatus } from "@natalia/contracts";
 import type { UiPlugin, UiPluginContext } from "@natalia/ui-host";
 
-type ElectronGlobal = {
-  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-};
-
-function getElectronGlobal(): ElectronGlobal | undefined {
-  return (globalThis as { electron?: ElectronGlobal }).electron;
-}
-
 type UiPluginView = {
   pluginId: string;
   name: string;
