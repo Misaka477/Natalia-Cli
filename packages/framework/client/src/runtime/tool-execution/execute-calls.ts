@@ -258,8 +258,6 @@ export function createExecuteCalls(
     },
   ): Promise<ProviderMessage[]> {
     const {
-      getExecutionBySession,
-      getTurnSession,
       getSessionID,
       getActiveExec,
       getWorkspaceRoot,

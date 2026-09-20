@@ -81,7 +81,6 @@ export function createPluginAssembly(
     const {
       getProvider,
       setProvider,
-      getProviderSource,
       setProviderSource,
       providerFromEnvironment,
       getExecutionBySession,

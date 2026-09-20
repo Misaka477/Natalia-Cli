@@ -57,8 +57,6 @@ export function createTurnRunner(
     sessionID: import("@natalia/contracts").SessionID,
   ): ProviderRunnerInput {
     const {
-      getExecutionBySession,
-      getTools,
       getAgentRegistry,
       getActiveExec,
       getWorkspaceRoot,

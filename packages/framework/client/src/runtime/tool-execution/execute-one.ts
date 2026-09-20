@@ -45,8 +45,6 @@ export function createExecuteOne(
     attachImage?: (path: string) => Promise<void>,
   ) {
     const {
-      getExecutionBySession,
-      getTurnSession,
       getSessionID,
       getActiveExec,
       getRuntimeContext,

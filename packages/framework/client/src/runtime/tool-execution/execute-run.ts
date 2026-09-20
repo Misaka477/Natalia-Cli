@@ -58,7 +58,6 @@ export async function runExecuteStage(
     turnID,
     attachImage,
     ctx,
-    options,
     sessionID,
     workspaceRoot,
   } = input;

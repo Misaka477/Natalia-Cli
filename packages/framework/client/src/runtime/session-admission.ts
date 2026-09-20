@@ -43,7 +43,6 @@ export function createSessionAdmission(
       ensureExecution,
       teamBehavior,
       publishForSession,
-      getSessionPersistence,
       getActiveExec,
       setLastSubmitted,
       rememberTitleInput,

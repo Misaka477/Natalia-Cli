@@ -264,7 +264,6 @@ export function createChatTools(ctx: RuntimeContext) {
   ): RuntimeTool[] {
     const {
       getExecutionBySession,
-      publishForSession,
       redactToolOutput,
       currentSessionSnapshot,
       wakeMainForCollaboration,

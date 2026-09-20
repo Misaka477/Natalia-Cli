@@ -91,8 +91,6 @@ export async function installSubagents(
     createSubagentContext,
     registerSubagentLedger,
     unregisterSubagentLedger,
-    queueSubagentMessage,
-    liveSubagentLedgerCount,
     runSubagentProviderStep,
     appendSubagentAssistant,
     appendSubagentToolResult,

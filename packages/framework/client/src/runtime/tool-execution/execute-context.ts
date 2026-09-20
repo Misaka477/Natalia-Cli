@@ -55,7 +55,6 @@ export function buildToolExecutionContext(input: BuildContextInput) {
     workspaceRoot,
     signal,
     timeoutSec,
-    parsed,
   } = input;
   const {
     getCapabilityRegistry,

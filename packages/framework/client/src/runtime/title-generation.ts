@@ -107,7 +107,6 @@ export function createTitleGeneration(ctx: RuntimeContext) {
       getSessionPersistence,
       getProviderConcurrencyLimiter,
       getExecutionBySession,
-      publishForSession,
     } = ctx.ports;
     const sanitized = sanitizeSessionTitleInput(text);
     if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
