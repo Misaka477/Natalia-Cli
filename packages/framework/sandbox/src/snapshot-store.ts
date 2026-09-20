@@ -27,6 +27,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import type { SandboxChange } from "./workspace-manager";
 import { DiffCache, ObjectStore } from "@natalia/object-store";
@@ -309,11 +310,15 @@ export class SnapshotStore {
     hostRoot: string,
     changes: SandboxChange[],
     authorize?: (paths: string[]) => Promise<void>,
+    base?: SnapshotIndex,
   ): Promise<void> {
     const paths = changes
       .filter((change) => change.kind !== "delete")
       .map((change) => change.path);
     await authorize?.(paths);
+    // Checked before anything is written, so a conflict leaves the host exactly
+    // as it was.
+    if (base) await this.assertNoConflict(hostRoot, changes, base);
     const lkgDir = this.lkgDir(id);
     await mkdir(lkgDir, { recursive: true });
     const record: PromotionRecord = { version: 1, applied: [] };
@@ -389,6 +394,46 @@ export class SnapshotStore {
     const target = containPath(hostRoot, path);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, await readFile(backup));
+  }
+
+  /**
+   * Refuses a promotion whose base no longer matches the host.
+   *
+   * A candidate is built from a snapshot, and a promotion used to assume the
+   * host was still at that snapshot. Two candidates taken from the same base and
+   * both editing one file break that assumption: the first lands, and the second
+   * overwrites it — the first candidate's work disappearing with nothing
+   * reported. This is the case the ownership map is meant to prevent, and the
+   * check is here because the map is a declaration, not a guarantee.
+   */
+  private async assertNoConflict(
+    hostRoot: string,
+    changes: SandboxChange[],
+    base: SnapshotIndex,
+  ): Promise<void> {
+    const conflicts: string[] = [];
+    for (const change of changes) {
+      const expected = base.get(change.path)?.objectID;
+      const target = containPath(hostRoot, change.path);
+      const raw = await readFile(target).catch(() => undefined);
+      const actual = raw
+        ? createHash("sha256").update(raw).digest("hex")
+        : undefined;
+      // `add` expects nothing on the host; `modify` and `delete` expect exactly
+      // the base blob. Anything else means the host moved under the candidate.
+      if (actual !== expected)
+        conflicts.push(
+          `${change.path} (host is ${actual ? "modified" : "missing"}, ` +
+            `candidate was built from ${expected ? "an earlier revision" : "nothing"})`,
+        );
+    }
+    if (conflicts.length)
+      throw new Error(
+        `promotion conflicts with changes already on the host: ${conflicts.join("; ")}. ` +
+          `The candidate was built from a snapshot that no longer matches, so ` +
+          `promoting it would discard the newer work. Rebase the candidate onto ` +
+          `the current host and review it again.`,
+      );
   }
 
   private async pathExists(path: string): Promise<boolean> {

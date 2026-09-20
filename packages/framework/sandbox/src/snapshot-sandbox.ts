@@ -148,6 +148,10 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
       this.hostRoot,
       changes,
       authorize,
+      // The base the candidate was built from: the promotion checks the host
+      // still matches it before writing, which is what stops a second candidate
+      // taken from the same base from silently overwriting the first.
+      base,
     );
     await this.store.saveCandidateIndex(id, candidateIndex);
     return changes;

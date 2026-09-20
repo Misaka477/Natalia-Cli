@@ -178,3 +178,90 @@ test("rollback removes a file the promote added, rather than leaving a 0-byte st
   // Rolling back an addition must undo it, not leave an empty file behind.
   await expect(readFile(join(host, "added.txt"))).rejects.toThrow();
 });
+
+test("a second candidate from the same base cannot overwrite the first", async () => {
+  // Two candidates taken from one snapshot and both editing one file: the first
+  // promotion lands, and the second used to overwrite it silently, discarding
+  // the first candidate's work with nothing reported.
+  const root = await mkdtemp(join(tmpdir(), "natalia-sb-conflict-"));
+  const host = join(root, "host");
+  await mkdir(host, { recursive: true });
+  await writeFile(join(host, "shared.ts"), "BASE\n");
+  const store = new SnapshotStore(
+    new ObjectStore(join(root, ".natalia", "objects")),
+    join(root, ".natalia", "store"),
+  );
+  const base = await store.capture(host);
+  const candidateFor = async (name: string, body: string) => {
+    const dir = join(root, name);
+    await mkdir(dir, { recursive: true });
+    const index = await store.materialize(dir, base);
+    await writeFile(join(dir, "shared.ts"), body);
+    const captured = await store.capture(dir, index);
+    return { dir, changes: await store.diff(dir, base, captured) };
+  };
+  const a = await candidateFor("candA", "A's version\n");
+  const b = await candidateFor("candB", "B's version\n");
+
+  await store.promote("sb_a", a.dir, host, a.changes, undefined, base);
+  await expect(
+    store.promote("sb_b", b.dir, host, b.changes, undefined, base),
+  ).rejects.toThrow(/conflicts with changes already on the host/);
+
+  // The refusal is the point: the first candidate's work survives.
+  expect(await readFile(join(host, "shared.ts"), "utf8")).toBe("A's version\n");
+});
+
+test("a candidate whose base still matches promotes without complaint", async () => {
+  // The check must not fire on the ordinary case, or every promotion after the
+  // first would be refused.
+  const root = await mkdtemp(join(tmpdir(), "natalia-sb-noconflict-"));
+  const host = join(root, "host");
+  await mkdir(host, { recursive: true });
+  await writeFile(join(host, "a.ts"), "one\n");
+  await writeFile(join(host, "b.ts"), "two\n");
+  const store = new SnapshotStore(
+    new ObjectStore(join(root, ".natalia", "objects")),
+    join(root, ".natalia", "store"),
+  );
+  const base = await store.capture(host);
+  const dir = join(root, "cand");
+  await mkdir(dir, { recursive: true });
+  const index = await store.materialize(dir, base);
+  await writeFile(join(dir, "a.ts"), "one changed\n");
+  const changes = await store.diff(dir, base, await store.capture(dir, index));
+
+  await store.promote("sb_ok", dir, host, changes, undefined, base);
+
+  expect(await readFile(join(host, "a.ts"), "utf8")).toBe("one changed\n");
+  expect(await readFile(join(host, "b.ts"), "utf8")).toBe("two\n");
+});
+
+test("an add whose path appeared on the host meanwhile is a conflict", async () => {
+  // The candidate created a file; if the host created one at the same path after
+  // the snapshot, promoting would destroy whichever came second.
+  const root = await mkdtemp(join(tmpdir(), "natalia-sb-addconflict-"));
+  const host = join(root, "host");
+  await mkdir(host, { recursive: true });
+  await writeFile(join(host, "seed.txt"), "seed\n");
+  const store = new SnapshotStore(
+    new ObjectStore(join(root, ".natalia", "objects")),
+    join(root, ".natalia", "store"),
+  );
+  const base = await store.capture(host);
+  const dir = join(root, "cand");
+  await mkdir(dir, { recursive: true });
+  const index = await store.materialize(dir, base);
+  await writeFile(join(dir, "new.txt"), "from the candidate\n");
+  const changes = await store.diff(dir, base, await store.capture(dir, index));
+  expect(changes.map((change) => change.kind)).toEqual(["add"]);
+  // Someone else created the same path after the snapshot was taken.
+  await writeFile(join(host, "new.txt"), "someone else's\n");
+
+  await expect(
+    store.promote("sb_add", dir, host, changes, undefined, base),
+  ).rejects.toThrow(/conflicts with changes already on the host/);
+  expect(await readFile(join(host, "new.txt"), "utf8")).toBe(
+    "someone else's\n",
+  );
+});
