@@ -1,4 +1,4 @@
-import { lineCount, makeDigest } from "@natalia/testing";
+import { createHash } from "node:crypto";
 import type {
   ApprovalResponse,
   FakeBackend,
@@ -696,8 +696,8 @@ export function createFakeBackend(): FakeBackend {
         id,
         text,
         byteLength: new TextEncoder().encode(text).byteLength,
-        lineCount: lineCount(text),
-        sha256: makeDigest(text),
+        lineCount: text.length === 0 ? 1 : text.split("\n").length,
+        sha256: createHash("sha256").update(text).digest("hex"),
       };
       publish(submission);
       if (text.trim().toLowerCase().startsWith("/modal")) {

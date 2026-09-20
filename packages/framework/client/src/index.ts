@@ -6,7 +6,6 @@ export {
   type BashCommandRule,
 } from "@natalia/tools";
 export { compactionDisplayLine } from "./compaction-display";
-export { createFakeBackend } from "./fixture";
 export {
   createUiAdapterHost,
   type UiAdapterHost,

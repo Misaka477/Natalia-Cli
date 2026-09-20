@@ -211,7 +211,6 @@
         "@natalia/session": "workspace:*",
         "@natalia/session-store": "workspace:*",
         "@natalia/subagents": "workspace:*",
-        "@natalia/testing": "workspace:*",
         "@natalia/tool-policy": "workspace:*",
         "@natalia/tools": "workspace:*",
         "@natalia/turn-orchestration": "workspace:*",
@@ -221,6 +220,7 @@
       },
       "devDependencies": {
         "@natalia/installer": "workspace:*",
+        "@natalia/testing": "workspace:*",
         "@natalia/view-store": "workspace:*",
       },
     },
@@ -506,11 +506,11 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
-        "@natalia/testing": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
       "devDependencies": {
         "@natalia/subagents": "workspace:*",
+        "@natalia/testing": "workspace:*",
       },
     },
     "packages/plugins/tools/ask": {

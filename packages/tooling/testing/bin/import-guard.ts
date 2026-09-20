@@ -139,6 +139,7 @@ const forbiddenConsumerContractImports = kernelPackages.map(
 const declaredSubpathExports = [
   "@natalia/transport/host",
   "@natalia/diff-wasm/ast",
+  "@natalia/client/fixture",
 ];
 /**
  * Host-side transport (`createRuntimeHttpServer`, `createRuntimeWsServer`, the

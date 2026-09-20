@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createFakeBackend } from "../src";
+import { createFakeBackend } from "../src/fixture";
 
 test("local fixture transport exposes runtime client boundary", async () => {
   const client = createFakeBackend();

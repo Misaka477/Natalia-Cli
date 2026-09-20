@@ -6,7 +6,8 @@
   "type": "module",
   "license": "Apache-2.0",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./fixture": "./src/fixture.ts"
   },
   "dependencies": {
     "@natalia/agent": "workspace:*",
@@ -31,7 +32,6 @@
     "@natalia/session": "workspace:*",
     "@natalia/session-store": "workspace:*",
     "@natalia/subagents": "workspace:*",
-    "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*",
     "@natalia/tool-policy": "workspace:*",
     "@natalia/turn-orchestration": "workspace:*",
@@ -43,6 +43,7 @@
   },
   "devDependencies": {
     "@natalia/installer": "workspace:*",
+    "@natalia/testing": "workspace:*",
     "@natalia/view-store": "workspace:*"
   }
 }
