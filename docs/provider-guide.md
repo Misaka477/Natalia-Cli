@@ -19,10 +19,10 @@ A provider adapter is an object implementing `StreamingProvider`
 
 ```ts
 export type StreamingProvider = {
-  provider: string;        // stable identity, e.g. "openai", "my-gateway"
-  model: string;           // the model id this instance talks to
-  imageInput?: boolean;    // can lower image attachments (default false)
-  videoInput?: boolean;    // can lower video attachments
+  provider: string; // stable identity, e.g. "openai", "my-gateway"
+  model: string; // the model id this instance talks to
+  imageInput?: boolean; // can lower image attachments (default false)
+  videoInput?: boolean; // can lower video attachments
   stream(request: ProviderStreamRequest): AsyncIterable<ProviderStreamChunk>;
 };
 ```
@@ -36,13 +36,13 @@ order, respect the signal, declare your attachment capabilities honestly.**
 
 Yield these chunks in this order per request:
 
-| Chunk | Meaning |
-| --- | --- |
-| `{ type: "thinking", text }` | reasoning text; the runtime hides it when the model forbids it |
-| `{ type: "content", text }` | visible text — may be yielded many times, accumulated into one assistant message |
+| Chunk                                                     | Meaning                                                                                                                 |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `{ type: "thinking", text }`                              | reasoning text; the runtime hides it when the model forbids it                                                          |
+| `{ type: "content", text }`                               | visible text — may be yielded many times, accumulated into one assistant message                                        |
 | `{ type: "tool_call", calls: [{ id, name, arguments }] }` | the model wants tools called; after the runtime executes them it calls `stream` again with tool results in the messages |
-| `{ type: "usage", inputTokens, outputTokens }` | token counts, recorded into the journal |
-| `{ type: "done" }` | the step is over |
+| `{ type: "usage", inputTokens, outputTokens }`            | token counts, recorded into the journal                                                                                 |
+| `{ type: "done" }`                                        | the step is over                                                                                                        |
 
 A step ends with `done`; a step that yields `tool_call` must be followed by
 the runtime calling `stream` again with the tool results appended to
@@ -154,10 +154,10 @@ Provider 适配器是实现 `StreamingProvider` 的对象（`@natalia/runtime`�
 
 ```ts
 export type StreamingProvider = {
-  provider: string;        // 稳定标识，如 "openai"、"my-gateway"
-  model: string;           // 本实例对话的模型 id
-  imageInput?: boolean;    // 能否降级图片附件（默认 false）
-  videoInput?: boolean;    // 能否降级视频附件
+  provider: string; // 稳定标识，如 "openai"、"my-gateway"
+  model: string; // 本实例对话的模型 id
+  imageInput?: boolean; // 能否降级图片附件（默认 false）
+  videoInput?: boolean; // 能否降级视频附件
   stream(request: ProviderStreamRequest): AsyncIterable<ProviderStreamChunk>;
 };
 ```
@@ -170,13 +170,13 @@ runtime 每个 provider 步调用一次 `stream`，传入累积消息、工具�
 
 每个请求按此顺序产出块：
 
-| 块 | 含义 |
-| --- | --- |
-| `{ type: "thinking", text }` | 推理文本；模型禁止时 runtime 隐藏它 |
-| `{ type: "content", text }` | 可见文本——可产出多次，累积成一条 assistant 消息 |
+| 块                                                        | 含义                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| `{ type: "thinking", text }`                              | 推理文本；模型禁止时 runtime 隐藏它                     |
+| `{ type: "content", text }`                               | 可见文本——可产出多次，累积成一条 assistant 消息         |
 | `{ type: "tool_call", calls: [{ id, name, arguments }] }` | 模型要调工具；runtime 执行后带工具结果再次调用 `stream` |
-| `{ type: "usage", inputTokens, outputTokens }` | token 计数，记入 journal |
-| `{ type: "done" }` | 本步结束 |
+| `{ type: "usage", inputTokens, outputTokens }`            | token 计数，记入 journal                                |
+| `{ type: "done" }`                                        | 本步结束                                                |
 
 一步以 `done` 结束；产出 `tool_call` 的步之后，runtime 会把工具结果追加到
 `request.messages` 再次调用 `stream`。没到 `done` 就停止的流视为失败。runtime

@@ -100,7 +100,7 @@ curl http://127.0.0.1:18765/healthz
 A successful connection looks like:
 
 ```json
-{"ok":true,"extensions":1}
+{ "ok": true, "extensions": 1 }
 ```
 
 If `extensions` is `0`, the extension is not connected yet; verify that the extension is loaded and the local bridge server is running.
@@ -203,7 +203,7 @@ curl http://127.0.0.1:18765/healthz
 看到类似输出即表示连接成功：
 
 ```json
-{"ok":true,"extensions":1}
+{ "ok": true, "extensions": 1 }
 ```
 
 如果 `extensions` 为 `0`，说明扩展还没有连接；请确认扩展已经加载，并且本地 bridge server 正在运行。

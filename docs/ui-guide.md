@@ -102,7 +102,6 @@ registry, or transport implementation. It only uses these public ports and
 public `@natalia/contracts` types. This lets a web, desktop, or custom
 renderer use the same runtime without sharing current UI state or components.
 
-
 ### Dynamic panel registration
 
 Web/desktop shells use a separate renderer-facing panel protocol for feature
@@ -136,7 +135,6 @@ The host then exposes the panel through `host.listPanels()` and mounts it with
 `host.mountPanel()`. Disabling or uninstalling the runtime plugin removes its
 panels automatically.
 
-
 ### Skins, layout profiles and shell layout plugins
 
 The UI is designed so one skin file controls the entire visual identity. A skin is a
@@ -169,7 +167,6 @@ plugin may implement `shellLayout`; the main UI then delegates the whole root
 rendering to that plugin.
 
 ### Checkpoints and message-level restore
-
 
 Build restore UI around preview, never around a direct workspace mutation:
 
@@ -340,7 +337,6 @@ UI package 不应导入内部 UI host、checkpoint controller、registry 或 tra
 使用这些公共 port 与公开的 `@natalia/contracts` type。因此 web、desktop 或自定义
 renderer 都可使用同一 runtime，而不依赖当前 UI 的 state 或组件。
 
-
 ### 动态面板注册
 
 Web/Desktop 对功能面板使用独立的 renderer 面板协议。插件包可以在 manifest
@@ -370,7 +366,6 @@ export function createFeatureUiPlugin() {
 
 host 通过 `host.listPanels()` 暴露面板，并通过 `host.mountPanel()` 挂载。
 禁用或卸载运行时插件后，对应面板会自动移除。
-
 
 ### 皮肤、布局配置与 Shell 布局插件
 
@@ -402,7 +397,6 @@ export const neo = defineUiSkin({
 委托给该插件。
 
 ### Checkpoint 与消息级 restore
-
 
 restore UI 必须围绕 preview 构建，不能直接修改 workspace：
 
