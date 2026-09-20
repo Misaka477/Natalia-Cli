@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ObjectStore } from "@natalia/object-store";
@@ -43,7 +43,10 @@ test("SnapshotStore captures, diffs and promotes by content hash", async () => {
   expect(await readFile(join(host, "b.txt"), "utf8")).toBe("new");
   await store.rollback(host, "s1");
   expect(await readFile(join(host, "a.txt"), "utf8")).toBe("base content");
-  expect(await readFile(join(host, "b.txt"), "utf8")).toBe("");
+  // `b.txt` did not exist before the promote, so rolling back removes it. This
+  // assertion previously expected an empty string — which is what a
+  // restore-only rollback leaves, and it pinned the leak as correct behaviour.
+  await expect(readFile(join(host, "b.txt"))).rejects.toThrow();
 });
 
 test("SnapshotSandboxManager checks the base out into each candidate worktree", async () => {
@@ -114,4 +117,64 @@ test("diff after a small change hashes only the changed file, not the whole tree
   );
   // At most a couple of files were hashed, not the whole 41-file tree.
   expect(puts - before).toBeLessThanOrEqual(2);
+});
+
+test("promoting a delete removes the file from the host", async () => {
+  // A sub-agent that deletes a file produces a `delete` change in its PR. The
+  // lead approves it. The host must end up without the file — otherwise the
+  // deletion is silently dropped and the host keeps a file the PR said was gone.
+  const root = await mkdtemp(join(tmpdir(), "natalia-sb-del-"));
+  const host = join(root, "host");
+  await mkdir(host, { recursive: true });
+  await writeFile(join(host, "keep.txt"), "keep");
+  await writeFile(join(host, "gone.txt"), "delete me");
+  const store = new SnapshotStore(
+    new ObjectStore(join(root, ".natalia", "objects")),
+    join(root, ".natalia", "store"),
+  );
+  const base = await store.capture(host);
+  const candidate = join(root, "candidate");
+  await mkdir(candidate, { recursive: true });
+  const candidateIndex = await store.materialize(candidate, base);
+  await rm(join(candidate, "gone.txt"));
+  // Re-capture after mutating the worktree: the index `materialize` returned
+  // describes the checkout, not what the agent did to it.
+  const afterDelete = await store.capture(candidate, candidateIndex);
+  const changes = await store.diff(candidate, base, afterDelete);
+  expect(changes.map((change) => change.kind)).toEqual(["delete"]);
+
+  await store.promote("sb_del", candidate, host, changes);
+
+  await expect(readFile(join(host, "gone.txt"))).rejects.toThrow();
+  await expect(readFile(join(host, "keep.txt"), "utf8")).resolves.toBe("keep");
+});
+
+test("rollback removes a file the promote added, rather than leaving a 0-byte stub", async () => {
+  // The backup for a file that did not exist on the host is empty, so writing
+  // every backup back leaves a 0-byte file where the promote created a real one.
+  const root = await mkdtemp(join(tmpdir(), "natalia-sb-add-"));
+  const host = join(root, "host");
+  await mkdir(host, { recursive: true });
+  await writeFile(join(host, "keep.txt"), "keep");
+  const store = new SnapshotStore(
+    new ObjectStore(join(root, ".natalia", "objects")),
+    join(root, ".natalia", "store"),
+  );
+  const base = await store.capture(host);
+  const candidate = join(root, "candidate");
+  await mkdir(candidate, { recursive: true });
+  const candidateIndex = await store.materialize(candidate, base);
+  await writeFile(join(candidate, "added.txt"), "brand new");
+  const afterAdd = await store.capture(candidate, candidateIndex);
+  const changes = await store.diff(candidate, base, afterAdd);
+  expect(changes.map((change) => change.kind)).toEqual(["add"]);
+
+  await store.promote("sb_add", candidate, host, changes);
+  await expect(readFile(join(host, "added.txt"), "utf8")).resolves.toBe(
+    "brand new",
+  );
+
+  expect(await store.rollback(host, "sb_add")).toBe(true);
+  // Rolling back an addition must undo it, not leave an empty file behind.
+  await expect(readFile(join(host, "added.txt"))).rejects.toThrow();
 });

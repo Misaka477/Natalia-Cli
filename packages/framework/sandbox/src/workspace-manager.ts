@@ -327,7 +327,24 @@ export class WorkspaceSandboxManager
     const hostRoot = input.hostRoot;
     if (!hostRoot) throw new Error("sandbox promote requires hostRoot");
     const changedFiles = await this.merge(id, hostRoot, input.authorize);
-    return { sandboxID: id, changedFiles };
+    // Reported rather than assumed: the completion record states whether a
+    // rollback point exists, and a constant would be a claim the backend never
+    // checked.
+    const rollbackPoint = await this.rollbackPoint(id);
+    return {
+      sandboxID: id,
+      changedFiles,
+      ...(rollbackPoint ? { lastKnownGood: rollbackPoint } : {}),
+    };
+  }
+
+  /**
+   * A marker for the rollback point a promotion left, or undefined when it left
+   * none. Backends name it differently — a commit, a backup directory — so the
+   * marker is opaque and only its presence is meaningful.
+   */
+  protected async rollbackPoint(_id: string): Promise<string | undefined> {
+    return undefined;
   }
 
   async validate(

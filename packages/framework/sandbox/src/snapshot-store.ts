@@ -18,7 +18,14 @@
  *     targets to `<id>.lkg` first (the last-known-good).
  *   - rollback      → restore the last-known-good backup.
  */
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SandboxDiffKind } from "@natalia/contracts";
 import type { SandboxChange } from "./workspace-manager";
@@ -52,6 +59,39 @@ async function walkFiles(
   }
   return files;
 }
+
+/**
+ * Resolves a snapshot-relative path against a root, refusing anything that
+ * escapes it.
+ *
+ * Shared by `materialize` and `promote`: both write at paths that came from a
+ * walk, and both must fail closed if that ever stops being true.
+ */
+function containPath(root: string, path: string): string {
+  const target = resolve(root, path);
+  const rel = relative(resolve(root), target);
+  if (rel.startsWith("..") || rel === "" || isAbsolute(rel))
+    throw new Error(`snapshot path escapes worktree: ${path}`);
+  return target;
+}
+
+/**
+ * What a promotion did, so a rollback can undo it exactly.
+ *
+ * Restoring backups is not enough on its own: a file the promote *created* has
+ * an empty backup, so writing the backups back leaves a zero-byte file where
+ * the promote put real content. Recording which paths existed before is what
+ * lets a rollback delete those instead.
+ */
+type PromotionRecord = {
+  version: 1;
+  /** Host-relative path, in the order the promote applied it. */
+  applied: Array<{
+    path: string;
+    kind: SandboxDiffKind;
+    existedBefore: boolean;
+  }>;
+};
 
 export class SnapshotStore {
   constructor(
@@ -101,10 +141,7 @@ export class SnapshotStore {
   ): Promise<SnapshotIndex> {
     const candidate: SnapshotIndex = new Map();
     for (const [path, entry] of index) {
-      const target = resolve(root, path);
-      const rel = relative(resolve(root), target);
-      if (rel.startsWith("..") || rel === "" || isAbsolute(rel))
-        throw new Error(`snapshot path escapes worktree: ${path}`);
+      const target = containPath(root, path);
       await mkdir(dirname(target), { recursive: true });
       await writeFile(target, await this.objects.get(entry.objectID));
       const info = await stat(target);
@@ -244,10 +281,27 @@ export class SnapshotStore {
     }
   }
 
+  /** Where one sandbox's last-known-good backups and their record live. */
+  private lkgDir(id: string): string {
+    return join(this.storeDir, `${id}.lkg`);
+  }
+
+  private lkgRecordPath(id: string): string {
+    // Beside the directory rather than inside it: a change path could be any
+    // name, and the record must not be able to collide with a backed-up file.
+    return join(this.storeDir, `${id}.lkg.json`);
+  }
+
   /**
    * Promotes the candidate's changes into the host: backs each target up to
-   * `<id>.lkg` first (the last-known-good), then applies the candidate file.
-   * Authorize runs on the changed paths before anything is touched.
+   * `<id>.lkg` (the last-known-good), applies the candidate file, and removes
+   * the target for a deletion. Authorize runs on the changed paths before
+   * anything is touched.
+   *
+   * A promote is a sequence of filesystem writes with no transaction behind it,
+   * so a failure part-way is undone from the record before the error is
+   * rethrown. Without that, a caller reporting "the host is unchanged" after a
+   * failed promote would be describing something that is not true.
    */
   async promote(
     id: string,
@@ -260,43 +314,138 @@ export class SnapshotStore {
       .filter((change) => change.kind !== "delete")
       .map((change) => change.path);
     await authorize?.(paths);
-    const lkgDir = join(this.storeDir, `${id}.lkg`);
+    const lkgDir = this.lkgDir(id);
     await mkdir(lkgDir, { recursive: true });
+    const record: PromotionRecord = { version: 1, applied: [] };
     for (const change of changes) {
-      const target = join(hostRoot, change.path);
-      const backupPath = join(lkgDir, change.path);
-      await mkdir(join(backupPath, ".."), { recursive: true });
-      await writeFile(
-        backupPath,
-        await readFile(target).catch(() => Buffer.alloc(0)),
-      );
-      if (change.kind === "delete") continue;
-      const source = join(candidateRoot, change.path);
-      await mkdir(join(target, ".."), { recursive: true });
-      await writeFile(target, await readFile(source));
+      const target = containPath(hostRoot, change.path);
+      const backupPath = containPath(lkgDir, change.path);
+      const existedBefore = await this.pathExists(target);
+      try {
+        await mkdir(dirname(backupPath), { recursive: true });
+        if (existedBefore) await writeFile(backupPath, await readFile(target));
+        if (change.kind === "delete") {
+          // A deletion is an operation, not an absence of one: the file the
+          // candidate removed must leave the host, or approving a PR that
+          // deletes a file silently does nothing.
+          await rm(target, { force: true });
+        } else {
+          await mkdir(dirname(target), { recursive: true });
+          await writeFile(
+            target,
+            await readFile(containPath(candidateRoot, change.path)),
+          );
+        }
+      } catch (error) {
+        // The record covers what already landed, and this change is undone from
+        // its backup: a change that failed after removing the target would
+        // otherwise leave the host missing a file it never agreed to lose.
+        await this.undoPromotion(hostRoot, id, record);
+        if (change.kind === "delete" && existedBefore)
+          await this.restoreFromBackup(lkgDir, hostRoot, change.path);
+        else if (change.kind !== "delete" && existedBefore)
+          await this.restoreFromBackup(lkgDir, hostRoot, change.path);
+        else if (change.kind !== "delete" && !existedBefore)
+          await rm(target, { force: true });
+        throw error;
+      }
+      record.applied.push({
+        path: change.path,
+        kind: change.kind,
+        existedBefore,
+      });
+    }
+    await writeFile(this.lkgRecordPath(id), JSON.stringify(record));
+  }
+
+  /** Undoes everything a promotion record lists, newest first. */
+  private async undoPromotion(
+    hostRoot: string,
+    id: string,
+    record: PromotionRecord,
+  ): Promise<void> {
+    const lkgDir = this.lkgDir(id);
+    for (const applied of [...record.applied].reverse()) {
+      const target = containPath(hostRoot, applied.path);
+      try {
+        if (!applied.existedBefore) {
+          await rm(target, { force: true });
+          continue;
+        }
+        await this.restoreFromBackup(lkgDir, hostRoot, applied.path);
+      } catch {
+        // Best effort: the caller is already failing, and the backups remain on
+        // disk for a manual rollback.
+      }
+    }
+  }
+
+  private async restoreFromBackup(
+    lkgDir: string,
+    hostRoot: string,
+    path: string,
+  ): Promise<void> {
+    const backup = containPath(lkgDir, path);
+    const target = containPath(hostRoot, path);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, await readFile(backup));
+  }
+
+  private async pathExists(path: string): Promise<boolean> {
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
     }
   }
 
   /**
    * Restores the host to the last-known-good state recorded by the last
-   * promote: every file the promote backed up is written back over the host.
+   * promote: backed-up files are written back and files the promote created are
+   * removed.
+   *
+   * Removing the created ones is the half that a restore-only rollback misses.
+   * Their backups are empty, so writing the backups back leaves zero-byte files
+   * where the promote had put real content — a rollback that leaves the host
+   * changed in a way nothing ever reported.
    */
   async rollback(hostRoot: string, id: string): Promise<boolean> {
-    const lkgDir = join(this.storeDir, `${id}.lkg`);
-    let exists = true;
-    try {
-      await stat(lkgDir);
-    } catch {
-      exists = false;
+    const lkgDir = this.lkgDir(id);
+    if (!(await this.pathExists(lkgDir))) return false;
+    const record = await this.loadPromotionRecord(id);
+    if (record) {
+      for (const applied of [...record.applied].reverse()) {
+        const target = containPath(hostRoot, applied.path);
+        if (!applied.existedBefore) {
+          await rm(target, { force: true });
+          continue;
+        }
+        await this.restoreFromBackup(lkgDir, hostRoot, applied.path);
+      }
+      return true;
     }
-    if (!exists) return false;
+    // A last-known-good written before records existed: restoring the backups is
+    // the most that can be done, since which paths were additions is not
+    // recoverable from an empty backup.
     for (const path of await walkFiles(lkgDir)) {
       const rel = relative(lkgDir, path).split("/").join("/");
-      const target = join(hostRoot, rel);
-      await mkdir(join(target, ".."), { recursive: true });
-      await writeFile(target, await readFile(path));
+      await this.restoreFromBackup(lkgDir, hostRoot, rel);
     }
     return true;
+  }
+
+  /** The record a promote wrote, or undefined for a pre-record last-known-good. */
+  private async loadPromotionRecord(
+    id: string,
+  ): Promise<PromotionRecord | undefined> {
+    try {
+      const raw = await readFile(this.lkgRecordPath(id), "utf8");
+      const parsed = JSON.parse(raw) as PromotionRecord;
+      return parsed?.applied ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Whether a last-known-good exists for the sandbox. */

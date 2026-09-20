@@ -15,8 +15,8 @@
  * fall back to the directory-copy manager; container/VM isolation is a later,
  * threat-model-driven step.
  */
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import {
   ensureNataliaIgnoreFile,
   isSnapshotIgnored,
@@ -332,8 +332,19 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
     const changedFiles = await this.previewMerge(id);
     const paths = changedFiles.map((change) => change.path);
     if (paths.length) await authorize?.(paths);
-    await git(this.hostRoot, ["merge", "--no-ff", "--no-edit", branch]);
-    this.lastKnownGood = lastKnownGood;
+    // Recorded before the merge is attempted, not after: a merge that conflicts
+    // never reaches an assignment placed after the `await`, and the commit it
+    // was about to build on is exactly what a rollback needs.
+    await this.setLastKnownGood(lastKnownGood);
+    try {
+      await git(this.hostRoot, ["merge", "--no-ff", "--no-edit", branch]);
+    } catch (error) {
+      // A conflicted merge leaves the host mid-merge with conflict markers and
+      // MERGE_HEAD set. Aborting is what returns it to a usable state; without
+      // it the next git command runs against a half-applied merge.
+      await git(this.hostRoot, ["merge", "--abort"]).catch(() => undefined);
+      throw error;
+    }
     return changedFiles;
   }
 
@@ -396,9 +407,80 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
    * failed activation after promotion triggers.
    */
   async rollback(): Promise<{ restored: string | undefined }> {
-    if (!this.lastKnownGood) return { restored: undefined };
-    await git(this.hostRoot, ["reset", "--hard", this.lastKnownGood]);
-    return { restored: this.lastKnownGood };
+    const lastKnownGood =
+      this.lastKnownGood ?? (await this.loadLastKnownGood());
+    if (!lastKnownGood) return { restored: undefined };
+    if (await this.mergeInProgress()) {
+      // A merge left half-applied is the state a rollback exists to clear, so
+      // everything dirty belongs to it and aborting is safe.
+      await git(this.hostRoot, ["merge", "--abort"]).catch(() => undefined);
+    } else {
+      const dirty = await this.uncommittedPaths();
+      if (dirty.length)
+        // `reset --hard` would destroy work that predates the promotion. A
+        // rollback that loses the user's uncommitted edits is worse than one
+        // that refuses, so it refuses and names what is in the way.
+        throw new Error(
+          `cannot roll back to ${lastKnownGood}: the host has ${dirty.length} ` +
+            `uncommitted path(s) that a hard reset would discard ` +
+            `(${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? ", …" : ""})`,
+        );
+    }
+    await git(this.hostRoot, ["reset", "--hard", lastKnownGood]);
+    await this.setLastKnownGood(undefined);
+    return { restored: lastKnownGood };
+  }
+
+  /** Whether a merge is half-applied in the host tree. */
+  private async mergeInProgress(): Promise<boolean> {
+    return await git(this.hostRoot, ["rev-parse", "--verify", "MERGE_HEAD"])
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  /** Host paths with uncommitted changes. */
+  private async uncommittedPaths(): Promise<string[]> {
+    const output = await git(this.hostRoot, [
+      "status",
+      "--porcelain",
+      "--untracked-files=no",
+    ]).catch(() => "");
+    return output
+      .split("\n")
+      .map((line) => line.slice(3).trim())
+      .filter(Boolean);
+  }
+
+  /** Where the last-known-good commit is written, so it survives a restart. */
+  private lastKnownGoodPath(): string {
+    return join(this["baseRoot"], "worktree-last-known-good.json");
+  }
+
+  private async setLastKnownGood(commit: string | undefined): Promise<void> {
+    this.lastKnownGood = commit;
+    // Persisted because an in-memory value is gone after a restart, and a
+    // rollback that silently does nothing is indistinguishable from one with
+    // nothing to do.
+    if (!commit) {
+      await rm(this.lastKnownGoodPath(), { force: true }).catch(
+        () => undefined,
+      );
+      return;
+    }
+    await mkdir(dirname(this.lastKnownGoodPath()), { recursive: true });
+    await writeFile(this.lastKnownGoodPath(), JSON.stringify({ commit })).catch(
+      () => undefined,
+    );
+  }
+
+  private async loadLastKnownGood(): Promise<string | undefined> {
+    try {
+      const raw = await readFile(this.lastKnownGoodPath(), "utf8");
+      const parsed = JSON.parse(raw) as { commit?: string };
+      return parsed?.commit;
+    } catch {
+      return undefined;
+    }
   }
 
   private async baseFor(id: string): Promise<string> {

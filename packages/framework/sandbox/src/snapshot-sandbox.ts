@@ -57,6 +57,15 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
     );
   }
 
+  /** The backup a promotion leaves, when it left one. */
+  protected override async rollbackPoint(
+    id: string,
+  ): Promise<string | undefined> {
+    return (await this.store.hasLastKnownGood(id))
+      ? `snapshot:${id}`
+      : undefined;
+  }
+
   private async snapshotIgnoreRules(): Promise<readonly SnapshotIgnoreRule[]> {
     await ensureNataliaIgnoreFile(this.hostRoot);
     return (await loadNataliaIgnore(this.hostRoot)).rules;

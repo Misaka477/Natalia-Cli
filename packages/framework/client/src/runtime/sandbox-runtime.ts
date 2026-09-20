@@ -389,7 +389,10 @@ export function createSandboxRuntime(
             objective,
             changeSummary: `${changes.length} files promoted from sandbox ${id}`,
             validations: [outcome],
-            rollbackState: "available",
+            // Derived from what the promotion actually left behind. Claiming
+            // "available" as a constant described a rollback point nobody had
+            // checked for, and there is no entry point that could act on one.
+            rollbackState: promotion.lastKnownGood ? "available" : "none",
             evidenceIDs: [evidence.id],
             recordedAt: new Date().toISOString(),
           }),

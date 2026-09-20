@@ -154,6 +154,27 @@ export class ObjectStore {
       this.lru.set(id, cached);
       return cached;
     }
+    return this.verify(id, await this.readObject(id));
+  }
+
+  /**
+   * Checks an object against the address it was fetched by.
+   *
+   * The store addresses by sha256, which buys deduplication on write; verifying
+   * on read is what turns that same address into an integrity check. Without it
+   * a truncated write or a rotted file is returned as content — and since the
+   * caller has no checksum of its own, nothing downstream can tell.
+   *
+   * Read cost is one hash over bytes that were just read to build the buffer.
+   */
+  private verify(id: string, buffer: Buffer): Buffer {
+    const actual = createHash("sha256").update(buffer).digest("hex");
+    if (actual !== id)
+      throw new Error(`object ${id} is corrupt: content hashes to ${actual}`);
+    return buffer;
+  }
+
+  private async readObject(id: string): Promise<Buffer> {
     const chunked = await this.getMeta<{
       manifestId: string;
       totalLength: number;
@@ -188,14 +209,24 @@ export class ObjectStore {
       manifestId: string;
       chunks: string[];
     }>(`chunked:${id}`);
-    if (chunked) {
-      const manifest = JSON.parse(
-        (await this.getRaw(chunked.manifestId)).toString("utf8"),
-      ) as { version: number; chunks: string[] };
-      for (const chunkId of manifest.chunks) yield await this.getRaw(chunkId);
+    if (!chunked) {
+      yield await this.get(id);
       return;
     }
-    yield await this.get(id);
+    const manifest = JSON.parse(
+      (await this.getRaw(chunked.manifestId)).toString("utf8"),
+    ) as { version: number; chunks: string[] };
+    // Chunks are yielded as they are read, so the checksum can only be checked
+    // at the end — but the reader is told rather than handed corrupt bytes.
+    const hash = createHash("sha256");
+    for (const chunkId of manifest.chunks) {
+      const chunk = await this.getRaw(chunkId);
+      hash.update(chunk);
+      yield chunk;
+    }
+    const actual = hash.digest("hex");
+    if (actual !== id)
+      throw new Error(`object ${id} is corrupt: content hashes to ${actual}`);
   }
 
   private async putRaw(content: Buffer | string): Promise<string> {
@@ -261,13 +292,47 @@ export class ObjectStore {
     return await Promise.all(contents.map((content) => this.put(content)));
   }
 
+  /**
+   * Removes an object however it is stored.
+   *
+   * Three forms have to be handled, and removing the loose file covers only the
+   * first: a chunked object never had one (its bytes live as chunk objects
+   * behind metadata), and a packed object's loose file was already removed by
+   * the pack. Miss either and `delete` becomes a no-op that still reports
+   * success while `has` and `get` keep answering.
+   */
   async delete(id: string): Promise<void> {
     const existing = this.lru.get(id);
     if (existing) {
       this.lru.delete(id);
       this.lruBytes -= existing.byteLength;
     }
+    const chunked = await this.getMeta<{
+      manifestId: string;
+      chunks?: string[];
+    }>(`chunked:${id}`);
+    if (chunked) {
+      // The chunks are separate objects with no other owner, so they go too —
+      // otherwise they leak with nothing left pointing at them.
+      for (const chunkId of [chunked.manifestId, ...(chunked.chunks ?? [])]) {
+        await rm(this.objectPath(chunkId), { force: true });
+        const cached = this.lru.get(chunkId);
+        if (cached) {
+          this.lru.delete(chunkId);
+          this.lruBytes -= cached.byteLength;
+        }
+      }
+      await this.deleteMeta(`chunked:${id}`);
+    }
     await rm(this.objectPath(id), { force: true });
+    // A pack is an append-only file, so the only way to remove one object from
+    // it is to write the pack again without that object.
+    await this.loadPackIndexes();
+    if (this.packs.has(id)) {
+      await this.rebuildPacks(
+        new Set([...this.packs.keys()].filter((packed) => packed !== id)),
+      );
+    }
   }
 
   private cacheSet(id: string, buffer: Buffer): void {

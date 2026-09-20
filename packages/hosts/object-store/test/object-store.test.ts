@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ObjectStore } from "../src";
@@ -184,4 +184,70 @@ test("multiple ObjectStore instances share the same content-addressed root", asy
     expect(await b.has(ids[i]!)).toBe(true);
     expect((await (i % 2 ? b : a).get(ids[i]!)).toString()).toBe(contents[i]);
   }
+});
+
+test("delete removes a chunked object and everything it was made of", async () => {
+  // A chunked object has no loose file of its own — its bytes live as chunk
+  // objects behind metadata. Removing only the metadata leaves `has` and `get`
+  // answering normally, so a delete that reports success has deleted nothing.
+  const root = await mkdtemp(join(tmpdir(), "obj-del-chunked-"));
+  const store = new ObjectStore(root);
+  const content = "x".repeat(3_000_000);
+  const id = await store.put(content);
+
+  await store.delete(id);
+
+  expect(await store.has(id)).toBe(false);
+  await expect(store.get(id)).rejects.toThrow();
+  // Nothing survives to be found by a later sweep.
+  expect(await store.list()).not.toContain(id);
+});
+
+test("delete removes a packed object", async () => {
+  // Once compacted, the loose file is gone and the bytes live in an append-only
+  // pack, so removing the loose path is a no-op.
+  const root = await mkdtemp(join(tmpdir(), "obj-del-packed-"));
+  const store = new ObjectStore(root);
+  const id = await store.put("packed content");
+  await store.compact();
+
+  await store.delete(id);
+
+  expect(await store.has(id)).toBe(false);
+  await expect(store.get(id)).rejects.toThrow();
+});
+
+test("get refuses an object whose content no longer matches its address", async () => {
+  // Addressing by content buys deduplication; verifying on read is what makes
+  // the same address an integrity check. Without it, corruption is returned as
+  // content and the caller has no checksum of its own to notice.
+  const root = await mkdtemp(join(tmpdir(), "obj-corrupt-"));
+  const store = new ObjectStore(root);
+  const id = await store.put("the real content");
+  const path = join(root, id.slice(0, 2), id);
+  await writeFile(path, "tampered content!!");
+
+  await expect(store.get(id)).rejects.toThrow(/corrupt/);
+});
+
+test("getStream refuses a chunked object whose chunks changed", async () => {
+  // The streamed path reads its chunks directly, so it needs the check too:
+  // otherwise the one read path used for large objects is the unverified one.
+  const root = await mkdtemp(join(tmpdir(), "obj-corrupt-stream-"));
+  const store = new ObjectStore(root);
+  const id = await store.put("y".repeat(3_000_000));
+  const meta = store as unknown as {
+    getMeta<T>(key: string): Promise<T | undefined>;
+  };
+  const chunked = await meta.getMeta<{ chunks: string[] }>(`chunked:${id}`);
+  const first = chunked!.chunks[0]!;
+  await writeFile(join(root, first.slice(0, 2), first), "not the chunk");
+
+  await expect(
+    (async () => {
+      for await (const _chunk of store.getStream(id)) {
+        // Draining is the point: the checksum lands on the last chunk.
+      }
+    })(),
+  ).rejects.toThrow(/corrupt/);
 });
