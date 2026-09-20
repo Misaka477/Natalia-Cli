@@ -74,32 +74,6 @@ function isContext(row: DiffRow) {
   return row.type === "" && row.sign === " ";
 }
 
-function collapseRows(rows: DiffRow[]): DiffRow[] {
-  const result: DiffRow[] = [];
-  let i = 0;
-  while (i < rows.length) {
-    if (isContext(rows[i]!)) {
-      let j = i;
-      while (j < rows.length && isContext(rows[j]!)) j++;
-      const count = j - i;
-      if (count > 6) {
-        result.push({
-          type: "is-header",
-          sign: "",
-          text: `··· ${count} unchanged lines ···`,
-          oldNo: "",
-          newNo: "",
-        });
-        i = j;
-        continue;
-      }
-    }
-    result.push(rows[i]!);
-    i++;
-  }
-  return result;
-}
-
 /**
  * A lightweight virtualized unified-diff renderer.
  *

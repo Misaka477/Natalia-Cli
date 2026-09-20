@@ -1140,27 +1140,6 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     };
   }
 
-  function modelCapabilities() {
-    const config = input.tsRuntimeConfig();
-    const candidate =
-      input.selectedAgent()?.model ??
-      input.selectedModel()?.modelID ??
-      (config?.defaultModel ? modelRefKey(config.defaultModel) : undefined);
-    const effective =
-      candidate && config
-        ? resolveEffectiveModel(config, candidate)
-        : undefined;
-    return (
-      effective?.capabilities ?? {
-        toolCall: true,
-        reasoning: true,
-        thinking: true,
-        imageInput: false,
-        videoInput: false,
-      }
-    );
-  }
-
   async function runProviderStepWithRecovery(
     id: string,
     messages: ProviderMessage[],
