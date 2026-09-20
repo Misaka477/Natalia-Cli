@@ -11,10 +11,10 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime-services": "workspace:*",
-    "@natalia/testing": "workspace:*",
     "@natalia/tools": "workspace:*"
   },
   "devDependencies": {
-    "@natalia/subagents": "workspace:*"
+    "@natalia/subagents": "workspace:*",
+    "@natalia/testing": "workspace:*"
   }
 }

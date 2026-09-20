@@ -313,3 +313,47 @@ test("workspace keys isolate identical session IDs", async () => {
   ).toContain("workspace two");
   await host.close();
 });
+
+test("unloading a plugin disposes the panels it mounted", async () => {
+  // `mountPanel` only disposes the previous panel for the same key, so nothing
+  // removed a plugin's panels when the plugin itself went away: the DOM, timers
+  // and listeners stayed, and a later install mounted a second copy beside them.
+  const root = fakeRoot();
+  const fixture = runtimeFixture();
+  const seen: string[] = [];
+  const plugin = defineUiPlugin({
+    id: "panels.web",
+    name: "Panels",
+    version: "1.0.0",
+    panels: [
+      { id: "main", title: "Main", region: "main" },
+      {
+        id: "chat",
+        title: "Chat",
+        region: "side",
+        mount: () => () => {
+          seen.push("panel-chat-disposed");
+        },
+      },
+    ],
+    mount: () => ({
+      dispose: () => {
+        seen.push("plugin-disposed");
+      },
+    }),
+  });
+  const host = await createUiPluginHost({ root, runtime: fixture.runtime });
+  await host.load(plugin);
+  const container = fakeRoot();
+  await host.mountPanel("panels.web", "chat", container);
+
+  await host.unload("panels.web");
+
+  expect(seen).toEqual(["panel-chat-disposed", "plugin-disposed"]);
+  // Removed as well as disposed: a listener reading the mount set must not see a
+  // panel belonging to a plugin that is gone.
+  await expect(
+    host.mountPanel("panels.web", "chat", fakeRoot()),
+  ).rejects.toThrow(/ui plugin not loaded/);
+  await host.close();
+});

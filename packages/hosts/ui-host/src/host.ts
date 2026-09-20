@@ -478,6 +478,17 @@ export async function createUiPluginHost<TContext = unknown>(
     const entry = mounted.get(id);
     if (!entry) return;
     mounted.delete(id);
+    // The panels this plugin mounted are keyed `${pluginId}:${panelId}`, and
+    // nothing else removes them: `mountPanel` only disposes the previous panel
+    // for the *same* key. Leaving them behind leaves the DOM, timers and
+    // listeners a disposing plugin was supposed to release, and a later install
+    // mounts a second copy beside the first.
+    for (const [key, panel] of [...mountedPanels])
+      if (key.startsWith(`${id}:`)) {
+        mountedPanels.delete(key);
+        panel.dispose?.();
+        await panel.lifecycle?.dispose();
+      }
     for (const [kind, owned] of [...presenters])
       if (owned.pluginId === id) presenters.delete(kind);
     for (const listener of panelListeners) listener();
