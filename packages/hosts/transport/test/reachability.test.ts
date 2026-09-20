@@ -28,38 +28,6 @@ import { WORKER_ROUTE_MEMBERS } from "@natalia/client";
  *     the report without anyone maintaining a checklist.
  */
 
-function stubClient(overrides: Partial<RuntimeClient> = {}) {
-  const client: RuntimeClient = {
-    start() {},
-    async submit(text) {
-      return {
-        type: "turn.submitted",
-        id: "turn_1",
-        text,
-        byteLength: text.length,
-        lineCount: 1,
-        sha256: "stub",
-      };
-    },
-    cancel() {},
-    snapshot(): RuntimeEvent {
-      return { type: "diagnostic", level: "info", message: "stub" };
-    },
-    diagnostic() {},
-    lastSubmission() {
-      return undefined;
-    },
-    respondApproval() {
-      return { accepted: true };
-    },
-    respondQuestion() {
-      return { accepted: true };
-    },
-    ...overrides,
-  };
-  return client;
-}
-
 /**
  * A runtime implementing every member — the most complete runtime there can
  * be, which is exactly what the in-process report test needs: nothing must be

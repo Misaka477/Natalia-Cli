@@ -83,24 +83,6 @@ async function mkdtemp(prefix: string) {
   return path;
 }
 
-async function spawnBuffered(command: string[], options: { cwd: string }) {
-  const child = Bun.spawn(command, {
-    ...options,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).arrayBuffer(),
-    new Response(child.stderr).arrayBuffer(),
-    child.exited,
-  ]);
-  return {
-    stdout: new Uint8Array(stdout),
-    stderr: new Uint8Array(stderr),
-    exitCode,
-  };
-}
-
 afterEach(async () => {
   const paths = [...temporaryDirectories];
   temporaryDirectories.clear();
@@ -121,20 +103,6 @@ afterAll(async () => {
   if (previousNpmCache === undefined) delete process.env.npm_config_cache;
   else process.env.npm_config_cache = previousNpmCache;
 });
-
-async function isolateGlobalModelConfig(root: string) {
-  const globalPath =
-    process.platform === "win32"
-      ? join(root, "natalia-cli", "config.json")
-      : join(root, ".config", "natalia-cli", "config.json");
-  await migrateProjectModelConfigToGlobal(root, { globalPath });
-  return {
-    ...process.env,
-    HOME: root,
-    APPDATA: root,
-    USERPROFILE: root,
-  };
-}
 
 test("CLI Work Graph reader projects only safe nodes and edges", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-workgraph-"));
