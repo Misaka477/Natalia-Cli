@@ -53,7 +53,9 @@ export function createPluginRegistry(input: PluginRegistryInput) {
     audit.push(entry);
     try {
       input.onAudit?.(entry);
-    } catch {}
+    } catch {
+      // an audit observer must not break the audit trail
+    }
   };
   const state: RegistryState = {
     input,
@@ -245,7 +247,9 @@ export function createPluginRegistry(input: PluginRegistryInput) {
         if (entry.plugin.manifest.requires.includes(update.name))
           try {
             await reconcileEntry(entry);
-          } catch {}
+          } catch {
+            // one dependent's reconcile failure must not block the others
+          }
     });
   });
 
@@ -274,7 +278,9 @@ export function createPluginRegistry(input: PluginRegistryInput) {
         for (const listener of entry.epoch?.listeners ?? [])
           try {
             listener(event);
-          } catch {}
+          } catch {
+            // one listener must not break event delivery
+          }
     },
     list: () => [...plugins.values()].map((entry) => entry.plugin.manifest),
     status(id: string): PluginStatus | undefined {

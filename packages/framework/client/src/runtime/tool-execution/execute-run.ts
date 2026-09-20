@@ -296,7 +296,9 @@ export async function runExecuteStage(
                   reason: "pre_tool",
                 }),
               );
-          } catch {}
+          } catch {
+            // pre-tool status publish is best-effort
+          }
         }
       }
     } catch (error) {

@@ -257,13 +257,17 @@ export async function activatePlugin(
   } catch (error) {
     try {
       await plugin.dispose?.();
-    } catch {}
+    } catch {
+      // best-effort cleanup; a dispose failure must not mask the activation error
+    }
     abort.abort();
     await Promise.allSettled(effects);
     state.cleanup(disposers);
     try {
       contributionOwner?.release();
-    } catch {}
+    } catch {
+      // best-effort release during rollback
+    }
     entry.epoch = undefined;
     entry.status = "failed";
     entry.error = error instanceof Error ? error.message : String(error);
