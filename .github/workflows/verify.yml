@@ -1,0 +1,59 @@
+name: verify
+
+# The gates in `npm run verify` already existed and already worked. What they
+# did not have was anything that ran them, so they only ran when someone
+# remembered — and the failures they were built to catch sat undetected for a
+# long stretch: a typecheck break survived ten rounds of work, the import guard
+# had never been run at all, and the format gate reported 86 files for long
+# enough that nobody read its output. A gate that nothing enforces is advice.
+#
+# This is the enforcement. Run it locally with `npm run verify`; it is the same
+# command, so a green run here and a green run there mean the same thing.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  # Allowed to be dispatched by hand so a branch can be checked without pushing
+  # another commit onto it.
+  workflow_dispatch:
+
+# A new push supersedes an in-flight run for the same ref: the older result can
+# no longer be acted on, and the suite is long enough that it would otherwise
+# queue behind itself.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # The suite runs ~2300 tests. The cap is here so a hang fails the job rather
+    # than occupying a runner until the platform's own limit.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both runtimes, because the scripts use each: the workspace installs with
+      # bun (the only lockfile is `bun.lock`), and the `verify` script and the
+      # scripts it chains invoke `npm run …` and `npx …`.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # `--frozen-lockfile` so a dependency that would drift from the committed
+      # lockfile fails here instead of silently changing what is being verified.
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # One command, and the same one a developer runs. Keeping CI to the single
+      # script is deliberate: a CI that assembled its own step list would be a
+      # second definition of "verified", and the two would drift.
+      - name: Verify
+        run: npm run verify
