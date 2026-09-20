@@ -396,6 +396,10 @@ export function createConfigReload(
     }
     ports.applyAgentPolicy();
     if (!previous.config) return;
+    // A reload that failed after it published the new config's tool catalog
+    // leaves the UI projecting tools the restored registry no longer has.
+    // Reconcile back and re-publish the diff, mirroring the forward path.
+    const toolsBeforeRollback = new Set(ports.getTools().keys());
     await ports
       .getPluginsController()
       .reconcileDesired([], previous.config.plugins);
@@ -405,5 +409,6 @@ export function createConfigReload(
       ),
     );
     await ports.runPluginLifecyclePostReconcile(selectedSkills);
+    ports.publishToolCatalogChanges(toolsBeforeRollback);
   }
 }

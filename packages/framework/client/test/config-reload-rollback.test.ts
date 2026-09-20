@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { updateConfig } from "@natalia/config";
 import { createConfigReload } from "../src/runtime/config-reload";
+import { createToolPublish } from "../src/runtime/tool-publish";
 import type { RuntimeContext } from "../src/runtime/context";
 
 // A config reload mutates live runtime state in place; if a later step throws,
@@ -16,12 +17,15 @@ import type { RuntimeContext } from "../src/runtime/context";
 async function harness() {
   const root = await mkdtemp(join(tmpdir(), "natalia-reload-rollback-"));
   const agentSpawn = { name: "agent_spawn", description: "seed" };
-  const tools = new Map<string, { description: string }>([
-    ["agent_spawn", agentSpawn],
-  ]);
+  const tools = new Map<
+    string,
+    { name: string; description: string; requiresApproval?: boolean }
+  >([["agent_spawn", agentSpawn]]);
   let config: unknown;
   let registry: unknown;
   let failPermissionSettings = false;
+  let failContextConfig = false;
+  const published: Array<{ type: string; name: string }> = [];
 
   const ctx = {
     state: { tools, frameworkServices: undefined, pluginStoreRoot: undefined },
@@ -66,30 +70,61 @@ async function harness() {
       getRuntimeContextConfig: () => ({}),
       setRuntimeContextConfig: () => {},
       applyAgentPolicy: () => {},
-      getPluginsController: () => ({ reconcileDesired: async () => {} }),
+      getPluginsController: () => ({
+        reconcileDesired: async (
+          _entries: unknown,
+          plugins: { enabled?: Record<string, boolean> } | undefined,
+        ) => {
+          tools.clear();
+          tools.set("agent_spawn", agentSpawn);
+          if (plugins?.enabled?.beta)
+            tools.set("beta_tool", { name: "beta_tool", description: "" });
+        },
+      }),
       runPluginLifecyclePostReconcile: async () => {},
-      publish: () => {},
+      publish: (event: { type: string; name?: string }) => {
+        if (
+          event.type === "tool.registered" ||
+          event.type === "tool.unregistered"
+        )
+          published.push({ type: event.type, name: event.name ?? "" });
+      },
       publishForSession: () => {},
       scheduleRuntimeStatusSnapshot: () => {},
       resolveService: () => undefined,
       getTools: () => tools,
+      getCapabilityRegistry: () => ({
+        ownerOf: () => undefined,
+        scopeOf: () => undefined,
+      }),
       getContextWindowResolver: () => ({}),
       refreshExecutionContextConfig: async () => {},
       modelRefKeyForSelection: () => "key",
-      resolveContextStatusConfig: async () => ({}),
+      resolveContextStatusConfig: async () => {
+        if (failContextConfig)
+          throw new Error("injected context-config failure");
+        return {};
+      },
       applyAgentProvider: () => {},
       publishToolCatalogChanges: () => {},
     },
   } as unknown as RuntimeContext;
-
-  const reload = createConfigReload(ctx, {
-    globalConfigPath: join(root, "absent-global.json"),
-  });
+  const options = { globalConfigPath: join(root, "absent-global.json") };
+  // Use the real tool-catalog publisher so the diff is actually emitted.
+  ctx.ports.publishToolCatalogChanges = createToolPublish(
+    ctx,
+    options,
+  ).publishToolCatalogChanges;
+  const reload = createConfigReload(ctx, options);
   return {
     root,
     agentSpawn,
+    published,
     setFailPermissionSettings: (value: boolean) => {
       failPermissionSettings = value;
+    },
+    setFailContextConfig: (value: boolean) => {
+      failContextConfig = value;
     },
     reload,
     dispose: () => rm(root, { recursive: true, force: true }),
@@ -118,6 +153,32 @@ test("a failed config reload restores the agent_spawn description to the prior c
     // Rolled back to the first config: beta must no longer be advertised.
     expect(h.agentSpawn.description).not.toContain("beta");
     expect(h.agentSpawn.description).toContain("alpha");
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("a failed reload re-publishes the tool catalog so the projection matches the rollback", async () => {
+  const h = await harness();
+  try {
+    await updateConfig(h.root, { version: 3, agents: { alpha } });
+    expect((await h.reload.applyConfigFromDisk()).applied).toBe(true);
+
+    // Config B enables an extra plugin tool; fail the reload only after the new
+    // tool catalog has been published (at context-config resolution).
+    await updateConfig(h.root, {
+      agents: { alpha },
+      plugins: { enabled: { beta: true } },
+    });
+    h.setFailContextConfig(true);
+    expect((await h.reload.applyConfigFromDisk()).applied).toBe(false);
+
+    // The failed reload advertised beta_tool; the rollback must retract it so
+    // the UI stops projecting a tool the restored registry no longer has.
+    expect(h.published).toContainEqual({
+      type: "tool.unregistered",
+      name: "beta_tool",
+    });
   } finally {
     await h.dispose();
   }
