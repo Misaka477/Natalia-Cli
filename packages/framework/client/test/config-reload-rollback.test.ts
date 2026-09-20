@@ -26,6 +26,7 @@ async function harness() {
   let failPermissionSettings = false;
   let failContextConfig = false;
   const published: Array<{ type: string; name: string }> = [];
+  const diagnostics: string[] = [];
 
   const ctx = {
     state: { tools, frameworkServices: undefined, pluginStoreRoot: undefined },
@@ -82,12 +83,14 @@ async function harness() {
         },
       }),
       runPluginLifecyclePostReconcile: async () => {},
-      publish: (event: { type: string; name?: string }) => {
+      publish: (event: { type: string; name?: string; message?: string }) => {
         if (
           event.type === "tool.registered" ||
           event.type === "tool.unregistered"
         )
           published.push({ type: event.type, name: event.name ?? "" });
+        else if (event.type === "diagnostic" && event.message)
+          diagnostics.push(event.message);
       },
       publishForSession: () => {},
       scheduleRuntimeStatusSnapshot: () => {},
@@ -120,6 +123,12 @@ async function harness() {
     root,
     agentSpawn,
     published,
+    diagnostics,
+    globalConfigPath: options.globalConfigPath,
+    resetRecorded() {
+      published.length = 0;
+      diagnostics.length = 0;
+    },
     setFailPermissionSettings: (value: boolean) => {
       failPermissionSettings = value;
     },
@@ -179,6 +188,47 @@ test("a failed reload re-publishes the tool catalog so the projection matches th
       type: "tool.unregistered",
       name: "beta_tool",
     });
+  } finally {
+    await h.dispose();
+  }
+});
+
+const adapterProvider = (format: string, module: string) => ({
+  name: "P",
+  driver: "openai-compatible",
+  connection: { apiKey: "x" },
+  protocol: { format, module },
+});
+
+test("a failed reload restores the previous config's provider adapter modules", async () => {
+  const h = await harness();
+  try {
+    // Config A names an adapter module that does not exist, so loading it fails
+    // and publishes a diagnostic (registers nothing).
+    await updateConfig(
+      h.root,
+      { version: 3, providers: { p: adapterProvider("fa", "a.ts") } },
+      { globalPath: h.globalConfigPath },
+    );
+    expect((await h.reload.applyConfigFromDisk()).applied).toBe(true);
+    expect(h.diagnostics.some((m) => m.includes("a.ts"))).toBe(true);
+
+    // Config B swaps the module; fail the reload only after the adapter set has
+    // been swapped (at context-config resolution).
+    h.resetRecorded();
+    await updateConfig(
+      h.root,
+      { version: 3, providers: { p: adapterProvider("fb", "b.ts") } },
+      { globalPath: h.globalConfigPath },
+    );
+    h.setFailContextConfig(true);
+    expect((await h.reload.applyConfigFromDisk()).applied).toBe(false);
+
+    // The rollback must restore the previous config's adapter set: its "a.ts"
+    // load diagnostic is published again, proving the failed config's "b.ts"
+    // was withdrawn and A's reloaded rather than left live.
+    expect(h.diagnostics.some((m) => m.includes("b.ts"))).toBe(true);
+    expect(h.diagnostics.some((m) => m.includes("a.ts"))).toBe(true);
   } finally {
     await h.dispose();
   }

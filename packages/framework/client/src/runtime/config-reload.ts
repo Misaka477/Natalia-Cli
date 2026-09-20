@@ -384,6 +384,23 @@ export function createConfigReload(
     ctx.state.frameworkServices?.refreshRuntimeConfig();
     ports.setProvider(previous.provider);
     ports.setProviderSource(previous.providerSource);
+    // Third rollback gap: the forward reload swaps the provider adapter
+    // module set (withdrawing the previous config's, loading the new one's).
+    // Restore the previous set and publish the same diagnostics the forward
+    // path does, so the restored provider can still resolve a module format.
+    if (!options.provider && previous.config) {
+      const adapterResults = await reloadProviderAdapterModules({
+        workspaceRoot: ports.getWorkspaceRoot(),
+        requests: providerAdapterModuleRequests(previous.config.providers),
+      });
+      for (const result of adapterResults)
+        if (!result.ok)
+          ports.publish({
+            type: "diagnostic",
+            level: "warning",
+            message: `provider adapter module for "${result.providerID}" did not load (${result.module}): ${result.error}`,
+          });
+    }
     ports.setRuntimeContextConfig(previous.runtimeContextConfig);
     for (const [id, state] of previous.executions) {
       const exec = ports.getExecutionBySession().get(id);
