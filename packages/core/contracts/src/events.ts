@@ -28,13 +28,12 @@ export type ErrorKind =
   | "unknown"
   | "cancel";
 
-export type StepRetryOperation = "llm_step" | "compaction" | "metadata_probe";
+export type StepRetryOperation = "llm_step" | "compaction";
 
 export type ContextStatusSource =
   | "exact_checkpoint"
   | "pending_estimate"
-  | "compaction_estimate"
-  | "restored";
+  | "compaction_estimate";
 
 export type CompactionTrigger =
   | "ratio"
@@ -58,11 +57,10 @@ export type TerminalStatus =
   | "awaiting_approval"
   | "exited"
   | "failed";
-export type TerminalOwnership = "model" | "user" | "shared" | "detached";
+export type TerminalOwnership = "model" | "user";
 export type TerminalAction =
   | "write"
   | "submit"
-  | "special_key"
   | "resize"
   | "exit"
   | "attach"
@@ -80,13 +78,7 @@ export type SandboxStatus =
   | "stopped"
   | "deleted"
   | "failed";
-export type SandboxDiffKind =
-  | "add"
-  | "modify"
-  | "delete"
-  | "rename"
-  | "mode"
-  | "conflict";
+export type SandboxDiffKind = "add" | "modify" | "delete" | "rename" | "mode";
 
 export type ProviderReasoningBlock = {
   text?: string;
@@ -1006,7 +998,6 @@ type RuntimeEventData =
       mode: "ask" | "auto" | "read_only";
       profile?: string;
     }
-  | { type: "task.selection"; taskID: string; evidenceID?: string }
   | {
       type: "projections.updated";
       contributions: ProjectionContribution[];
@@ -1100,12 +1091,6 @@ type RuntimeEventData =
       type: "capability.unloaded";
       id: string;
       name: string;
-    }
-  | {
-      type: "capability.failed";
-      id: string;
-      name: string;
-      reason: string;
     }
   | {
       type: "workgraph.node_added";
@@ -1654,46 +1639,6 @@ type RuntimeEventData =
       messageTokens?: number;
     }
   | {
-      /** Navi-owned context status. */
-      type: "navi.context.status";
-      used: number;
-      max: number;
-      source: ContextStatusSource;
-      thresholdPercent: number;
-      reserved: number;
-      trigger?: CompactionTrigger;
-      /** Model-visible message/tool surface tokens (the message bucket). */
-      surfaceTokens?: number;
-      /** Conservative full-request tokens (header + surface). */
-      requestTokens?: number;
-      /** systemTokens + toolsTokens. */
-      headerTokens?: number;
-      /** System-prompt tokens, counted once in the header only. */
-      systemTokens?: number;
-      /** Tool-definition tokens, counted once in the header only. */
-      toolsTokens?: number;
-    }
-  | {
-      /** Nia-owned context status. */
-      type: "nia.context.status";
-      used: number;
-      max: number;
-      source: ContextStatusSource;
-      thresholdPercent: number;
-      reserved: number;
-      trigger?: CompactionTrigger;
-      /** Model-visible message/tool surface tokens (the message bucket). */
-      surfaceTokens?: number;
-      /** Conservative full-request tokens (header + surface). */
-      requestTokens?: number;
-      /** systemTokens + toolsTokens. */
-      headerTokens?: number;
-      /** System-prompt tokens, counted once in the header only. */
-      systemTokens?: number;
-      /** Tool-definition tokens, counted once in the header only. */
-      toolsTokens?: number;
-    }
-  | {
       /** Navi-owned TokenMeter projection. */
       type: "navi.context.snapshot";
       usedTokens: number;
@@ -2101,11 +2046,6 @@ type RuntimeEventData =
     }
   | {
       type: "workspace.removed";
-      workspaceID: string;
-    }
-  | {
-      type: "workspace.status";
-      workspace: WorkspaceSummary;
       workspaceID: string;
     };
 
@@ -2696,13 +2636,11 @@ export function runtimeEventDurability(
     case "chat.turn.phase":
     case "chat.turn.finished":
     case "projections.updated":
-    case "task.selection":
     // Synthetic runtime declarations are re-published on every boot. Storing
     // them in the session DB only multiplies startup writes and bloats the
     // session history; they are reconstructible and do not need durability.
     case "capability.loaded":
     case "capability.unloaded":
-    case "capability.failed":
     case "tool.registered":
     case "plugin.update":
     case "resource.read":

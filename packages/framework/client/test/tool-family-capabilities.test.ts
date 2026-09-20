@@ -8,6 +8,7 @@ import {
   toolFamilyCapabilityID,
   toolFamilyRegistration,
 } from "../src/capabilities/tool-family-capabilities";
+import { createToolPublish } from "../src/runtime/tool-publish";
 
 // The built-in tools are capabilities now, so they must be assemblable without a
 // runtime. If any of this needed a real client, nothing would have been decoupled.
@@ -139,4 +140,55 @@ test("dependency ordering registers a dependent after its dependency", () => {
   expect(tools.has("later_run")).toBe(true);
   expect(registry.has(toolFamilyCapabilityID("later"))).toBe(true);
   expect(registry.has(toolFamilyCapabilityID("earlier"))).toBe(true);
+});
+
+test("publishing capabilities reports the ones that went away", () => {
+  // Publishing only `loaded` made the stream additive: a consumer accumulated
+  // capabilities and never heard about one going away, so a reload that dropped
+  // a family left it on screen. The sync is what makes removal observable.
+  const published: Array<{ type: string; id: string; name?: string }> = [];
+  let present = [
+    {
+      id: "family_a",
+      name: "Family A",
+      version: "1.0.0",
+      scope: "session",
+      grants: [],
+    },
+    {
+      id: "family_b",
+      name: "Family B",
+      version: "1.0.0",
+      scope: "session",
+      grants: [],
+    },
+  ];
+  const tools = createToolPublish(
+    {
+      ports: {
+        publish: (event: { type: string; id: string; name?: string }) =>
+          published.push(event),
+        getCapabilityRegistry: () => ({ list: () => present }),
+      },
+    } as never,
+    {} as never,
+  );
+
+  tools.publishRuntimeCapabilities();
+  expect(published.map((event) => `${event.type}:${event.id}`)).toEqual([
+    "capability.loaded:cap:family_a",
+    "capability.loaded:cap:family_b",
+  ]);
+
+  // A reload drops family_b.
+  present = [present[0]!];
+  published.length = 0;
+  tools.publishRuntimeCapabilities();
+
+  expect(published.map((event) => `${event.type}:${event.id}`)).toEqual([
+    "capability.loaded:cap:family_a",
+    "capability.unloaded:cap:family_b",
+  ]);
+  // The removal carries the name, which is what a UI needs to say what left.
+  expect(published[1]!.name).toBe("Family B");
 });

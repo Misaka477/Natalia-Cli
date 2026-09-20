@@ -65,15 +65,6 @@ export function applyWorkspaceEvent(
     return before !== state.workspaces.length;
   }
 
-  if (event.type === "workspace.status") {
-    const existing = state.workspaces.find(
-      (entry) => entry.workspaceID === event.workspace.workspaceID,
-    );
-    if (existing) Object.assign(existing, event.workspace);
-    else state.workspaces.push({ ...event.workspace });
-    return true;
-  }
-
   if (event.type === "session.created" || event.type === "session.ready") {
     if (event.workspaceID) {
       // Keep the current routing facts in sync even before a full session list

@@ -152,10 +152,25 @@ export function createPermissions(
       permissionMode: getPermissionMode(),
     });
     if (!derived.found) return;
+    const previousMode = getPermissionMode();
     setSelectedPermissionProfile(derived.selectedProfile);
     setPermissionMode(derived.mode);
     setDefaultPermissionMode(derived.defaultMode);
     setDefaultPermissionProfile(derived.defaultProfile);
+    // Reported only on a real change. The projector derives a session's mode by
+    // scanning its events, and nothing emitted this one, so the projected mode
+    // was always undefined — a pure replay cannot see process state, only events.
+    if (previousMode !== derived.mode)
+      for (const exec of ctx.ports.getExecutionBySession().values()) {
+        exec.permissionMode = derived.mode;
+        // `mode` only: the profile's key lives upstream of what this derivation
+        // returns, and the event's `profile` is optional, so inventing one here
+        // would be worse than leaving it out.
+        ctx.ports.publishForSession(exec, {
+          type: "session.permission.mode",
+          mode: derived.mode,
+        });
+      }
   }
 
   function isToolAllowed(

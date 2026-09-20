@@ -497,7 +497,7 @@ test("plugin projection contributions project and clear", () => {
   expect(cleared.pluginProjections).toEqual([]);
 });
 
-test("task.selection projects selectedTaskID", () => {
+test("evidence.recorded projects a message carrying its task", () => {
   const state = projectEvents([
     {
       type: "evidence.recorded",
@@ -506,14 +506,7 @@ test("task.selection projects selectedTaskID", () => {
       objective: "verify the build",
       status: "promoted",
     } as RuntimeEvent,
-    {
-      type: "task.selection",
-      taskID: "task_build",
-      evidenceID: "evidence:1",
-    } as RuntimeEvent,
   ]);
-  expect(state.selectedTaskID).toBe("task_build");
-  expect(state.selectedEvidenceID).toBe("evidence:1");
   expect(state.messages[0]).toMatchObject({
     id: "evidence:1",
     taskID: "task_build",

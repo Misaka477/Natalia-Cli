@@ -133,8 +133,11 @@ export function applyStatusEvent(
       ];
       return true;
     case "context.status": {
-      // Legacy journal replay only: live writers emit navi./nia.context.status.
-      // `channel` is the journal-compatibility discriminator.
+      // Journal replay only: a live writer emits the namespaced
+      // `navi./nia.context.snapshot`, and the shared `context.status` for the
+      // main channel. `channel` is the discriminator that older journals carry,
+      // so it decides which meter an old entry belongs to — dropping it would
+      // file a replayed navi status under the main channel.
       const usage: import("./state").ContextUsageView = {
         used: event.used,
         max: event.max,
@@ -167,28 +170,6 @@ export function applyStatusEvent(
       if (event.channel === "navi") state.navi.context = usage;
       else if (event.channel === "nia") state.nia.context = usage;
       else state.context = usage;
-      return true;
-    }
-    case "navi.context.status": {
-      state.navi.context = {
-        used: event.used,
-        max: event.max,
-        source: event.source,
-        thresholdPercent: event.thresholdPercent,
-        reserved: event.reserved,
-        ...(event.trigger === undefined ? {} : { trigger: event.trigger }),
-      };
-      return true;
-    }
-    case "nia.context.status": {
-      state.nia.context = {
-        used: event.used,
-        max: event.max,
-        source: event.source,
-        thresholdPercent: event.thresholdPercent,
-        reserved: event.reserved,
-        ...(event.trigger === undefined ? {} : { trigger: event.trigger }),
-      };
       return true;
     }
     case "navi.context.snapshot": {
@@ -322,10 +303,6 @@ export function applyStatusEvent(
         modelID: event.modelID,
         variant: event.variant,
       };
-      return true;
-    case "task.selection":
-      state.selectedTaskID = event.taskID;
-      state.selectedEvidenceID = event.evidenceID;
       return true;
     case "drift.finding_opened": {
       if (

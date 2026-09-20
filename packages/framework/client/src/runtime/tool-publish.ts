@@ -18,6 +18,20 @@ export function createToolPublish(
   ctx: RuntimeContext,
   options: RealRuntimeClientOptions,
 ) {
+  /**
+   * Capabilities published by the previous call, so publishing stays a sync
+   * rather than an append.
+   *
+   * Publishing only `loaded` made the stream additive: a consumer accumulates
+   * capabilities and never hears about one going away, so a reload that drops a
+   * family left it on screen.
+   *
+   * Declared before the `return` below on purpose — a `let` placed after it
+   * would never be initialised, since the function returns first, and every
+   * later read would land in the temporal dead zone.
+   */
+  let publishedCapabilities = new Map<string, string>();
+
   return {
     publishRuntimeCapabilities,
     hotReloadToolFamily,
@@ -28,10 +42,13 @@ export function createToolPublish(
 
   function publishRuntimeCapabilities() {
     const { publish, getCapabilityRegistry } = ctx.ports;
+    const present = new Map<string, string>();
     for (const record of getCapabilityRegistry().list()) {
+      const id = `cap:${record.id}`;
+      present.set(id, record.name);
       publish({
         type: "capability.loaded",
-        id: `cap:${record.id}`,
+        id,
         apiVersion: 1,
         name: record.name,
         version: record.version,
@@ -39,6 +56,9 @@ export function createToolPublish(
         grants: record.grants,
       });
     }
+    for (const [id, name] of publishedCapabilities)
+      if (!present.has(id)) publish({ type: "capability.unloaded", id, name });
+    publishedCapabilities = present;
   }
 
   async function hotReloadToolFamily(familyID: string) {

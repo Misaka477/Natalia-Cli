@@ -453,8 +453,6 @@ export type AppState = {
    * contract summary bar. Session-scoped like the rest of the state.
    */
   workContracts: Record<string, WorkContractView>;
-  selectedTaskID?: string;
-  selectedEvidenceID?: string;
   /** Recent policy outcomes, so a UI can explain why a tool did not run. */
   policyDecisions: PolicyDecisionView[];
   workGraphNodes: Record<string, WorkGraphNodeView>;

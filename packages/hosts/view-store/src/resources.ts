@@ -306,8 +306,7 @@ export function applyResourceEvent(
     case "capability.loaded":
       state.capabilities = { ...state.capabilities, [event.id]: event };
       return true;
-    case "capability.unloaded":
-    case "capability.failed": {
+    case "capability.unloaded": {
       const { [event.id]: _removed, ...rest } = state.capabilities;
       state.capabilities = rest;
       return true;

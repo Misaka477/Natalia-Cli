@@ -887,13 +887,14 @@ test("projectedCapabilities tracks loaded/unloaded capabilities", () => {
   expect(projectedCapabilities(session.events)).toEqual([]);
 });
 
-test("projectedCapabilities keeps a failed load out of the projection", () => {
-  const session = createSessionRecord("ses_cap_failed", "Capabilities");
+test("projectedCapabilities keeps a removal out of the projection", () => {
+  // A capability going away is not a capability being present. The projection
+  // reads `loaded` only, so a removal contributes nothing.
+  const session = createSessionRecord("ses_cap_unloaded", "Capabilities");
   appendSessionEvent(session, {
-    type: "capability.failed",
+    type: "capability.unloaded",
     id: "evt_1",
-    name: "Broken Capability",
-    reason: "dependency missing",
+    name: "Removed Capability",
   });
   expect(projectedCapabilities(session.events)).toEqual([]);
 });
