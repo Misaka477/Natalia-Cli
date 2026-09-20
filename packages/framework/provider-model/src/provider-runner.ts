@@ -10,7 +10,6 @@ import {
   contextEntriesToProviderMessages,
   contextStatusBuckets,
   contextStatusEvent,
-  DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
   estimateTokens,
   MAX_STEPS_PROMPT,
   memoryTrace,
@@ -26,10 +25,14 @@ import {
   type ProviderFinishReason,
   type ProviderToolCall,
   type StreamingProvider,
+  appendDateRollover,
+  today,
 } from "@natalia/runtime";
+
 import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";
+import { cacheHitRate, totalInputTokens } from "@natalia/contracts";
 import { buildSubmittedTurn, type SessionRecord } from "@natalia/session";
 import { materializeTools } from "@natalia/tools";
 import { agentSystemPrompt } from "@natalia/agent-prompts";
@@ -246,6 +249,18 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     let assistant = "";
     try {
       const ledger = input.context();
+      // The day may have changed since this session's history was last written.
+      // One notice is appended — never a rewrite — so the earlier context the
+      // provider already cached stays exactly as it was.
+      if (
+        appendDateRollover({
+          ledger,
+          sessionID: input.session()?.id ?? "",
+          recorded: input.sessionCurrentDate?.(),
+          todayDate: today(),
+        }) === "appended"
+      )
+        input.recordSessionDate?.(today());
 
       ledger.add({
         id: `${id}:${internal ? "internal" : "user"}`,
@@ -323,6 +338,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         workspaceRoot: input.workspaceRoot(),
         permissionMode: activePermissionMode,
         agentName: agent?.name,
+        sessionStartedAt: input.sessionStartedAt?.(),
         skills: input.skillsList(),
         activeSkill: input.activeSkill(),
         naviSuggestions: input.naviSuggestions(),
@@ -490,9 +506,11 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         throw new Error(
           `turn reached its step limit without ${unresolvedNaviReply.action} ${unresolvedNaviReply.id}`,
         );
+      let usedFallbackResponse = false;
       if ((usedTools || ranFinalOnlyStep) && !finalResponse.trim()) {
         finalResponse = MISSING_FINAL_RESPONSE_FALLBACK;
         assistant += finalResponse;
+        usedFallbackResponse = true;
         input.publish({ type: "content.delta", id, text: finalResponse });
         input.publish({ type: "content.done", id, text: finalResponse });
         input.publish({
@@ -561,6 +579,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         type: "turn.finished",
         id,
         stopReason: finishedStopReason,
+        // The turn reports done, but the model never produced a closing answer:
+        // the runtime substituted its fallback. Without this a consumer cannot
+        // tell a finished turn from one that ended on boilerplate.
+        ...(usedFallbackResponse
+          ? { reason: "missing_final_response" as const }
+          : {}),
         model: activeProvider.model,
         profile: activePermissionMode,
         durationMs: Date.now() - startedAt,
@@ -600,38 +624,37 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     }
   }
 
-    /**
-     * The advertised tool definitions for the current provider step, derived
-     * once so token metering (measureRequest) and the provider usage anchor
-     * (recordUsage) price the exact same request header. Tools are part of the
-     * request envelope header and must be measured as their own bucket.
-     */
-    function currentStepToolDefinitions(
-      activePermissionMode: PermissionMode,
-      activeModelCapabilities: ModelCapabilities,
-    ) {
-      if (!activeModelCapabilities.toolCall) return undefined;
-      const agent = input.selectedAgent();
-      const skill = input.activeSkill();
-      const advertised = new Map(
-        [...input.tools()].filter(
-          ([name, tool]) =>
-            input.isToolAllowed(name) &&
-            (activePermissionMode !== "read_only" || !tool.requiresApproval) &&
-            (!agent?.mcpServers.length ||
-              !name.startsWith("mcp_") ||
-              agent.mcpServers.some((server) =>
-                name.startsWith(`mcp_${server}_`),
-              )) &&
-            (!skill ||
-              input.skillService?.()?.authorizeTool(skill, tool.name, {
-                mode: "default",
-              }) !== false),
-        ),
-      );
-      return materializeTools(input.tools(), advertised).definitions;
-    }
-
+  /**
+   * The advertised tool definitions for the current provider step, derived
+   * once so token metering (measureRequest) and the provider usage anchor
+   * (recordUsage) price the exact same request header. Tools are part of the
+   * request envelope header and must be measured as their own bucket.
+   */
+  function currentStepToolDefinitions(
+    activePermissionMode: PermissionMode,
+    activeModelCapabilities: ModelCapabilities,
+  ) {
+    if (!activeModelCapabilities.toolCall) return undefined;
+    const agent = input.selectedAgent();
+    const skill = input.activeSkill();
+    const advertised = new Map(
+      [...input.tools()].filter(
+        ([name, tool]) =>
+          input.isToolAllowed(name) &&
+          (activePermissionMode !== "read_only" || !tool.requiresApproval) &&
+          (!agent?.mcpServers.length ||
+            !name.startsWith("mcp_") ||
+            agent.mcpServers.some((server) =>
+              name.startsWith(`mcp_${server}_`),
+            )) &&
+          (!skill ||
+            input.skillService?.()?.authorizeTool(skill, tool.name, {
+              mode: "default",
+            }) !== false),
+      ),
+    );
+    return materializeTools(input.tools(), advertised).definitions;
+  }
 
   async function runProviderStep(
     id: string,
@@ -911,19 +934,21 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       // ADR E metric: how much of the stable prefix the provider reused this
       // request. A near-zero read against a large creation means the prefix is
       // being re-billed every turn — the regression this pipe exists to catch.
+      // The rate comes from the shared `cacheHitRate`: `inputTokens` here is the
+      // provider's *uncached* remainder, so dividing the read by it reports
+      // absurd values (100k read over 2k fresh input reads as 5000%).
       const read = output.usage.cacheReadInputTokens ?? 0;
       const created = output.usage.cacheCreationInputTokens ?? 0;
-      const total = output.usage.inputTokens;
-      const hitRate = total > 0 ? Math.round((read / total) * 100) : 0;
+      const hitPercent = Math.round(cacheHitRate(output.usage) * 1000) / 10;
       memoryTrace("provider.cache", {
         read,
         created,
-        inputTokens: total,
-        hitRate,
+        inputTokens: totalInputTokens(output.usage),
+        hitRate: hitPercent,
       });
       if (process.env.NATALIA_DEBUG_PROVIDER === "1")
         console.debug(
-          `[provider] cache read=${read} created=${created} hit=${hitRate}%`,
+          `[provider] cache read=${read} created=${created} hit=${hitPercent}%`,
         );
     }
     if (output.usage) {
@@ -1154,12 +1179,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       ledger: input.context(),
       provider: activeProvider,
       budget: contextConfig,
-      preservedRecentMessages:
-        input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
-      preservedRecentTokens:
-        input.tsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
-      maxOverflowRetries:
-        input.tsRuntimeConfig()?.context.maxOverflowRetries ?? 1,
+      preservedRecentMessages: contextConfig.preservedRecentMessages,
+      preservedRecentTokens: contextConfig.preservedRecentTokens,
+      maxOverflowRetries: contextConfig.maxOverflowRetries,
       prefixMessages: messages.filter((message) => message.role === "system"),
       instruction: "Recover from provider context limit before retrying.",
       signal: input.activeAbort()?.signal,
@@ -1207,7 +1229,9 @@ export function createProviderRunner(input: ProviderRunnerInput) {
    * system / tools / messages accounting is exposed alongside it.
    */
   function publishMainContextStatus(
-    meter: ReturnType<NonNullable<ProviderRunnerInput["tokenMeter"]>> | undefined,
+    meter:
+      | ReturnType<NonNullable<ProviderRunnerInput["tokenMeter"]>>
+      | undefined,
     config: { max: number; thresholdPercent: number; reserved: number },
   ) {
     const buckets = meter
@@ -1220,7 +1244,6 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       }),
     );
   }
-
 
   function publishMainTokenSnapshot(
     meter: ReturnType<NonNullable<ProviderRunnerInput["tokenMeter"]>>,
@@ -1288,14 +1311,15 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       tools: stepTools,
       contextWindow: config.max,
       budget: config,
-      preserve: {
-        recentMessages:
-          input.tsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
-        recentTokens:
-          input.tsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
-      },
+      // Prune once per turn: `step` is 1-based, so only the turn's first
+      // provider request rewrites the ledger. A per-step prune would invalidate
+      // the prefix cache the request just wrote, re-billing the whole tail.
+      prune: step === 1,
       outbound: messages,
-      rebuildOutbound: (_entries: ContextEntry[], phase: "prune" | "compact") => {
+      rebuildOutbound: (
+        _entries: ContextEntry[],
+        phase: "prune" | "compact",
+      ) => {
         rebuildMessagesAfterCompaction(
           messages,
           ledger,
@@ -1307,7 +1331,6 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         applyRuntimeContext(messages);
         return messages;
       },
-      pruneOptions: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
       provider: activeProvider,
       prefixMessages: messages.filter((message) => message.role === "system"),
       instruction:
@@ -1318,7 +1341,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       publish: input.publish,
       emitStatus: () => publishMainContextStatus(realMeter, config),
       emitSnapshot: (measured: { totalTokens: number }) => {
-        if (realMeter) publishMainTokenSnapshot(realMeter, measured.totalTokens);
+        if (realMeter)
+          publishMainTokenSnapshot(realMeter, measured.totalTokens);
       },
       onCompacted: () => {
         memoryTrace("main.compact.after", {
@@ -1506,6 +1530,15 @@ type RuntimeContextBlockInput = {
   workspaceRoot: string;
   permissionMode: PermissionMode;
   agentName?: string;
+  /**
+   * The session's start date, `YYYY-MM-DD`.
+   *
+   * Rides in the environment block rather than the static system prompt: that
+   * prompt is documented as byte-identical across sessions and workspaces, and
+   * Anthropic's prefix cache is content-addressed, so ten sessions share one
+   * entry — a per-session date in it would forfeit that sharing.
+   */
+  sessionStartedAt?: string;
   skills?: SkillMetadata[];
   activeSkill?: SkillMetadata;
   /**
@@ -1696,6 +1729,11 @@ function runtimeContextBlocks(
       `Workspace root folder: ${input.workspaceRoot}`,
       `Permission mode: ${input.permissionMode}`,
       input.agentName ? `Active agent: ${input.agentName}` : undefined,
+      // Date only, no time: seconds make the string look volatile, which
+      // misleads anyone later reading a log or a diff.
+      input.sessionStartedAt
+        ? `Session started: ${input.sessionStartedAt}`
+        : undefined,
       "</environment_details>",
     ],
   });

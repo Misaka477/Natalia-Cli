@@ -2,11 +2,13 @@ import { expect, test } from "bun:test";
 import {
   AnthropicProvider,
   ContextLedger,
+  DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
   TokenMeter,
   estimateTokens,
   providerError,
 } from "@natalia/runtime";
 import type {
+  ContextBudget,
   ProviderStreamChunk,
   ProviderStreamRequest,
   ProviderToolCall,
@@ -25,6 +27,24 @@ import { createCompactionService } from "@natalia/compaction";
 
 function content(text: string): ProviderStreamChunk {
   return { type: "content", text };
+}
+
+/**
+ * Completes a partial test budget with the ContextBudget policy defaults, so
+ * fixtures only spell out the fields a test actually varies (plan §2.3).
+ */
+function withBudgetDefaults(
+  budget: Pick<ContextBudget, "max" | "thresholdPercent" | "reserved"> &
+    Partial<ContextBudget>,
+): ContextBudget {
+  return {
+    reservedSource: "config",
+    preservedRecentMessages: 10,
+    preservedRecentTokens: 0,
+    maxOverflowRetries: 1,
+    prune: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
+    ...budget,
+  };
 }
 
 function thinking(text: string): ProviderStreamChunk {
@@ -99,6 +119,11 @@ function makeHarness(
       max: number;
       thresholdPercent: number;
       reserved: number;
+      reservedSource?: import("@natalia/runtime").ContextBudget["reservedSource"];
+      preservedRecentMessages?: number;
+      preservedRecentTokens?: number;
+      maxOverflowRetries?: number;
+      prune?: import("@natalia/runtime").ToolResultPruneOptions;
     };
     preservedRecentMessages?: number;
     tokenMeter?: TokenMeter;
@@ -166,12 +191,21 @@ function makeHarness(
               preservedRecentMessages: options.preservedRecentMessages,
             },
           } as unknown as import("@natalia/contracts").ConfigV3),
-    runtimeContextConfig: () =>
-      options?.runtimeContextConfig ?? {
+    runtimeContextConfig: () => {
+      // The budget is the canonical source (plan §2.3) and is derived from the
+      // ts config, so the harness option that models
+      // `tsRuntimeConfig().context.preservedRecentMessages` is applied last.
+      const explicit = options?.runtimeContextConfig ?? {
         max: 200000,
         thresholdPercent: 85,
         reserved: 8192,
-      },
+      };
+      const budget = withBudgetDefaults(explicit);
+      const preservedRecentMessages = options?.preservedRecentMessages;
+      return preservedRecentMessages === undefined
+        ? budget
+        : { ...budget, preservedRecentMessages };
+    },
     activeSkill: () => undefined,
     skillsList: () => [],
     takeLiveUserMessages: () => options?.takeLiveUserMessages?.() ?? [],
@@ -432,7 +466,9 @@ test("tool calls with an empty final answer emit a deterministic fallback", asyn
       event.type === "turn.finished",
   );
   expect(finished?.stopReason).toBe("done");
-  expect(finished?.reason).toBeUndefined();
+  // The turn reports done, but the model never produced a closing answer: the
+  // runtime substituted its fallback, and a consumer must be able to tell.
+  expect(finished?.reason).toBe("missing_final_response");
   expect(
     events
       .filter(
@@ -996,7 +1032,7 @@ test("context-limit recovery keeps compacted context and recovered tool results 
         if (calls === 1)
           throw providerError({ kind: "context_limit", message: "too long" });
         if (calls === 2) {
-          yield content("compacted summary");
+          yield content(CONFORMING_SUMMARY);
           return;
         }
         if (calls === 3) {
@@ -1009,7 +1045,7 @@ test("context-limit recovery keeps compacted context and recovered tool results 
           request.messages.some(
             (message) =>
               message.role === "system" &&
-              message.content.includes("compacted summary"),
+              message.content.includes(CONFORMING_SUMMARY),
           ),
         ).toBe(true);
         expect(
@@ -1056,16 +1092,19 @@ test("context-limit recovery clears the stale token anchor before publishing the
         calls++;
         if (calls === 1)
           throw providerError({ kind: "context_limit", message: "too long" });
-        yield content("compacted final");
+        yield content(CONFORMING_SUMMARY);
       },
     },
     { preservedRecentMessages: 0, tokenMeter: meter },
   );
+  // Large enough that a conforming summary is genuinely smaller, so the shrink
+  // check lets the compaction through and this test can observe the anchor.
   for (let index = 0; index < 3; index++)
     ledger.add({
       id: `old-${index}`,
       role: index % 2 ? "assistant" : "user",
-      content: `old context ${index}`,
+      content: `old context ${index} ${"y".repeat(20_000)}`,
+      tokens: 5_000,
     });
 
   await runner.runTurn(turn);
@@ -1086,6 +1125,31 @@ test("context-limit recovery clears the stale token anchor before publishing the
   expect(compacted.projectedTokens ?? 0).toBeLessThan(10_000);
 });
 
+/** A summary satisfying the compaction contract, for stub providers. */
+const CONFORMING_SUMMARY = [
+  "## Objective",
+  "- Keep the request honest.",
+  "",
+  "## Important Details",
+  "- The contract is enforced now.",
+  "",
+  "## Work State",
+  "### Completed",
+  "- (none)",
+  "",
+  "### Active",
+  "- Compacting the request.",
+  "",
+  "### Blocked",
+  "- (none)",
+  "",
+  "## Next Move",
+  "1. Rebuild the outbound.",
+  "",
+  "## Relevant Files",
+  "- packages/framework/runtime/src/compaction.ts: the contract.",
+].join("\n");
+
 test("provider steps compact proactively before dispatching an oversized request", async () => {
   const requests: ProviderStreamRequest[] = [];
   const { runner, ledger, events } = makeHarness(
@@ -1095,14 +1159,14 @@ test("provider steps compact proactively before dispatching an oversized request
       async *stream(request) {
         requests.push(request);
         if (requests.length === 1) {
-          yield content("preflight summary");
+          yield content(CONFORMING_SUMMARY);
           return;
         }
         expect(
           request.messages.some(
             (message) =>
               message.role === "system" &&
-              message.content.includes("preflight summary"),
+              message.content.includes(CONFORMING_SUMMARY),
           ),
         ).toBe(true);
         expect(
@@ -1114,19 +1178,22 @@ test("provider steps compact proactively before dispatching an oversized request
       },
     },
     {
-      runtimeContextConfig: {
+      runtimeContextConfig: withBudgetDefaults({
         max: 100,
         thresholdPercent: 50,
         reserved: 10,
-      },
+      }),
       preservedRecentMessages: 0,
     },
   );
+  // The compacted span has to be genuinely larger than any conforming summary,
+  // or the shrink check correctly refuses the compaction and there is nothing
+  // left for this test to observe.
   ledger.add({
     id: "old-1",
     role: "assistant",
-    content: "x".repeat(400),
-    tokens: 100,
+    content: "x".repeat(40_000),
+    tokens: 10_000,
   });
   ledger.add({
     id: "old-2",
@@ -1165,11 +1232,11 @@ test("provider steps prune old oversized tool results before dispatch", async ()
       },
     },
     {
-      runtimeContextConfig: {
+      runtimeContextConfig: withBudgetDefaults({
         max: 200_000,
         thresholdPercent: 85,
         reserved: 8_192,
-      },
+      }),
     },
   );
   ledger.add({
@@ -1237,11 +1304,11 @@ test("provider estimates price durable attachment refs by metadata, not bytes", 
 });
 
 test("a turn keeps the context budget snapshotted with its active model", async () => {
-  const runtimeContextConfig = {
+  const runtimeContextConfig = withBudgetDefaults({
     max: 100_000,
     thresholdPercent: 50,
     reserved: 1_000,
-  };
+  });
   let calls = 0;
   const { runner, events } = makeHarness(
     {
@@ -1602,12 +1669,16 @@ test("constitution/AGENTS documents inject with explicit per-section enforcement
   const injected = shapes[0]!;
   expect(injected).toContain("<constitution_rules>");
   expect(injected).toContain("[deny] Force-pushing rewrites shared history.");
-  expect(injected).toContain('[warn] Prefer small pull requests.');
-  expect(injected).toContain('appliesTo: {"commandPattern":"git push --force"}');
+  expect(injected).toContain("[warn] Prefer small pull requests.");
+  expect(injected).toContain(
+    'appliesTo: {"commandPattern":"git push --force"}',
+  );
   // The raw content still rides along for grounding.
   expect(injected).toContain("# Rules");
   // The block stays in the appended runtime context, never the static system.
-  const systemMsg = injected.split("\n").find((line) => line === "SYSTEM_PLACEHOLDER");
+  const systemMsg = injected
+    .split("\n")
+    .find((line) => line === "SYSTEM_PLACEHOLDER");
   expect(systemMsg).toBeUndefined();
 });
 
@@ -1824,8 +1895,7 @@ test("main-path request metering counts advertised tools and exposes the three b
 
   const status = events.find(
     (event): event is Extract<RuntimeEvent, { type: "context.status" }> =>
-      event.type === "context.status" &&
-      event.toolsTokens !== undefined,
+      event.type === "context.status" && event.toolsTokens !== undefined,
   );
   expect(status).toBeDefined();
   expect(status!.headerTokens).toBe(
