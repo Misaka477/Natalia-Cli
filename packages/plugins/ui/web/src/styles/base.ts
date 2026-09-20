@@ -4108,6 +4108,15 @@ button.neu-settings-item.neu-settings-item-button:active {
   padding: 8px 14px;
   background: var(--neu-bg);
 }
+/* The pane must pass a bounded height down to neu-governance-content, or the
+   nested scrollports (work-graph virtual window, tab lists) never resolve and
+   every tab renders unbounded content. */
+.governance-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
 .neu-governance-content {
   flex: 1;
   min-height: 0;
@@ -4696,17 +4705,29 @@ button.neu-settings-item.neu-settings-item-button:active {
   opacity: 0.4;
   flex-shrink: 0;
 }
-.wg-tree {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  font-size: 12px;
-}
+/* Work Graph: one fixed-height row model shared by the virtual window
+   (WORK_GRAPH_ROW_HEIGHT). Rows are positioned by the virtualizer, never
+   DOM-measored, so the height here is the estimate too. */
+.wg-tree,
 .wg-graph {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  flex: 1;
+  min-height: 0;
+  gap: 1px;
   font-size: 12px;
+}
+.wg-tab {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.wg-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .wg-view-toggle {
   display: flex;
@@ -4763,39 +4784,58 @@ button.neu-settings-item.neu-settings-item-button:active {
 .wg-search-result:hover {
   background: rgba(255, 255, 255, 0.09);
 }
-.wg-navigation {
-  margin-bottom: 7px;
-  padding: 5px 7px;
-  border-radius: 7px;
-  background: rgba(120, 160, 255, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(120, 160, 255, 0.18);
-}
-.wg-node {
-  display: flex;
-  flex-direction: column;
-}
-.wg-node-row {
+/* One row height for every section header and tree node (12px × 1.5 line +
+   2×2px padding); the virtualizer's fixed-height estimate must match. */
+.wg-row {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  box-sizing: border-box;
   width: 100%;
+  height: 22px;
+  flex: none;
   padding: 2px 4px;
   border: none;
   border-radius: 4px;
   background: transparent;
   color: inherit;
   text-align: left;
-  cursor: default;
-  font-size: 12px;
-  line-height: 1.5;
+  font: inherit;
+  overflow: hidden;
 }
-.wg-node-row[data-depth]:not([data-depth="0"]) {
-  cursor: pointer;
+.wg-row-section {
+  align-items: center;
+}
+/* Flattened rows keep their causal depth as an indent (the tree hierarchy the
+   recursive renderer used to express by nesting); the indent itself is set as
+   an inline padding because it depends on the row's depth. */
+.wg-node-row {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 .wg-node-row[data-depth="0"] {
+  border-left-color: transparent;
+}
+.wg-node-row[data-unattributed="true"] {
+  background: rgba(230, 180, 90, 0.08);
+}
+.wg-row-section[data-tone="inbound"] {
+  color: color-mix(in srgb, var(--neu-accent) 70%, var(--neu-text));
+}
+.wg-row-section[data-tone="outbound"] {
+  color: color-mix(in srgb, var(--neu-success) 70%, var(--neu-text));
+}
+.wg-row-section[data-tone="unattributed"] {
+  color: color-mix(in srgb, #e6b45a 80%, var(--neu-text));
+}
+/* Pagination is scroll-driven (no button, no status line): reaching the end of
+   the window appends the next page. */
+button.wg-node-row:not(:disabled) {
   cursor: pointer;
 }
-.wg-node-row:hover {
+button.wg-node-row:disabled {
+  cursor: default;
+}
+button.wg-node-row:hover {
   background: rgba(255, 255, 255, 0.05);
 }
 .wg-twisty {
@@ -4815,6 +4855,7 @@ button.neu-settings-item.neu-settings-item-button:active {
 }
 .wg-summary {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4824,24 +4865,12 @@ button.neu-settings-item.neu-settings-item-button:active {
   opacity: 0.5;
   font-size: 10px;
 }
-.wg-children {
-  margin-left: 14px;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-  padding-left: 4px;
-}
-.wg-unattributed {
-  margin-bottom: 6px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  background: rgba(230, 180, 90, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(230, 180, 90, 0.22);
-}
 .wg-section-title {
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   opacity: 0.7;
-  margin-bottom: 2px;
+  margin-bottom: 0;
 }
 .plan-contract-bar {
   display: flex;
@@ -5156,13 +5185,9 @@ button.neu-settings-item.neu-settings-item-button:active {
 .constitution-btn[data-danger]:hover {
   background: rgba(220, 90, 90, 0.3);
 }
-/* EI Phase 1 panel pagination: a centered "load more" row under a governance
-   list when older durable pages remain. */
-.governance-load-more {
-  display: flex;
-  justify-content: center;
-  margin-top: 8px;
-}
+/* EI Phase 1 panel pagination: scrolling to the end of the pane appends the
+   next durable page (unified-scroll plan §9); there is no per-page affordance
+   in the markup. */
 /* A release-scope (runtime self-protection) rule: not an empty action slot but
    an explicit label, so the panel explains why it cannot be edited. */
 .constitution-protected {

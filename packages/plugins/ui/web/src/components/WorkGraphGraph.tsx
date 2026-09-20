@@ -1,41 +1,16 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { Show, createMemo, createSignal } from "solid-js";
 import {
   buildWorkGraphFileNavigation,
   type WorkGraphState,
-  type WorkGraphTreeNode,
 } from "@natalia/view-store";
-
-/**
- * One node row in the graph view. Unlike the causal forest, the graph view is
- * an explicit node/edge adjacency anchored on a file: each row is a node in the
- * "why changed" or "what changed" chain, so a reader sees the graph edges, not
- * just the tree shape.
- */
-function GraphNodeRow(props: { tree: WorkGraphTreeNode; depth: number }) {
-  return (
-    <div class="wg-node" data-depth={props.depth}>
-      <div class="wg-node-row" data-depth={props.depth}>
-        <span class="wg-twisty">
-          {props.tree.children.length ? "├" : "•"}
-        </span>
-        <span class="wg-kind" data-kind={props.tree.node.kind}>
-          {props.tree.node.kind}
-        </span>
-        <span class="wg-summary">{props.tree.node.summary}</span>
-        <Show when={props.tree.via}>
-          <span class="wg-via">← {props.tree.via}</span>
-        </Show>
-      </div>
-      <Show when={props.tree.children.length}>
-        <div class="wg-children">
-          <For each={props.tree.children}>
-            {(child) => <GraphNodeRow tree={child} depth={props.depth + 1} />}
-          </For>
-        </div>
-      </Show>
-    </div>
-  );
-}
+import {
+  flattenWorkGraphNodes,
+  flattenWorkGraphTrees,
+  toggleWorkGraphOverride,
+  workGraphSectionRow,
+  type WorkGraphRow,
+} from "./work-graph-rows";
+import { WorkGraphWindow } from "./WorkGraphWindow";
 
 /**
  * The independent Work Graph navigator (WG5): start from a file path and read
@@ -43,14 +18,58 @@ function GraphNodeRow(props: { tree: WorkGraphTreeNode; depth: number }) {
  * this touch" (forward chain). Complements the causal `WorkGraphTree` forest
  * with a file-anchored adjacency view; a path with no node shows an explicit
  * "unknown provenance" instead of a fabricated cause.
+ *
+ * Both chains render through the same fixed-height virtual window as the causal
+ * tree, so a deeply linked file never mounts an unbounded row list.
  */
 export function WorkGraphGraph(props: { state: WorkGraphState }) {
   const [filePath, setFilePath] = createSignal("");
+  const [overrides, setOverrides] = createSignal<ReadonlyMap<string, boolean>>(
+    new Map<string, boolean>(),
+  );
   const navigation = createMemo(() => {
     const path = filePath().trim();
     if (!path) return undefined;
     return buildWorkGraphFileNavigation(props.state, path);
   });
+  const rows = createMemo<WorkGraphRow[]>(() => {
+    const nav = navigation();
+    if (!nav || !nav.matches.length) return [];
+    return [
+      workGraphSectionRow(
+        "section:matches",
+        `Graph nodes targeting ${nav.filePath}`,
+        nav.matches.length,
+        "inbound",
+      ),
+      ...flattenWorkGraphNodes(nav.matches, { idPrefix: "matches" }),
+      workGraphSectionRow(
+        "section:why",
+        "Why changed (backward)",
+        nav.whyChanged.length,
+        "inbound",
+      ),
+      ...flattenWorkGraphTrees(nav.whyChanged, {
+        overrides: overrides(),
+        idPrefix: "why",
+      }),
+      workGraphSectionRow(
+        "section:what",
+        "What this touches (forward)",
+        nav.whatChanged.length,
+        "outbound",
+      ),
+      ...flattenWorkGraphTrees(nav.whatChanged, {
+        overrides: overrides(),
+        idPrefix: "what",
+      }),
+    ];
+  });
+  const toggleNode = (nodeID: string, expanded: boolean) => {
+    setOverrides((current) =>
+      toggleWorkGraphOverride(current, nodeID, expanded),
+    );
+  };
   return (
     <div class="wg-graph">
       <div class="wg-search">
@@ -64,41 +83,24 @@ export function WorkGraphGraph(props: { state: WorkGraphState }) {
       </div>
       <Show when={navigation()}>
         {(nav) => (
-          <div class="wg-navigation">
-            <Show
-              when={nav().matches.length}
-              fallback={
+          <Show
+            when={nav().matches.length}
+            fallback={
+              <div class="neu-gov-empty">
+                No graph node targets “{nav().filePath}” — unknown provenance.
+              </div>
+            }
+          >
+            <WorkGraphWindow
+              rows={rows()}
+              onToggleNode={toggleNode}
+              empty={
                 <div class="neu-gov-empty">
                   No graph node targets “{nav().filePath}” — unknown provenance.
                 </div>
               }
-            >
-              <div class="wg-section-title">
-                Why changed (backward) · {nav().filePath}
-              </div>
-              <Show
-                when={nav().whyChanged.length}
-                fallback={
-                  <div class="neu-gov-empty">No inbound causal edge.</div>
-                }
-              >
-                <For each={nav().whyChanged}>
-                  {(tree) => <GraphNodeRow tree={tree} depth={0} />}
-                </For>
-              </Show>
-              <div class="wg-section-title">What this touches (forward)</div>
-              <Show
-                when={nav().whatChanged.length}
-                fallback={
-                  <div class="neu-gov-empty">No outbound causal edge.</div>
-                }
-              >
-                <For each={nav().whatChanged}>
-                  {(tree) => <GraphNodeRow tree={tree} depth={0} />}
-                </For>
-              </Show>
-            </Show>
-          </div>
+            />
+          </Show>
         )}
       </Show>
       <Show when={!navigation()}>

@@ -9,6 +9,7 @@ import type { AppState, WorkGraphState } from "@natalia/view-store";
 import { WorkGraphTree } from "./components/WorkGraphTree";
 import { WorkGraphGraph } from "./components/WorkGraphGraph";
 import { useConfirmDialog } from "./components/ConfirmDialog";
+import { createScrollAutoAppend } from "./auto-append";
 
 export type GovernanceTab =
   | "constitution"
@@ -739,6 +740,7 @@ export function GovernancePane(props: {
   initialTab?: GovernanceTab;
 }) {
   const [tab, setTab] = createSignal<Tab>(props.initialTab ?? "drift");
+  const [contentEl, setContentEl] = createSignal<HTMLDivElement>();
   const [workGraphView, setWorkGraphView] = createSignal<"tree" | "graph">(
     "tree",
   );
@@ -818,7 +820,7 @@ export function GovernancePane(props: {
 
   // EI Phase 1 面板分页: append the next durable page for one list tab. The
   // cursor comes from the first-page bundle; the tab keeps the accumulated list
-  // so scroll/加载更多 appends instead of replacing.
+  // so scrolling to the end appends instead of replacing.
   async function loadMore(tab: GovernanceListTab) {
     const info = pageInfo()[tab];
     if (!info?.nextCursor || actionBusy()) return;
@@ -840,14 +842,59 @@ export function GovernancePane(props: {
       setPageInfo((current) => ({ ...current, [tab]: next }));
     } catch (error) {
       setActionNotice(
-        `加载更多失败：${error instanceof Error ? error.message : String(error)}`,
+        `加载下一页失败：${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
       setActionBusy(false);
     }
   }
 
-  // EI Phase 0: the user records a human validation note on a completion card
+  // Scroll-driven pagination for the list tabs (unified-scroll plan §9): the
+  // reader never clicks "加载更多"; reaching the end of the pane appends the
+  // next durable page for the active tab, and a first page that cannot fill the
+  // pane extends itself instead of trapping the reader at a dead end.
+  const listRowCount = (): number => {
+    const which = tab();
+    if (which === "decisions") return liveDecisions().length;
+    if (which === "evidence") return liveEvidence().length;
+    if (which === "completions") return liveCompletions().length;
+    if (which === "drift") return liveDrift().length;
+    return 0;
+  };
+  const autoAppend = createScrollAutoAppend({
+    scrollEl: contentEl,
+    moreAvailable: () => {
+      const which = tab();
+      if (
+        which !== "decisions" &&
+        which !== "evidence" &&
+        which !== "completions" &&
+        which !== "drift"
+      )
+        return false;
+      return !!pageInfo()[which]?.nextCursor && !actionBusy();
+    },
+    rowCount: listRowCount,
+    append: () => {
+      const which = tab();
+      if (
+        which === "decisions" ||
+        which === "evidence" ||
+        which === "completions" ||
+        which === "drift"
+      )
+        void loadMore(which);
+    },
+  });
+  // A tab switch or a freshly loaded bundle can leave a page shorter than the
+  // pane: check after every list change so the pane self-extends when needed.
+  createEffect(() => {
+    void liveDecisions();
+    void liveEvidence();
+    void liveCompletions();
+    void liveDrift();
+    autoAppend.check();
+  });
   // ("用户走 UI 补 humanValidation").
   async function recordHumanValidation(taskID: string) {
     const note = window.prompt(
@@ -1161,7 +1208,11 @@ export function GovernancePane(props: {
           Notices
         </button>
       </div>
-      <div class="neu-governance-content">
+      <div
+        class="neu-governance-content"
+        ref={setContentEl}
+        onScroll={() => autoAppend.check()}
+      >
         <Show when={loadErrors().length}>
           <div class="neu-gov-error">
             {loadErrors().join(" · ")}
@@ -1196,18 +1247,6 @@ export function GovernancePane(props: {
             <div class="neu-gov-empty">
               No drift findings yet. The evaluator opens them from accepted
               contracts, constitution hits or behaviour signals.
-            </div>
-          </Show>
-          <Show when={pageInfo().drift?.nextCursor}>
-            <div class="governance-load-more">
-              <button
-                type="button"
-                class="constitution-btn"
-                disabled={actionBusy()}
-                onClick={() => void loadMore("drift")}
-              >
-                加载更多（共 {pageInfo().drift?.total ?? 0} 条）
-              </button>
             </div>
           </Show>
         </Show>
@@ -1631,18 +1670,6 @@ export function GovernancePane(props: {
               workspace decisions come from an explicit workspace promotion.
             </div>
           </Show>
-          <Show when={pageInfo().decisions?.nextCursor}>
-            <div class="governance-load-more">
-              <button
-                type="button"
-                class="constitution-btn"
-                disabled={actionBusy()}
-                onClick={() => void loadMore("decisions")}
-              >
-                加载更多（共 {pageInfo().decisions?.total ?? 0} 条）
-              </button>
-            </div>
-          </Show>
         </Show>
         <Show when={tab() === "evidence"}>
           <For
@@ -1717,18 +1744,6 @@ export function GovernancePane(props: {
               No evidence.recorded for this session yet. Evidence appears after
               the model runs record_validation / record_completion or Nia
               submits an audit report.
-            </div>
-          </Show>
-          <Show when={pageInfo().evidence?.nextCursor}>
-            <div class="governance-load-more">
-              <button
-                type="button"
-                class="constitution-btn"
-                disabled={actionBusy()}
-                onClick={() => void loadMore("evidence")}
-              >
-                加载更多（共 {pageInfo().evidence?.total ?? 0} 条）
-              </button>
             </div>
           </Show>
         </Show>
@@ -1844,41 +1859,34 @@ export function GovernancePane(props: {
               model calls record_completion with its validation matrix.
             </div>
           </Show>
-          <Show when={pageInfo().completions?.nextCursor}>
-            <div class="governance-load-more">
+        </Show>
+        <Show when={tab() === "workgraph"}>
+          <div class="wg-tab">
+            <div class="wg-view-toggle">
               <button
                 type="button"
                 class="constitution-btn"
-                disabled={actionBusy()}
-                onClick={() => void loadMore("completions")}
+                data-active={workGraphView() === "tree"}
+                onClick={() => setWorkGraphView("tree")}
               >
-                加载更多（共 {pageInfo().completions?.total ?? 0} 条）
+                因果树
+              </button>
+              <button
+                type="button"
+                class="constitution-btn"
+                data-active={workGraphView() === "graph"}
+                onClick={() => setWorkGraphView("graph")}
+              >
+                图导航
               </button>
             </div>
-          </Show>
-        </Show>
-        <Show when={tab() === "workgraph"}>
-          <div class="wg-view-toggle">
-            <button
-              type="button"
-              class="constitution-btn"
-              data-active={workGraphView() === "tree"}
-              onClick={() => setWorkGraphView("tree")}
+            <Show
+              when={workGraphView() === "tree"}
+              fallback={<WorkGraphGraph state={workGraphState()} />}
             >
-              因果树
-            </button>
-            <button
-              type="button"
-              class="constitution-btn"
-              data-active={workGraphView() === "graph"}
-              onClick={() => setWorkGraphView("graph")}
-            >
-              图导航
-            </button>
+              <WorkGraphTree state={workGraphState()} />
+            </Show>
           </div>
-          <Show when={workGraphView() === "tree"} fallback={<WorkGraphGraph state={workGraphState()} />}>
-            <WorkGraphTree state={workGraphState()} />
-          </Show>
         </Show>
         <Show when={tab() === "notices"}>
           <div class="neu-gov-section-title">Runtime Notices</div>
