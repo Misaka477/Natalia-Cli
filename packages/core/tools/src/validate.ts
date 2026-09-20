@@ -158,3 +158,35 @@ export function assertValidToolParameters(
     throw new Error(`tool parameter validation failed: ${detail}`);
   }
 }
+
+/**
+ * Validate a tool's output against the shape it declared.
+ *
+ * A tool's `execute` returns the model-facing string, not a value, so the
+ * declared schema is a contract only for the tools whose result is JSON. The
+ * check runs on that subset and skips everything else rather than forcing every
+ * text-returning tool to wrap its output.
+ *
+ * A tool whose JSON has drifted from what it declared fails here, with the
+ * exact paths, instead of handing the model a shape it was told to expect
+ * differently — and the caller turns that into a normal tool failure.
+ */
+export function validateToolOutput(
+  schema: ToolSchema,
+  output: string,
+): ToolParameterError[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    // Not JSON: the schema describes a JSON result this call did not produce.
+    return [];
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+    return [];
+  return validateObject(
+    schema as unknown as JsonSchemaLike,
+    parsed as Record<string, unknown>,
+    "value",
+  );
+}
