@@ -1,4 +1,16 @@
 import type { ContextEntry } from "./context";
+import { ensureBuiltinProviderAdapters } from "./builtin-provider-adapters";
+import {
+  anthropicCacheControl,
+  resolveEndpointCapabilities,
+  type CacheRetention,
+  type EndpointCapabilities,
+} from "./provider-caps";
+import {
+  getProviderAdapter,
+  resolveEndpointProtocol,
+  type ProviderFormat,
+} from "./provider-adapters";
 import { modelSelectionStatus, resolveEffectiveModel } from "@natalia/config";
 import {
   parseModelRef,
@@ -9,7 +21,11 @@ import {
   type ProviderContentPart,
   type ProviderReasoningBlock,
 } from "@natalia/contracts";
-import { providerError, providerErrorFromHttp } from "./errors";
+import {
+  asProviderError,
+  providerError,
+  providerErrorFromHttp,
+} from "./errors";
 import {
   CONSERVATIVE_MODEL_LIMIT_FALLBACK,
   knownModelOutputLimit,
@@ -650,6 +666,12 @@ export type OpenAICompatibleProviderOptions = {
   interleavedReasoningField?: OpenAICompatibleReasoningField;
   timeoutMs?: number;
   streamIdleTimeoutMs?: number;
+  /** Declared optional cache extensions; absent means none are used. */
+  capabilities?: EndpointCapabilities;
+  /** Stable session id, sent only when a cache key is declared. */
+  sessionID?: string;
+  /** How long this endpoint's prompt cache should be retained. */
+  cacheRetention?: CacheRetention;
 };
 
 export type AnthropicProviderOptions = {
@@ -666,6 +688,12 @@ export type AnthropicProviderOptions = {
   reasoningEffort?: string;
   thinkingEnabled?: boolean;
   thinkingBudgetTokens?: number;
+  /** Declared optional cache extensions; absent means none are used. */
+  capabilities?: EndpointCapabilities;
+  /** Stable session id, sent only when the endpoint declares affinity headers. */
+  sessionID?: string;
+  /** How long this endpoint's prompt cache should be retained. */
+  cacheRetention?: CacheRetention;
 };
 
 export type GeminiProviderOptions = {
@@ -679,6 +707,442 @@ export type GeminiProviderOptions = {
   temperature?: number;
   maxTokens?: number;
 };
+
+/**
+ * The session-cache-key parameter for an OpenAI-family endpoint, or nothing.
+ *
+ * Two independent gates: the endpoint must declare that it accepts a key at
+ * all, and must name the spelling. Neither is inferred.
+ */
+function openAICacheKeyParams(
+  capabilities: EndpointCapabilities | undefined,
+  sessionID: string | undefined,
+  retention: CacheRetention | undefined,
+): Record<string, unknown> {
+  const caps = resolveEndpointCapabilities(capabilities);
+  // `none` opts out of the cache entirely, so the key has nothing to route.
+  if (retention === "none") return {};
+  if (!caps.supportsPromptCacheKey || !sessionID) return {};
+  // `prompt_cache_key` is the spelling on the wire, which is what these
+  // adapters post. `promptCacheKey` is the AI SDK's option name for the same
+  // thing; it only applies to an endpoint that speaks the SDK's shape rather
+  // than the HTTP one, so it is opt-in rather than the default.
+  const field = caps.promptCacheKeyField ?? "prompt_cache_key";
+  return { [field]: sessionID };
+}
+
+export type OpenAIResponsesProviderOptions = {
+  apiKey: string;
+  model: string;
+  baseURL?: string;
+  provider?: string;
+  fetch?: typeof fetch;
+  authHeader?: string;
+  customHeaders?: Record<string, string>;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  reasoningEffort?: string;
+  timeoutMs?: number;
+  streamIdleTimeoutMs?: number;
+  /** Declared optional cache extensions; absent means none are used. */
+  capabilities?: EndpointCapabilities;
+  /** Stable session id, sent only when a cache key is declared. */
+  sessionID?: string;
+  /** How long this endpoint's prompt cache should be retained. */
+  cacheRetention?: CacheRetention;
+};
+
+/** Responses rejects `max_output_tokens` below this. */
+const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
+
+function responsesURL(baseURL: string) {
+  return baseURL.endsWith("/responses") ? baseURL : `${baseURL}/responses`;
+}
+
+/** One Responses `input` item. */
+type ResponsesInputItem =
+  | { role: "system" | "user"; content: Array<Record<string, unknown>> }
+  | { type: "function_call"; call_id: string; name: string; arguments: string }
+  | { type: "function_call_output"; call_id: string; output: string };
+
+/**
+ * Map the neutral message list onto Responses `input` items.
+ *
+ * The Responses family has no `messages` array: a user turn is a
+ * `{role, content}` item, an assistant tool call is a `function_call` item, and
+ * a tool result is a `function_call_output` item. Tool calls therefore have to
+ * be lifted out of the assistant message that carried them, because the pairing
+ * lives in `call_id` rather than in message order.
+ */
+function toResponsesInput(
+  messages: readonly ProviderMessage[],
+): ResponsesInputItem[] {
+  const items: ResponsesInputItem[] = [];
+  for (const message of messages) {
+    if (message.role === "tool") {
+      if (!message.toolCallID) continue;
+      items.push({
+        type: "function_call_output",
+        call_id: message.toolCallID,
+        output: message.content,
+      });
+      continue;
+    }
+    if (message.role === "assistant") {
+      // An assistant tool call is its own `function_call` item, so it has to be
+      // lifted out of the message that carried it. Skipping the role here would
+      // silently drop every historical call and the results that pair with it.
+      for (const call of message.toolCalls ?? [])
+        items.push({
+          type: "function_call",
+          call_id: call.id,
+          name: call.name,
+          arguments: call.arguments,
+        });
+      continue;
+    }
+    if (message.role !== "user" && message.role !== "system") continue;
+    const content: Array<Record<string, unknown>> = [];
+    if (message.content)
+      content.push({ type: "input_text", text: message.content });
+    for (const image of message.images ?? [])
+      content.push({
+        type: "input_image",
+        image_url: materializedDataURL(image),
+      });
+    // An empty content array is rejected, so a message that carried only
+    // attachments that failed to materialise still needs a text part.
+    if (!content.length) content.push({ type: "input_text", text: "" });
+    items.push({ role: message.role, content });
+  }
+  return items;
+}
+
+/**
+ * The retention parameter pair for one endpoint, or nothing at all.
+ *
+ * Exactly one of the two shapes is ever emitted, and only when the endpoint
+ * declared it accepts that one. `prompt_cache_key` is separate: it rides along
+ * whenever a key is configured, because a session key is accepted far more
+ * widely than either retention parameter.
+ */
+/**
+ * The prompt-cache parameters for a Responses endpoint, or nothing.
+ *
+ * The family has two mutually exclusive retention shapes and sending the one a
+ * deployment rejects is a hard 400, so which one goes out comes from the
+ * declaration rather than from a model id. `prompt_cache_key` is separate and
+ * rides along whenever a key is declared, because a session key is accepted far
+ * more widely than either retention parameter.
+ */
+function responsesPromptCacheParams(
+  capabilities: EndpointCapabilities | undefined,
+  sessionID: string | undefined,
+  retention: CacheRetention | undefined,
+): Record<string, unknown> {
+  if (retention === "none") return {};
+  const caps = resolveEndpointCapabilities(capabilities);
+  const params = {
+    ...openAICacheKeyParams(capabilities, sessionID, retention),
+  };
+  if (caps.supportsExplicitPromptCacheMode) {
+    params.prompt_cache_options = caps.supportsLongCacheRetention
+      ? { mode: "explicit", ttl: "30m" }
+      : { mode: "explicit" };
+  } else if (caps.supportsLongCacheRetention) {
+    params.prompt_cache_retention = "24h";
+  }
+  return params;
+}
+
+type ResponsesSSEState = {
+  toolCalls: Map<number, ProviderToolCall>;
+  /** Arguments accumulated per tool-call output index. */
+  toolArguments: Map<number, string>;
+  /** Item id of the tool call currently being streamed, per output index. */
+  toolItemIDs: Map<number, string>;
+  finishReason?: ProviderFinishReason;
+  responseID?: string;
+};
+
+function parseResponsesSSEPart(
+  part: string,
+  state: ResponsesSSEState,
+): ProviderStreamChunk[] {
+  const chunks: ProviderStreamChunk[] = [];
+  for (const line of part.split(/\r?\n/u)) {
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice("data:".length).trim();
+    if (!data || data === "[DONE]") continue;
+    const event = JSON.parse(data) as {
+      type?: string;
+      response?: { id?: string; usage?: ResponsesUsage };
+      item?: { id?: string; type?: string; name?: string; call_id?: string };
+      output_index?: number;
+      delta?: string;
+      arguments?: string;
+    };
+    if (process.env.NATALIA_DEBUG_PROVIDER === "1")
+      console.debug("[provider] responses SSE", event.type);
+
+    switch (event.type) {
+      case "response.created":
+        if (event.response?.id) state.responseID = event.response.id;
+        break;
+      case "response.output_item.added":
+      case "response.output_item.done": {
+        const index = event.output_index ?? state.toolCalls.size;
+        if (event.item?.type !== "function_call") break;
+        if (event.item.id) state.toolItemIDs.set(index, event.item.id);
+        // The item may already exist from an earlier `added`; only create it
+        // once so a `done` event cannot reset accumulated arguments.
+        if (
+          !state.toolCalls.has(index) &&
+          event.item.call_id &&
+          event.item.name
+        )
+          state.toolCalls.set(index, {
+            id: event.item.call_id,
+            name: event.item.name,
+            arguments: "",
+          });
+        break;
+      }
+      case "response.output_text.delta":
+        if (event.delta) chunks.push({ type: "content", text: event.delta });
+        break;
+      case "response.reasoning_text.delta":
+      case "response.reasoning_summary_text.delta":
+        if (event.delta)
+          chunks.push({
+            type: "thinking",
+            text: event.delta,
+            field: "reasoning_text",
+          });
+        break;
+      case "response.refusal.delta":
+        // A refusal is model output the caller must see; it is not an error.
+        if (event.delta) chunks.push({ type: "content", text: event.delta });
+        break;
+      case "response.function_call_arguments.delta": {
+        const index = event.output_index ?? 0;
+        state.toolArguments.set(
+          index,
+          (state.toolArguments.get(index) ?? "") + (event.delta ?? ""),
+        );
+        break;
+      }
+      case "response.function_call_arguments.done": {
+        const index = event.output_index ?? 0;
+        const call = state.toolCalls.get(index);
+        if (call) {
+          const finalArguments =
+            event.arguments ?? state.toolArguments.get(index) ?? "";
+          state.toolCalls.set(index, { ...call, arguments: finalArguments });
+        }
+        break;
+      }
+      case "response.completed":
+      case "response.incomplete": {
+        state.finishReason =
+          event.type === "response.incomplete" ? "length" : "stop";
+        const usage = event.response?.usage;
+        if (usage) chunks.push(responsesUsageChunk(usage));
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return chunks;
+}
+
+type ResponsesUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  input_tokens_details?: {
+    cached_tokens?: number;
+    cache_write_tokens?: number;
+  } | null;
+  output_tokens_details?: { reasoning_tokens?: number } | null;
+};
+
+/**
+ * Map Responses usage onto the neutral chunk.
+ *
+ * Unlike Anthropic — whose `input_tokens` excludes cached traffic — the
+ * Responses family **includes** cached and cache-write tokens inside
+ * `input_tokens`. Reporting it directly would double-count every cached token
+ * and inflate the request total, so both are subtracted here.
+ */
+function responsesUsageChunk(usage: ResponsesUsage): ProviderStreamChunk {
+  const cached = usage.input_tokens_details?.cached_tokens ?? 0;
+  const written = usage.input_tokens_details?.cache_write_tokens ?? 0;
+  const reported = usage.input_tokens ?? 0;
+  return {
+    type: "usage",
+    inputTokens: Math.max(0, reported - cached - written),
+    outputTokens: usage.output_tokens ?? 0,
+    ...(cached === 0 ? {} : { cacheReadInputTokens: cached }),
+    ...(written === 0 ? {} : { cacheCreationInputTokens: written }),
+  };
+}
+
+async function* streamResponsesSSE(
+  body: ReadableStream<Uint8Array>,
+  streamIdleTimeoutMs?: number,
+): AsyncIterable<ProviderStreamChunk> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const state: ResponsesSSEState = {
+    toolCalls: new Map(),
+    toolArguments: new Map(),
+    toolItemIDs: new Map(),
+  };
+  let buffer = "";
+  while (true) {
+    const next = await readWithIdleTimeout(reader, streamIdleTimeoutMs);
+    if (next.done) break;
+    buffer += decoder.decode(next.value, { stream: true });
+    const parts = buffer.split(/\r?\n\r?\n/u);
+    buffer = parts.pop() ?? "";
+    for (const part of parts) yield* parseResponsesSSEPart(part, state);
+  }
+  buffer += decoder.decode();
+  if (buffer) yield* parseResponsesSSEPart(buffer, state);
+  if (state.toolCalls.size)
+    yield { type: "tool_call", calls: [...state.toolCalls.values()] };
+  yield { type: "done", finishReason: state.finishReason };
+}
+
+/**
+ * OpenAI Responses adapter.
+ *
+ * A separate family from chat completions rather than a flag on it: the request
+ * has no `messages` array, tool calls are standalone `function_call` items
+ * keyed by `call_id`, and the prompt-cache controls are two mutually exclusive
+ * parameter pairs. Folding that into the completions adapter would put every one
+ * of those differences behind a conditional.
+ */
+export class OpenAIResponsesProvider implements StreamingProvider {
+  readonly provider: string;
+  readonly model: string;
+  readonly imageInput = true;
+  private readonly apiKey: string;
+  private readonly baseURL: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly authHeader: string;
+  private readonly customHeaders: Record<string, string>;
+  private readonly temperature?: number;
+  private readonly maxTokens?: number;
+  private readonly topP?: number;
+  private readonly reasoningEffort?: string;
+  private readonly timeoutMs?: number;
+  private readonly streamIdleTimeoutMs?: number;
+  private readonly capabilities?: EndpointCapabilities;
+  private readonly sessionID?: string;
+  private readonly cacheRetention?: CacheRetention;
+
+  constructor(options: OpenAIResponsesProviderOptions) {
+    this.apiKey = options.apiKey;
+    this.model = options.model;
+    this.baseURL = (options.baseURL ?? "https://api.openai.com/v1").replace(
+      /\/+$/u,
+      "",
+    );
+    this.provider = options.provider ?? "openai-responses";
+    this.fetchImpl = options.fetch ?? fetch;
+    this.authHeader = options.authHeader ?? "authorization";
+    this.customHeaders = options.customHeaders ?? {};
+    this.temperature = options.temperature;
+    this.maxTokens = options.maxTokens;
+    this.topP = options.topP;
+    this.reasoningEffort = options.reasoningEffort;
+    this.timeoutMs = options.timeoutMs;
+    this.streamIdleTimeoutMs = options.streamIdleTimeoutMs;
+    this.capabilities = options.capabilities;
+    this.sessionID = options.sessionID;
+    this.cacheRetention = options.cacheRetention;
+  }
+
+  async *stream(
+    request: ProviderStreamRequest,
+  ): AsyncIterable<ProviderStreamChunk> {
+    const timeout = this.timeoutMs;
+    const signal = timeout ? AbortSignal.timeout(timeout) : request.signal;
+    const input = toResponsesInput(request.messages);
+    const tools =
+      request.toolChoice === "none"
+        ? undefined
+        : request.tools?.map((tool) => ({
+            type: "function",
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+          }));
+    const body: Record<string, unknown> = {
+      model: this.model,
+      input,
+      stream: true,
+      // Stateless by default: the harness owns history, so retaining it server
+      // side would duplicate state nothing reads.
+      store: false,
+      ...responsesPromptCacheParams(
+        this.capabilities,
+        this.sessionID,
+        this.cacheRetention,
+      ),
+      ...(tools?.length ? { tools } : {}),
+      ...(request.toolChoice && request.toolChoice !== "none"
+        ? { tool_choice: request.toolChoice }
+        : {}),
+      ...(this.maxTokens === undefined
+        ? {}
+        : {
+            max_output_tokens: Math.max(
+              this.maxTokens,
+              OPENAI_RESPONSES_MIN_OUTPUT_TOKENS,
+            ),
+          }),
+      ...(this.temperature === undefined
+        ? {}
+        : { temperature: this.temperature }),
+      ...(this.topP === undefined ? {} : { top_p: this.topP }),
+      ...(this.reasoningEffort
+        ? { reasoning: { effort: this.reasoningEffort } }
+        : {}),
+    };
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(responsesURL(this.baseURL), {
+        method: "POST",
+        headers: {
+          [this.authHeader]: `Bearer ${this.apiKey}`,
+          "content-type": "application/json",
+          ...this.customHeaders,
+        },
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (error) {
+      throw asProviderError(error);
+    }
+    if (!response.ok)
+      throw providerErrorFromHttp({
+        statusCode: response.status,
+        statusText: response.statusText,
+        retryAfter: response.headers.get("retry-after"),
+        retryAfterMs: response.headers.get("retry-after-ms"),
+        message: await safeResponseText(response),
+      });
+    if (!response.body)
+      throw new Error("OpenAI Responses response body unavailable");
+    yield* streamResponsesSSE(response.body, this.streamIdleTimeoutMs);
+  }
+}
 
 export class OpenAICompatibleProvider implements StreamingProvider {
   readonly provider: string;
@@ -698,6 +1162,9 @@ export class OpenAICompatibleProvider implements StreamingProvider {
   private readonly interleavedReasoningField?: OpenAICompatibleReasoningField;
   private readonly timeoutMs?: number;
   private readonly streamIdleTimeoutMs?: number;
+  private readonly capabilities?: EndpointCapabilities;
+  private readonly sessionID?: string;
+  private readonly cacheRetention?: CacheRetention;
   private modelMetadata?: ReturnType<
     OpenAICompatibleProvider["fetchModelMetadata"]
   >;
@@ -721,6 +1188,9 @@ export class OpenAICompatibleProvider implements StreamingProvider {
     this.interleavedReasoningField = options.interleavedReasoningField;
     this.timeoutMs = options.timeoutMs;
     this.streamIdleTimeoutMs = options.streamIdleTimeoutMs;
+    this.capabilities = options.capabilities;
+    this.sessionID = options.sessionID;
+    this.cacheRetention = options.cacheRetention;
   }
 
   async *stream(
@@ -762,6 +1232,15 @@ export class OpenAICompatibleProvider implements StreamingProvider {
         tool_choice: request.toolChoice,
         stream: true,
         stream_options: { include_usage: true },
+        // A session key is an extension rather than part of either OpenAI
+        // spec, and the field spelling differs per deployment. Both come from
+        // the declaration; a key sent under the wrong name is silently ignored,
+        // which looks exactly like a cache that never works.
+        ...openAICacheKeyParams(
+          this.capabilities,
+          this.sessionID,
+          this.cacheRetention,
+        ),
         ...(this.temperature === undefined
           ? {}
           : { temperature: this.temperature }),
@@ -794,12 +1273,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
         arguments: call.function.arguments,
       }));
       if (toolCalls?.length) yield { type: "tool_call", calls: toolCalls };
-      if (data.usage)
-        yield {
-          type: "usage",
-          inputTokens: data.usage.prompt_tokens,
-          outputTokens: data.usage.completion_tokens,
-        };
+      if (data.usage) yield openAIUsageChunk(data.usage);
       yield {
         type: "done",
         finishReason: normalizeOpenAIFinishReason(
@@ -907,6 +1381,9 @@ export class AnthropicProvider implements StreamingProvider {
   private readonly thinkingEnabled?: boolean;
   private readonly thinkingBudgetTokens?: number;
   private readonly streamIdleTimeoutMs?: number;
+  private readonly capabilities?: EndpointCapabilities;
+  private readonly sessionID?: string;
+  private readonly cacheRetention?: CacheRetention;
   private modelMetadata?: Promise<
     Array<{
       id: string;
@@ -933,6 +1410,9 @@ export class AnthropicProvider implements StreamingProvider {
     this.thinkingEnabled = options.thinkingEnabled;
     this.thinkingBudgetTokens = options.thinkingBudgetTokens;
     this.streamIdleTimeoutMs = options.streamIdleTimeoutMs;
+    this.capabilities = options.capabilities;
+    this.sessionID = options.sessionID;
+    this.cacheRetention = options.cacheRetention;
   }
 
   async *stream(
@@ -940,6 +1420,11 @@ export class AnthropicProvider implements StreamingProvider {
   ): AsyncIterable<ProviderStreamChunk> {
     request = await materializeProviderMessages(request);
 
+    const caps = resolveEndpointCapabilities(this.capabilities);
+    const cacheControl = anthropicCacheControl({
+      retention: this.cacheRetention ?? "short",
+      supportsLongCacheRetention: caps.supportsLongCacheRetention,
+    });
     const timeout = this.timeoutMs
       ? AbortSignal.timeout(this.timeoutMs)
       : undefined;
@@ -967,41 +1452,57 @@ export class AnthropicProvider implements StreamingProvider {
     const systemMessages = request.messages
       .filter((message) => message.role === "system")
       .map((message) => message.content);
+    const conversationMessages = request.messages
+      .filter((message) => message.role !== "system")
+      .map(toAnthropicMessage);
+    // ADR D1/E: mark the end of the conversation so the whole prefix is cached,
+    // not just the header. Anthropic only *writes* a cache entry at a
+    // breakpoint, so without one here the conversation is re-billed in full on
+    // every turn however stable it is. This is the single largest cache win on
+    // this family.
+    markConversationBreakpoint(conversationMessages, cacheControl);
+    // `cache_control` on tool definitions is an extension the Messages spec
+    // added after tool caching shipped, so a conforming endpoint is not obliged
+    // to accept it. Gated on a declaration rather than assumed, and on the same
+    // retention marker the system block uses.
+    const toolCacheControl =
+      caps.supportsCacheControlOnTools && cacheControl
+        ? { cache_control: cacheControl }
+        : {};
     const anthropicTools =
       request.toolChoice === "none"
         ? undefined
-        : request.tools?.map((tool, index, all) =>
-            index === all.length - 1
-              ? {
-                  name: tool.name,
-                  description: tool.description,
-                  input_schema: tool.parameters,
-                  cache_control: { type: "ephemeral" },
-                }
-              : {
-                  name: tool.name,
-                  description: tool.description,
-                  input_schema: tool.parameters,
-                },
-          );
+        : request.tools?.map((tool, index, all) => ({
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.parameters,
+            ...(index === all.length - 1 ? toolCacheControl : {}),
+          }));
     const response = await this.fetchImpl(messagesURL(this.baseURL), {
       method: "POST",
       headers: {
         "x-api-key": this.apiKey,
         "anthropic-version": this.version,
         "content-type": "application/json",
+        // A replica-routing endpoint needs this or requests are load-balanced
+        // and the prefix cache never lands. Sent only when declared.
+        ...(caps.sendSessionAffinityHeaders && this.sessionID
+          ? {
+              [caps.sessionAffinityFormat === "openrouter"
+                ? "x-session-id"
+                : "x-session-affinity"]: this.sessionID,
+            }
+          : {}),
       },
       body: JSON.stringify({
         model: this.model,
-        messages: request.messages
-          .filter((message) => message.role !== "system")
-          .map(toAnthropicMessage),
+        messages: conversationMessages,
         system: systemMessages.length
           ? [
               {
                 type: "text",
                 text: systemMessages.join("\n\n"),
-                cache_control: { type: "ephemeral" },
+                ...(cacheControl ? { cache_control: cacheControl } : {}),
               },
             ]
           : undefined,
@@ -1408,40 +1909,32 @@ export function providerFromKind(
   input: OpenAICompatibleProviderOptions & {
     providerName?: string;
     thinkingBudgetTokens?: number;
+    /** Declared wire format; resolved from `driver` only when absent. */
+    format?: ProviderFormat;
+    /** Declared optional cache extensions; absent means none are used. */
+    capabilities?: EndpointCapabilities;
+    /** Stable session id, sent only when a cache key is declared. */
+    sessionID?: string;
+    /** How long this endpoint's prompt cache should be retained. */
+    cacheRetention?: CacheRetention;
   },
 ) {
-  const kind = (input.providerName ?? input.provider ?? "").toLowerCase();
-  if (kind.includes("anthropic") || kind.includes("claude"))
-    return new AnthropicProvider({
-      apiKey: input.apiKey,
-      model: input.model,
-      baseURL: input.baseURL,
-      provider: input.providerName ?? input.provider,
-      fetch: input.fetch,
-      timeoutMs: input.timeoutMs,
-      streamIdleTimeoutMs: input.streamIdleTimeoutMs,
-      maxTokens: input.maxTokens,
-      temperature: input.temperature,
-      reasoningEffort: input.reasoningEffort,
-      thinkingEnabled: input.thinkingEnabled,
-      thinkingBudgetTokens: input.thinkingBudgetTokens,
-    });
-  if (kind.includes("gemini") || kind.includes("google"))
-    return new GeminiProvider({
-      apiKey: input.apiKey,
-      model: input.model,
-      baseURL: input.baseURL,
-      provider: input.providerName ?? input.provider,
-      fetch: input.fetch,
-      timeoutMs: input.timeoutMs,
-      streamIdleTimeoutMs: input.streamIdleTimeoutMs,
-      maxTokens: input.maxTokens,
-      temperature: input.temperature,
-    });
-  return new OpenAICompatibleProvider({
-    ...input,
-    provider: input.providerName,
+  const { format } = resolveEndpointProtocol({
+    driver: input.providerName ?? input.provider,
+    protocol: input.format ? { format: input.format } : undefined,
   });
+  // Built-ins register on first use, so no caller has to arrange an import.
+  ensureBuiltinProviderAdapters();
+  const adapter = getProviderAdapter(format);
+  // Fail loudly rather than silently falling back: an unrecognised format that
+  // quietly became an OpenAI request would send the wrong shape to an endpoint
+  // and fail there, far from the cause.
+  if (!adapter)
+    throw new Error(`no provider adapter is registered for format "${format}"`);
+  return adapter.create({
+    ...input,
+    provider: input.providerName ?? input.provider,
+  }) as StreamingProvider;
 }
 
 function interleavedReasoningFieldForModel(
@@ -1483,7 +1976,15 @@ export function providerForModel(
   config: ConfigV3,
   ref: ModelRef | string | null | undefined,
   _variantName?: string,
-  requestOverride?: { reasoningEffort?: string },
+  requestOverride?: {
+    reasoningEffort?: string;
+    /**
+     * Stable session id, used only when the endpoint declares a cache key.
+     * Per-session rather than global: each session, subagent and collaborator
+     * stream needs its own key so their caches do not evict each other.
+     */
+    sessionID?: string;
+  },
 ): StreamingProvider | undefined {
   if (!ref) return undefined;
   let modelRef: ModelRef;
@@ -1502,6 +2003,14 @@ export function providerForModel(
     // by runtime status, model metadata, and existing evaluator contracts.
     providerName: providerConfig.driver,
     provider: providerConfig.driver,
+    // The declared wire format wins; `providerFromKind` resolves the fallback.
+    format: providerConfig.protocol?.format,
+    // Declared cache behaviour travels with the endpoint rather than being
+    // guessed per adapter: which extensions this deployment accepts, and how
+    // long its cache should be retained.
+    capabilities: providerConfig.protocol?.capabilities,
+    cacheRetention: providerConfig.protocol?.cacheRetention,
+    sessionID: requestOverride?.sessionID,
     apiKey: providerConfig.connection.apiKey,
     model: effective.ref.model,
     baseURL: providerConfig.connection.baseURL,
@@ -1669,10 +2178,7 @@ type GeminiStreamChunk = {
 };
 
 type OpenAIChatCompletion = {
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-  };
+  usage?: OpenAIRawUsage;
   choices?: Array<{
     finish_reason?: string | null;
     message?: {
@@ -1685,11 +2191,38 @@ type OpenAIChatCompletion = {
   }>;
 };
 
+/**
+ * The usage fields an OpenAI-compatible endpoint reports.
+ *
+ * `prompt_tokens_details.cached_tokens` is the only cache signal this family
+ * emits: OpenAI caches a matching prefix implicitly and bills no write, so the
+ * read is the whole story and `cacheCreationInputTokens` stays absent.
+ */
+type OpenAIRawUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  prompt_tokens_details?: { cached_tokens?: number } | null;
+};
+
+/**
+ * Map OpenAI-compatible usage into the provider-neutral chunk.
+ *
+ * Both the streaming and buffered paths go through here so they cannot drift:
+ * a session whose usage is read by one path and not the other would report a
+ * hit rate that depends on which code path happened to serve the request.
+ */
+function openAIUsageChunk(usage: OpenAIRawUsage): ProviderStreamChunk {
+  const cached = usage.prompt_tokens_details?.cached_tokens;
+  return {
+    type: "usage",
+    inputTokens: usage.prompt_tokens,
+    outputTokens: usage.completion_tokens,
+    ...(cached === undefined ? {} : { cacheReadInputTokens: cached }),
+  };
+}
+
 type OpenAIStreamChunk = {
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-  } | null;
+  usage?: OpenAIRawUsage | null;
   choices?: Array<{
     recipient?: string;
     function_call?: { name?: string; arguments?: string };
@@ -2153,12 +2686,7 @@ function parseSSEChunks(
     const data = line.slice("data:".length).trim();
     if (!data || data === "[DONE]") continue;
     const parsed = JSON.parse(data) as OpenAIStreamChunk;
-    if (parsed.usage)
-      chunks.push({
-        type: "usage",
-        inputTokens: parsed.usage.prompt_tokens,
-        outputTokens: parsed.usage.completion_tokens,
-      });
+    if (parsed.usage) chunks.push(openAIUsageChunk(parsed.usage));
     const choice = parsed.choices?.[0];
     if (choice?.finish_reason)
       completion.finishReason = normalizeOpenAIFinishReason(
@@ -2539,6 +3067,53 @@ function anthropicContentParts(
       ];
     },
   );
+}
+
+/** Content block types an Anthropic cache breakpoint may sit on. */
+const ANTHROPIC_CACHEABLE_BLOCKS = new Set([
+  "text",
+  "image",
+  "tool_result",
+  "tool_addition",
+  "tool_removal",
+]);
+
+/**
+ * Mark the last message of a conversation with a cache breakpoint, in place.
+ *
+ * Anthropic writes a cache entry only where a `cache_control` marker sits, so a
+ * request whose breakpoints are all in the header caches nothing of the
+ * conversation — every turn re-bills the whole history. Marking the final
+ * message extends the cached prefix over it.
+ *
+ * Only the last message, and only on a block type the API accepts the marker on.
+ * A trailing message that cannot carry one is simply left unmarked rather than
+ * moved: the header breakpoints still cover the stable part.
+ */
+function markConversationBreakpoint(
+  messages: Array<{
+    role: string;
+    content: unknown;
+  }>,
+  cacheControl: { type: "ephemeral"; ttl?: "1h" } | undefined,
+): void {
+  if (!cacheControl || messages.length === 0) return;
+  const last = messages[messages.length - 1]!;
+  if (last.role !== "user" && last.role !== "assistant") return;
+  if (Array.isArray(last.content)) {
+    const lastBlock = last.content[last.content.length - 1] as
+      | { type?: string; cache_control?: unknown }
+      | undefined;
+    if (!lastBlock || !ANTHROPIC_CACHEABLE_BLOCKS.has(lastBlock.type ?? ""))
+      return;
+    lastBlock.cache_control = cacheControl;
+    return;
+  }
+  // A bare string has no block to mark, so it becomes one. The conversion above
+  // only yields a string when the message carried nothing else.
+  last.content = [
+    { type: "text", text: last.content, cache_control: cacheControl },
+  ];
 }
 
 function toAnthropicMessage(message: ProviderMessage) {

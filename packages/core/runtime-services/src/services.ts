@@ -401,6 +401,16 @@ export type ProviderRunnerInput = {
   setActiveTurnID(id: string | undefined): void;
   selectedAgent(): AgentDefinition | undefined;
   setSelectedAgent(agent: AgentDefinition | undefined): void;
+  /**
+   * The session's start date, `YYYY-MM-DD`, snapshotted when its execution
+   * state was built. Rendered in the environment block; absent on a runner with
+   * no session to name, in which case no date is shown rather than one invented.
+   */
+  sessionStartedAt?: () => string | undefined;
+  /** The date the session's history currently reflects, for the rollover check. */
+  sessionCurrentDate?: () => string | undefined;
+  /** Record a new current date, once its rollover notice has been appended. */
+  recordSessionDate?: (date: string) => void;
   pendingAgent(): AgentDefinition | undefined;
   setPendingAgent(agent: AgentDefinition | undefined): void;
   selectedModel(): { modelID?: string; variant?: string } | undefined;
@@ -412,11 +422,7 @@ export type ProviderRunnerInput = {
   permissionMode(): "ask" | "auto" | "read_only";
   workspaceRoot(): string;
   tsRuntimeConfig(): ConfigV3 | undefined;
-  runtimeContextConfig(): {
-    max: number;
-    thresholdPercent: number;
-    reserved: number;
-  };
+  runtimeContextConfig(): import("@natalia/runtime").ContextBudget;
   activeSkill(): SkillMetadata | undefined;
   skillsList(): SkillMetadata[];
   skillService?(): SkillService | undefined;
@@ -578,6 +584,19 @@ export interface StatusSnapshotController {
 }
 
 export interface SubagentsService extends SubagentToolService {
+  /**
+   * Install or clear the live-delivery hook for one subagent.
+   *
+   * The runtime that owns the child's ledger is the only thing that can reach
+   * it, so it installs a hook for the duration of the child's run and clears it
+   * when the run ends — after which a message queues instead of vanishing.
+   */
+  setSteerHook(
+    id: string,
+    hook:
+      | ((message: string) => "delivered" | "resumed" | undefined)
+      | undefined,
+  ): void;
   init(
     runner: (
       task: string,

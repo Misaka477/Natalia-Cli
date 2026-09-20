@@ -2420,6 +2420,8 @@ test("Anthropic provider streams text usage and tool calls", async () => {
     apiKey: "test-key",
     model: "claude-test",
     fetch: fetchImpl,
+    // The tool breakpoint is a declared extension; this test opts in.
+    capabilities: { supportsCacheControlOnTools: true },
   });
   const chunks = [];
   for await (const chunk of provider.stream({
@@ -2829,6 +2831,9 @@ test("Anthropic requests emit cache_control breakpoints on the stable prefix (AD
     apiKey: "key",
     model: "model",
     maxTokens: 1024,
+    // The tool breakpoint is a declared extension, so this test opts in. The
+    // system-block breakpoint needs no declaration: it is native to the format.
+    capabilities: { supportsCacheControlOnTools: true },
     fetch: Object.assign(
       async (_input: URL | RequestInfo, init?: RequestInit) => {
         bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
@@ -2904,4 +2909,448 @@ test("Anthropic usage chunks carry the cache metrics (ADR E)", async () => {
     cacheCreationInputTokens: 80,
     cacheReadInputTokens: 20,
   });
+});
+
+/** Drive the OpenAI-compatible adapter over one SSE body and collect its chunks. */
+async function collectOpenAIChunks(
+  sse: string,
+): Promise<import("../src/provider").ProviderStreamChunk[]> {
+  const fetchImpl = Object.assign(
+    async () =>
+      new Response(sse, {
+        headers: { "content-type": "text/event-stream" },
+      }),
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "test-key",
+    model: "test-model",
+    fetch: fetchImpl,
+  });
+  const chunks: import("../src/provider").ProviderStreamChunk[] = [];
+  for await (const chunk of provider.stream({ messages: [] }))
+    chunks.push(chunk);
+  return chunks;
+}
+
+test("OpenAI-compatible reports prefix-cache reads from prompt_tokens_details", async () => {
+  // Without this the whole OpenAI family shows a permanent 0% hit rate however
+  // stable the prefix is, because the read was the only cache signal it emits.
+  const chunks = await collectOpenAIChunks(
+    [
+      'data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":12000,"completion_tokens":4,"prompt_tokens_details":{"cached_tokens":11000}}}',
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n"),
+  );
+
+  const usage = chunks.find((chunk) => chunk.type === "usage");
+  expect(usage).toEqual({
+    type: "usage",
+    inputTokens: 12000,
+    outputTokens: 4,
+    cacheReadInputTokens: 11000,
+  });
+  // OpenAI bills no cache write, so that field must stay absent rather than 0 —
+  // a 0 would claim the endpoint reported a write it never measured.
+  expect(usage).not.toHaveProperty("cacheCreationInputTokens");
+});
+
+test("OpenAI-compatible omits the cache read when the endpoint reports none", async () => {
+  const chunks = await collectOpenAIChunks(
+    [
+      'data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":8,"completion_tokens":2}}',
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n"),
+  );
+
+  expect(chunks.find((chunk) => chunk.type === "usage")).toEqual({
+    type: "usage",
+    inputTokens: 8,
+    outputTokens: 2,
+  });
+});
+
+test("OpenAI-compatible treats an explicit zero cached_tokens as a reported read", async () => {
+  // A cold cache is a real measurement, not a missing one: reporting it lets the
+  // hit-rate metric show 0% honestly instead of hiding the request.
+  const chunks = await collectOpenAIChunks(
+    [
+      'data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":900,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":0}}}',
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n"),
+  );
+
+  expect(chunks.find((chunk) => chunk.type === "usage")).toEqual({
+    type: "usage",
+    inputTokens: 900,
+    outputTokens: 2,
+    cacheReadInputTokens: 0,
+  });
+});
+
+test("OpenAI-compatible reads cache usage on the buffered path too", async () => {
+  // Both the streaming and buffered parsers share one mapping, so a session
+  // cannot report a hit rate that depends on which path served the request.
+  const chunks = await collectOpenAIChunks(
+    [
+      'data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":5000,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":5000}}}',
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n"),
+  );
+
+  const usage = chunks.find((chunk) => chunk.type === "usage");
+  expect(usage).toMatchObject({ cacheReadInputTokens: 5000 });
+});
+
+/** Drive the Anthropic adapter and capture the request body and headers. */
+async function runAnthropic(input: {
+  messages?: Parameters<AnthropicProvider["stream"]>[0]["messages"];
+  tools?: Parameters<AnthropicProvider["stream"]>[0]["tools"];
+  capabilities?: ConstructorParameters<
+    typeof AnthropicProvider
+  >[0]["capabilities"];
+  sessionID?: string;
+  cacheRetention?: ConstructorParameters<
+    typeof AnthropicProvider
+  >[0]["cacheRetention"];
+}): Promise<{
+  body: Record<string, unknown>;
+  headers: Record<string, string>;
+}> {
+  let sent: Record<string, unknown> = {};
+  let headers: Record<string, string> = {};
+  const fetchImpl = Object.assign(
+    async (_url: string | URL | Request, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      headers = Object.fromEntries(
+        Object.entries((init?.headers ?? {}) as Record<string, string>),
+      );
+      return new Response("", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new AnthropicProvider({
+    apiKey: "test-key",
+    model: "claude-test",
+    fetch: fetchImpl,
+    ...(input.capabilities ? { capabilities: input.capabilities } : {}),
+    ...(input.sessionID ? { sessionID: input.sessionID } : {}),
+    ...(input.cacheRetention ? { cacheRetention: input.cacheRetention } : {}),
+  });
+  for await (const _chunk of provider.stream({
+    messages: input.messages ?? [{ role: "user", content: "hi" }],
+    ...(input.tools ? { tools: input.tools } : {}),
+  }));
+  return { body: sent, headers };
+}
+
+const ONE_TOOL = [
+  { name: "read_file", description: "read", parameters: { type: "object" } },
+];
+
+test("Anthropic omits tool cache_control until the endpoint declares it", async () => {
+  // Tool caching is an extension the Messages spec added after tool caching
+  // shipped, so a conforming endpoint is not obliged to accept it.
+  const undeclared = await runAnthropic({ tools: ONE_TOOL });
+  expect(
+    (undeclared.body.tools as Array<Record<string, unknown>>)[0],
+  ).not.toHaveProperty("cache_control");
+
+  const declared = await runAnthropic({
+    tools: ONE_TOOL,
+    capabilities: { supportsCacheControlOnTools: true },
+  });
+  expect(
+    (declared.body.tools as Array<Record<string, unknown>>)[0].cache_control,
+  ).toEqual({ type: "ephemeral" });
+});
+
+test("Anthropic always marks the system block, which is native to the format", async () => {
+  // Not gated: `cache_control` on the system block is part of the Messages
+  // spec, the way `stream: true` is.
+  const { body } = await runAnthropic({
+    messages: [
+      { role: "system", content: "be terse" },
+      { role: "user", content: "hi" },
+    ],
+  });
+
+  const system = (body.system as Array<Record<string, unknown>>)[0];
+  expect(system.cache_control).toEqual({ type: "ephemeral" });
+});
+
+test("Anthropic sends no session affinity header until the endpoint declares it", async () => {
+  const undeclared = await runAnthropic({ sessionID: "ses_abc" });
+  expect(undeclared.headers).not.toHaveProperty("x-session-affinity");
+  expect(undeclared.headers).not.toHaveProperty("x-session-id");
+
+  const declared = await runAnthropic({
+    sessionID: "ses_abc",
+    capabilities: { sendSessionAffinityHeaders: true },
+  });
+  expect(declared.headers["x-session-affinity"]).toBe("ses_abc");
+
+  const openrouter = await runAnthropic({
+    sessionID: "ses_abc",
+    capabilities: {
+      sendSessionAffinityHeaders: true,
+      sessionAffinityFormat: "openrouter",
+    },
+  });
+  expect(openrouter.headers["x-session-id"]).toBe("ses_abc");
+  expect(openrouter.headers).not.toHaveProperty("x-session-affinity");
+});
+
+test("Anthropic sends no affinity header without a session id", async () => {
+  // The capability alone is not enough: there is nothing to put in the header.
+  const { headers } = await runAnthropic({
+    capabilities: { sendSessionAffinityHeaders: true },
+  });
+
+  expect(headers).not.toHaveProperty("x-session-affinity");
+});
+
+test("Anthropic sends ttl 1h only when retention and the capability agree", async () => {
+  const undeclared = await runAnthropic({
+    messages: [
+      { role: "system", content: "s" },
+      { role: "user", content: "hi" },
+    ],
+    cacheRetention: "long",
+  });
+  // Long asked for, long not declared: degrades rather than sending a ttl the
+  // deployment would reject.
+  expect(
+    (undeclared.body.system as Array<Record<string, unknown>>)[0].cache_control,
+  ).toEqual({ type: "ephemeral" });
+
+  const declared = await runAnthropic({
+    messages: [
+      { role: "system", content: "s" },
+      { role: "user", content: "hi" },
+    ],
+    cacheRetention: "long",
+    capabilities: { supportsLongCacheRetention: true },
+  });
+  expect(
+    (declared.body.system as Array<Record<string, unknown>>)[0].cache_control,
+  ).toEqual({ type: "ephemeral", ttl: "1h" });
+});
+
+test("Anthropic retention none omits the cache marker everywhere", async () => {
+  const { body } = await runAnthropic({
+    messages: [
+      { role: "system", content: "s" },
+      { role: "user", content: "hi" },
+    ],
+    tools: [
+      { name: "read_file", description: "r", parameters: { type: "object" } },
+    ],
+    cacheRetention: "none",
+    capabilities: { supportsCacheControlOnTools: true },
+  });
+
+  expect((body.system as Array<Record<string, unknown>>)[0]).not.toHaveProperty(
+    "cache_control",
+  );
+  expect((body.tools as Array<Record<string, unknown>>)[0]).not.toHaveProperty(
+    "cache_control",
+  );
+});
+
+test("Anthropic marks the last conversation message so the whole prefix is cached", async () => {
+  // Anthropic writes a cache entry only at a breakpoint, so without one on the
+  // conversation the entire history is re-billed every turn however stable it
+  // is. This is the largest single cache win on this family.
+  const { body } = await runAnthropic({
+    messages: [
+      { role: "system", content: "s" },
+      { role: "user", content: "first" },
+      { role: "assistant", content: "ok" },
+      { role: "user", content: "second" },
+    ],
+  });
+
+  const messages = body.messages as Array<{
+    role: string;
+    content: Array<{ type: string; text?: string; cache_control?: unknown }>;
+  }>;
+  expect(messages).toHaveLength(3);
+  // Only the last message carries the conversation breakpoint.
+  expect(messages[0]!.content[0]).not.toHaveProperty("cache_control");
+  expect(messages[1]!.content[0]).not.toHaveProperty("cache_control");
+  expect(messages[2]!.content[0]!.cache_control).toEqual({ type: "ephemeral" });
+});
+
+test("Anthropic marks a trailing tool result, which is a user-role block", async () => {
+  // A tool turn ends in a tool_result block, so the breakpoint has to be able to
+  // land there or a tool-heavy turn caches nothing.
+  const { body } = await runAnthropic({
+    messages: [
+      { role: "user", content: "read it" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "c1", name: "read_file", arguments: "{}" }],
+      },
+      {
+        role: "tool",
+        content: "file body",
+        toolCallID: "c1",
+        toolName: "read_file",
+      },
+    ],
+  });
+
+  const messages = body.messages as Array<{
+    role: string;
+    content: Array<{ type: string; cache_control?: unknown }>;
+  }>;
+  const last = messages[messages.length - 1]!;
+  expect(last.role).toBe("user");
+  expect(last.content[0]!.type).toBe("tool_result");
+  expect(last.content[0]!.cache_control).toEqual({ type: "ephemeral" });
+});
+
+test("Anthropic conversation breakpoint honours retention and its capability", async () => {
+  const none = await runAnthropic({ cacheRetention: "none" });
+  expect(
+    (
+      none.body.messages as Array<{ content: Array<Record<string, unknown>> }>
+    )[0]!.content[0],
+  ).not.toHaveProperty("cache_control");
+
+  const longUndeclared = await runAnthropic({ cacheRetention: "long" });
+  expect(
+    (
+      longUndeclared.body.messages as Array<{
+        content: Array<Record<string, unknown>>;
+      }>
+    )[0]!.content[0]!.cache_control,
+  ).toEqual({ type: "ephemeral" });
+
+  const longDeclared = await runAnthropic({
+    cacheRetention: "long",
+    capabilities: { supportsLongCacheRetention: true },
+  });
+  expect(
+    (
+      longDeclared.body.messages as Array<{
+        content: Array<Record<string, unknown>>;
+      }>
+    )[0]!.content[0]!.cache_control,
+  ).toEqual({ type: "ephemeral", ttl: "1h" });
+});
+
+test("Anthropic converts a bare-string last message rather than skipping it", async () => {
+  // A message with no parts converts to a bare string; it still has to carry the
+  // marker or the conversation caches nothing.
+  const { body } = await runAnthropic({
+    messages: [{ role: "user", content: "" }],
+  });
+
+  const messages = body.messages as Array<{
+    content: Array<{ type: string; cache_control?: unknown }> | string;
+  }>;
+  expect(Array.isArray(messages[0]!.content)).toBe(true);
+  expect(
+    (messages[0]!.content as Array<Record<string, unknown>>)[0]!.cache_control,
+  ).toEqual({ type: "ephemeral" });
+});
+
+test("Anthropic cached prefix grows monotonically across turns", async () => {
+  // The property the whole cache line exists for: what turn N+1 sends must be a
+  // strict extension of what turn N sent, so the prefix cached at turn N is
+  // reused rather than re-billed. This is why the volatile runtime-context block
+  // costs nothing — it is re-inserted at the same relative position every turn,
+  // so it always lands in the fresh tail and never inside the reusable prefix.
+  const requests: Array<Array<Record<string, unknown>>> = [];
+  const fetchImpl = Object.assign(
+    async (_input: URL | RequestInfo, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        messages: Array<Record<string, unknown>>;
+      };
+      requests.push(body.messages);
+      return new Response("event: message_stop\ndata: {}\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+    { preconnect: fetch.preconnect },
+  ) as typeof fetch;
+  const provider = new AnthropicProvider({
+    apiKey: "k",
+    model: "m",
+    maxTokens: 64,
+    fetch: fetchImpl,
+  });
+
+  // Three turns, each appending an assistant reply and a fresh user request.
+  const turns = [
+    [{ role: "user" as const, content: "one" }],
+    [
+      { role: "user" as const, content: "one" },
+      { role: "assistant" as const, content: "reply one" },
+      { role: "user" as const, content: "two" },
+    ],
+    [
+      { role: "user" as const, content: "one" },
+      { role: "assistant" as const, content: "reply one" },
+      { role: "user" as const, content: "two" },
+      { role: "assistant" as const, content: "reply two" },
+      { role: "user" as const, content: "three" },
+    ],
+  ];
+  for (const messages of turns)
+    for await (const _chunk of provider.stream({ messages })) {
+      // Drain to force the request.
+    }
+
+  expect(requests).toHaveLength(3);
+  // The breakpoint marker is stripped before comparing: it moves to whichever
+  // message is last in each request, so the annotated bytes differ between turns
+  // by construction. What must be stable is the content, because that is what
+  // the cache keys on — Anthropic's own recommendation is to mark the last
+  // block, and that pattern only works across turns if the annotation is
+  // per-request metadata rather than part of the cached prompt.
+  const key = (m: Record<string, unknown>) => {
+    const copy: Record<string, unknown> = { ...m };
+    if (Array.isArray(copy.content))
+      copy.content = (copy.content as Array<Record<string, unknown>>).map(
+        (block) => {
+          const { cache_control: _ignored, ...rest } = block;
+          return rest;
+        },
+      );
+    return JSON.stringify(copy);
+  };
+  // Turn N's messages are a prefix of turn N+1's: nothing already sent changes.
+  for (let index = 1; index < requests.length; index += 1) {
+    const previous = requests[index - 1]!.map(key);
+    const current = requests[index]!.map(key);
+    expect(current.length).toBeGreaterThan(previous.length);
+    expect(current.slice(0, previous.length)).toEqual(previous);
+  }
+  // And the breakpoint is on the final message each time, so the cached prefix
+  // is exactly the stable part rather than stopping at the header.
+  const marked = (messages: Array<Record<string, unknown>>) =>
+    messages.filter((message) =>
+      Array.isArray(message.content)
+        ? (message.content as Array<Record<string, unknown>>).some(
+            (block) => block.cache_control !== undefined,
+          )
+        : false,
+    ).length;
+  expect(marked(requests[2]!)).toBe(1);
+  expect(marked(requests[2]!)).toBeLessThan(requests[2]!.length);
 });

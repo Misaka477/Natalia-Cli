@@ -9,6 +9,11 @@ export {
 export * from "./errors";
 export * from "./loop";
 export * from "./modelmeta";
+export * from "./provider-adapters";
+export * from "./provider-caps";
+export * from "./session-date";
+export * from "./provider-adapter-modules";
+export * from "./builtin-provider-adapters";
 export * from "./provider";
 export * from "./provider-concurrency";
 export * from "./request";
