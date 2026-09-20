@@ -1942,7 +1942,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
     const resetProjectionForSessionSwitch = () => {
       historyReplayDone = false;
       setTranscriptHistoryLoading(true);
-      messagesHydrationStarted = false;
       lastHydratedSessionID = undefined;
       // A stale in-flight load must not block the same session from being
       // retried after the reset.
@@ -2006,7 +2005,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
       ),
     );
 
-    let messagesHydrationStarted = false;
     let lastHydratedSessionID: string | undefined;
     let hydratingSessionID: string | undefined;
     const workspaceIDForSession = (sessionID: string) =>
@@ -2030,7 +2028,6 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
         sessionID,
         workspaceIDForSession(sessionID),
       );
-      messagesHydrationStarted = true;
       const loadToken = (
         globalThis as unknown as { __nataliaSessionLoadToken?: number }
       ).__nataliaSessionLoadToken;
