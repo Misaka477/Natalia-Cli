@@ -14,7 +14,10 @@ function fakeScrollport(height: number) {
   };
 }
 
-function makeAppender(el: ReturnType<typeof fakeScrollport>, rowCount: () => number) {
+function makeAppender(
+  el: ReturnType<typeof fakeScrollport>,
+  rowCount: () => number,
+) {
   // `more` models remaining data: it stays true until a test exhausts it, the
   // way a real owner gates `moreAvailable` on its own page state.
   let more = true;

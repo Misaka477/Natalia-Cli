@@ -110,7 +110,8 @@ function patchCounts(patch: string): { additions: number; deletions: number } {
 }
 
 export class WorktreeSandboxManager extends WorkspaceSandboxManager {
-  private lastKnownGood: string | undefined;
+  /** The commit the last promotion was built on, and whose promotion it was. */
+  private lastKnownGood: { commit: string; sandboxID: string } | undefined;
   private readonly hostRoot: string;
 
   constructor(hostRoot: string) {
@@ -335,7 +336,7 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
     // Recorded before the merge is attempted, not after: a merge that conflicts
     // never reaches an assignment placed after the `await`, and the commit it
     // was about to build on is exactly what a rollback needs.
-    await this.setLastKnownGood(lastKnownGood);
+    await this.setLastKnownGood({ commit: lastKnownGood, sandboxID: id });
     try {
       await git(this.hostRoot, ["merge", "--no-ff", "--no-edit", branch]);
     } catch (error) {
@@ -399,17 +400,20 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
 
   /** The recorded last-known-good commit, if any. */
   async lastKnownGoodCommit(): Promise<string | undefined> {
-    return this.lastKnownGood;
+    return (this.lastKnownGood ?? (await this.loadLastKnownGood()))?.commit;
   }
 
   /**
    * Rolls the system slot back to the last-known-good commit — the rollback a
    * failed activation after promotion triggers.
    */
-  async rollback(): Promise<{ restored: string | undefined }> {
-    const lastKnownGood =
-      this.lastKnownGood ?? (await this.loadLastKnownGood());
-    if (!lastKnownGood) return { restored: undefined };
+  override async rollback(id: string): Promise<{ restored: boolean }> {
+    const recorded = this.lastKnownGood ?? (await this.loadLastKnownGood());
+    if (!recorded) return { restored: false };
+    // The recorded commit belongs to the last promotion, so undoing any other
+    // sandbox would revert work this rollback was never asked about.
+    if (recorded.sandboxID !== id) return { restored: false };
+    const lastKnownGood = recorded.commit;
     if (await this.mergeInProgress()) {
       // A merge left half-applied is the state a rollback exists to clear, so
       // everything dirty belongs to it and aborting is safe.
@@ -428,7 +432,7 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
     }
     await git(this.hostRoot, ["reset", "--hard", lastKnownGood]);
     await this.setLastKnownGood(undefined);
-    return { restored: lastKnownGood };
+    return { restored: true };
   }
 
   /** Whether a merge is half-applied in the host tree. */
@@ -456,28 +460,34 @@ export class WorktreeSandboxManager extends WorkspaceSandboxManager {
     return join(this["baseRoot"], "worktree-last-known-good.json");
   }
 
-  private async setLastKnownGood(commit: string | undefined): Promise<void> {
-    this.lastKnownGood = commit;
+  private async setLastKnownGood(
+    point: { commit: string; sandboxID: string } | undefined,
+  ): Promise<void> {
+    this.lastKnownGood = point;
     // Persisted because an in-memory value is gone after a restart, and a
     // rollback that silently does nothing is indistinguishable from one with
     // nothing to do.
-    if (!commit) {
+    if (!point) {
       await rm(this.lastKnownGoodPath(), { force: true }).catch(
         () => undefined,
       );
       return;
     }
     await mkdir(dirname(this.lastKnownGoodPath()), { recursive: true });
-    await writeFile(this.lastKnownGoodPath(), JSON.stringify({ commit })).catch(
+    await writeFile(this.lastKnownGoodPath(), JSON.stringify(point)).catch(
       () => undefined,
     );
   }
 
-  private async loadLastKnownGood(): Promise<string | undefined> {
+  private async loadLastKnownGood(): Promise<
+    { commit: string; sandboxID: string } | undefined
+  > {
     try {
       const raw = await readFile(this.lastKnownGoodPath(), "utf8");
-      const parsed = JSON.parse(raw) as { commit?: string };
-      return parsed?.commit;
+      const parsed = JSON.parse(raw) as { commit?: string; sandboxID?: string };
+      return parsed?.commit && parsed.sandboxID
+        ? { commit: parsed.commit, sandboxID: parsed.sandboxID }
+        : undefined;
     } catch {
       return undefined;
     }

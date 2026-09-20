@@ -868,7 +868,7 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (21 groups · 178 optional members)
+### Capability groups (21 groups · 179 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -880,7 +880,7 @@ Deployment notes:
 | workspace      | `workspaceFiles` · `workspaceSearch` · `workspaceList` · `workspaceRead` · `resourceRead` · `workspaceWrite` · `workspaceCreate` · `workspaceRename` · `workspaceDelete` · `workspaceWriteConflicts` · `workspaceGlob` · `workspaceDiff` · `workspaceGitDiff` · `gitRefs` · `astDiff` · `astDiffBatch` · `astRefactorPreview` · `astService` · `astRefactorPlan` · `astApplyRefactor` · `workspaceRoots` · `workspaceAdd` · `workspaceRemove` · `workspaceActivate` · `workspacePermissionGet` · `workspacePermissionSet` · `workspaceToolGet` · `workspaceToolSet`                                      |
 | nativeTerminal | `nativeTerminalList` · `nativeTerminalRead` · `nativeTerminalClaimHumanInput` · `nativeTerminalOpenHub` · `nativeTerminalRevokeApprovalScope` · `nativeTerminalReleaseHumanControl` · `nativeTerminalBeginSecureInput` · `nativeTerminalEndSecureInput` · `nativeTerminalStop` · `nativeTerminalStart` · `nativeTerminalWrite` · `nativeTerminalResize`                                                                                                                                                                                                                                                  |
 | checkpoint     | `checkpointList` · `checkpointListByKind` · `auditRounds` · `roundDiff` · `checkpointPreview` · `checkpointRollback` · `checkpointRename`                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| sandbox        | `sandboxList` · `sandboxDiff` · `sandboxResources` · `sandboxResourceOutput` · `sandboxMerge` · `sandboxDelete` · `sandboxResourceStop` · `teamPRList`                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| sandbox        | `sandboxList` · `sandboxDiff` · `sandboxResources` · `sandboxResourceOutput` · `sandboxMerge` · `sandboxDelete` · `sandboxRollback` · `sandboxResourceStop` · `teamPRList`                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | sessions       | `sessionList` · `sessionTouch` · `sessionRename` · `sessionPin` · `sessionDuplicate` · `sessionFork` · `sessionRollbackMessages` · `sessionDelete` · `sessionNew` · `sessionArchive` · `sessionRestore` · `sessionExport` · `sessionAttach` · `subagents` · `subagentHistory` · `subagentHistoryPage`                                                                                                                                                                                                                                                                                                    |
 | mcp            | `mcpCatalog` · `getMcpPrompt` · `readMcpResource` · `mcpServerAdd` · `mcpServerRemove`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | extensions     | `plugins` · `commandCatalog` · `commandExecute` · `capabilities` · `pluginUnload` · `pluginReload` · `pluginInstall` · `pluginUninstall` · `pluginSetEnabled` · `pluginCatalog` · `toolFamilyReload` · `projectionContributions`                                                                                                                                                                                                                                                                                                                                                                         |
@@ -894,7 +894,7 @@ Deployment notes:
 | attachments    | `uploadAttachment` · `attachmentDataUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | chat           | `naviChat` · `niaChat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-### RPC route table (195 methods → members)
+### RPC route table (196 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -958,6 +958,7 @@ Deployment notes:
 | `sandbox.resource.output`            | `sandboxResourceOutput`             | sandbox          | read  |
 | `sandbox.merge`                      | `sandboxMerge`                      | sandbox          | write |
 | `sandbox.delete`                     | `sandboxDelete`                     | sandbox          | write |
+| `sandbox.rollback`                   | `sandboxRollback`                   | sandbox          | write |
 | `sandbox.resource.stop`              | `sandboxResourceStop`               | sandbox          | write |
 | `session.list`                       | `sessionList`                       | sessions         | read  |
 | `session.touch`                      | `sessionTouch`                      | sessions         | write |
@@ -1094,7 +1095,7 @@ Deployment notes:
 | `nia.chat.model.profile`             | `niaChat`                           | chat             | read  |
 | `nia.chat.model.profile.set`         | `niaChat`                           | chat             | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 68 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 69 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `submit.andWait`
@@ -1119,6 +1120,7 @@ Deployment notes:
 - `checkpoint.rename`
 - `sandbox.merge`
 - `sandbox.delete`
+- `sandbox.rollback`
 - `sandbox.resource.stop`
 - `session.touch`
 - `session.rename`
@@ -2245,7 +2247,7 @@ createRuntimeHttpServer({
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (21 groups · 178 optional members)
+### Capability groups (21 groups · 179 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -2257,7 +2259,7 @@ createRuntimeHttpServer({
 | workspace      | `workspaceFiles` · `workspaceSearch` · `workspaceList` · `workspaceRead` · `resourceRead` · `workspaceWrite` · `workspaceCreate` · `workspaceRename` · `workspaceDelete` · `workspaceWriteConflicts` · `workspaceGlob` · `workspaceDiff` · `workspaceGitDiff` · `gitRefs` · `astDiff` · `astDiffBatch` · `astRefactorPreview` · `astService` · `astRefactorPlan` · `astApplyRefactor` · `workspaceRoots` · `workspaceAdd` · `workspaceRemove` · `workspaceActivate` · `workspacePermissionGet` · `workspacePermissionSet` · `workspaceToolGet` · `workspaceToolSet`                                      |
 | nativeTerminal | `nativeTerminalList` · `nativeTerminalRead` · `nativeTerminalClaimHumanInput` · `nativeTerminalOpenHub` · `nativeTerminalRevokeApprovalScope` · `nativeTerminalReleaseHumanControl` · `nativeTerminalBeginSecureInput` · `nativeTerminalEndSecureInput` · `nativeTerminalStop` · `nativeTerminalStart` · `nativeTerminalWrite` · `nativeTerminalResize`                                                                                                                                                                                                                                                  |
 | checkpoint     | `checkpointList` · `checkpointListByKind` · `auditRounds` · `roundDiff` · `checkpointPreview` · `checkpointRollback` · `checkpointRename`                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| sandbox        | `sandboxList` · `sandboxDiff` · `sandboxResources` · `sandboxResourceOutput` · `sandboxMerge` · `sandboxDelete` · `sandboxResourceStop` · `teamPRList`                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| sandbox        | `sandboxList` · `sandboxDiff` · `sandboxResources` · `sandboxResourceOutput` · `sandboxMerge` · `sandboxDelete` · `sandboxRollback` · `sandboxResourceStop` · `teamPRList`                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | sessions       | `sessionList` · `sessionTouch` · `sessionRename` · `sessionPin` · `sessionDuplicate` · `sessionFork` · `sessionRollbackMessages` · `sessionDelete` · `sessionNew` · `sessionArchive` · `sessionRestore` · `sessionExport` · `sessionAttach` · `subagents` · `subagentHistory` · `subagentHistoryPage`                                                                                                                                                                                                                                                                                                    |
 | mcp            | `mcpCatalog` · `getMcpPrompt` · `readMcpResource` · `mcpServerAdd` · `mcpServerRemove`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | extensions     | `plugins` · `commandCatalog` · `commandExecute` · `capabilities` · `pluginUnload` · `pluginReload` · `pluginInstall` · `pluginUninstall` · `pluginSetEnabled` · `pluginCatalog` · `toolFamilyReload` · `projectionContributions`                                                                                                                                                                                                                                                                                                                                                                         |
@@ -2271,7 +2273,7 @@ createRuntimeHttpServer({
 | attachments    | `uploadAttachment` · `attachmentDataUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | chat           | `naviChat` · `niaChat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-### RPC route table (195 methods → members)
+### RPC route table (196 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -2335,6 +2337,7 @@ createRuntimeHttpServer({
 | `sandbox.resource.output`            | `sandboxResourceOutput`             | sandbox          | read  |
 | `sandbox.merge`                      | `sandboxMerge`                      | sandbox          | write |
 | `sandbox.delete`                     | `sandboxDelete`                     | sandbox          | write |
+| `sandbox.rollback`                   | `sandboxRollback`                   | sandbox          | write |
 | `sandbox.resource.stop`              | `sandboxResourceStop`               | sandbox          | write |
 | `session.list`                       | `sessionList`                       | sessions         | read  |
 | `session.touch`                      | `sessionTouch`                      | sessions         | write |
@@ -2471,7 +2474,7 @@ createRuntimeHttpServer({
 | `nia.chat.model.profile`             | `niaChat`                           | chat             | read  |
 | `nia.chat.model.profile.set`         | `niaChat`                           | chat             | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 68 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 69 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `submit.andWait`
@@ -2496,6 +2499,7 @@ createRuntimeHttpServer({
 - `checkpoint.rename`
 - `sandbox.merge`
 - `sandbox.delete`
+- `sandbox.rollback`
 - `sandbox.resource.stop`
 - `session.touch`
 - `session.rename`

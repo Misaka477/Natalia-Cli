@@ -27,7 +27,9 @@ test("captureRepositoryRefsSync stamps a safe commit hash and injected version",
   const dir = await makeGitRepo();
   if (!dir) return; // git unavailable in this environment
   try {
-    const refs = captureRepositoryRefsSync(dir!, { NATALIA_VERSION: "0.0.0-m13" });
+    const refs = captureRepositoryRefsSync(dir!, {
+      NATALIA_VERSION: "0.0.0-m13",
+    });
     expect(refs.repositoryVersion).toBe("0.0.0-m13");
     expect(refs.commit).toMatch(/^[0-9a-f]{40}$/u);
   } finally {

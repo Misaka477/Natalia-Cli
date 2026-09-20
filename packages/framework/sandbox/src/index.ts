@@ -18,6 +18,7 @@ export {
   type WorktreePromotion,
 } from "./worktree-sandbox";
 export { SnapshotSandboxManager } from "./snapshot-sandbox";
+export { SandboxPromotionConflict } from "./snapshot-store";
 export { createSandboxController } from "./sandbox-controller";
 export {
   SnapshotStore,

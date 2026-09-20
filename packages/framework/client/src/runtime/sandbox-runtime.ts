@@ -18,7 +18,11 @@ import {
   ensureSessionEventWindow,
   sessionWindowEvents,
 } from "./session-event-window";
-import { riskTierForChanges, riskTierForPath } from "@natalia/sandbox";
+import {
+  riskTierForChanges,
+  riskTierForPath,
+  SandboxPromotionConflict,
+} from "@natalia/sandbox";
 import { captureRepositoryEvidenceFields } from "./repository-refs";
 
 async function appendSandboxMutation(
@@ -65,6 +69,7 @@ type SandboxRuntime = Pick<
   | "sandboxResourceOutput"
   | "sandboxMerge"
   | "sandboxDelete"
+  | "sandboxRollback"
   | "sandboxResourceStop"
 >;
 
@@ -295,6 +300,12 @@ export function createSandboxRuntime(
         // rewrite its own contract. The tier is recorded as an audit fact.
         const preview = await sandboxes.previewMerge(id);
         const tier = riskTierForChanges(preview);
+        // Naming the transition: the manifest can only say "has changes", so the
+        // merge lifecycle is unreportable without an explicit status.
+        ctx.ports.publishForSession(
+          owner,
+          sandboxes.updateEvent(id, "merge_previewed"),
+        );
         ctx.ports.publishForSession(
           owner,
           sandboxes.auditEvent(id, "merge", tier === "high"),
@@ -372,7 +383,7 @@ export function createSandboxRuntime(
           );
         }
         mutationRegistry()?.settle(operationID);
-        ctx.ports.publishForSession(owner, sandboxes.updateEvent(id));
+        ctx.ports.publishForSession(owner, sandboxes.updateEvent(id, "merged"));
         ctx.ports.publishForSession(owner, sandboxes.auditEvent(id, "merge"));
         const { evidence, outcome } = await publishPromotionEvidence({
           status: "promoted",
@@ -403,15 +414,50 @@ export function createSandboxRuntime(
         );
         return changes;
       } catch (error) {
+        // A conflict is a state, not just a failure: the candidate needs
+        // rebasing, and the sandbox itself is what says so. Reported before the
+        // evidence record so a consumer watching status sees it either way.
+        if (error instanceof SandboxPromotionConflict)
+          ctx.ports.publishForSession(
+            owner,
+            sandboxes.updateEvent(id, "conflicted"),
+          );
         await publishPromotionEvidence({
           status: "failed",
           result: "failed",
           output: error instanceof Error ? error.message : String(error),
           durationMs: performance.now() - startedAt,
-          knownGaps: ["promotion did not land; host unchanged"],
+          knownGaps: [
+            error instanceof SandboxPromotionConflict
+              ? `promotion refused; host unchanged, candidate must be rebased ` +
+                `(${error.paths.length} conflicting path(s))`
+              : "promotion did not land; host unchanged",
+          ],
         });
         throw error;
       }
+    },
+    async sandboxRollback(id, sessionID?) {
+      await ctx.ports.getReady();
+      const owner = await sessionOwner(sessionID);
+      await assertSandboxOwned(ctx, owner, id);
+      const sandboxes = requireSandboxes();
+      // It rewrites host files, so it clears the same gate as the merge it
+      // undoes rather than a weaker one.
+      const preview = await sandboxes.previewMerge(id);
+      await ctx.ports.authorizeSandboxMerge(
+        { id, paths: preview.map((change) => change.path) },
+        owner,
+      );
+      const result = await sandboxes.rollback(id);
+      if (result.restored) {
+        ctx.ports.publishForSession(owner, sandboxes.updateEvent(id));
+        ctx.ports.publishForSession(
+          owner,
+          sandboxes.auditEvent(id, "rollback"),
+        );
+      }
+      return result;
     },
     async sandboxDelete(id, sessionID?) {
       await ctx.ports.getReady();

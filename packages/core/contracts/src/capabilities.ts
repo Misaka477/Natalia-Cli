@@ -194,6 +194,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "sandboxResourceOutput",
     "sandboxMerge",
     "sandboxDelete",
+    "sandboxRollback",
     "sandboxResourceStop",
     "teamPRList",
   ],
@@ -304,10 +305,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   /** Durable attachment upload/storage for pasted or dropped files. */
   attachments: ["uploadAttachment", "attachmentDataUrl"],
   /** The always-available Live Work Chat conversation (P8 Phase C2). */
-  chat: [
-    "naviChat",
-    "niaChat",
-  ],
+  chat: ["naviChat", "niaChat"],
 } as const satisfies Record<string, readonly (keyof RuntimeClient)[]>;
 
 export type RuntimeCapabilityGroup = keyof typeof RUNTIME_CAPABILITY_GROUPS;

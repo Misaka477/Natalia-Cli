@@ -33,7 +33,8 @@ test("Phase 0 E2E: record tools land journal facts that agree across projections
           tool: {
             name: "record_decision",
             arguments: {
-              decision: "append runtime context instead of mutating the system prompt",
+              decision:
+                "append runtime context instead of mutating the system prompt",
               rationale: ["keeps the cacheable prefix stable"],
               alternatives: [
                 {
@@ -60,7 +61,8 @@ test("Phase 0 E2E: record tools land journal facts that agree across projections
             name: "record_completion",
             arguments: {
               taskID: "plan:e2e:s1",
-              objective: "record a completion card for the zero-window write path",
+              objective:
+                "record a completion card for the zero-window write path",
               changeSummary: "wired record_decision/validation/completion",
               validations: [
                 {
@@ -71,7 +73,9 @@ test("Phase 0 E2E: record tools land journal facts that agree across projections
               ],
               knownGaps: [],
               rollbackState: "clean",
-              changePaths: ["packages/framework/client/src/runtime/record-tools.ts"],
+              changePaths: [
+                "packages/framework/client/src/runtime/record-tools.ts",
+              ],
             },
           },
         },
@@ -165,8 +169,9 @@ test("Phase 0 E2E: record tools land journal facts that agree across projections
       (edge) => edge.kind === "validated_by",
     ),
   ).toBe(true);
-  expect(projectedWorkGraphNodes(events).some((node) => node.kind === "decision"))
-    .toBe(true);
+  expect(
+    projectedWorkGraphNodes(events).some((node) => node.kind === "decision"),
+  ).toBe(true);
   expect(
     projectedWorkGraphEdges(events).some(
       (edge) => edge.kind === "validated_by",
@@ -204,10 +209,7 @@ test("Phase -1 E2E: Navi plan_propose lands a user accepted WorkContract read by
   });
   client.start((event) => {
     events.push(event);
-    if (
-      event.type === "approval.request" &&
-      event.scope === "work_contract"
-    )
+    if (event.type === "approval.request" && event.scope === "work_contract")
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   await client.sessionAttach!("ses_e2e_contract" as SessionID);
@@ -222,14 +224,18 @@ test("Phase -1 E2E: Navi plan_propose lands a user accepted WorkContract read by
   });
   planID = marked.planID;
   await client.planDocActivate!(planID);
-  await client.naviChat!.submit({  text: "propose the contract" });
+  await client.naviChat!.submit({ text: "propose the contract" });
   await waitFor(
     () => events.some((event) => event.type === "work_contract.accepted"),
     { timeoutMs: 10_000 },
   );
 
-  expect(events.filter((event) => event.type === "work_contract.drafted")).toHaveLength(1);
-  expect(events.filter((event) => event.type === "work_contract.accepted")).toHaveLength(1);
+  expect(
+    events.filter((event) => event.type === "work_contract.drafted"),
+  ).toHaveLength(1);
+  expect(
+    events.filter((event) => event.type === "work_contract.accepted"),
+  ).toHaveLength(1);
   const contracts = projectedWorkContracts(events);
   expect(contracts).toHaveLength(1);
   expect(contracts[0]).toMatchObject({
@@ -317,7 +323,9 @@ test("Phase 0 E2E: Nia audit_report writes evidence visible to projection and ru
   if (gitHead !== undefined) {
     expect(projected[0]).toMatchObject({ commit: gitHead });
   }
-  const evidence = await client.evidenceRecords!({ sessionID: "ses_e2e_audit" });
+  const evidence = await client.evidenceRecords!({
+    sessionID: "ses_e2e_audit",
+  });
   expect(evidence.items).toHaveLength(1);
   expect(evidence.items[0]).toMatchObject({
     taskID: planID,
@@ -390,14 +398,15 @@ test("decisions are session-scoped unless explicitly promoted to workspace scope
   );
   // The explicit workspace record does not silently appear in the session
   // default view either.
-  const secondSessionAfter = await second.decisionRecords!({ scope: "session" });
+  const secondSessionAfter = await second.decisionRecords!({
+    scope: "session",
+  });
   expect(secondSessionAfter.items).not.toContainEqual(
     expect.objectContaining({ decision: "workspace shared choice" }),
   );
   await first.dispose?.();
   await second.dispose?.();
 }, 30_000);
-
 
 test("Phase -1 E2E: constitution doc rules are read and promoted into journal rules", async () => {
   const root = await officialPluginWorkspace("governance-e2e-constitution");
@@ -440,13 +449,17 @@ test("Phase -1 E2E: constitution doc rules are read and promoted into journal ru
 
   // 1. The read surface parses the document into enforcement-tagged rules.
   const docRules = await client.constitutionDocRules!(sessionID);
-  const forcePush = docRules.find((rule) => rule.section === "Never force-push");
+  const forcePush = docRules.find(
+    (rule) => rule.section === "Never force-push",
+  );
   expect(forcePush).toMatchObject({
     enforcement: "deny",
     annotated: true,
     appliesTo: { commandPattern: "git push --force" },
   });
-  const smallPRs = docRules.find((rule) => rule.section === "Small pull requests");
+  const smallPRs = docRules.find(
+    (rule) => rule.section === "Small pull requests",
+  );
   expect(smallPRs).toMatchObject({ enforcement: "warn", annotated: false });
   const blockRm = docRules.find((rule) => rule.section === "Block rm -rf");
   expect(blockRm).toMatchObject({ enforcement: "deny", annotated: true });
@@ -500,9 +513,10 @@ test("Phase -1 E2E: constitution doc rules are read and promoted into journal ru
   await client.dispose?.();
 }, 30_000);
 
-
 test("Phase -1 E2E: a user can add, edit, disable and delete a constitution rule", async () => {
-  const root = await officialPluginWorkspace("governance-e2e-constitution-crud");
+  const root = await officialPluginWorkspace(
+    "governance-e2e-constitution-crud",
+  );
   const sessionID = "ses_e2e_constitution_crud" as SessionID;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -564,25 +578,20 @@ test("Phase -1 E2E: a user can add, edit, disable and delete a constitution rule
   });
 
   // 4. Disable -> filtered from the effective set.
-  await client.updateConstitutionRule!(
-    { ruleID, enabled: false },
-    sessionID,
-  );
+  await client.updateConstitutionRule!({ ruleID, enabled: false }, sessionID);
   rules = await client.constitutionRules!(sessionID);
   expect(rules.some((rule) => rule.ruleID === ruleID)).toBe(false);
 
   // 5. Delete -> tombstone.
-  const removed = await client.removeConstitutionRule!(
-    { ruleID },
-    sessionID,
-  );
+  const removed = await client.removeConstitutionRule!({ ruleID }, sessionID);
   expect(removed.removed).toBe(true);
   await client.dispose?.();
 }, 30_000);
 
-
 test("Phase -1 E2E: a user edits a soft constitution doc rule and it is written back (EI §3.8 P-1.c)", async () => {
-  const root = await officialPluginWorkspace("governance-e2e-constitution-docedit");
+  const root = await officialPluginWorkspace(
+    "governance-e2e-constitution-docedit",
+  );
   const sessionID = "ses_e2e_constitution_docedit" as SessionID;
   const constitutionPath = join(root, ".natalia", "constitution.md");
   await mkdir(join(root, ".natalia"), { recursive: true });
@@ -618,7 +627,9 @@ test("Phase -1 E2E: a user edits a soft constitution doc rule and it is written 
   await client.sessionAttach!(sessionID);
 
   const before = await client.constitutionDocRules!(sessionID);
-  const smallPRs = before.find((rule) => rule.section === "Small pull requests")!;
+  const smallPRs = before.find(
+    (rule) => rule.section === "Small pull requests",
+  )!;
   const forcePush = before.find((rule) => rule.section === "Never force-push")!;
   expect(smallPRs.enforcement).toBe("warn");
 
@@ -658,7 +669,11 @@ test("Phase -1 E2E: a user edits a soft constitution doc rule and it is written 
   const afterAnnotate = await client.constitutionDocRules!(sessionID);
   expect(
     afterAnnotate.find((rule) => rule.section === "Small pull requests"),
-  ).toMatchObject({ enforcement: "approval", annotated: true, appliesTo: { tools: ["shell"] } });
+  ).toMatchObject({
+    enforcement: "approval",
+    annotated: true,
+    appliesTo: { tools: ["shell"] },
+  });
 
   // 3. A deny edit that clears the appliesTo anchor is refused (unenforceable
   // hard rule) and writes nothing.
@@ -682,14 +697,18 @@ test("Phase -1 E2E: a user edits a soft constitution doc rule and it is written 
   const finalRules = await client.constitutionDocRules!(sessionID);
   expect(
     finalRules.find((rule) => rule.section === "Never force-push"),
-  ).toMatchObject({ enforcement: "deny", appliesTo: { commandPattern: "git push --force" } });
+  ).toMatchObject({
+    enforcement: "deny",
+    appliesTo: { commandPattern: "git push --force" },
+  });
 
   await client.dispose?.();
 }, 30_000);
 
-
 test("Phase -1 E2E: hard-protected rules refuse edits, other release rules stay user-editable", async () => {
-  const root = await officialPluginWorkspace("governance-e2e-constitution-protection");
+  const root = await officialPluginWorkspace(
+    "governance-e2e-constitution-protection",
+  );
   const sessionID = "ses_e2e_constitution_protection" as SessionID;
   const client = createRealRuntimeClient({
     workspaceRoot: root,

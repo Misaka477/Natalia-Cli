@@ -18,9 +18,7 @@ import { requestAuditAfterCompletion } from "./audit-request";
 import type { GovernanceLedgerController } from "./context";
 import { redactToolOutput } from "./engineering-intelligence/redaction";
 import { runValidationCommand } from "./engineering-intelligence/validation";
-import {
-  captureRepositoryEvidenceFields,
-} from "./repository-refs";
+import { captureRepositoryEvidenceFields } from "./repository-refs";
 import type { RuntimeContext, SessionExecutionState } from "./context";
 
 function resolveExec(
@@ -126,9 +124,12 @@ export function createRecordValidationTool(
           const relative = `.natalia/artifacts/${name.replace(/[^a-zA-Z0-9:_-]/gu, "_")}.log`;
           try {
             const absolute = join(ctx.ports.getWorkspaceRoot(), relative);
-            await mkdir(join(ctx.ports.getWorkspaceRoot(), ".natalia", "artifacts"), {
-              recursive: true,
-            });
+            await mkdir(
+              join(ctx.ports.getWorkspaceRoot(), ".natalia", "artifacts"),
+              {
+                recursive: true,
+              },
+            );
             await writeFile(absolute, run.fullOutput, "utf8");
             artifactRef = relative;
           } catch {

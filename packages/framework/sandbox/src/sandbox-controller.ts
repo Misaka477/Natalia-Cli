@@ -89,6 +89,7 @@ export function createSandboxController(input: {
         hostRoot: promoteInput.hostRoot ?? input.workspaceRoot,
       }),
     delete: async (id) => await requireManager().delete(id),
+    rollback: async (id) => await requireManager().rollback(id),
     startResource: async (id, command, resourceID) =>
       await requireManager().startResource(id, command, resourceID),
     resourcesFor: (id) => requireManager().resourcesFor(id),

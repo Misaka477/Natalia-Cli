@@ -62,6 +62,27 @@ async function walkFiles(
 }
 
 /**
+ * A promotion whose candidate was built from a snapshot the host has moved past.
+ *
+ * Typed rather than a message, because the caller's response differs: a conflict
+ * is a state to report (`sandbox.update` with `conflicted`) and a candidate to
+ * rebase, not a failed operation to retry.
+ */
+export class SandboxPromotionConflict extends Error {
+  readonly paths: string[];
+  constructor(paths: string[]) {
+    super(
+      `promotion conflicts with changes already on the host: ${paths.join("; ")}. ` +
+        `The candidate was built from a snapshot that no longer matches, so ` +
+        `promoting it would discard the newer work. Rebase the candidate onto ` +
+        `the current host and review it again.`,
+    );
+    this.name = "SandboxPromotionConflict";
+    this.paths = paths;
+  }
+}
+
+/**
  * Resolves a snapshot-relative path against a root, refusing anything that
  * escapes it.
  *
@@ -427,13 +448,7 @@ export class SnapshotStore {
             `candidate was built from ${expected ? "an earlier revision" : "nothing"})`,
         );
     }
-    if (conflicts.length)
-      throw new Error(
-        `promotion conflicts with changes already on the host: ${conflicts.join("; ")}. ` +
-          `The candidate was built from a snapshot that no longer matches, so ` +
-          `promoting it would discard the newer work. Rebase the candidate onto ` +
-          `the current host and review it again.`,
-      );
+    if (conflicts.length) throw new SandboxPromotionConflict(conflicts);
   }
 
   private async pathExists(path: string): Promise<boolean> {

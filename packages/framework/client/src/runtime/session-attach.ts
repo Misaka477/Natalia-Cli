@@ -150,7 +150,8 @@ export function createSessionAttach(ctx: RuntimeContext) {
           ? naviChatProviderMessagesFromHistory(exec)
           : niaChatProviderMessagesFromHistory(exec);
       if (!messages.length) return;
-      const streamMeter = stream === "navi" ? exec.naviTokenMeter : exec.niaTokenMeter;
+      const streamMeter =
+        stream === "navi" ? exec.naviTokenMeter : exec.niaTokenMeter;
       const profile =
         stream === "navi"
           ? exec.naviChatModelProfile?.normal

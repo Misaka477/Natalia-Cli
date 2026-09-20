@@ -265,3 +265,41 @@ test("an add whose path appeared on the host meanwhile is a conflict", async () 
     "someone else's\n",
   );
 });
+
+test("a rollback reports false when there is no rollback point for that sandbox", async () => {
+  // `restored: false` must mean "nothing to undo", not a silent failure — a
+  // backend that cannot reach a point says so rather than claiming success.
+  const root = await mkdtemp(join(tmpdir(), "natalia-sb-nolkg-"));
+  const host = join(root, "host");
+  await mkdir(host, { recursive: true });
+  const store = new SnapshotStore(
+    new ObjectStore(join(root, ".natalia", "objects")),
+    join(root, ".natalia", "store"),
+  );
+  const manager = new SnapshotSandboxManager(root);
+  await manager.initialize();
+
+  expect(await store.rollback(host, "never_promoted")).toBe(false);
+  expect(await store.rollback(host, "never_promoted")).toBe(false);
+});
+
+test("a promotion is undoable by sandbox id through the manager", async () => {
+  // The entry point a tool or route reaches: the promotion is addressable by the
+  // sandbox it came from, which is what makes `rollbackState` actionable.
+  const root = await mkdtemp(join(tmpdir(), "natalia-sb-mgr-rollback-"));
+  await writeFile(join(root, "file.txt"), "before\n");
+  const manager = new SnapshotSandboxManager(root);
+  await manager.initialize();
+  const sandbox = await manager.create("sb_undo");
+  await writeFile(join(sandbox.root, "file.txt"), "promoted\n");
+  await manager.promoteWithValidation("sb_undo", {
+    command: "true",
+    hostRoot: root,
+  });
+  expect(await readFile(join(root, "file.txt"), "utf8")).toBe("promoted\n");
+
+  const result = await manager.rollback("sb_undo");
+
+  expect(result.restored).toBe(true);
+  expect(await readFile(join(root, "file.txt"), "utf8")).toBe("before\n");
+});

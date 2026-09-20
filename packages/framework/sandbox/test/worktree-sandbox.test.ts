@@ -97,9 +97,10 @@ test("rollback returns the system slot to last-known-good", async () => {
   await git(sandbox.root, ["commit", "-m", "promote me"]);
   await manager.merge("sbx.4", root);
   expect(await readFile(join(root, "file.txt"), "utf8")).toBe("promoted\n");
-  // A failed activation rolls back to last-known-good.
-  const rollback = await manager.rollback();
-  expect(rollback.restored).toBeDefined();
+  // A failed activation rolls back to last-known-good, addressed by the sandbox
+  // whose promotion is being undone.
+  const rollback = await manager.rollback("sbx.4");
+  expect(rollback.restored).toBe(true);
   expect(await readFile(join(root, "file.txt"), "utf8")).toBe("base\n");
 });
 

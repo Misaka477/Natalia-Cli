@@ -158,7 +158,7 @@ export class SnapshotSandboxManager extends WorkspaceSandboxManager {
   }
 
   /** Restores the host to the last-known-good state of the last promote. */
-  async rollback(id: string): Promise<{ restored: boolean }> {
+  override async rollback(id: string): Promise<{ restored: boolean }> {
     return { restored: await this.store.rollback(this.hostRoot, id) };
   }
 

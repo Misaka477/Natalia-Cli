@@ -169,6 +169,7 @@ export const RPC_ROUTE_MEMBERS = {
   "sandbox.resource.output": "sandboxResourceOutput",
   "sandbox.merge": "sandboxMerge",
   "sandbox.delete": "sandboxDelete",
+  "sandbox.rollback": "sandboxRollback",
   "sandbox.resource.stop": "sandboxResourceStop",
   "session.list": "sessionList",
   "session.touch": "sessionTouch",
@@ -372,6 +373,7 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "checkpoint.rename",
   "sandbox.merge",
   "sandbox.delete",
+  "sandbox.rollback",
   "sandbox.resource.stop",
   "session.touch",
   "session.rename",
@@ -1399,6 +1401,17 @@ export async function handleRPCMessage(
         ),
       };
     }
+    if (body.method === "sandbox.rollback") {
+      optionsGuard(client, "sandboxRollback");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.sandboxRollback?.(
+          stringParam(body.params, "id"),
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
     if (body.method === "sandbox.resource.stop") {
       optionsGuard(client, "sandboxResourceStop");
       return {
@@ -2067,11 +2080,10 @@ export async function handleRPCMessage(
       optionsGuard(client, "updateConstitutionRule");
       const params = body.params as Record<string, unknown> | undefined;
       if (!params || typeof params.ruleID !== "string" || !params.ruleID.trim())
-        throw invalidParams("constitution.rule.update requires a ruleID string");
-      if (
-        params.enabled !== undefined &&
-        typeof params.enabled !== "boolean"
-      )
+        throw invalidParams(
+          "constitution.rule.update requires a ruleID string",
+        );
+      if (params.enabled !== undefined && typeof params.enabled !== "boolean")
         throw invalidParams(
           "constitution.rule.update.enabled must be a boolean when provided",
         );
@@ -2117,8 +2129,14 @@ export async function handleRPCMessage(
     if (body.method === "constitution.rule.create") {
       optionsGuard(client, "createConstitutionRule");
       const params = body.params as Record<string, unknown> | undefined;
-      if (!params || typeof params.statement !== "string" || !params.statement.trim())
-        throw invalidParams("constitution.rule.create requires a statement string");
+      if (
+        !params ||
+        typeof params.statement !== "string" ||
+        !params.statement.trim()
+      )
+        throw invalidParams(
+          "constitution.rule.create requires a statement string",
+        );
       if (
         params.enforcement !== "deny" &&
         params.enforcement !== "approval" &&
@@ -2163,7 +2181,9 @@ export async function handleRPCMessage(
       optionsGuard(client, "removeConstitutionRule");
       const params = body.params as Record<string, unknown> | undefined;
       if (!params || typeof params.ruleID !== "string" || !params.ruleID.trim())
-        throw invalidParams("constitution.rule.remove requires a ruleID string");
+        throw invalidParams(
+          "constitution.rule.remove requires a ruleID string",
+        );
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -3393,9 +3413,7 @@ export async function handleRPCMessage(
         params !== undefined &&
         (typeof params !== "object" || Array.isArray(params))
       )
-        throw invalidParams(
-          "subagent.history.page.params must be an object",
-        );
+        throw invalidParams("subagent.history.page.params must be an object");
       return {
         jsonrpc: "2.0",
         id: body.id ?? null,
@@ -3575,7 +3593,9 @@ export async function handleRPCMessage(
             throw invalidParams(`${body.method}.params must be an object`);
           const profile = (params as { profile?: unknown }).profile;
           if (!profile || typeof profile !== "object")
-            throw invalidParams(`${body.method}.params.profile must be an object`);
+            throw invalidParams(
+              `${body.method}.params.profile must be an object`,
+            );
           result = await surface.setModelProfile?.(
             profile as import("@natalia/contracts").ChatModelProfile,
             (params as { sessionID?: string }).sessionID,

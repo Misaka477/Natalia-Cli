@@ -14,6 +14,7 @@ import type {
   ExecutionTarget,
   RuntimeEvent,
   SandboxDiffKind,
+  SandboxStatus,
 } from "@natalia/contracts";
 
 export type SubagentStatusView =
@@ -326,6 +327,15 @@ export type SandboxToolService = {
     pendingChanges: SandboxChangeView[];
     runningResources: string[];
   }>;
+  /**
+   * Undoes one sandbox's promotion, restoring the host to what it was before.
+   *
+   * `restored: false` means there was nothing to undo — no recorded rollback
+   * point, or the recorded one belongs to a different sandbox. A backend that
+   * cannot reach a rollback point says false rather than reporting a success it
+   * did not achieve.
+   */
+  rollback(id: string): Promise<{ restored: boolean }>;
   startResource(
     id: string,
     command: string,
@@ -342,7 +352,11 @@ export type SandboxToolService = {
     id: string,
     command: string,
   ): Promise<{ ok: boolean; exitCode: number; output: string }>;
-  updateEvent(id: string): RuntimeEvent;
+  /**
+   * The sandbox's status event. `status` names a transition the manifest cannot
+   * describe, such as a merge that was previewed, landed or conflicted.
+   */
+  updateEvent(id: string, status?: SandboxStatus): RuntimeEvent;
   diffEvent(id: string): RuntimeEvent;
   auditEvent(
     id: string,

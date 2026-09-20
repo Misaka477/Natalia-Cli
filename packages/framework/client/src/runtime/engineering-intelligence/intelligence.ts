@@ -407,8 +407,7 @@ export function createIntelligenceSurface(
           },
     ) {
       const params = typeof input === "string" ? {} : (input ?? {});
-      const sessionID =
-        typeof input === "string" ? input : input?.sessionID;
+      const sessionID = typeof input === "string" ? input : input?.sessionID;
       const scope =
         typeof input === "string" ? "session" : (input?.scope ?? "session");
       const exec = await completeIntelligenceExec(sessionID);
@@ -418,10 +417,8 @@ export function createIntelligenceSurface(
       // requested through scope workspace/all.
       const sessionDecisionRecords = exec.factStateTerminalEvicted
         ? await readCompleteFacts(ctx, exec, projectedDecisionRecords)
-        : readFactSlice(
-            exec,
-            sessionFactDecisionRecords,
-            () => projectedDecisionRecords(exec.session.events),
+        : readFactSlice(exec, sessionFactDecisionRecords, () =>
+            projectedDecisionRecords(exec.session.events),
           );
       const sessionRecords = sessionDecisionRecords
         .filter((record) => record.scope !== "workspace")
@@ -519,13 +516,13 @@ export function createIntelligenceSurface(
       // B6: the hot fact state is authoritative after the complete-history
       // check above; the projected-events path is the fallback for a
       // tail-only attach.
-      const evidence = (exec.factStateTerminalEvicted
-        ? await readCompleteFacts(ctx, exec, projectedEvidenceRecords)
-        : readFactSlice(
-            exec,
-            sessionFactEvidenceRecords,
-            () => projectedEvidenceRecords(exec.session.events),
-          )) as ReturnType<typeof projectedEvidenceRecords>;
+      const evidence = (
+        exec.factStateTerminalEvicted
+          ? await readCompleteFacts(ctx, exec, projectedEvidenceRecords)
+          : readFactSlice(exec, sessionFactEvidenceRecords, () =>
+              projectedEvidenceRecords(exec.session.events),
+            )
+      ) as ReturnType<typeof projectedEvidenceRecords>;
       return paginate(
         evidence.map((r) => ({
           taskID: r.taskID,
@@ -562,10 +559,8 @@ export function createIntelligenceSurface(
       if (!exec?.session) return paginate([], input?.limit, input?.cursor);
       const completions = exec.factStateTerminalEvicted
         ? await readCompleteFacts(ctx, exec, projectedCompletions)
-        : readFactSlice(
-            exec,
-            sessionFactCompletions,
-            () => projectedCompletions(exec.session.events),
+        : readFactSlice(exec, sessionFactCompletions, () =>
+            projectedCompletions(exec.session.events),
           );
       // EI Phase 0: a user-recorded human validation on the card overrides the
       // model's own (the user has the last word on acceptance).
@@ -577,18 +572,18 @@ export function createIntelligenceSurface(
         completions.map((c) => {
           const validated = humanValidation.get(c.taskID) ?? c.humanValidation;
           return {
-          completionID: c.id,
-          taskID: c.taskID,
-          objective: c.objective,
-          changeSummary: c.changeSummary,
-          ...(c.behaviorImpact ? { behaviorImpact: c.behaviorImpact } : {}),
-          validations: c.validations,
-          ...(validated ? { humanValidation: validated } : {}),
-          knownGaps: c.knownGaps ?? [],
-          externalSideEffects: c.externalSideEffects ?? [],
-          ...(c.rollbackState ? { rollbackState: c.rollbackState } : {}),
-          evidenceIDs: c.evidenceIDs ?? [],
-          recordedAt: c.recordedAt,
+            completionID: c.id,
+            taskID: c.taskID,
+            objective: c.objective,
+            changeSummary: c.changeSummary,
+            ...(c.behaviorImpact ? { behaviorImpact: c.behaviorImpact } : {}),
+            validations: c.validations,
+            ...(validated ? { humanValidation: validated } : {}),
+            knownGaps: c.knownGaps ?? [],
+            externalSideEffects: c.externalSideEffects ?? [],
+            ...(c.rollbackState ? { rollbackState: c.rollbackState } : {}),
+            evidenceIDs: c.evidenceIDs ?? [],
+            recordedAt: c.recordedAt,
           };
         }),
         input?.limit,
@@ -638,10 +633,7 @@ export function createIntelligenceSurface(
      * checked box with no backing evidence is a `gap`, never `verified`; a
      * skipped box stays visible. The planID defaults to the active plan.
      */
-    async planTaskStates(
-      input?: { planID?: string },
-      sessionID?: string,
-    ) {
+    async planTaskStates(input?: { planID?: string }, sessionID?: string) {
       const resolvedSessionID = input?.planID ? sessionID : sessionID;
       const exec = await completeIntelligenceExec(resolvedSessionID);
       if (!exec?.session) return [];
@@ -869,10 +861,8 @@ export function createIntelligenceSurface(
       if (!exec?.session) return paginate([], input?.limit, input?.cursor);
       const findings = exec.factStateTerminalEvicted
         ? await readCompleteFacts(ctx, exec, projectedDriftFindings)
-        : readFactSlice(
-            exec,
-            sessionFactDriftFindings,
-            () => projectedDriftFindings(exec.session.events),
+        : readFactSlice(exec, sessionFactDriftFindings, () =>
+            projectedDriftFindings(exec.session.events),
           );
       return paginate(
         findings.map((f) => ({
@@ -914,7 +904,9 @@ export function createIntelligenceSurface(
         }>;
         evidenceRefs?: string[];
         /** EI Phase 2 机制 2: recent action kinds for the no-progress window. */
-        recentActions?: Array<{ kind: import("@natalia/work-ledger").DriftActionKind }>;
+        recentActions?: Array<{
+          kind: import("@natalia/work-ledger").DriftActionKind;
+        }>;
         /** EI Phase 2 机制 2: recent failed tool calls for the failure-loop rule. */
         recentFailures?: Array<{ toolName: string; key: string }>;
       },
@@ -939,7 +931,9 @@ export function createIntelligenceSurface(
         changes: input.changes ?? [],
         evidenceRefs: input.evidenceRefs ?? [],
         ...(input.recentActions ? { recentActions: input.recentActions } : {}),
-        ...(input.recentFailures ? { recentFailures: input.recentFailures } : {}),
+        ...(input.recentFailures
+          ? { recentFailures: input.recentFailures }
+          : {}),
         ...(contract
           ? {
               contract: {
@@ -1018,10 +1012,7 @@ export function createIntelligenceSurface(
      * premise (the contract revision) is gone. The Main Agent cannot reopen:
      * self-correction goes through a fresh finding or the chat flow.
      */
-    async reopenDriftFinding(
-      input: { findingID: string },
-      sessionID?: string,
-    ) {
+    async reopenDriftFinding(input: { findingID: string }, sessionID?: string) {
       const exec = await intelligenceExecWindow(sessionID);
       if (!exec?.session || !input.findingID.trim())
         return { reopened: false as const, reason: "no finding" };
@@ -1033,7 +1024,8 @@ export function createIntelligenceSurface(
       const finding = findings.find(
         (candidate) => candidate.findingID === input.findingID,
       );
-      if (!finding) return { reopened: false as const, reason: "unknown finding" };
+      if (!finding)
+        return { reopened: false as const, reason: "unknown finding" };
       if (finding.status !== "dismissed" && finding.status !== "explained")
         return {
           reopened: false as const,
@@ -1154,8 +1146,7 @@ export function createIntelligenceSurface(
       // Hard-coded runtime self-protection (C-TERM-*): the guarantee survives
       // a journal edit, so the panel must not pretend it can be changed. Every
       // other rule (C-REL-*, user rules) is user-editable (EI §3.8 P-1.c).
-      if (isHardProtectedRule(input.ruleID))
-        return { updated: false as const };
+      if (isHardProtectedRule(input.ruleID)) return { updated: false as const };
       const governanceLedger = requireGovernanceLedger();
       if (!governanceLedger) return { updated: false as const };
       // A deny/approval rule must keep a non-empty structured anchor so the
@@ -1204,8 +1195,7 @@ export function createIntelligenceSurface(
       // Hard-coded runtime self-protection (C-TERM-*): the guarantee cannot
       // be removed by deleting the journal row, so deletion is refused. Every
       // other rule (C-REL-*, user rules) is user-removable.
-      if (isHardProtectedRule(input.ruleID))
-        return { removed: false as const };
+      if (isHardProtectedRule(input.ruleID)) return { removed: false as const };
       const governanceLedger = requireGovernanceLedger();
       if (!governanceLedger) return { removed: false as const };
       ctx.ports.publishForSession(
@@ -1241,7 +1231,10 @@ export function createIntelligenceSurface(
     ) {
       const exec = await intelligenceExecWindow(sessionID);
       if (!exec?.session || !input.statement?.trim())
-        return { created: false as const, reason: "a rule requires a statement" };
+        return {
+          created: false as const,
+          reason: "a rule requires a statement",
+        };
       const anchor = input.appliesTo;
       if (
         (input.enforcement === "deny" || input.enforcement === "approval") &&
@@ -1258,7 +1251,10 @@ export function createIntelligenceSurface(
         };
       const governanceLedger = requireGovernanceLedger();
       if (!governanceLedger)
-        return { created: false as const, reason: "governance ledger unavailable" };
+        return {
+          created: false as const,
+          reason: "governance ledger unavailable",
+        };
       const ruleID = `P-USER-${Date.now().toString(36).toUpperCase()}`;
       ctx.ports.publishForSession(
         exec,
@@ -1280,13 +1276,11 @@ export function createIntelligenceSurface(
      * (prose → warn, `<!-- enforcement -->` → hard with appliesTo). These are
      * the soft rules the governance panel can promote into journal rules.
      */
-    async constitutionDocRules(_sessionID?: string): Promise<
-      ConstitutionDocRule[]
-    > {
+    async constitutionDocRules(
+      _sessionID?: string,
+    ): Promise<ConstitutionDocRule[]> {
       await ctx.ports.getReady();
-      const snapshot = await loadProjectDocuments(
-        ctx.ports.getWorkspaceRoot(),
-      );
+      const snapshot = await loadProjectDocuments(ctx.ports.getWorkspaceRoot());
       return snapshot.documents.flatMap((document) => document.rules);
     },
     /**
@@ -1305,9 +1299,7 @@ export function createIntelligenceSurface(
       if (!exec?.session || !input.id.trim())
         return { promoted: false as const, reason: "no rule id" };
       await ctx.ports.getReady();
-      const snapshot = await loadProjectDocuments(
-        ctx.ports.getWorkspaceRoot(),
-      );
+      const snapshot = await loadProjectDocuments(ctx.ports.getWorkspaceRoot());
       const rule = snapshot.documents
         .flatMap((document) => document.rules)
         .find((candidate) => candidate.id === input.id);
@@ -1327,7 +1319,10 @@ export function createIntelligenceSurface(
         };
       const governanceLedger = requireGovernanceLedger();
       if (!governanceLedger)
-        return { promoted: false as const, reason: "governance ledger unavailable" };
+        return {
+          promoted: false as const,
+          reason: "governance ledger unavailable",
+        };
       const ruleID = `P-DOC-${rule.id.replace(/[^a-zA-Z0-9]+/gu, "-")}`;
       ctx.ports.publishForSession(
         exec,
@@ -1342,64 +1337,63 @@ export function createIntelligenceSurface(
       return { promoted: true as const, ruleID };
     },
 
-      /**
-       * Edit a soft (document) rule in place and write it back (EI §3.8 P-1.c
-       * 软规则编辑): the user rewrites a section's prose and syncs its
-       * enforcement / appliesTo HTML-comment annotations. The document is the
-       * source of truth for soft rules — there is no journal event; the change
-       * is picked up by the hash-based runtime-context re-derivation. The model
-       * never calls this (§3.6): only the user, through the governance panel.
-       */
-      async updateConstitutionDocRule(
-        input: {
-          id: string;
-          statement?: string;
-          enforcement?: ConstitutionDocRule["enforcement"];
-          appliesTo?: ConstitutionDocRule["appliesTo"];
-        },
-        sessionID?: string,
-      ) {
-        if (!input.id.trim())
-          return { updated: false as const, reason: "no rule id" };
-        const statement = input.statement?.trim();
-        if (input.statement !== undefined && !statement)
-          return {
-            updated: false as const,
-            reason: "statement must not be empty",
-          };
-        await ctx.ports.getReady();
-        const workspaceRoot = ctx.ports.getWorkspaceRoot();
-        const snapshot = await loadProjectDocuments(workspaceRoot);
-        const document = snapshot.documents.find((candidate) =>
-          candidate.rules.some((rule) => rule.id === input.id),
-        );
-        if (!document)
-          return { updated: false as const, reason: "unknown document rule id" };
-        const current = document.rules.find((rule) => rule.id === input.id)!;
-        const next = {
-          statement: statement ?? current.statement,
-          enforcement: input.enforcement ?? current.enforcement,
-          ...(input.appliesTo !== undefined
-            ? { appliesTo: input.appliesTo }
-            : current.appliesTo
-              ? { appliesTo: current.appliesTo }
-              : {}),
-        };
-        const edited = applyConstitutionDocEdit(
-          document.content,
-          document.source,
-          input.id,
-          next,
-        );
-        if (!edited.ok)
-          return { updated: false as const, reason: edited.reason };
-        await writeWorkspaceFile({
-          workspaceRoot,
-          path: document.path,
-          content: edited.content,
-        });
-        return { updated: true as const };
+    /**
+     * Edit a soft (document) rule in place and write it back (EI §3.8 P-1.c
+     * 软规则编辑): the user rewrites a section's prose and syncs its
+     * enforcement / appliesTo HTML-comment annotations. The document is the
+     * source of truth for soft rules — there is no journal event; the change
+     * is picked up by the hash-based runtime-context re-derivation. The model
+     * never calls this (§3.6): only the user, through the governance panel.
+     */
+    async updateConstitutionDocRule(
+      input: {
+        id: string;
+        statement?: string;
+        enforcement?: ConstitutionDocRule["enforcement"];
+        appliesTo?: ConstitutionDocRule["appliesTo"];
       },
+      sessionID?: string,
+    ) {
+      if (!input.id.trim())
+        return { updated: false as const, reason: "no rule id" };
+      const statement = input.statement?.trim();
+      if (input.statement !== undefined && !statement)
+        return {
+          updated: false as const,
+          reason: "statement must not be empty",
+        };
+      await ctx.ports.getReady();
+      const workspaceRoot = ctx.ports.getWorkspaceRoot();
+      const snapshot = await loadProjectDocuments(workspaceRoot);
+      const document = snapshot.documents.find((candidate) =>
+        candidate.rules.some((rule) => rule.id === input.id),
+      );
+      if (!document)
+        return { updated: false as const, reason: "unknown document rule id" };
+      const current = document.rules.find((rule) => rule.id === input.id)!;
+      const next = {
+        statement: statement ?? current.statement,
+        enforcement: input.enforcement ?? current.enforcement,
+        ...(input.appliesTo !== undefined
+          ? { appliesTo: input.appliesTo }
+          : current.appliesTo
+            ? { appliesTo: current.appliesTo }
+            : {}),
+      };
+      const edited = applyConstitutionDocEdit(
+        document.content,
+        document.source,
+        input.id,
+        next,
+      );
+      if (!edited.ok) return { updated: false as const, reason: edited.reason };
+      await writeWorkspaceFile({
+        workspaceRoot,
+        path: document.path,
+        content: edited.content,
+      });
+      return { updated: true as const };
+    },
     async registeredTools(sessionID?: string) {
       await ctx.ports.getReady();
       const exec = await intelligenceExecWindow(sessionID);

@@ -193,6 +193,52 @@ function sandboxMergeTool(): RuntimeTool {
   };
 }
 
+/**
+ * Undoes one sandbox's promotion.
+ *
+ * Exposed as a tool because the promotion is: a capability the runtime publishes
+ * in its completion record (`rollbackState`) is only honest if something can act
+ * on it. It rewrites host files, so it clears the same authorization gate as the
+ * merge it undoes.
+ */
+function sandboxRollbackTool(): RuntimeTool {
+  return {
+    name: "sandbox_rollback",
+    description:
+      "Undo a sandbox's promotion and restore the host to what it was before. Refuses when a later promotion has touched the same paths, since undoing would discard newer work.",
+    requiresApproval: true,
+    parameters: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const id = requireString(args.id, "id");
+      const manager = requireSandboxes(context);
+      const diff = await manager.previewMerge(id);
+      const paths = diff.map((change) => change.path);
+      await context.sandboxMergeAuthorize?.({ id, paths });
+      const result = await manager.rollback(id);
+      context.onWorkspaceChange?.(
+        diff.map((change) => ({ ...change, kind: "modify" as const })),
+      );
+      context.onSandboxEvent?.(manager.updateEvent(id));
+      context.onSandboxEvent?.(manager.auditEvent(id, "rollback"));
+      return JSON.stringify(
+        {
+          id,
+          restored: result.restored,
+          restoredPaths: result.restored ? paths : [],
+        },
+        null,
+        2,
+      );
+    },
+  };
+}
+
 function sandboxDeleteTool(): RuntimeTool {
   return {
     name: "sandbox_delete",
@@ -378,6 +424,7 @@ export function sandboxTools(): RuntimeTool[] {
     sandboxWriteTool(),
     sandboxDiffTool(),
     sandboxMergeTool(),
+    sandboxRollbackTool(),
     sandboxDeleteTool(),
     sandboxResourceStartTool(),
     sandboxResourceListTool(),

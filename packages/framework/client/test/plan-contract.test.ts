@@ -330,7 +330,11 @@ test("A1 E2E: a plan edit marks the draft stale in work_contract_read (re-propos
       async *stream(request: ProviderStreamRequest) {
         const messages = (
           request as {
-            messages: Array<{ role: string; content: string; toolCallID?: string }>;
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
           }
         ).messages;
         // After a tool call (the last message is its result), capture the read
@@ -394,7 +398,10 @@ test("A1 E2E: a plan edit marks the draft stale in work_contract_read (re-propos
     content: "# Stale plan\n",
     title: "Stale plan",
   });
-  const marked = await client.planDocMark!({ path: "plans/stale-plan.md", title: "Stale plan" });
+  const marked = await client.planDocMark!({
+    path: "plans/stale-plan.md",
+    title: "Stale plan",
+  });
   planID = marked.planID;
   await client.planDocActivate!(marked.planID);
 
@@ -418,7 +425,12 @@ test("A1 E2E: a plan edit marks the draft stale in work_contract_read (re-propos
   await client.submitAndWait!("read the contract again");
   expect(readResults).toHaveLength(2);
   const after = JSON.parse(readResults[1]!);
-  expect(after).toMatchObject({ planID, status: "draft", version: 1, stale: true });
+  expect(after).toMatchObject({
+    planID,
+    status: "draft",
+    version: 1,
+    stale: true,
+  });
   await client.dispose?.();
 }, 30_000);
 

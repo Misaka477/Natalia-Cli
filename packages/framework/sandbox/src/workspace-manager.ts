@@ -14,6 +14,7 @@ import type {
   ExecutionTarget,
   RuntimeEvent,
   SandboxDiffKind,
+  SandboxStatus,
 } from "@natalia/contracts";
 import {
   forceRemove,
@@ -339,6 +340,17 @@ export class WorkspaceSandboxManager
   }
 
   /**
+   * Undoes one sandbox's promotion, restoring the host to what it was before.
+   *
+   * Takes the sandbox id because that is what the caller has: an entry point
+   * that reaches a rollback by sandbox id is the only shape that can be exposed
+   * as a tool. `restored: false` means there was nothing to undo.
+   */
+  async rollback(_id: string): Promise<{ restored: boolean }> {
+    return { restored: false };
+  }
+
+  /**
    * A marker for the rollback point a promotion left, or undefined when it left
    * none. Backends name it differently — a commit, a backup directory — so the
    * marker is opaque and only its presence is meaningful.
@@ -448,12 +460,21 @@ export class WorkspaceSandboxManager
     return result;
   }
 
-  updateEvent(id: string): RuntimeEvent {
+  /**
+   * The sandbox's status event.
+   *
+   * The manifest can only describe two states — has changes, has none — so a
+   * caller naming a transition the manifest cannot see (a merge that was
+   * previewed, landed, or conflicted) passes it explicitly. Left to the default
+   * those transitions were unreportable, and `merge_previewed`/`merged`/
+   * `conflicted` were vocabulary nothing could emit.
+   */
+  updateEvent(id: string, status?: SandboxStatus): RuntimeEvent {
     const manifest = this.mustGet(id);
     return {
       type: "sandbox.update",
       id,
-      status: manifest.changedFiles.length ? "changed" : "created",
+      status: status ?? (manifest.changedFiles.length ? "changed" : "created"),
       root: manifest.root,
       isolationLevel: manifest.isolationLevel,
       changedFiles: manifest.changedFiles.length,

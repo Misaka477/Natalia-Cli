@@ -3505,6 +3505,14 @@ export type RuntimeClient = {
     pendingChanges: RuntimeSandboxChange[];
     runningResources: string[];
   }>;
+  /**
+   * Undoes one sandbox's promotion. `restored: false` means there was nothing to
+   * undo, not that the rollback failed.
+   */
+  sandboxRollback?(
+    id: string,
+    sessionID?: string,
+  ): Promise<{ restored: boolean }>;
   sandboxResourceStop?(input: {
     id: string;
     resourceID: string;

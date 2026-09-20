@@ -160,10 +160,8 @@ export async function loadGovernancePage(
       ...input,
       scope: options.decisionScope ?? "session",
     });
-  else if (tab === "evidence")
-    page = await runtime?.evidenceRecords?.(input);
-  else if (tab === "completions")
-    page = await runtime?.completions?.(input);
+  else if (tab === "evidence") page = await runtime?.evidenceRecords?.(input);
+  else if (tab === "completions") page = await runtime?.completions?.(input);
   else page = await runtime?.driftFindings?.(input);
   return {
     items: page?.items ?? [],
@@ -254,7 +252,9 @@ export async function loadGovernanceSlices(
   const loadList = async (tab: GovernanceListTab) => {
     try {
       return await loadGovernancePage(runtime, tab, sessionID, {
-        ...(options.decisionScope ? { decisionScope: options.decisionScope } : {}),
+        ...(options.decisionScope
+          ? { decisionScope: options.decisionScope }
+          : {}),
         ...(options.pageSize ? { limit: options.pageSize } : {}),
       });
     } catch (error) {
@@ -294,16 +294,14 @@ export async function loadGovernanceSlices(
     loadSlice(
       "WorkGraphNodes",
       () =>
-        runtime?.workGraphNodes?.(
-          sessionID ? { sessionID } : undefined,
-        ) ?? Promise.resolve([]),
+        runtime?.workGraphNodes?.(sessionID ? { sessionID } : undefined) ??
+        Promise.resolve([]),
     ),
     loadSlice(
       "WorkGraphEdges",
       () =>
-        runtime?.workGraphEdges?.(
-          sessionID ? { sessionID } : undefined,
-        ) ?? Promise.resolve([]),
+        runtime?.workGraphEdges?.(sessionID ? { sessionID } : undefined) ??
+        Promise.resolve([]),
     ),
   ]);
   return {
@@ -985,14 +983,24 @@ export function GovernancePane(props: {
 
   function openRuleEditor(
     mode: "add" | "edit",
-    rule?: { ruleID: string; statement: string; enforcement: string; appliesTo?: { tools?: string[]; paths?: string[]; commandPattern?: string } },
+    rule?: {
+      ruleID: string;
+      statement: string;
+      enforcement: string;
+      appliesTo?: {
+        tools?: string[];
+        paths?: string[];
+        commandPattern?: string;
+      };
+    },
   ) {
     setActionNotice(undefined);
     setRuleEditor({
       mode,
       ...(rule ? { ruleID: rule.ruleID } : {}),
       statement: rule?.statement ?? "",
-      enforcement: (rule?.enforcement as "deny" | "approval" | "warn") ?? "warn",
+      enforcement:
+        (rule?.enforcement as "deny" | "approval" | "warn") ?? "warn",
       tools: (rule?.appliesTo?.tools ?? []).join(", "),
       paths: (rule?.appliesTo?.paths ?? []).join(", "),
       commandPattern: rule?.appliesTo?.commandPattern ?? "",
@@ -1214,9 +1222,7 @@ export function GovernancePane(props: {
         onScroll={() => autoAppend.check()}
       >
         <Show when={loadErrors().length}>
-          <div class="neu-gov-error">
-            {loadErrors().join(" · ")}
-          </div>
+          <div class="neu-gov-error">{loadErrors().join(" · ")}</div>
         </Show>
         <Show when={actionNotice()}>
           <div class="neu-gov-action-note">{actionNotice()}</div>
@@ -1461,12 +1467,11 @@ export function GovernancePane(props: {
                       class="constitution-btn"
                       onClick={() =>
                         void (async () => {
-                          const result =
-                            await promoteConstitutionDocRuleViaRpc(
-                              props.runtime,
-                              props.sessionID,
-                              rule.id,
-                            );
+                          const result = await promoteConstitutionDocRuleViaRpc(
+                            props.runtime,
+                            props.sessionID,
+                            rule.id,
+                          );
                           setActionNotice(
                             result?.promoted
                               ? `已提升为正式规则 ${result.ruleID}`
@@ -1665,9 +1670,9 @@ export function GovernancePane(props: {
             }
           >
             <div class="neu-gov-empty">
-              No decision.recorded for this {decisionScope()} scope yet.
-              Session decisions appear when the model calls record_decision;
-              workspace decisions come from an explicit workspace promotion.
+              No decision.recorded for this {decisionScope()} scope yet. Session
+              decisions appear when the model calls record_decision; workspace
+              decisions come from an explicit workspace promotion.
             </div>
           </Show>
         </Show>
@@ -1790,9 +1795,7 @@ export function GovernancePane(props: {
                   <Show
                     when={(record.validations ?? []).length}
                     fallback={
-                      <div class="gov-card-text">
-                        no validation recorded
-                      </div>
+                      <div class="gov-card-text">no validation recorded</div>
                     }
                   >
                     <For each={record.validations ?? []}>

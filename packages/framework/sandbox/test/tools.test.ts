@@ -211,3 +211,71 @@ async function waitForOutput(read: () => Promise<string>, expected = "ready") {
     await Bun.sleep(20);
   }
 }
+
+test("sandbox_rollback undoes a promotion and clears the same gate as the merge", async () => {
+  // It rewrites host files, so it must not be a weaker path than the merge it
+  // undoes — the authorization runs before the host is touched.
+  const root = await mkdtemp(join(tmpdir(), "natalia-tool-rollback-"));
+  await writeFile(join(root, "file.txt"), "before\n");
+  const manager = new SnapshotSandboxManager(root);
+  await manager.initialize();
+  const sandbox = await manager.create("sb_tool");
+  await writeFile(join(sandbox.root, "file.txt"), "promoted\n");
+  await manager.promoteWithValidation("sb_tool", {
+    command: "true",
+    hostRoot: root,
+  });
+  const events: unknown[] = [];
+  const authorized: string[][] = [];
+  const context = {
+    workspaceRoot: root,
+    sandboxes: manager,
+    sandboxMergeAuthorize: async ({ paths }: { paths: string[] }) => {
+      authorized.push(paths);
+    },
+    onSandboxEvent: (event: unknown) => events.push(event),
+    onWorkspaceChange: () => {},
+  } as never;
+  const tool = sandboxTools().find((t) => t.name === "sandbox_rollback")!;
+
+  const output = await tool.execute({ id: "sb_tool" }, context);
+
+  expect(authorized).toHaveLength(1);
+  expect(JSON.parse(output as string).restored).toBe(true);
+  expect(await readFile(join(root, "file.txt"), "utf8")).toBe("before\n");
+  // The transition is reported as an audit fact, not left as a silent rewrite.
+  expect(
+    events.some(
+      (event) =>
+        (event as { type: string; action?: string }).type === "sandbox.audit" &&
+        (event as { action?: string }).action === "rollback",
+    ),
+  ).toBe(true);
+});
+
+test("a second candidate from the same base is refused and the first survives", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-conflicted-"));
+  await writeFile(join(root, "shared.ts"), "BASE\n");
+  const manager = new SnapshotSandboxManager(root);
+  await manager.initialize();
+  // Both candidates are created before either is promoted — which is what a
+  // fan-out does: spawn the batch, then review it. A sandbox created after a
+  // promotion would snapshot the promoted host and have nothing to conflict with.
+  const first = await manager.create("sb_one");
+  const other = await manager.create("sb_two");
+  await writeFile(join(first.root, "shared.ts"), "ONE\n");
+  await writeFile(join(other.root, "shared.ts"), "TWO\n");
+  await manager.promoteWithValidation("sb_one", {
+    command: "true",
+    hostRoot: root,
+  });
+
+  await expect(
+    manager.promoteWithValidation("sb_two", {
+      command: "true",
+      hostRoot: root,
+    }),
+  ).rejects.toThrow(/conflicts with changes already on the host/);
+  // The first candidate's work survived the refusal.
+  expect(await readFile(join(root, "shared.ts"), "utf8")).toBe("ONE\n");
+});
