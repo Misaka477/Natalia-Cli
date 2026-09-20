@@ -480,7 +480,6 @@ const EVENT_TRIGGERS: Record<string, string> = {
   "turn.finished": "a turn ended; `stopReason`: done, cancelled or error",
   "turn.paused": "a turn is waiting on an approval or question",
   "turn.resumed": "a paused turn resumed",
-  "turn.retry": "a whole turn is being retried (retry policy)",
   "turn.submitted": "a turn was accepted; `id` is the turn id",
   "workgraph.edge_added": "a work graph edge was added",
   "workgraph.node_added": "a work graph node was added",
@@ -1613,19 +1612,42 @@ function renderConfigReferenceSections(): string {
   );
 }
 
+/**
+ * Replace every generated block in a document, not just the first.
+ *
+ * The reference documents carry the generated block twice — once in the English
+ * section and once in the Chinese one — and a single `indexOf` pair rewrote only
+ * the first. The second therefore froze at whatever the source looked like when
+ * it was last written by hand, and no amount of regenerating brought it forward.
+ * The gate could not see it either, because the gate runs this same writer.
+ */
+function replaceAllBlocks(full: string, block: string, path: string): string {
+  let out = "";
+  let cursor = 0;
+  for (;;) {
+    const start = full.indexOf(GEN_BEGIN, cursor);
+    const end = full.indexOf(GEN_END, cursor);
+    if (start === -1 && end === -1) break;
+    if (start === -1 || end === -1 || end < start)
+      throw new Error(
+        `${path} has an unpaired generated-block marker (${GEN_BEGIN} … ${GEN_END})`,
+      );
+    out += full.slice(cursor, start) + block;
+    cursor = end + GEN_END.length;
+  }
+  if (cursor === 0)
+    throw new Error(
+      `${path} is missing the generated-block markers (${GEN_BEGIN} … ${GEN_END})`,
+    );
+  return out + full.slice(cursor);
+}
+
 export function writeApiReference(): void {
   const block = `${GEN_BEGIN}\n${renderGeneratedSections()}${GEN_END}`;
   for (const path of [API_REFERENCE_PATH, API_REFERENCE_ZH_PATH]) {
-    const full = readFileSync(path, "utf8");
-    const start = full.indexOf(GEN_BEGIN);
-    const end = full.indexOf(GEN_END);
-    if (start === -1 || end === -1 || end < start)
-      throw new Error(
-        `${path} is missing the generated-block markers (${GEN_BEGIN} … ${GEN_END})`,
-      );
     writeFileSync(
       path,
-      `${full.slice(0, start)}${block}${full.slice(end + GEN_END.length)}`,
+      replaceAllBlocks(readFileSync(path, "utf8"), block, path),
     );
   }
   const typesBlock = `${TYPES_GEN_BEGIN}\n${renderTypesReferenceSections()}${TYPES_GEN_END}`;

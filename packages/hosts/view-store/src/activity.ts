@@ -109,7 +109,6 @@ export function applyActivityEvent(state: AppState, event: RuntimeEvent): void {
         state: "active",
       });
       return;
-    case "turn.retry":
     case "step.retry":
       upsertActivity(state, {
         id: retryActivityID(event.id),

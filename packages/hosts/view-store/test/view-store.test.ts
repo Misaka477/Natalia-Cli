@@ -841,12 +841,14 @@ test("retry and compaction activities clear after their terminal events", () => 
   let state = projectEvents([
     submitted("t1", "continue"),
     {
-      type: "turn.retry",
+      type: "step.retry",
       id: "t1",
+      operation: "llm_step",
+      step: 1,
       attempt: 1,
       maxAttempts: 3,
-      reason: "rate_limited",
-      retryAfterMs: 1000,
+      waitMs: 1000,
+      reason: "rate_limit",
     },
     {
       type: "compaction.begin",
@@ -1023,12 +1025,14 @@ test("an announced retry that continues with a stamped delta keeps the earlier t
     submitted("t1", "q"),
     { type: "content.delta", id: "t1", attempt: 1, text: "Hello.\n\n" },
     {
-      type: "turn.retry",
+      type: "step.retry",
       id: "t1",
+      operation: "llm_step",
+      step: 1,
       attempt: 2,
       maxAttempts: 3,
+      waitMs: 10,
       reason: "timeout",
-      retryAfterMs: 10,
     },
     { type: "content.delta", id: "t1", attempt: 2, text: "World." },
   ]);
@@ -1410,12 +1414,14 @@ test("a retry that resends everything does not duplicate the response", () => {
     submitted("t1", "q"),
     { type: "content.delta", id: "t1", text: "Hello" },
     {
-      type: "turn.retry",
+      type: "step.retry",
       id: "t1",
+      operation: "llm_step",
+      step: 1,
       attempt: 2,
       maxAttempts: 3,
+      waitMs: 10,
       reason: "timeout",
-      retryAfterMs: 10,
     },
     { type: "content.delta", id: "t1", text: "Hello world" },
     { type: "content.done", id: "t1", text: "Hello world" },
@@ -1460,12 +1466,14 @@ test("a retry keeps confirmed text and continues from it", () => {
     submitted("t1", "q"),
     { type: "content.delta", id: "t1", text: "Hello.\n\n" },
     {
-      type: "turn.retry",
+      type: "step.retry",
       id: "t1",
+      operation: "llm_step",
+      step: 1,
       attempt: 2,
       maxAttempts: 3,
+      waitMs: 10,
       reason: "timeout",
-      retryAfterMs: 10,
     },
     { type: "content.delta", id: "t1", text: "World." },
     { type: "content.done", id: "t1", text: "Hello.\n\nWorld." },
@@ -1508,18 +1516,20 @@ test("a retry also clears unconfirmed text so it cannot be shown twice", () => {
     { type: "content.delta", id: "t1", text: "Hello" },
     { type: "content.delta", id: "t1", text: " partial" },
     {
-      type: "turn.retry",
+      type: "step.retry",
       id: "t1",
+      operation: "llm_step",
+      step: 1,
       attempt: 2,
       maxAttempts: 3,
+      waitMs: 10,
       reason: "timeout",
-      retryAfterMs: 10,
     },
   ]);
   const assistant = state.messages.find((block) => block.role === "assistant");
   // The banner is up and the unconfirmed tail is gone.
   expect(assistant?.pendingText).toBe("");
-  expect(state.retryBanner?.kind).toBe("turn_retry");
+  expect(state.retryBanner?.kind).toBe("step_retry");
 });
 
 test("a long response does not split a fenced code block across segments", () => {

@@ -883,14 +883,6 @@ type RuntimeEventData =
       attempt?: number;
     }
   | {
-      type: "turn.retry";
-      id: string;
-      attempt: number;
-      maxAttempts: number;
-      reason: string;
-      retryAfterMs: number;
-    }
-  | {
       type: "step.retry";
       id: string;
       operation: StepRetryOperation;
