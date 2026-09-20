@@ -1950,9 +1950,9 @@ function interleavedReasoningFieldForModel(
   )
     return interleaved.field;
   if (interleaved === false) return undefined;
-  // OpenCode's built-in fallback: @ai-sdk/openai-compatible DeepSeek models
-  // default to reasoning_content even when the catalog has no explicit
-  // interleaved capability.
+  // The fallback the compatible-OpenAI SDK applies: reasoning-style models on
+  // this driver shape default to reasoning_content even when the catalog has no
+  // explicit interleaved capability.
   const kind = driver.toLowerCase();
   if (
     !kind.includes("anthropic") &&

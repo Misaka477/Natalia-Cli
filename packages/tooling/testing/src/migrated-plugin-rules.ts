@@ -355,6 +355,7 @@ export function findClientProductDependencyViolation(
  */
 const clientClosureAllowlist = [
   "agent",
+  "agent-prompts",
   "attachments",
   "capability",
   "checkpoint",
@@ -363,6 +364,7 @@ const clientClosureAllowlist = [
   "config",
   "context-ledger",
   "contracts",
+  "goal",
   "governance-ledger",
   "platform",
   "plugin",

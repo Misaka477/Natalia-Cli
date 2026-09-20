@@ -19,15 +19,6 @@ export function createSubagentsController(input: {
   wallClockBudgetMs?: number;
 }): SubagentsController {
   let registry: SubagentRegistry | undefined;
-  /**
-   * Live-delivery hooks keyed by subagent id, supplied by the runtime that owns
-   * the subagent's ledger. Only a hook can reach a running child, so a target
-   * without one is the queued case — never a silently dropped message.
-   */
-  const steerHooks = new Map<
-    string,
-    (message: string) => "delivered" | "resumed" | undefined
-  >();
 
   async function init(runner: SubagentRunner) {
     const next = new SubagentRegistry({
@@ -53,8 +44,7 @@ export function createSubagentsController(input: {
       | ((message: string) => "delivered" | "resumed" | undefined)
       | undefined,
   ) {
-    if (hook) steerHooks.set(id, hook);
-    else steerHooks.delete(id);
+    requireRegistry().setSteerHook(id, hook);
   }
 
   function enabled() {
@@ -87,31 +77,11 @@ export function createSubagentsController(input: {
     setPendingMessages: (id, messages) =>
       requireRegistry().setPendingMessages(id, messages),
     setSteerHook,
-    sendMessage: async (id, message, callerSession) => {
-      const registry = requireRegistry();
-      const record = registry.get(id);
-      if (!record) return { route: "not_found" };
-      // Only the parent may steer: a spawner is recorded on the record, and
-      // anything else is a stranger that has no business redirecting this child.
-      if (
-        record.parentSessionID !== undefined &&
-        callerSession !== undefined &&
-        record.parentSessionID !== callerSession
-      )
-        throw new Error(
-          `subagent ${id} belongs to another session; only its parent may steer it`,
-        );
-      // The client supplies the live-ledger routing through this hook; absent
-      // one the message is queued rather than dropped, so the parent is never
-      // told it steered when it did not.
-      const routed = steerHooks.get(id)?.(message);
-      if (routed) return { route: routed };
-      registry.setPendingMessages(id, [
-        ...(record.pendingMessages ?? []),
-        message,
-      ]);
-      return { route: "queued" };
-    },
+    // Authority, live routing and the queueing fallback all live on the registry
+    // now, so both a bare registry and this composition answer a steer the same
+    // way instead of the composition being the only one that can.
+    sendMessage: async (id, message, callerSession) =>
+      await requireRegistry().sendMessage(id, message, callerSession),
     retry: async (id) => await requireRegistry().retry(id),
     attach: (id) => requireRegistry().attach(id),
     detach: (id) => requireRegistry().detach(id),

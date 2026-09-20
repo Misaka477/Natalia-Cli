@@ -173,11 +173,10 @@ export const contextConfigSchema = z.object({
    * Recent-context tokens always kept verbatim across a compaction.
    *
    * A floor rather than a ceiling: the preserved tail is whichever of this and
-   * `preservedRecentMessages` reaches further back. Sized like the other
-   * harnesses' defaults — pi keeps 20k, opencode clamps to 2k–15k — because a
-   * count alone cannot say how much context a turn holds: ten short exchanges
-   * and ten file reads are the same count and an order of magnitude apart in
-   * tokens.
+   * `preservedRecentMessages` reaches further back. Sized in the 15k–20k range
+   * the other agent harnesses settle on, because a count alone cannot say how
+   * much context a turn holds: ten short exchanges and ten file reads are the
+   * same count and an order of magnitude apart in tokens.
    */
   preservedRecentTokens: z.number().int().min(0).default(20_000),
   /** Bounded overflow recovery attempts before surfacing context_limit. */

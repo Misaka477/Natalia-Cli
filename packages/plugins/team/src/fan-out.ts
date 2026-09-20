@@ -31,7 +31,11 @@ export type FanOutTask = {
 export type FanOutPR = {
   id: string;
   sandboxID: string;
-  status: "completed" | "failed" | "stopped";
+  /**
+   * `running` is reachable: a fan-out that times out still has live candidates,
+   * and reporting them as one of the terminal states would be a guess.
+   */
+  status: "completed" | "failed" | "stopped" | "running";
   /** The candidate's diff against its base — what a lead reviews. */
   diff: SandboxChangeView[];
   result?: string;
@@ -78,15 +82,27 @@ export async function runFanOut(input: {
     level: "info",
     message: `fan-out spawned ${spawned.length} sandboxed sub-agents in parallel`,
   });
-  await waitForAllTerminal(
+  const { statuses, stuck } = await waitForAllTerminal(
     input.subagents,
     spawned.map(({ record }) => record.id),
     input.timeoutMs ?? 120_000,
   );
+  if (stuck.length)
+    input.publish?.({
+      type: "diagnostic",
+      level: "warning",
+      message:
+        `fan-out timed out waiting for ${stuck.length} sub-agent(s): ` +
+        `${stuck.join(", ")}; the PRs that finished are still reported`,
+    });
   const prs: FanOutPR[] = [];
   for (const { item: task, record } of spawned) {
-    const status =
-      (input.subagents.status(record.id) as FanOutPR["status"]) ?? "failed";
+    // Read from the wait's own snapshot: a sub-agent that is still running after
+    // the timeout is reported as running, not coerced into a terminal state it
+    // has not reached.
+    const observed =
+      statuses[record.id]?.status ?? input.subagents.status(record.id);
+    const status = (observed ?? "failed") as FanOutPR["status"];
     // A completed candidate's worktree holds its diff for the lead to review.
     const diff =
       status === "completed"
@@ -140,17 +156,16 @@ async function waitForAllTerminal(
   registry: SubagentToolService,
   ids: string[],
   timeoutMs: number,
-): Promise<void> {
+): Promise<{ statuses: Record<string, { status: string }>; stuck: string[] }> {
   const results = await registry.wait(ids, "all_terminal", timeoutMs);
   const stuck = ids.filter(
     (id) =>
       !["completed", "failed", "stopped"].includes(results[id]?.status ?? ""),
   );
-  if (stuck.length > 0) {
-    throw new Error(
-      `fan-out timed out waiting for sub-agents: ${stuck.join(", ")}`,
-    );
-  }
+  // Returned rather than thrown: a fan-out that times out still produced work
+  // for every candidate that finished, and discarding all of it because one is
+  // slow throws away the leads' review material along with the straggler.
+  return { statuses: results, stuck };
 }
 
 /**
@@ -197,6 +212,12 @@ export type PRReviewOutcome = {
   reason?: string;
   /** The promoted changes when approved and merged. */
   merged?: SandboxChangeView[];
+  /**
+   * Set when an approved PR's promotion failed. The PR is reported back for
+   * changes rather than thrown, so one candidate that cannot land does not stop
+   * the lead from reviewing the rest of the batch.
+   */
+  promotionError?: string;
 };
 
 /**
@@ -226,23 +247,65 @@ export async function reviewPRs(input: {
     }
     const decision = await input.decide(pr);
     if (decision.decision === "approve") {
-      const merged = await input.sandboxes
+      const promotion = await input.sandboxes
         .promoteWithValidation(pr.sandboxID, {
+          // An empty command is refused by the promotion, so a batch with no
+          // build configured validates against `true` — the gate is the
+          // promotion's structure, not a check this layer invented.
           command: input.buildCommand?.trim() || "true",
           hostRoot: input.workspaceRoot,
         })
-        .then((promotion) => promotion.changedFiles)
-        .catch((error) => {
-          throw new Error(
-            `promotion of ${pr.id} failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
+        .then((result) => ({ ok: true as const, result }))
+        .catch((error: unknown) => ({
+          ok: false as const,
+          reason: error instanceof Error ? error.message : String(error),
+        }));
+      if (!promotion.ok) {
+        // Recorded and the loop continues. Throwing here abandoned every PR
+        // after the first that could not land, and left the ones already
+        // promoted reported nowhere.
+        input.publish?.({
+          type: "diagnostic",
+          level: "warning",
+          message: `PR ${pr.id} could not be promoted: ${promotion.reason}`,
         });
+        outcomes.push({
+          id: pr.id,
+          decision: "request-changes",
+          reason: `promotion failed: ${promotion.reason}`,
+          promotionError: promotion.reason,
+        });
+        continue;
+      }
+      const merged = promotion.result.changedFiles;
       input.publish?.({
         type: "diagnostic",
         level: "info",
         message: `PR ${pr.id} approved and promoted (${merged.length} files)`,
       });
       outcomes.push({ id: pr.id, decision: "approve", merged });
+      // The work is in the host now, so its candidate is redundant: leaving it
+      // behind leaks a worktree, a branch and a backup per approved PR.
+      await input.sandboxes
+        .delete(pr.sandboxID)
+        .then(() =>
+          input.publish?.({
+            type: "diagnostic",
+            level: "info",
+            message: `PR ${pr.id} candidate sandbox released after promotion`,
+          }),
+        )
+        .catch((error: unknown) => {
+          // A sandbox that will not delete is worth saying out loud: it holds a
+          // worktree and a branch, and nothing else will come back for it.
+          input.publish?.({
+            type: "diagnostic",
+            level: "warning",
+            message:
+              `PR ${pr.id} was promoted but its sandbox ${pr.sandboxID} ` +
+              `could not be released: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        });
     } else {
       input.publish?.({
         type: "diagnostic",

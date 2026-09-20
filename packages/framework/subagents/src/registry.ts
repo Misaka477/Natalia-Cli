@@ -41,6 +41,10 @@ export class SubagentRegistry {
     ReturnType<typeof setTimeout>
   >();
   private records = new Map<SubagentID, SubagentRecord>();
+  private readonly steerHooks = new Map<
+    SubagentID,
+    (message: string) => string | undefined
+  >();
   private running = new Map<SubagentID, AbortController>();
   private subscribers = new Set<(event: SubagentEvent) => void>();
   private auditEntries: AuditEntry[] = [];
@@ -207,6 +211,50 @@ export class SubagentRegistry {
    * would drop messages queued in between, and the whole point of the queue is
    * that nothing is lost.
    */
+  /**
+   * Registers where a live run of this subagent accepts a mid-flight message.
+   * Absent a hook, `sendMessage` queues instead, so a parent is never told it
+   * steered when it did not.
+   */
+  setSteerHook(
+    id: SubagentID,
+    hook: ((message: string) => string | undefined) | undefined,
+  ): void {
+    if (hook) this.steerHooks.set(id, hook);
+    else this.steerHooks.delete(id);
+  }
+
+  /**
+   * Delivers a steer to one subagent, or queues it when the run has no live
+   * ledger to route through.
+   *
+   * Lives here rather than in the controller because this class owns the
+   * records, and a service surface that only the composition can satisfy makes
+   * every consumer depend on the composition.
+   */
+  async sendMessage(
+    id: SubagentID,
+    message: string,
+    callerSession?: string,
+  ): Promise<{ route: string }> {
+    const record = this.records.get(id);
+    if (!record) return { route: "not_found" };
+    // Only the parent may steer: anything else is a stranger that has no
+    // business redirecting this child.
+    if (
+      record.parentSessionID !== undefined &&
+      callerSession !== undefined &&
+      record.parentSessionID !== callerSession
+    )
+      throw new Error(
+        `subagent ${id} belongs to another session; only its parent may steer it`,
+      );
+    const routed = this.steerHooks.get(id)?.(message);
+    if (routed) return { route: routed };
+    this.setPendingMessages(id, [...(record.pendingMessages ?? []), message]);
+    return { route: "queued" };
+  }
+
   setPendingMessages(id: SubagentID, messages: string[]): boolean {
     const record = this.records.get(id);
     if (!record) return false;

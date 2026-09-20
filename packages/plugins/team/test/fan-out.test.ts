@@ -4,10 +4,15 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { SubagentToolService } from "@natalia/tools";
+import type { SandboxToolService, SubagentToolService } from "@natalia/tools";
 import { SnapshotSandboxTestManager as SnapshotSandboxManager } from "@natalia/testing";
 import { SubagentRegistry } from "@natalia/subagents";
-import { reviewPRs, runFanOut, validateOwnershipMap } from "../src/index";
+import {
+  reviewPRs,
+  runFanOut,
+  validateOwnershipMap,
+  type FanOutPR,
+} from "../src/index";
 
 test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-fanout-"));
@@ -236,4 +241,139 @@ test("runFanOut caps concurrent spawns with maxConcurrent", async () => {
   expect(prs).toHaveLength(3);
   // Never more than 2 spawn calls were in flight at once.
   expect(peakSpawn).toBeLessThanOrEqual(2);
+});
+
+test("a promotion that fails is reported for that PR without stopping the batch", async () => {
+  // Throwing on the first failure abandoned every PR after it, and left the ones
+  // already promoted reported nowhere.
+  const root = await mkdtemp(join(tmpdir(), "natalia-review-fail-"));
+  await mkdir(join(root, ".natalia", "subagents"), { recursive: true });
+  const sandboxes = new SnapshotSandboxManager(root);
+  await sandboxes.initialize();
+  const prs: FanOutPR[] = [
+    {
+      id: "bad",
+      sandboxID: "sb_does_not_exist",
+      status: "completed",
+      diff: [],
+    },
+    { id: "good", sandboxID: "sb_also_missing", status: "completed", diff: [] },
+  ];
+  const decisions: string[] = [];
+
+  const outcomes = await reviewPRs({
+    prs,
+    sandboxes,
+    workspaceRoot: root,
+    decide: (pr) => {
+      decisions.push(pr.id);
+      return { id: pr.id, decision: "approve" };
+    },
+  });
+
+  // Both were decided: the second is not skipped because the first could not land.
+  expect(decisions).toEqual(["bad", "good"]);
+  expect(outcomes).toHaveLength(2);
+  for (const outcome of outcomes) {
+    expect(outcome.decision).toBe("request-changes");
+    expect(outcome.promotionError).toBeTruthy();
+  }
+});
+
+test("an approved PR releases its candidate sandbox", async () => {
+  // The work is in the host after promotion, so the candidate is redundant —
+  // and nothing else ever comes back for it. This asserts the release on the
+  // approve path, which is the only path that has one.
+  const root = await mkdtemp(join(tmpdir(), "natalia-review-cleanup-"));
+  await writeFile(join(root, "base.txt"), "base\n");
+  const sandboxes = new SnapshotSandboxManager(root);
+  await sandboxes.initialize();
+  const registry = new SubagentRegistry({
+    workDir: join(root, ".natalia", "subagents"),
+    runner: async (task, context) => {
+      const manifest = await sandboxes.create(context.agentId);
+      await writeFile(join(manifest.root, "output.txt"), `from ${task}`);
+      context.log("ok");
+      context.setStatus("done");
+    },
+  });
+  const prs = await runFanOut({
+    tasks: [{ id: "released", prompt: "released task" }],
+    subagents: registry,
+    sandboxes,
+    timeoutMs: 10_000,
+  });
+  const deleted: string[] = [];
+  const tracking = new Proxy(sandboxes, {
+    get(target, prop) {
+      if (prop === "delete")
+        return async (id: string) => {
+          deleted.push(id);
+          return await target.delete(id);
+        };
+      return (target as unknown as Record<string, unknown>)[prop as string];
+    },
+  });
+
+  const outcomes = await reviewPRs({
+    prs,
+    sandboxes: tracking as unknown as SandboxToolService,
+    workspaceRoot: root,
+    decide: (pr) => ({ id: pr.id, decision: "approve" as const }),
+  });
+
+  expect(outcomes[0]?.decision).toBe("approve");
+  // The promotion landed, and its candidate was released.
+  expect(await readFile(join(root, "output.txt"), "utf8")).toBe(
+    "from released task",
+  );
+  expect(deleted).toEqual([prs[0]!.sandboxID]);
+});
+
+test("a PR sent back for changes keeps its candidate for the sub-agent to redo", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-review-keep-"));
+  await writeFile(join(root, "base.txt"), "base\n");
+  const sandboxes = new SnapshotSandboxManager(root);
+  await sandboxes.initialize();
+  const registry = new SubagentRegistry({
+    workDir: join(root, ".natalia", "subagents"),
+    runner: async (task, context) => {
+      const manifest = await sandboxes.create(context.agentId);
+      await writeFile(join(manifest.root, "output.txt"), `from ${task}`);
+      context.log("ok");
+      context.setStatus("done");
+    },
+  });
+  const prs = await runFanOut({
+    tasks: [{ id: "kept", prompt: "kept task" }],
+    subagents: registry,
+    sandboxes,
+    timeoutMs: 10_000,
+  });
+  const deleted: string[] = [];
+  const tracking = new Proxy(sandboxes, {
+    get(target, prop) {
+      if (prop === "delete")
+        return async (id: string) => {
+          deleted.push(id);
+          return await target.delete(id);
+        };
+      return (target as unknown as Record<string, unknown>)[prop as string];
+    },
+  });
+
+  const outcomes = await reviewPRs({
+    prs,
+    sandboxes: tracking as unknown as SandboxToolService,
+    workspaceRoot: root,
+    decide: (pr) => ({
+      id: pr.id,
+      decision: "request-changes" as const,
+      reason: "redo",
+    }),
+  });
+
+  expect(outcomes[0]?.decision).toBe("request-changes");
+  // Nothing was promoted, so nothing may be released.
+  expect(deleted).toEqual([]);
 });
