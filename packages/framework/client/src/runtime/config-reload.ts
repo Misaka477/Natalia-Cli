@@ -369,7 +369,13 @@ export function createConfigReload(
     ports.setMaxSteps(previous.maxSteps);
     ports.setRetryPolicy(previous.retryPolicy);
     ports.setProviderConcurrencyLimiter(previous.limiter);
-    if (previous.agentRegistry) ports.setAgentRegistry(previous.agentRegistry);
+    if (previous.agentRegistry) {
+      ports.setAgentRegistry(previous.agentRegistry);
+      // The reload re-derived the agent_spawn description from the new registry
+      // in place; restoring the registry alone would leave that description stale,
+      // so re-derive it from the registry we just put back.
+      refreshAgentSpawnDescription(ctx, previous.agentRegistry);
+    }
     ports.setSelectedAgent(previous.selectedAgent);
     ports.setPermissionMode(previous.permissionMode);
     ports.setSelectedPermissionProfile(previous.selectedPermissionProfile);
