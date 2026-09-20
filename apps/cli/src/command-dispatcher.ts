@@ -2,12 +2,10 @@ import { plainStatus } from "./index";
 import { handleRuntimeCommand } from "./runtime-commands";
 import { handleDaemonCommands } from "./daemon-commands";
 import { handleLocalCommands } from "./local-commands";
-import { handleTaskCommands } from "./task-commands";
 
 const argv = process.argv.slice(2);
 const handled =
   (await handleRuntimeCommand(argv)) ||
-  (await handleTaskCommands(argv)) ||
   (await handleDaemonCommands(argv)) ||
   (await handleLocalCommands(argv));
 

@@ -11,7 +11,6 @@ import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
 const runtimeCommands = new Set(["serve", "run", "eval", "ui", "record"]);
 const daemonCommands = new Set(["daemon", "daemon-status", "daemon-stop"]);
-const taskCommands = new Set(["task", "flow"]);
 const localCommands = new Set([
   "diagnose",
   "status",
@@ -29,7 +28,6 @@ export function isRecognizedHostCommand(argv: readonly string[]) {
   return (
     runtimeCommands.has(command) ||
     daemonCommands.has(command) ||
-    taskCommands.has(command) ||
     localCommands.has(command)
   );
 }

@@ -225,27 +225,6 @@ test("turn orchestration subsystem is present even when plugins.enabled disables
   await client.dispose?.();
 });
 
-test("ordinary runtime never advertises flow_module_complete", async () => {
-  const root = await mkdtemp(join(tmpdir(), "natalia-ordinary-runtime-"));
-  const seenTools: string[][] = [];
-  const client = createRealRuntimeClient({
-    workspaceRoot: root,
-    sessionID: "ses_ordinary" as SessionID,
-    provider: {
-      provider: "ordinary",
-      model: "ordinary-model",
-      async *stream(request) {
-        seenTools.push((request.tools ?? []).map((tool) => tool.name));
-        yield { type: "done" as const };
-      },
-    },
-  });
-  client.start(() => undefined);
-  await client.submitAndWait!("hello");
-  expect(seenTools[0]).not.toContain("flow_module_complete");
-  await client.dispose?.();
-});
-
 test("runtime can suppress startup event replay for paged UI hydration", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-paged-replay-"));
   const sessionID = "ses_runtime_paged_replay" as SessionID;

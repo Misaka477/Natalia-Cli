@@ -44,7 +44,9 @@ test("recognized host commands initialize official plugins in the distribution s
     pluginStoreRoot: string;
     distributionRoot: string;
   }> = [];
-  for (const command of ["run", "daemon-status", "task", "status"]) {
+  // One representative per recognized group: runtime, daemon, local. The
+  // task/flow group was removed along with the feature.
+  for (const command of ["run", "daemon-status", "status"]) {
     expect(
       await initializeOfficialPluginsForHostCommand(
         [command],
@@ -55,7 +57,7 @@ test("recognized host commands initialize official plugins in the distribution s
       ),
     ).toBe(true);
   }
-  expect(calls).toHaveLength(4);
+  expect(calls).toHaveLength(3);
   expect(
     calls.every(({ pluginStoreRoot }) =>
       pluginStoreRoot.endsWith("dist/ts/plugin-store"),
