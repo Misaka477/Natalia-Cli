@@ -58,6 +58,20 @@ export interface SubagentRecord {
   id: SubagentID;
   task: string;
   mode: string;
+  /**
+   * Name of the configured agent this subagent was spawned as, when any. The
+   * definition is resolved from the registry at run time so a config reload
+   * changes what the type means without rewriting stored records.
+   */
+  agentType?: string;
+  /**
+   * Whether the subagent starts from its parent's conversation (`fork`) or from
+   * nothing but its task (`fresh`). Stored rather than resolved at start, so the
+   * balance of the seed is decided when the fork is requested, not whenever the
+   * child happens to begin.
+   */
+  context?: "fresh" | "fork";
+  pendingMessages?: string[];
   status: SubagentStatus;
   attached: boolean;
   modelProfile: string;
@@ -79,6 +93,14 @@ export interface SubagentRecord {
 
 export interface SpawnOptions {
   mode?: string;
+  agentType?: string;
+  /**
+   * Whether the child starts from its parent's conversation (`fork`) or from
+   * nothing but its task (`fresh`).
+   */
+  context?: "fresh" | "fork";
+  /** Messages to deliver before the child's first step. */
+  pendingMessages?: string[];
   modelProfile?: string;
   allowedTools?: string[];
   excludeTools?: string[];
@@ -110,4 +132,9 @@ export interface SubagentRegistryOptions {
   clock?: () => number;
   /** Grace period before idle→stalled; 0 uses the default. */
   stallThresholdMs?: number;
+  /**
+   * Milliseconds one run may take before the registry stops it; 0 disables the
+   * budget. The timer is armed per run, so a retry gets a fresh budget.
+   */
+  wallClockBudgetMs?: number;
 }

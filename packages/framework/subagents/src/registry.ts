@@ -1,3 +1,4 @@
+import { boundVerboseOutput } from "./format-output";
 import type {
   SubagentID,
   SubagentStatus,
@@ -33,6 +34,12 @@ export class SubagentRegistry {
   private readonly runner: RunnerCallback;
   private readonly clock: () => number;
   private readonly stallThresholdMs: number;
+  private readonly wallClockBudgetMs: number;
+  /** One deadline timer per running subagent, cleared when its run settles. */
+  private readonly budgetTimers = new Map<
+    SubagentID,
+    ReturnType<typeof setTimeout>
+  >();
   private records = new Map<SubagentID, SubagentRecord>();
   private running = new Map<SubagentID, AbortController>();
   private subscribers = new Set<(event: SubagentEvent) => void>();
@@ -46,6 +53,7 @@ export class SubagentRegistry {
     this.runner = opts.runner;
     this.clock = opts.clock ?? (() => Date.now());
     this.stallThresholdMs = opts.stallThresholdMs ?? DEFAULT_STALL_MS;
+    this.wallClockBudgetMs = opts.wallClockBudgetMs ?? 0;
     this.store = new SubagentStore(opts.workDir, opts.sessionID);
   }
 
@@ -95,6 +103,11 @@ export class SubagentRegistry {
       id,
       task,
       mode: options.mode ?? "code",
+      ...(options.agentType ? { agentType: options.agentType } : {}),
+      ...(options.context ? { context: options.context } : {}),
+      ...(options.pendingMessages?.length
+        ? { pendingMessages: [...options.pendingMessages] }
+        : {}),
       status: "idle",
       attached: true,
       modelProfile: options.modelProfile ?? "",
@@ -163,7 +176,12 @@ export class SubagentRegistry {
     });
   }
 
-  requestStop(id: SubagentID, reason: string, force = false): StopResult {
+  requestStop(
+    id: SubagentID,
+    reason: string,
+    force = false,
+    requestedBy: AuditEntry["requestedBy"] = "model",
+  ): StopResult {
     const record = this.records.get(id);
     if (!record) return { outcome: "not_found", id };
     if (!["running", "paused"].includes(record.status))
@@ -178,8 +196,24 @@ export class SubagentRegistry {
       );
       return { outcome: "protected", id, health: h, retryAfterMs };
     }
-    this.doStop(id, reason, force);
+    this.doStop(id, reason, force, requestedBy);
     return { outcome: "stopped", id };
+  }
+
+  /**
+   * Replace the messages queued for a subagent.
+   *
+   * Reads the record fresh rather than taking one from the caller: a stale view
+   * would drop messages queued in between, and the whole point of the queue is
+   * that nothing is lost.
+   */
+  setPendingMessages(id: SubagentID, messages: string[]): boolean {
+    const record = this.records.get(id);
+    if (!record) return false;
+    record.pendingMessages = messages.length ? [...messages] : undefined;
+    record.updatedAt = this.clock();
+    this.save().catch(() => {});
+    return true;
   }
 
   async retry(id: SubagentID): Promise<SubagentRecord | undefined> {
@@ -221,6 +255,8 @@ export class SubagentRegistry {
       phase: "provider",
       activityDetail: "starting",
     });
+
+    this.armWallClockBudget(id, abortController);
 
     const ctx: RunnerContext = {
       agentId: id,
@@ -334,6 +370,7 @@ export class SubagentRegistry {
         record.updatedAt = this.clock();
         this.running.delete(id);
         this.activityThrottle.delete(id);
+        this.clearWallClockBudget(id);
         this.addAudit({
           agentId: id,
           action: "done",
@@ -368,7 +405,49 @@ export class SubagentRegistry {
     return this.records.get(id)?.outputs;
   }
 
-  private doStop(id: SubagentID, reason: string, force: boolean) {
+  /**
+   * Arm this run's wall-clock deadline.
+   *
+   * The stop on expiry is forced: the run is by definition not making progress
+   * anyone would want to pay for, so the stall protection that shields a healthy
+   * run does not apply to it. A disabled budget arms nothing.
+   *
+   * The timer is unref'd so a deadline never holds the process open after its
+   * run has settled.
+   */
+  private armWallClockBudget(id: SubagentID, ctrl: AbortController) {
+    if (this.wallClockBudgetMs <= 0) return;
+    this.clearWallClockBudget(id);
+    const timer = setTimeout(() => {
+      this.budgetTimers.delete(id);
+      if (!this.records.has(id)) return;
+      this.requestStop(
+        id,
+        `wall-clock budget of ${this.wallClockBudgetMs}ms exceeded`,
+        true,
+        "runtime",
+      );
+    }, this.wallClockBudgetMs);
+    timer.unref?.();
+    this.budgetTimers.set(id, timer);
+    // The controller is read by the callback above only through the record
+    // lookup, so keep the reference explicit for readers of this method.
+    void ctrl;
+  }
+
+  private clearWallClockBudget(id: SubagentID) {
+    const timer = this.budgetTimers.get(id);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.budgetTimers.delete(id);
+  }
+
+  private doStop(
+    id: SubagentID,
+    reason: string,
+    force: boolean,
+    requestedBy: AuditEntry["requestedBy"] = "model",
+  ) {
     const record = this.records.get(id);
     if (!record) return;
     const ctrl = this.running.get(id);
@@ -387,7 +466,7 @@ export class SubagentRegistry {
         attached: record.attached,
         timestamp: this.clock(),
         stopReason: reason,
-        requestedBy: "model",
+        requestedBy,
         force,
       });
       this.emit({
@@ -399,7 +478,7 @@ export class SubagentRegistry {
         phase: "finalizing",
         activityDetail: reason,
         stopReason: reason,
-        requestedBy: "model",
+        requestedBy,
         force,
       });
       void this.save();
@@ -575,9 +654,11 @@ export class SubagentRegistry {
       const last = rec.outputs[rec.outputs.length - 1]!;
       return `${rec.id} [${rec.status}]\n${truncate(last.text, 1200)}`;
     }
-    return rec.outputs
-      .map((o) => `[${rec.id}] step=${o.step} ${o.text}`)
-      .join("\n");
+    // Bounded: the whole audit trail would spend the parent's context on a
+    // history it rarely needs whole, and the tail is the part it acts on.
+    return boundVerboseOutput(
+      rec.outputs.map((o) => `[${rec.id}] step=${o.step} ${o.text}`),
+    );
   }
 
   async formatStatus(id: SubagentID): Promise<string> {
