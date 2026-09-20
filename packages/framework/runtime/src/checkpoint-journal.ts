@@ -21,7 +21,15 @@
  */
 import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { copyFile, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import {
+  copyFile,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
 import { join } from "node:path";

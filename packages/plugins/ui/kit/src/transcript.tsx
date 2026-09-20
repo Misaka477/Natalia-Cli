@@ -336,7 +336,6 @@ export function Transcript(props: TranscriptProps) {
     isPaused: () => props.suspendVirtualization === true,
     onFollowChange: (following) => props.onFollowChange?.(following),
     onNearTop: () => notifyNearTop(),
-
   });
 
   const scrollToBottom = (options?: { behavior?: ScrollBehavior }) => {
@@ -874,7 +873,6 @@ export function fixedRowHeight(message: Message): number {
     Math.min(MAX_ROW_HEIGHT, Math.ceil(height)),
   );
 }
-
 
 function MessageGroup(props: {
   message: Message;

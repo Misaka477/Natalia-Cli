@@ -53,16 +53,15 @@ const fixturePatterns = [
 const db = new Database(options.db);
 try {
   db.exec("PRAGMA busy_timeout=5000");
-  const where = fixturePatterns
-    .map(() => "(event LIKE ?)")
-    .join(" OR ");
+  const where = fixturePatterns.map(() => "(event LIKE ?)").join(" OR ");
   const params = [options.session, ...fixturePatterns];
-  const count = db
-    .query<{ count: number }, string[]>(
-      `SELECT count(*) AS count FROM events
+  const count =
+    db
+      .query<{ count: number }, string[]>(
+        `SELECT count(*) AS count FROM events
         WHERE session_id = ? AND (${where})`,
-    )
-    .get(...params)?.count ?? 0;
+      )
+      .get(...params)?.count ?? 0;
 
   console.log(
     JSON.stringify(

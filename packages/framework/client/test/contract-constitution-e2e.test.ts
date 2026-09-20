@@ -84,10 +84,7 @@ test("plan_propose refuses a scope naming a deny-covered path before the gate", 
   });
   client.start((event) => {
     events.push(event);
-    if (
-      event.type === "approval.request" &&
-      event.scope === "work_contract"
-    ) {
+    if (event.type === "approval.request" && event.scope === "work_contract") {
       approvals += 1;
       client.respondApproval({ requestID: event.id, decision: "once" });
     }
@@ -253,9 +250,7 @@ test("detour_declare refuses a scopeDelta naming a deny-covered path before the 
   await client.submitAndWait!("propose the contract then declare a detour");
 
   // The refused detour never reached the journal.
-  const requested = events.filter(
-    (event) => event.type === "detour.requested",
-  );
+  const requested = events.filter((event) => event.type === "detour.requested");
   expect(requested).toHaveLength(1);
   expect(requested[0]).toMatchObject({
     planID,

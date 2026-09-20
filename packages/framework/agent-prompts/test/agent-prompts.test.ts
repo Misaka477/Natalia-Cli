@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  agentPromptPreamble,
-  agentSystemPrompt,
-} from "../src/index";
+import { agentPromptPreamble, agentSystemPrompt } from "../src/index";
 
 test("agentSystemPrompt prepends the shared preamble then the persona", () => {
   const navi = agentSystemPrompt("navi");

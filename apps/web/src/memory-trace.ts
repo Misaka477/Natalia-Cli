@@ -23,9 +23,8 @@ export function startRendererMemoryTrace(): () => void {
     .__NATALIA_MEMORY_TRACE;
   if (flag !== 1 && flag !== "1") return stop;
   if (timer) return stop;
-  const memory = (
-    performance as Performance & { memory?: ChromiumMemory }
-  ).memory;
+  const memory = (performance as Performance & { memory?: ChromiumMemory })
+    .memory;
   if (!memory) {
     console.warn(
       "[mem-trace][renderer] performance.memory unavailable in this renderer",

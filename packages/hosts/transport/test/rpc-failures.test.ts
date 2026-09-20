@@ -345,5 +345,7 @@ test("navi.chat with no surface answers method-not-available (-32601), not -3200
     client,
   );
   expect(response.error?.code).toBe(-32601);
-  expect(response.error?.message).toContain("navi.chat surface is not available");
+  expect(response.error?.message).toContain(
+    "navi.chat surface is not available",
+  );
 });

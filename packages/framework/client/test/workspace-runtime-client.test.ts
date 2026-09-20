@@ -217,9 +217,7 @@ test("workspace proxy chat messages await lazy runtime initialization", async ()
     // only kicked initialization off in the background, so chatMessages must
     // wait for ready instead of racing `ensureExecution`.
     expect(
-      (await client.naviChat?.messages?.(session.id))?.map(
-        (row) => row.text,
-      ),
+      (await client.naviChat?.messages?.(session.id))?.map((row) => row.text),
     ).toEqual(["Navi ready"]);
     expect(
       (await client.niaChat?.messages?.(session.id))?.map((row) => row.text),
@@ -253,7 +251,12 @@ test("workspace proxy intelligence reads await lazy initialization", async () =>
     // These read surfaces may be the first routed call on a fresh workspace.
     await expect(
       client.driftFindings?.({ sessionID: session.id }),
-    ).resolves.toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
+    ).resolves.toMatchObject({
+      items: [],
+      returned: 0,
+      total: 0,
+      truncated: false,
+    });
     await expect(client.notices?.(session.id)).resolves.toEqual([]);
   } finally {
     await manager.dispose();
@@ -262,7 +265,6 @@ test("workspace proxy intelligence reads await lazy initialization", async () =>
     else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
   }
 });
-
 
 test("chat history survives after the newest event window", async () => {
   const root = await officialPluginWorkspace("workspace-chat-tail");
@@ -308,9 +310,7 @@ test("chat history survives after the newest event window", async () => {
     await manager.add({ path: root });
     const client = createWorkspaceRuntimeClient(manager);
     expect(
-      (await client.naviChat?.messages?.(session.id))?.map(
-        (row) => row.text,
-      ),
+      (await client.naviChat?.messages?.(session.id))?.map((row) => row.text),
     ).toEqual(["old navi 1", "old navi 2"]);
     const page = await client.naviChat?.messagesPage?.({
       sessionID: session.id,
@@ -386,7 +386,6 @@ test("subagent history pages are filtered per subagent", async () => {
     else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
   }
 });
-
 
 test("session-scoped runtime calls route to the owning workspace", async () => {
   const calls: string[] = [];
@@ -843,7 +842,6 @@ test("workspace delete replaces an inactive workspace's active session", async (
     else process.env.NATALIA_WORKSPACES_FILE = previousRegistry;
   }
 });
-
 
 test("load restores the persisted active workspace", async () => {
   const firstRoot = await officialPluginWorkspace("workspace-active-a");

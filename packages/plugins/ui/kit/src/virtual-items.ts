@@ -24,8 +24,7 @@ export function dedupeVirtualItems<T extends { index: number }>(
 /** Return each value that occurs more than once, in first-seen order. */
 export function duplicateValues<T>(values: readonly T[]): T[] {
   const counts = new Map<T, number>();
-  for (const value of values)
-    counts.set(value, (counts.get(value) ?? 0) + 1);
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
   const seen = new Set<T>();
   const out: T[] = [];
   for (const value of values) {

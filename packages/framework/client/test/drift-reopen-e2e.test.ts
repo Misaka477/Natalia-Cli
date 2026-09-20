@@ -89,9 +89,9 @@ test("Phase 2 E2E: a corrected drift finding cannot be reopened (its premise is 
     },
     SESSION,
   );
-  const finding = (await client.driftFindings!({ sessionID: SESSION })).items.find(
-    (f) => f.status === "open",
-  )!;
+  const finding = (
+    await client.driftFindings!({ sessionID: SESSION })
+  ).items.find((f) => f.status === "open")!;
 
   // Corrected means the contract was revised to absorb the finding; reopening
   // it is meaningless, so the reopen is refused.
@@ -108,7 +108,6 @@ test("Phase 2 E2E: a corrected drift finding cannot be reopened (its premise is 
 
   await client.dispose?.();
 }, 30_000);
-
 
 test("Phase 2 E2E: a warning/high finding is auto-injected into the main agent's next step; advisory is not", async () => {
   const root = await officialPluginWorkspace("drift-e2e-inject");
@@ -172,7 +171,9 @@ test("Phase 2 E2E: a warning/high finding is auto-injected into the main agent's
 
   // An advisory finding (no accepted contract + a change -> unverifiable) is
   // NOT auto-injected — it is noise-level.
-  const beforeAdvisory = events.filter((event) => event.type === "input.admitted").length;
+  const beforeAdvisory = events.filter(
+    (event) => event.type === "input.admitted",
+  ).length;
   await client.evaluateDrift!(
     {
       objective: "refactor the parser tokenizer",
@@ -186,7 +187,9 @@ test("Phase 2 E2E: a warning/high finding is auto-injected into the main agent's
       event.type === "drift.finding_opened" && event.severity === "advisory",
   );
   expect(advisoryFinding).toBeDefined();
-  const afterAdvisory = events.filter((event) => event.type === "input.admitted").length;
+  const afterAdvisory = events.filter(
+    (event) => event.type === "input.admitted",
+  ).length;
   // No new input.admitted for the advisory finding.
   expect(afterAdvisory).toBe(beforeAdvisory);
   expect(
@@ -199,7 +202,6 @@ test("Phase 2 E2E: a warning/high finding is auto-injected into the main agent's
 
   await client.dispose?.();
 }, 30_000);
-
 
 test("Phase 2 E2E: reopening a warning/high finding re-injects it for re-review (EI §3.5)", async () => {
   const root = await officialPluginWorkspace("drift-e2e-reopen-reinject");
@@ -236,9 +238,9 @@ test("Phase 2 E2E: reopening a warning/high finding re-injects it for re-review 
       ),
     { timeoutMs: 10_000 },
   );
-  const finding = (await client.driftFindings!({ sessionID: SESSION })).items.find(
-    (f) => f.severity === "high",
-  )!;
+  const finding = (
+    await client.driftFindings!({ sessionID: SESSION })
+  ).items.find((f) => f.severity === "high")!;
   const injectionsForFinding = () =>
     events.filter(
       (event): event is Extract<RuntimeEvent, { type: "input.admitted" }> =>
@@ -261,7 +263,9 @@ test("Phase 2 E2E: reopening a warning/high finding re-injects it for re-review 
   expect(reopened.reopened).toBe(true);
   expect(reopened.reopenedCount).toBe(1);
 
-  await waitFor(() => injectionsForFinding().length >= 2, { timeoutMs: 10_000 });
+  await waitFor(() => injectionsForFinding().length >= 2, {
+    timeoutMs: 10_000,
+  });
   const reinjection = injectionsForFinding().at(-1)!;
   // The re-review note tells the agent not to repeat its last rationale, and
   // the admission id is distinct from the original injection's.
@@ -271,7 +275,6 @@ test("Phase 2 E2E: reopening a warning/high finding re-injects it for re-review 
 
   await client.dispose?.();
 }, 30_000);
-
 
 test("Phase 2 E2E: a warning/high finding reaches the main agent's next provider request; advisory does not", async () => {
   const root = await officialPluginWorkspace("drift-e2e-b3-nextrequest");
@@ -341,8 +344,7 @@ test("Phase 2 E2E: the main agent's drift_acknowledge moves an open finding to e
             arguments: {
               findingID: openFindingID!,
               status: "explained",
-              rationale:
-                "the deletions were within the approved cleanup scope",
+              rationale: "the deletions were within the approved cleanup scope",
             },
           }),
         },
@@ -402,7 +404,8 @@ test("Phase 2 E2E: the main agent's drift_acknowledge moves an open finding to e
   );
 
   // And the read surface the panel consumes agrees the finding is no longer open.
-  const findings = (await client.driftFindings!({ sessionID: SESSION })).items as Array<{
+  const findings = (await client.driftFindings!({ sessionID: SESSION }))
+    .items as Array<{
     findingID: string;
     status: string;
   }>;
@@ -433,7 +436,9 @@ test("Phase 2 E2E: evaluateDrift opens a no-progress finding from recentActions"
     {
       objective: "ship the feature",
       currentActivity: "reading files",
-      recentActions: Array.from({ length: 8 }, () => ({ kind: "tool_call" as const })),
+      recentActions: Array.from({ length: 8 }, () => ({
+        kind: "tool_call" as const,
+      })),
     },
     SESSION,
   );

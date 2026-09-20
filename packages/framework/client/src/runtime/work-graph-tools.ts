@@ -36,10 +36,10 @@ export function createWorkGraphQueryTool(
     name: "work_graph_query",
     description:
       "Query the session's Work Graph — the recorded fact graph of goals, plans, decisions, tool calls, approvals, checkpoints, validations and workspace changes. " +
-        "Decision tree: leaving everything empty returns the ACTIVE plan's whole chain (or the whole session graph when no plan is active); fill exactly one precise query — `path` (a file/plan-document causal chain) or `findingID` (a drift finding's context); " +
-        "narrow with the range filters planID / goalID / checkpointID / nodeKind. " +
-        "Pagination: `limit` (default 50, max 200) and `cursor`; when the result is over the limit the response carries `truncated: true` and a `nextCursor` — pass that cursor back until `truncated` is false. " +
-        "An empty result is `{ nodes: [], truncated: false }` (no matching chain, not an error).",
+      "Decision tree: leaving everything empty returns the ACTIVE plan's whole chain (or the whole session graph when no plan is active); fill exactly one precise query — `path` (a file/plan-document causal chain) or `findingID` (a drift finding's context); " +
+      "narrow with the range filters planID / goalID / checkpointID / nodeKind. " +
+      "Pagination: `limit` (default 50, max 200) and `cursor`; when the result is over the limit the response carries `truncated: true` and a `nextCursor` — pass that cursor back until `truncated` is false. " +
+      "An empty result is `{ nodes: [], truncated: false }` (no matching chain, not an error).",
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -160,10 +160,7 @@ export function createWorkGraphQueryTool(
       // A node matches an id filter when it carries the id, or its target /
       // summary references it (the graph predates structured id tracking, so
       // provenance is sometimes only implicit).
-      const matchesID = (
-        node: (typeof nodes)[number],
-        id: string,
-      ): boolean =>
+      const matchesID = (node: (typeof nodes)[number], id: string): boolean =>
         node.planID === id ||
         node.target === id ||
         node.target?.includes(id) === true ||
@@ -171,8 +168,7 @@ export function createWorkGraphQueryTool(
       let filtered = nodes;
       if (findingID)
         filtered = filtered.filter((node) => matchesID(node, findingID));
-      if (planID)
-        filtered = filtered.filter((node) => matchesID(node, planID));
+      if (planID) filtered = filtered.filter((node) => matchesID(node, planID));
       if (args.goalID?.trim())
         filtered = filtered.filter((node) =>
           matchesID(node, args.goalID!.trim()),

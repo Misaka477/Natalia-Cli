@@ -621,9 +621,7 @@ export type NataliaSDK = {
   /** Reads the session-scoped active plan pointer. */
   planDocActive(
     sessionID?: string,
-  ): Promise<
-    Awaited<ReturnType<NonNullable<RuntimeClient["planDocActive"]>>>
-  >;
+  ): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["planDocActive"]>>>>;
   /** Sets the session-scoped active plan pointer. */
   planDocActivate(
     planID: string,

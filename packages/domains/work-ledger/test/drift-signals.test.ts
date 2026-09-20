@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
-import {
-  createDriftEvaluator,
-  deriveDriftBehaviorSignals,
-} from "../src";
+import { createDriftEvaluator, deriveDriftBehaviorSignals } from "../src";
 
 function toolUpdate(
   name: string,
@@ -40,7 +37,9 @@ test("deriveDriftBehaviorSignals classifies actions and collects failures with a
   ]);
   // Three failed run_shell calls, all with the same args → the same key.
   expect(signals.recentFailures).toHaveLength(3);
-  expect(signals.recentFailures.every((f) => f.toolName === "run_shell")).toBe(true);
+  expect(signals.recentFailures.every((f) => f.toolName === "run_shell")).toBe(
+    true,
+  );
   expect(new Set(signals.recentFailures.map((f) => f.key)).size).toBe(1);
   // The key is a hash, never the raw args.
   expect(signals.recentFailures[0]!.key).not.toContain("bun test");
@@ -67,7 +66,9 @@ test("evaluateBehavior runs only the behaviour rules (no objective/contract spam
     applicableConstraints: [],
     changes: [],
     evidenceRefs: [],
-    recentActions: Array.from({ length: 8 }, () => ({ kind: "tool_call" as const })),
+    recentActions: Array.from({ length: 8 }, () => ({
+      kind: "tool_call" as const,
+    })),
   });
   expect(findings.map((f) => f.ruleHits?.[0]?.rule)).toEqual(["no_progress"]);
 });

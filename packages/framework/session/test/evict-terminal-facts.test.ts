@@ -50,8 +50,12 @@ test("evictTerminalFacts bounds terminal entries but keeps active ones", () => {
     (event) => event.type === "evidence.recorded",
   );
   // Terminal evidence keeps the most recent 200; active evidence is kept whole.
-  expect(keptEvidence.filter((event) => event.status === "accepted")).toHaveLength(200);
-  expect(keptEvidence.filter((event) => event.status === "validated")).toHaveLength(10);
+  expect(
+    keptEvidence.filter((event) => event.status === "accepted"),
+  ).toHaveLength(200);
+  expect(
+    keptEvidence.filter((event) => event.status === "validated"),
+  ).toHaveLength(10);
   expect(
     state.intelligence.journalEvents.filter(
       (event) => event.type === "completion.recorded",

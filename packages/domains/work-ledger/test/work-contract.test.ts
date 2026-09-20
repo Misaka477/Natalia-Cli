@@ -379,7 +379,6 @@ test("the minimum-evidence matrix judges completion claims (EI §8.8)", () => {
   expect(parser.missing).toContain("validation:parser");
 });
 
-
 test("detour.requested carries the optimistic lock and deltas", () => {
   const event = buildDetourRequested({
     id: "detour:1",
@@ -466,7 +465,9 @@ test("mergeDetourIntoContract unions the deltas into the next version", () => {
 });
 
 test("classifyPathClass infers the class from the file path, not the objective", () => {
-  expect(classifyPathClass(["packages/framework/client/src/foo.ts"])).toBe("source");
+  expect(classifyPathClass(["packages/framework/client/src/foo.ts"])).toBe(
+    "source",
+  );
   expect(classifyPathClass(["packages/kernel/src/lib.rs"])).toBe("source");
   expect(classifyPathClass(["packages/kernel/test/lib.test.ts"])).toBe("test");
   expect(classifyPathClass(["docs/api-reference.md"])).toBe("docs");
@@ -498,7 +499,9 @@ test("evaluateCompletionCard classifies by change path and requires validation f
     objective: "whatever the model says",
     changes: ["packages/framework/client/src/foo.ts"],
     evidenceRefs: [],
-    validations: [{ command: "bun test", result: "passed", safeSummary: "green" }],
+    validations: [
+      { command: "bun test", result: "passed", safeSummary: "green" },
+    ],
   });
   expect(done.judgeable).toBe(true);
   expect(done.missing).toEqual([]);

@@ -434,7 +434,6 @@ export function constitutionCheckEdge(input: {
   };
 }
 
-
 /**
  * A Work Graph integrity report (EI WG4 / Phase 3 D): the graph is a
  * projection of the append-only journal, rebuilt by replay. This verifies the

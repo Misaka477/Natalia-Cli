@@ -37,8 +37,8 @@ test("renderer memory trace samples performance.memory when enabled", () => {
     totalJSHeapSize: 20 * 1048576,
     jsHeapSizeLimit: 100 * 1048576,
   };
-  (globalThis as { __NATALIA_MEMORY_TRACE?: unknown })
-    .__NATALIA_MEMORY_TRACE = 1;
+  (globalThis as { __NATALIA_MEMORY_TRACE?: unknown }).__NATALIA_MEMORY_TRACE =
+    1;
   try {
     const stop = startRendererMemoryTrace();
     expect(

@@ -92,9 +92,7 @@ export async function handleDaemonCommands(argv: string[]) {
         await waitSignal();
       } finally {
         await settleShutdown("daemon transport close", () => transport.close());
-        await settleShutdown("daemon client dispose", () =>
-          client.dispose?.(),
-        );
+        await settleShutdown("daemon client dispose", () => client.dispose?.());
       }
       break;
     }

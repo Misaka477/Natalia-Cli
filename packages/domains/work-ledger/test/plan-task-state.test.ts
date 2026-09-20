@@ -26,10 +26,23 @@ test("parsePlanTasks reads open, done and skipped checkboxes with depth", () => 
     depth: 0,
     text: "top-level open task",
   });
-  expect(tasks[1]).toMatchObject({ declaration: "done", text: "top-level done task" });
-  expect(tasks[2]).toMatchObject({ declaration: "skipped", text: "a skipped task" });
-  expect(tasks[3]).toMatchObject({ declaration: "open", depth: 1, text: "a nested open task" });
-  expect(tasks[4]).toMatchObject({ declaration: "done", text: "a numbered done task" });
+  expect(tasks[1]).toMatchObject({
+    declaration: "done",
+    text: "top-level done task",
+  });
+  expect(tasks[2]).toMatchObject({
+    declaration: "skipped",
+    text: "a skipped task",
+  });
+  expect(tasks[3]).toMatchObject({
+    declaration: "open",
+    depth: 1,
+    text: "a nested open task",
+  });
+  expect(tasks[4]).toMatchObject({
+    declaration: "done",
+    text: "a numbered done task",
+  });
   // Ids are stable document-order ordinals.
   expect(tasks.map((task) => task.id)).toEqual([
     "task:1",
@@ -41,18 +54,34 @@ test("parsePlanTasks reads open, done and skipped checkboxes with depth", () => 
 });
 
 test("evaluatePlanTaskState is evidence-first: checked without evidence is a gap", () => {
-  expect(evaluatePlanTaskState({ declaration: "done", hasEvidence: true })).toBe("verified");
-  expect(evaluatePlanTaskState({ declaration: "done", hasEvidence: false })).toBe("gap");
-  expect(evaluatePlanTaskState({ declaration: "open", hasEvidence: true })).toBe("in_progress");
-  expect(evaluatePlanTaskState({ declaration: "open", hasEvidence: false })).toBe("pending");
-  expect(evaluatePlanTaskState({ declaration: "skipped", hasEvidence: false })).toBe("skipped");
+  expect(
+    evaluatePlanTaskState({ declaration: "done", hasEvidence: true }),
+  ).toBe("verified");
+  expect(
+    evaluatePlanTaskState({ declaration: "done", hasEvidence: false }),
+  ).toBe("gap");
+  expect(
+    evaluatePlanTaskState({ declaration: "open", hasEvidence: true }),
+  ).toBe("in_progress");
+  expect(
+    evaluatePlanTaskState({ declaration: "open", hasEvidence: false }),
+  ).toBe("pending");
+  expect(
+    evaluatePlanTaskState({ declaration: "skipped", hasEvidence: false }),
+  ).toBe("skipped");
   // A skipped task stays skipped even if some evidence mentions it.
-  expect(evaluatePlanTaskState({ declaration: "skipped", hasEvidence: true })).toBe("skipped");
+  expect(
+    evaluatePlanTaskState({ declaration: "skipped", hasEvidence: true }),
+  ).toBe("skipped");
 });
 
 test("projectPlanTaskStates matches evidence by taskID or by text reference", () => {
   const tasks = parsePlanTasks(
-    ["- [ ] wire the runtime client", "- [x] add the parser", "- [x] ship docs"].join("\n"),
+    [
+      "- [ ] wire the runtime client",
+      "- [x] add the parser",
+      "- [x] ship docs",
+    ].join("\n"),
   );
   const states = projectPlanTaskStates(tasks, [
     // Evidence references the "add the parser" task by its text.
@@ -69,8 +98,16 @@ test("projectPlanTaskStates matches evidence by taskID or by text reference", ()
 });
 
 test("applyPlanDocTick ticks and unticks an existing checkbox, leaving text intact", () => {
-  const doc = ["# Plan", "", "- [ ] wire the runtime client", "- [x] add the parser"].join("\n");
-  const ticked = applyPlanDocTick(doc, { task: "wire the runtime client", done: true });
+  const doc = [
+    "# Plan",
+    "",
+    "- [ ] wire the runtime client",
+    "- [x] add the parser",
+  ].join("\n");
+  const ticked = applyPlanDocTick(doc, {
+    task: "wire the runtime client",
+    done: true,
+  });
   expect(ticked.ok).toBe(true);
   if (!ticked.ok) return;
   expect(ticked.action).toBe("ticked");
@@ -80,7 +117,10 @@ test("applyPlanDocTick ticks and unticks an existing checkbox, leaving text inta
   expect(ticked.content).toContain("# Plan");
   expect(ticked.content).toContain("wire the runtime client");
 
-  const unticked = applyPlanDocTick(doc, { task: "add the parser", done: false });
+  const unticked = applyPlanDocTick(doc, {
+    task: "add the parser",
+    done: false,
+  });
   expect(unticked.ok).toBe(true);
   if (!unticked.ok) return;
   expect(unticked.action).toBe("unticked");
@@ -88,7 +128,9 @@ test("applyPlanDocTick ticks and unticks an existing checkbox, leaving text inta
 });
 
 test("applyPlanDocTick matches a unique label substring", () => {
-  const doc = ["- [ ] rewrite the tokenizer", "- [ ] add the parser"].join("\n");
+  const doc = ["- [ ] rewrite the tokenizer", "- [ ] add the parser"].join(
+    "\n",
+  );
   const hit = applyPlanDocTick(doc, { task: "tokenizer", done: true });
   expect(hit.ok).toBe(true);
   if (!hit.ok) return;
@@ -107,7 +149,12 @@ test("applyPlanDocTick refuses a non-matching or ambiguous task on a checklist p
 });
 
 test("applyPlanDocTick appends a 落地日志 section when the plan has no checkboxes", () => {
-  const doc = ["# Design notes", "", "Some prose, no checkboxes here.", ""].join("\n");
+  const doc = [
+    "# Design notes",
+    "",
+    "Some prose, no checkboxes here.",
+    "",
+  ].join("\n");
   const first = applyPlanDocTick(doc, { task: "wired the parser", done: true });
   expect(first.ok).toBe(true);
   if (!first.ok) return;
@@ -118,7 +165,10 @@ test("applyPlanDocTick appends a 落地日志 section when the plan has no check
   expect(first.content).toContain("Some prose, no checkboxes here.");
 
   // A second tick extends the same section instead of adding another heading.
-  const second = applyPlanDocTick(first.content, { task: "shipped the docs", done: true });
+  const second = applyPlanDocTick(first.content, {
+    task: "shipped the docs",
+    done: true,
+  });
   expect(second.ok).toBe(true);
   if (!second.ok) return;
   expect(second.content.match(/## 落地日志/g)).toHaveLength(1);

@@ -65,10 +65,7 @@ test("Phase 2 E2E: a contract revision auto-corrects an absorbed target_drift fi
   });
   client.start((event) => {
     events.push(event);
-    if (
-      event.type === "approval.request" &&
-      event.scope === "work_contract"
-    )
+    if (event.type === "approval.request" && event.scope === "work_contract")
       client.respondApproval({ requestID: event.id, decision: "once" });
   });
   await client.sessionAttach!(SESSION);

@@ -1161,9 +1161,10 @@ export function createWorkspaceRuntimeClient(
             )[stream];
             const fn = target?.[method];
             return typeof fn === "function"
-              ? await (
-                  fn as (...call: unknown[]) => Promise<unknown>
-                ).apply(target, args)
+              ? await (fn as (...call: unknown[]) => Promise<unknown>).apply(
+                  target,
+                  args,
+                )
               : undefined;
           };
         }
@@ -1187,10 +1188,7 @@ export function createWorkspaceRuntimeClient(
           const result = await (
             fn as (...call: unknown[]) => Promise<unknown>
           ).apply(owner.client, args);
-          if (
-            prop === "planDocActivate" ||
-            prop === "planDocDeactivate"
-          )
+          if (prop === "planDocActivate" || prop === "planDocDeactivate")
             manager.invalidateSessionCache(owner.workspaceID);
           return result;
         };

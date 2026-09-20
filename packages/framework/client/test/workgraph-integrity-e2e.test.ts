@@ -43,7 +43,6 @@ test("Phase 3 E2E: work graph integrity reports a stable graph and unattributed 
   await client.dispose?.();
 }, 30_000);
 
-
 test("Phase 3 E2E: an external workspace change surfaces through the unattributedChanges read surface", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-wg-unattributed-"));
   const client = createRealRuntimeClient({

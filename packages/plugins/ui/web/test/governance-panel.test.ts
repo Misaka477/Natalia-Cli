@@ -49,7 +49,9 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
     }),
     notices: async () => [{ noticeID: "notice:1" }],
     workGraphNodes: async () => [{ nodeID: "wg:action:1" }],
-    workGraphEdges: async () => [{ sourceID: "a", targetID: "b", kind: "caused" }],
+    workGraphEdges: async () => [
+      { sourceID: "a", targetID: "b", kind: "caused" },
+    ],
   } as unknown as RuntimeClient;
   const data = await loadGovernanceSlices(filled, "ses_panel");
   expect(data.constitution).toHaveLength(1);
@@ -245,8 +247,7 @@ test("drift dismiss then reopen (翻案) round-trips through the RPC and counts 
       const finding = journal.find(
         (candidate) => candidate.findingID === input.findingID,
       );
-      if (!finding || finding.status !== "open")
-        return { acknowledged: false };
+      if (!finding || finding.status !== "open") return { acknowledged: false };
       finding.status = input.status;
       return { acknowledged: true };
     },
@@ -256,7 +257,10 @@ test("drift dismiss then reopen (翻案) round-trips through the RPC and counts 
       );
       if (!finding) return { reopened: false, reason: "unknown finding" };
       if (finding.status !== "dismissed" && finding.status !== "explained")
-        return { reopened: false, reason: `only dismissed/explained (${finding.status})` };
+        return {
+          reopened: false,
+          reason: `only dismissed/explained (${finding.status})`,
+        };
       finding.status = "open";
       finding.reopenedCount = (finding.reopenedCount ?? 0) + 1;
       return { reopened: true };
@@ -264,17 +268,32 @@ test("drift dismiss then reopen (翻案) round-trips through the RPC and counts 
   } as unknown as RuntimeClient;
 
   // Dismiss, then reopen.
-  await acknowledgeDriftFindingViaRpc(runtime, "ses_reopen", "DF-REOPEN", "dismissed");
-  expect((await loadGovernanceSlices(runtime, "ses_reopen")).drift[0]).toMatchObject({
+  await acknowledgeDriftFindingViaRpc(
+    runtime,
+    "ses_reopen",
+    "DF-REOPEN",
+    "dismissed",
+  );
+  expect(
+    (await loadGovernanceSlices(runtime, "ses_reopen")).drift[0],
+  ).toMatchObject({
     status: "dismissed",
   });
-  const reopened = await reopenDriftFindingViaRpc(runtime, "ses_reopen", "DF-REOPEN");
+  const reopened = await reopenDriftFindingViaRpc(
+    runtime,
+    "ses_reopen",
+    "DF-REOPEN",
+  );
   expect(reopened).toMatchObject({ reopened: true });
   const after = await loadGovernanceSlices(runtime, "ses_reopen");
   expect(after.drift[0]).toMatchObject({ status: "open", reopenedCount: 1 });
 
   // A second reopen is refused: the finding is open again.
-  const second = await reopenDriftFindingViaRpc(runtime, "ses_reopen", "DF-REOPEN");
+  const second = await reopenDriftFindingViaRpc(
+    runtime,
+    "ses_reopen",
+    "DF-REOPEN",
+  );
   expect(second).toMatchObject({ reopened: false });
 });
 
@@ -293,11 +312,14 @@ test("constitution actions call their RPCs and reload reflects update and tombst
   ];
   const runtime = {
     constitutionRules: async () =>
-      journal
-        .filter((rule) => rule.enabled)
-        .map((rule) => ({ ...rule })),
-    updateConstitutionRule: async (input: { ruleID: string; enabled?: boolean }) => {
-      const rule = journal.find((candidate) => candidate.ruleID === input.ruleID);
+      journal.filter((rule) => rule.enabled).map((rule) => ({ ...rule })),
+    updateConstitutionRule: async (input: {
+      ruleID: string;
+      enabled?: boolean;
+    }) => {
+      const rule = journal.find(
+        (candidate) => candidate.ruleID === input.ruleID,
+      );
       if (!rule) return { updated: false };
       rule.enabled = input.enabled ?? rule.enabled;
       return { updated: true };
@@ -310,16 +332,19 @@ test("constitution actions call their RPCs and reload reflects update and tombst
     },
   } as unknown as RuntimeClient;
 
-  expect((await loadGovernanceSlices(runtime, "ses_action")).constitution)
-    .toHaveLength(1);
+  expect(
+    (await loadGovernanceSlices(runtime, "ses_action")).constitution,
+  ).toHaveLength(1);
   await updateConstitutionRuleViaRpc(runtime, "ses_action", "C-ACTION", false);
-  expect((await loadGovernanceSlices(runtime, "ses_action")).constitution)
-    .toHaveLength(0);
+  expect(
+    (await loadGovernanceSlices(runtime, "ses_action")).constitution,
+  ).toHaveLength(0);
   // Tombstone removal is a separate call/RPC, not a silent edit.
   await updateConstitutionRuleViaRpc(runtime, "ses_action", "C-ACTION", true);
   await removeConstitutionRuleViaRpc(runtime, "ses_action", "C-ACTION");
-  expect((await loadGovernanceSlices(runtime, "ses_action")).constitution)
-    .toHaveLength(0);
+  expect(
+    (await loadGovernanceSlices(runtime, "ses_action")).constitution,
+  ).toHaveLength(0);
 });
 
 test("constitution rule add/edit call their RPCs and reload reflects the changes", async () => {
@@ -339,7 +364,9 @@ test("constitution rule add/edit call their RPCs and reload reflects the changes
       return { created: true, ruleID };
     },
     updateConstitutionRule: async (input: any) => {
-      const rule = journal.find((candidate) => candidate.ruleID === input.ruleID);
+      const rule = journal.find(
+        (candidate) => candidate.ruleID === input.ruleID,
+      );
       if (!rule) return { updated: false };
       if (input.statement) rule.statement = input.statement;
       if (input.enforcement) rule.enforcement = input.enforcement;
@@ -354,7 +381,9 @@ test("constitution rule add/edit call their RPCs and reload reflects the changes
     appliesTo: { commandPattern: "git push --force" },
   });
   expect(created).toMatchObject({ created: true, ruleID: "P-USER-1" });
-  expect((await loadGovernanceSlices(runtime, "ses_crud")).constitution).toEqual([
+  expect(
+    (await loadGovernanceSlices(runtime, "ses_crud")).constitution,
+  ).toEqual([
     expect.objectContaining({
       ruleID: "P-USER-1",
       statement: "no force push",
@@ -431,12 +460,17 @@ test("the Decisions read requests session scope by default and workspace scope o
     },
   } as unknown as RuntimeClient;
 
-  await loadGovernanceSlices(runtime, "ses_scope", { decisionScope: "session" });
+  await loadGovernanceSlices(runtime, "ses_scope", {
+    decisionScope: "session",
+  });
   expect(calls[0]).toMatchObject({ sessionID: "ses_scope", scope: "session" });
   await loadGovernanceSlices(runtime, "ses_scope", {
     decisionScope: "workspace",
   });
-  expect(calls[1]).toMatchObject({ sessionID: "ses_scope", scope: "workspace" });
+  expect(calls[1]).toMatchObject({
+    sessionID: "ses_scope",
+    scope: "workspace",
+  });
 });
 
 test("splitActivityRefs trims and drops empty entries from a comma list", () => {
@@ -492,16 +526,12 @@ test("updateConstitutionDocRuleViaRpc forwards the edit (id + fields) to the RPC
     },
   } as unknown as RuntimeClient;
 
-  const result = await updateConstitutionDocRuleViaRpc(
-    runtime,
-    "ses_doc",
-    {
-      id: "constitution:small-prs:2",
-      statement: "Prefer small, single-purpose pull requests.",
-      enforcement: "approval",
-      appliesTo: { tools: ["shell"] },
-    },
-  );
+  const result = await updateConstitutionDocRuleViaRpc(runtime, "ses_doc", {
+    id: "constitution:small-prs:2",
+    statement: "Prefer small, single-purpose pull requests.",
+    enforcement: "approval",
+    appliesTo: { tools: ["shell"] },
+  });
   expect(result).toEqual({ updated: true });
   expect(calls).toEqual([
     {
@@ -519,9 +549,15 @@ test("updateConstitutionDocRuleViaRpc forwards the edit (id + fields) to the RPC
 test("constitution rows: only hard-protected rules lock, everything else edits", () => {
   // Per the user's decision: 硬保护不能删，其余用户可删改. Only the C-TERM-*
   // rules backed by hard-coded SELF_PROTECTION_PATTERNS are locked.
-  expect(constitutionRuleAffordance({ ruleID: "C-TERM-001" })).toBe("protected");
-  expect(constitutionRuleAffordance({ ruleID: "C-TERM-002" })).toBe("protected");
-  expect(constitutionRuleAffordance({ ruleID: "C-TERM-003" })).toBe("protected");
+  expect(constitutionRuleAffordance({ ruleID: "C-TERM-001" })).toBe(
+    "protected",
+  );
+  expect(constitutionRuleAffordance({ ruleID: "C-TERM-002" })).toBe(
+    "protected",
+  );
+  expect(constitutionRuleAffordance({ ruleID: "C-TERM-003" })).toBe(
+    "protected",
+  );
   // Release-scope runtime-policy rules are user-editable, not locked.
   expect(constitutionRuleAffordance({ ruleID: "C-REL-001" })).toBe("editable");
   expect(constitutionRuleAffordance({ ruleID: "C-REL-002" })).toBe("editable");
@@ -569,7 +605,11 @@ test("mergeWorkGraphState backfills durable nodes and de-dupes edges by content"
       },
     ],
     [
-      { sourceID: "wg:action:t1", targetID: "wg:tool:t1:c1", kind: "caused" as const },
+      {
+        sourceID: "wg:action:t1",
+        targetID: "wg:tool:t1:c1",
+        kind: "caused" as const,
+      },
     ],
   );
   expect(Object.keys(merged.workGraphNodes).sort()).toEqual([
@@ -603,7 +643,9 @@ test("governance lists paginate: first page + cursor appends the next", async ()
   const all = Array.from({ length: 120 }, (_, i) => ({ taskID: `t${i}` }));
   const calls: Array<{ limit?: number; cursor?: string }> = [];
   const runtime = {
-    evidenceRecords: async (input: { limit?: number; cursor?: string } = {}) => {
+    evidenceRecords: async (
+      input: { limit?: number; cursor?: string } = {},
+    ) => {
       calls.push(input);
       const offset = input.cursor ? Number(input.cursor) : 0;
       const size = input.limit ?? all.length;
@@ -686,8 +728,7 @@ test("drift six interactions (explained/disputed/dismissed/corrected/detour_decl
         (candidate) => candidate.findingID === input.findingID,
       );
       // Only an open finding may be acknowledged into any of the five states.
-      if (!finding || finding.status !== "open")
-        return { acknowledged: false };
+      if (!finding || finding.status !== "open") return { acknowledged: false };
       finding.status = input.status;
       if (input.rationale) finding.rationale = input.rationale;
       return { acknowledged: true };

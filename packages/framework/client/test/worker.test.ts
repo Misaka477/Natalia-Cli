@@ -846,11 +846,31 @@ test("fact-domain read queries and mailbox writes route through the channel", as
     mailboxList: async () => [],
     mailboxSend: async (input) => ({ queued: true, messageID: "mailbox:1" }),
     mailboxAcknowledge: async () => ({ acknowledged: true }),
-    driftFindings: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
-    completions: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
+    driftFindings: async () => ({
+      items: [],
+      returned: 0,
+      total: 0,
+      truncated: false,
+    }),
+    completions: async () => ({
+      items: [],
+      returned: 0,
+      total: 0,
+      truncated: false,
+    }),
     constitutionRules: async () => [],
-    decisionRecords: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
-    evidenceRecords: async () => ({ items: [], returned: 0, total: 0, truncated: false }),
+    decisionRecords: async () => ({
+      items: [],
+      returned: 0,
+      total: 0,
+      truncated: false,
+    }),
+    evidenceRecords: async () => ({
+      items: [],
+      returned: 0,
+      total: 0,
+      truncated: false,
+    }),
     naviChat: {
       submit: async () => ({ messageID: "chat:m1" }),
       messages: async () => [
@@ -885,11 +905,31 @@ test("fact-domain read queries and mailbox writes route through the channel", as
   expect(await client.mailboxAcknowledge!("mailbox:1")).toEqual({
     acknowledged: true,
   });
-  expect(await client.driftFindings!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
-  expect(await client.completions!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
+  expect(await client.driftFindings!()).toMatchObject({
+    items: [],
+    returned: 0,
+    total: 0,
+    truncated: false,
+  });
+  expect(await client.completions!()).toMatchObject({
+    items: [],
+    returned: 0,
+    total: 0,
+    truncated: false,
+  });
   expect(await client.constitutionRules!()).toEqual([]);
-  expect(await client.decisionRecords!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
-  expect(await client.evidenceRecords!()).toMatchObject({ items: [], returned: 0, total: 0, truncated: false });
+  expect(await client.decisionRecords!()).toMatchObject({
+    items: [],
+    returned: 0,
+    total: 0,
+    truncated: false,
+  });
+  expect(await client.evidenceRecords!()).toMatchObject({
+    items: [],
+    returned: 0,
+    total: 0,
+    truncated: false,
+  });
   expect(await client.naviChat!.messages!()).toEqual([
     { messageID: "chat:m1", role: "user", text: "hi", at: "now" },
   ]);

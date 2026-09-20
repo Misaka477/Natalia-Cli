@@ -1348,7 +1348,8 @@ export class SqliteSessionStore {
       ]);
     if (event.type === "turn.cancelled")
       this.run(`UPDATE sessions SET cancelled = 1 WHERE id = ?`, [sessionID]);
-    if (isDurableFlushBarrier(event)) this.persistProjectionCheckpoint(sessionID);
+    if (isDurableFlushBarrier(event))
+      this.persistProjectionCheckpoint(sessionID);
   }
 
   /** Writes the live projection fold for a session as a durable checkpoint. */

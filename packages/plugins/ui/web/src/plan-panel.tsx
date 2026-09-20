@@ -456,7 +456,7 @@ export function PlanPanel(props: {
                   </div>
                 )}
               </Show>
-<div class="plan-panel-doc-buttons">
+              <div class="plan-panel-doc-buttons">
                 <button
                   type="button"
                   class="plan-panel-btn"
@@ -509,9 +509,7 @@ export function PlanPanel(props: {
                     <span class="review-section-label">任务态</span>
                     <span class="plan-task-counts">{taskStateSummary()}</span>
                     <span class="plan-task-toggle">
-                      {tasksExpanded()
-                        ? "收起"
-                        : `展开 ${taskStates().length}`}
+                      {tasksExpanded() ? "收起" : `展开 ${taskStates().length}`}
                     </span>
                   </button>
                   <Show when={tasksExpanded()}>

@@ -26,7 +26,11 @@ test("Phase 3 E2E: work_graph_query filters by nodeKind and reports truncation",
       async *stream(request: ProviderStreamRequest) {
         const toolResult = (
           request as {
-            messages: Array<{ role: string; content: string; toolCallID?: string }>;
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
           }
         ).messages
           .filter(
@@ -45,7 +49,10 @@ test("Phase 3 E2E: work_graph_query filters by nodeKind and reports truncation",
                 {
                   id: "call_graph",
                   name: "work_graph_query",
-                  arguments: JSON.stringify({ nodeKind: "decision", limit: 50 }),
+                  arguments: JSON.stringify({
+                    nodeKind: "decision",
+                    limit: 50,
+                  }),
                 },
               ],
             };
@@ -60,7 +67,10 @@ test("Phase 3 E2E: work_graph_query filters by nodeKind and reports truncation",
                 {
                   id: "call_graph",
                   name: "work_graph_query",
-                  arguments: JSON.stringify({ path: "plans/x.md", findingID: "DF-1" }),
+                  arguments: JSON.stringify({
+                    path: "plans/x.md",
+                    findingID: "DF-1",
+                  }),
                 },
               ],
             };
@@ -130,7 +140,6 @@ test("Phase 3 E2E: work_graph_query filters by nodeKind and reports truncation",
   await client.dispose?.();
 }, 30_000);
 
-
 test("Phase 3 E2E: work_graph_query returns an empty (not error) result for a non-matching query", async () => {
   const root = await officialPluginWorkspace("workgraph-query-empty");
   const results: string[] = [];
@@ -143,7 +152,13 @@ test("Phase 3 E2E: work_graph_query returns an empty (not error) result for a no
       model: "test",
       async *stream(request: ProviderStreamRequest) {
         const messages = (
-          request as { messages: Array<{ role: string; content: string; toolCallID?: string }> }
+          request as {
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
+          }
         ).messages;
         const graphResult = messages
           .filter(
@@ -203,7 +218,6 @@ test("Phase 3 E2E: work_graph_query returns an empty (not error) result for a no
   await client.dispose?.();
 }, 30_000);
 
-
 test("Phase 3 E2E: an unfiltered work_graph_query defaults to the active plan's chain", async () => {
   const root = await officialPluginWorkspace("workgraph-query-active-plan");
   const sessionID = "ses_e2e_wgq_active" as SessionID;
@@ -219,7 +233,11 @@ test("Phase 3 E2E: an unfiltered work_graph_query defaults to the active plan's 
       async *stream(request: ProviderStreamRequest) {
         const toolResult = (
           request as {
-            messages: Array<{ role: string; content: string; toolCallID?: string }>;
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
           }
         ).messages
           .filter(

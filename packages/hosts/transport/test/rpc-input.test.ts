@@ -159,9 +159,7 @@ test("goal.control validates the action and delegates to the runtime", async () 
     },
     stubClient(),
   );
-  expect(unsupported.error?.code).toBe(
-    RUNTIME_RPC_ERROR_CODES.notSupported,
-  );
+  expect(unsupported.error?.code).toBe(RUNTIME_RPC_ERROR_CODES.notSupported);
 
   const badAction = await handleRPCMessage(
     {

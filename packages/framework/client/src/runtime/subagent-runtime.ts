@@ -100,9 +100,7 @@ export function createSubagentRuntime(
     async subagentHistoryPage(input) {
       await ctx.ports.getReady();
       const exec = input.sessionID
-        ? ctx.ports
-            .getExecutionBySession()
-            .get(input.sessionID as SessionID)
+        ? ctx.ports.getExecutionBySession().get(input.sessionID as SessionID)
         : ctx.ports.getActiveExec();
       if (!exec) return { data: [], cursor: {} };
       // Pages are projected from the durable log; the legacy array surface

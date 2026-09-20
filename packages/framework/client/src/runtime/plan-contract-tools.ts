@@ -366,7 +366,8 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
         scopeDelta: {
           type: "array",
           items: { type: "string" },
-          description: "New scope paths to add (must not overlap the committed scope).",
+          description:
+            "New scope paths to add (must not overlap the committed scope).",
         },
         verificationDelta: {
           type: "array",
@@ -405,7 +406,8 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
           ? sessionFactWorkContracts(exec.factState)
           : projectedWorkContracts(exec.session.events)
       ).find(
-        (candidate) => candidate.planID === planID && candidate.status === "current",
+        (candidate) =>
+          candidate.planID === planID && candidate.status === "current",
       );
       if (!contract)
         return JSON.stringify({
@@ -421,15 +423,20 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
       const problems = ledger.validateDetour({
         reason: args.reason ?? "",
         scopeDelta: args.scopeDelta ?? [],
-        ...(args.verificationDelta ? { verificationDelta: args.verificationDelta } : {}),
-        ...(args.constraintDelta ? { constraintDelta: args.constraintDelta } : {}),
+        ...(args.verificationDelta
+          ? { verificationDelta: args.verificationDelta }
+          : {}),
+        ...(args.constraintDelta
+          ? { constraintDelta: args.constraintDelta }
+          : {}),
         currentScope: contract.scope ?? [],
       });
       if (problems.length)
         return JSON.stringify({
           accepted: false,
           problems,
-          reason: "the detour failed validation; fix the problems and re-declare",
+          reason:
+            "the detour failed validation; fix the problems and re-declare",
         });
       // EI Open Question "契约 handoff 撞 constitution" — same 事前 check as
       // plan_propose: a scopeDelta naming a path a deny rule covers would
@@ -460,8 +467,12 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
           currentVersion: contract.version,
           reason: args.reason!,
           scopeDelta: args.scopeDelta!,
-          ...(args.verificationDelta ? { verificationDelta: args.verificationDelta } : {}),
-          ...(args.constraintDelta ? { constraintDelta: args.constraintDelta } : {}),
+          ...(args.verificationDelta
+            ? { verificationDelta: args.verificationDelta }
+            : {}),
+          ...(args.constraintDelta
+            ? { constraintDelta: args.constraintDelta }
+            : {}),
           requestedAt: now,
         }),
       );
@@ -547,13 +558,21 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
       const merged = ledger.mergeDetourIntoContract(
         {
           ...(contract.scope ? { scope: contract.scope } : {}),
-          ...(contract.verification ? { verification: contract.verification } : {}),
-          ...(contract.constraints ? { constraints: contract.constraints } : {}),
+          ...(contract.verification
+            ? { verification: contract.verification }
+            : {}),
+          ...(contract.constraints
+            ? { constraints: contract.constraints }
+            : {}),
         },
         {
           scopeDelta: args.scopeDelta!,
-          ...(args.verificationDelta ? { verificationDelta: args.verificationDelta } : {}),
-          ...(args.constraintDelta ? { constraintDelta: args.constraintDelta } : {}),
+          ...(args.verificationDelta
+            ? { verificationDelta: args.verificationDelta }
+            : {}),
+          ...(args.constraintDelta
+            ? { constraintDelta: args.constraintDelta }
+            : {}),
         },
       );
       ctx.ports.publishForSession(
@@ -707,7 +726,6 @@ export function createConstitutionProposeTool(
   };
 }
 
-
 /**
  * `detour_review` (EI §3.4): Nia's independent opinion on a requested detour.
  * Nia reads the detour (and the contract / work graph) and records a
@@ -775,7 +793,11 @@ export function createDetourReviewTool(ctx: RuntimeContext): RuntimeTool {
           ...(args.rationale ? { rationale: args.rationale } : {}),
         }),
       );
-      return JSON.stringify({ reviewed: true, detourID, verdict: args.verdict });
+      return JSON.stringify({
+        reviewed: true,
+        detourID,
+        verdict: args.verdict,
+      });
     },
   };
 }

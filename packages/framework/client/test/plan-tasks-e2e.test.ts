@@ -34,7 +34,10 @@ test("Phase 4 E2E: plan checkboxes project to evidence-first task states", async
     ].join("\n"),
     title: "E2E tasks",
   });
-  const marked = await client.planDocMark!({ path: "plans/e2e-tasks.md", title: "E2E tasks" });
+  const marked = await client.planDocMark!({
+    path: "plans/e2e-tasks.md",
+    title: "E2E tasks",
+  });
   const planID = marked.planID;
   await client.planDocActivate!(planID);
 
@@ -45,7 +48,9 @@ test("Phase 4 E2E: plan checkboxes project to evidence-first task states", async
       taskID: "plan:e2e:tasks",
       objective: "add the parser tests",
       changeSummary: "added parser unit tests",
-      validations: [{ command: "bun test", result: "passed", safeSummary: "green" }],
+      validations: [
+        { command: "bun test", result: "passed", safeSummary: "green" },
+      ],
       knownGaps: [],
       rollbackState: "clean",
     },
@@ -58,7 +63,9 @@ test("Phase 4 E2E: plan checkboxes project to evidence-first task states", async
       taskID: "plan:e2e:tasks",
       objective: "refactor the tokenizer",
       changeSummary: "started the tokenizer refactor",
-      validations: [{ command: "bun test", result: "passed", safeSummary: "green" }],
+      validations: [
+        { command: "bun test", result: "passed", safeSummary: "green" },
+      ],
       knownGaps: [],
       rollbackState: "clean",
     },
@@ -122,7 +129,10 @@ test("Phase 4 E2E: the main agent's plan_doc_tick declares a step done and can r
     ].join("\n"),
     title: "Tick E2E",
   });
-  const marked = await client.planDocMark!({ path: "plans/tick-e2e.md", title: "Tick E2E" });
+  const marked = await client.planDocMark!({
+    path: "plans/tick-e2e.md",
+    title: "Tick E2E",
+  });
   planID = marked.planID;
 
   // The main agent's turn ticks then retracts the step via plan_doc_tick.
@@ -149,7 +159,11 @@ test("Phase 4 E2E: plan_doc_tick appends a 落地日志 section to a checkbox-le
         {
           tool: () => ({
             name: "plan_doc_tick",
-            arguments: { planID: planID!, task: "wired the parser", done: true },
+            arguments: {
+              planID: planID!,
+              task: "wired the parser",
+              done: true,
+            },
           }),
         },
         { text: "logged the step" },
@@ -164,10 +178,18 @@ test("Phase 4 E2E: plan_doc_tick appends a 落地日志 section to a checkbox-le
   let planID: string | undefined;
   await client.planDocWrite!({
     path: "plans/log-e2e.md",
-    content: ["# Prose plan", "", "A design note with no checkboxes at all.", ""].join("\n"),
+    content: [
+      "# Prose plan",
+      "",
+      "A design note with no checkboxes at all.",
+      "",
+    ].join("\n"),
     title: "Prose plan",
   });
-  const marked = await client.planDocMark!({ path: "plans/log-e2e.md", title: "Prose plan" });
+  const marked = await client.planDocMark!({
+    path: "plans/log-e2e.md",
+    title: "Prose plan",
+  });
   planID = marked.planID;
 
   await client.submitAndWait!("record that the parser is wired");

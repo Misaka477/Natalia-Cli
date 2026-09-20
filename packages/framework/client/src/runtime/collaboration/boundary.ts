@@ -76,8 +76,7 @@ export function deliveredMailboxConstraints(
     .filter(
       (message) =>
         message.intent === "constraint" &&
-        (message.status === "delivered" ||
-          message.status === "acknowledged"),
+        (message.status === "delivered" || message.status === "acknowledged"),
     )
     .map((message) => message.safeSummary)
     .filter((summary) => summary.trim().length > 0);
@@ -306,7 +305,9 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         ];
         // EI Phase 2: the same matched rules, carrying enforcement, so a deny
         // hit opens a high constitution_conflict finding.
-        const constitutionHits = projectedConstitutionRules(target.session.events)
+        const constitutionHits = projectedConstitutionRules(
+          target.session.events,
+        )
           .filter((rule) =>
             rule.appliesTo?.paths?.some((pattern) =>
               confirmed.some((change) => globPathMatch(pattern, change.path)),
@@ -398,9 +399,9 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         goal = undefined;
       }
       if (goal?.phase === "active") {
-        const hasContract = projectedWorkContracts(
-          target.session.events,
-        ).some((candidate) => candidate.status === "current");
+        const hasContract = projectedWorkContracts(target.session.events).some(
+          (candidate) => candidate.status === "current",
+        );
         const narration = hasContract
           ? undefined
           : lastAssistantNarration(target.session.events);

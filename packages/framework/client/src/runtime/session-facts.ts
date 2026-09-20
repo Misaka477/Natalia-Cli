@@ -104,9 +104,7 @@ export async function completeSessionFactState(
   // A missing, stale-versioned, or corrupt checkpoint fails soft to paging (C).
   const checkpoint = store.loadProjectionCheckpoint?.(exec.session.id);
   if (checkpoint) {
-    const projection = deserializeProjectionState(
-      checkpoint.serializedState,
-    );
+    const projection = deserializeProjectionState(checkpoint.serializedState);
     if (projection) {
       const state = emptySessionFactState();
       for (const event of projection.events)

@@ -29,7 +29,9 @@ test("a user records human validation and it lands on the completion card", asyn
     taskID: "task_build",
     objective: "ship the build check",
     changeSummary: "added the build check",
-    validations: [{ command: "bun run typecheck", result: "passed", safeSummary: "ok" }],
+    validations: [
+      { command: "bun run typecheck", result: "passed", safeSummary: "ok" },
+    ],
   });
   let cards = await client.completions!({ sessionID });
   expect(cards.items.map((c) => c.taskID)).toContain("task_build");

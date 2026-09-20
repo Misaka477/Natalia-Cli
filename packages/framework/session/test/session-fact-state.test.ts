@@ -723,16 +723,40 @@ test("a drift finding reopened from a terminal state counts each reopen", () => 
       applicableConstraints: [],
       contractVersion: 2,
     },
-    { type: "drift.finding_updated", id: "u1", findingID: "DF-001", status: "dismissed" },
+    {
+      type: "drift.finding_updated",
+      id: "u1",
+      findingID: "DF-001",
+      status: "dismissed",
+    },
     // First reopen (翻案): dismissed -> open.
-    { type: "drift.finding_updated", id: "u2", findingID: "DF-001", status: "open" },
+    {
+      type: "drift.finding_updated",
+      id: "u2",
+      findingID: "DF-001",
+      status: "open",
+    },
     // An open->open update is not a reopen.
-    { type: "drift.finding_updated", id: "u3", findingID: "DF-001", status: "explained" },
-    { type: "drift.finding_updated", id: "u4", findingID: "DF-001", status: "open" },
+    {
+      type: "drift.finding_updated",
+      id: "u3",
+      findingID: "DF-001",
+      status: "explained",
+    },
+    {
+      type: "drift.finding_updated",
+      id: "u4",
+      findingID: "DF-001",
+      status: "open",
+    },
   ]);
   const findings = sessionFactDriftFindings(state);
   expect(findings).toHaveLength(1);
-  expect(findings[0]).toMatchObject({ findingID: "DF-001", status: "open", reopenedCount: 2 });
+  expect(findings[0]).toMatchObject({
+    findingID: "DF-001",
+    status: "open",
+    reopenedCount: 2,
+  });
 });
 
 test("constitution disable and tombstone fold keep history complete", () => {

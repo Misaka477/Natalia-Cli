@@ -33,7 +33,12 @@ export type PlanTask = {
 };
 
 /** The projected state of a task (declaration × evidence). */
-export type PlanTaskState = "pending" | "in_progress" | "verified" | "gap" | "skipped";
+export type PlanTaskState =
+  | "pending"
+  | "in_progress"
+  | "verified"
+  | "gap"
+  | "skipped";
 
 // A markdown task list item: optional indent, a bullet or number, a checkbox
 // marker, and the label. `x`/`X` = done, `-`/`~` = skipped, space = open.
@@ -81,7 +86,8 @@ export function evaluatePlanTaskState(input: {
   hasEvidence: boolean;
 }): PlanTaskState {
   if (input.declaration === "skipped") return "skipped";
-  if (input.declaration === "done") return input.hasEvidence ? "verified" : "gap";
+  if (input.declaration === "done")
+    return input.hasEvidence ? "verified" : "gap";
   return input.hasEvidence ? "in_progress" : "pending";
 }
 

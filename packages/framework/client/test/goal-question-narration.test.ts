@@ -44,7 +44,13 @@ test("only delivered/acknowledged mailbox constraints are judged (EI §3.3)", ()
     createdAt: "2026-01-01T00:00:00.000Z",
   };
   const message = (intent: string, status: string, id: string) =>
-    ({ ...base, messageID: id, intent, status, safeSummary: `${intent}:${status}` }) as never;
+    ({
+      ...base,
+      messageID: id,
+      intent,
+      status,
+      safeSummary: `${intent}:${status}`,
+    }) as never;
   const sentences = deliveredMailboxConstraints([
     message("constraint", "delivered", "m1"),
     message("constraint", "acknowledged", "m2"),
@@ -53,5 +59,8 @@ test("only delivered/acknowledged mailbox constraints are judged (EI §3.3)", ()
     message("constraint", "superseded", "m4"),
     message("clarification", "delivered", "m5"),
   ]);
-  expect(sentences).toEqual(["constraint:delivered", "constraint:acknowledged"]);
+  expect(sentences).toEqual([
+    "constraint:delivered",
+    "constraint:acknowledged",
+  ]);
 });

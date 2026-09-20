@@ -237,7 +237,6 @@ export function deserializeProjectionState(
   };
 }
 
-
 function belongsToInterruptedTurn(event: RuntimeEvent, active: Set<string>) {
   if (!("id" in event) || typeof event.id !== "string") return false;
   return [...active].some(
@@ -2232,11 +2231,7 @@ export function sessionFactCompletions(
 /** The terminal-keep count for the hot fact state (EI Phase 1 "降档"). */
 export const FACT_TERMINAL_LIMIT = 200;
 
-const ACTIVE_EVIDENCE_STATUS = new Set([
-  "planned",
-  "implemented",
-  "validated",
-]);
+const ACTIVE_EVIDENCE_STATUS = new Set(["planned", "implemented", "validated"]);
 
 /**
  * EI Phase 1 "降档" (RINA boundary): bound the hot fact state's *terminal*
@@ -2260,7 +2255,9 @@ export function evictTerminalFacts(
 ): boolean {
   let evicted = false;
   const journal = state.intelligence.journalEvents;
-  const evidence = journal.filter((event) => event.type === "evidence.recorded");
+  const evidence = journal.filter(
+    (event) => event.type === "evidence.recorded",
+  );
   const completions = journal.filter(
     (event) => event.type === "completion.recorded",
   );
@@ -2299,10 +2296,7 @@ export function evictTerminalFacts(
     (finding) => !isOpen(finding.status),
   );
   if (terminalFindings.length > limit) {
-    const keep = new Set([
-      ...openFindings,
-      ...terminalFindings.slice(-limit),
-    ]);
+    const keep = new Set([...openFindings, ...terminalFindings.slice(-limit)]);
     for (const [id, finding] of state.drift.findings)
       if (!keep.has(finding)) {
         state.drift.findings.delete(id);

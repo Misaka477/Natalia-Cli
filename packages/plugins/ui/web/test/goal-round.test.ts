@@ -20,7 +20,7 @@ test("parses a rendered goal-round prompt", () => {
 
 test("treats a zero cap as unlimited", () => {
   const parsed = parseGoalRoundPrompt(
-    ['<goal_round>', 'Objective: "ship it"', "Round: 7/unlimited"].join("\n"),
+    ["<goal_round>", 'Objective: "ship it"', "Round: 7/unlimited"].join("\n"),
   );
   expect(parsed?.maxGoalRounds).toBe(0);
   expect(parsed?.round).toBe(7);

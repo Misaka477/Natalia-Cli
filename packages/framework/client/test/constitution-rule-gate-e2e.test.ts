@@ -51,8 +51,7 @@ test("a proposed constitution rule still gates in auto mode (no auto-grant)", as
 
   const approval = events.find(
     (event): event is Extract<RuntimeEvent, { type: "approval.request" }> =>
-      event.type === "approval.request" &&
-      event.scope === "constitution_rule",
+      event.type === "approval.request" && event.scope === "constitution_rule",
   );
   expect(approval).toBeDefined();
   expect(approvals).toBe(1);

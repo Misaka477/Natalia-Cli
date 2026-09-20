@@ -393,7 +393,9 @@ export function buildConstitutionRuleUpdate(input: {
     commandPattern?: string;
   };
 }): Extract<RuntimeEvent, { type: "constitution.rule_updated" }> {
-  const nonEmpty = <T extends { tools?: string[]; paths?: string[]; commandPattern?: string }>(
+  const nonEmpty = <
+    T extends { tools?: string[]; paths?: string[]; commandPattern?: string },
+  >(
     anchor: T | undefined,
   ) =>
     anchor &&

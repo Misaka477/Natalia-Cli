@@ -132,7 +132,7 @@ test("Navi and Nia run concurrently with independent event and thinking namespac
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
   try {
-    const navi = client.naviChat!.submit({  text: "navi first" });
+    const navi = client.naviChat!.submit({ text: "navi first" });
     const nia = client.niaChat!.submit({ text: "nia first" });
     await Promise.all([gates.get("navi")!.started, gates.get("nia")!.started]);
     expect(requests).toHaveLength(2);
@@ -180,7 +180,7 @@ test("Navi and Nia provider usage feeds the session usage dashboard", async () =
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
   try {
-    await client.naviChat!.submit({  text: "navi usage" });
+    await client.naviChat!.submit({ text: "navi usage" });
     await client.niaChat!.submit({ text: "nia usage" });
     const naviUsage = events.filter(
       (event) => event.type === "navi.runtime.step_usage",
@@ -213,11 +213,10 @@ test("pending user messages are drained only by their own stream and reach the p
   ]);
   const { client } = await makeClient("pending", requests, gates);
   try {
-    const naviBusy = client.naviChat!.submit({  text: "navi busy" });
+    const naviBusy = client.naviChat!.submit({ text: "navi busy" });
     const niaBusy = client.niaChat!.submit({ text: "nia busy" });
     await Promise.all([gates.get("navi")!.started, gates.get("nia")!.started]);
     const queuedNavi = client.naviChat!.submit({
-      
       text: "navi pending",
     });
     const queuedNia = client.niaChat!.submit({
@@ -263,14 +262,12 @@ test("identical queued Navi text is consumed once per message ID", async () => {
   const gates = new Map<string, StreamGate>([["navi", streamGate()]]);
   const { client } = await makeClient("duplicate-pending", requests, gates);
   try {
-    const busy = client.naviChat!.submit({  text: "busy" });
+    const busy = client.naviChat!.submit({ text: "busy" });
     await gates.get("navi")!.started;
     const first = await client.naviChat!.submit({
-      
       text: "same text",
     });
     const second = await client.naviChat!.submit({
-      
       text: "same text",
     });
     expect(first.messageID).not.toBe(second.messageID);
@@ -296,10 +293,9 @@ test("a Navi message arriving after the last-step drain gets a follow-up provide
     maxStepsPerTurn: 1,
   });
   try {
-    const busy = client.naviChat!.submit({  text: "last step" });
+    const busy = client.naviChat!.submit({ text: "last step" });
     await gates.get("navi")!.started;
     const pending = await client.naviChat!.submit({
-      
       text: "arrived after drain",
     });
     gates.get("navi")!.release();
@@ -333,7 +329,9 @@ test.each([
     const cancelled = chat.submit({
       text: `${aborted} abort`,
     });
-    const survivor = (peer === "navi" ? client.naviChat! : client.niaChat!).submit({
+    const survivor = (
+      peer === "navi" ? client.naviChat! : client.niaChat!
+    ).submit({
       text: `${peer} peer`,
     });
     await Promise.all([gates.get(aborted)!.started, gates.get(peer)!.started]);
@@ -342,7 +340,9 @@ test.each([
     gates.get(peer)!.release();
     await survivor;
     await cancelled;
-    expect(await (peer === "navi" ? client.naviChat! : client.niaChat!).abort!()).toEqual({ aborted: false });
+    expect(
+      await (peer === "navi" ? client.naviChat! : client.niaChat!).abort!(),
+    ).toEqual({ aborted: false });
     expect(requests).toHaveLength(2);
   } finally {
     releaseAll(gates);
@@ -414,9 +414,9 @@ test("Nia normal profile selects its configured model and reasoning for submit a
   try {
     await client.niaChat!.submit({ text: "establish execution" });
     expect(
-      await client.niaChat!.setModelProfile!(
-        { normal: { modelID: "grok/grok-4.6", reasoningEffort: "high" } },
-      ),
+      await client.niaChat!.setModelProfile!({
+        normal: { modelID: "grok/grok-4.6", reasoningEffort: "high" },
+      }),
     ).toEqual({ saved: true });
     await client.niaChat!.submit({ text: "audit" });
     await client.planDocWrite!({
@@ -486,9 +486,9 @@ test("awaiting audit wakes Nia through her normal profile and namespaced stream"
   client.start((event) => events.push(event));
   try {
     await client.niaChat!.submit({ text: "establish execution" });
-    await client.niaChat!.setModelProfile!(
-      { normal: { reasoningEffort: "high" } },
-    );
+    await client.niaChat!.setModelProfile!({
+      normal: { reasoningEffort: "high" },
+    });
     await client.planDocWrite!({
       path: "plans/audit-target.md",
       content: "# Audit target\n",
@@ -526,7 +526,7 @@ test("main, Navi, and Nia publish thinking in their independent namespaces", asy
   client.start((event) => events.push(event));
   try {
     await client.submitAndWait!("main thinking");
-    await client.naviChat!.submit({  text: "navi thinking" });
+    await client.naviChat!.submit({ text: "navi thinking" });
     await client.niaChat!.submit({ text: "nia thinking" });
     expect(events.some((event) => eventType(event) === "thinking.delta")).toBe(
       true,
@@ -553,7 +553,7 @@ test("durable thinking rows replay independently and never enter later chat prom
   });
   initial.start(() => undefined);
   try {
-    await initial.naviChat!.submit({  text: "first navi" });
+    await initial.naviChat!.submit({ text: "first navi" });
     await initial.niaChat!.submit({ text: "first nia" });
     const naviRows = await initial.naviChat!.messages!();
     const niaRows = await initial.niaChat!.messages!();
@@ -588,7 +588,7 @@ test("durable thinking rows replay independently and never enter later chat prom
       expect.objectContaining({ text: "nia-thinking:" }),
     ]);
 
-    await reopened.naviChat!.submit({  text: "second navi" });
+    await reopened.naviChat!.submit({ text: "second navi" });
     await reopened.niaChat!.submit({ text: "second nia" });
     expect(replayRequests).toHaveLength(2);
     expect(

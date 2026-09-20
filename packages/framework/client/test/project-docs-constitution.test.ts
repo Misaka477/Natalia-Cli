@@ -15,7 +15,11 @@ async function workspaceWithConstitution(
 ): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), `natalia-const-${name}-`));
   await mkdir(join(root, ".natalia"), { recursive: true });
-  await writeFile(join(root, ".natalia", "constitution.md"), constitution, "utf8");
+  await writeFile(
+    join(root, ".natalia", "constitution.md"),
+    constitution,
+    "utf8",
+  );
   if (agents) await writeFile(join(root, "AGENTS.md"), agents, "utf8");
   return root;
 }
@@ -54,7 +58,10 @@ test("loadProjectDocumentsSync parses constitution sections into enforcement-tag
   expect(review).toMatchObject({ enforcement: "warn", annotated: false });
   // The AGENTS.md prose rule is warn-level too.
   const testing = rules.find((rule) => rule.source === "agents");
-  expect(testing).toMatchObject({ enforcement: "warn", statement: "Every change ships with a test." });
+  expect(testing).toMatchObject({
+    enforcement: "warn",
+    statement: "Every change ships with a test.",
+  });
 
   // The rendered block states enforcement explicitly and keeps raw grounding.
   const block = renderProjectDocumentsBlock(snapshot!);

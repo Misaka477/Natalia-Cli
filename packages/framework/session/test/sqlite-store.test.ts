@@ -145,7 +145,10 @@ test("SQLite message pages use turn cursors without loading unrelated history", 
 });
 
 test("SQLite descending message pages keep turn.input with its owning turn", () => {
-  const path = join(tmpdir(), `natalia-message-input-${crypto.randomUUID()}.db`);
+  const path = join(
+    tmpdir(),
+    `natalia-message-input-${crypto.randomUUID()}.db`,
+  );
   const store = new SqliteSessionStore(path);
   const sessionID = "ses_message_input" as const;
   try {
@@ -211,7 +214,10 @@ test("SQLite descending message pages keep turn.input with its owning turn", () 
 });
 
 test("SQLite message pages match the event-stream projector", () => {
-  const path = join(tmpdir(), `natalia-message-parity-${crypto.randomUUID()}.db`);
+  const path = join(
+    tmpdir(),
+    `natalia-message-parity-${crypto.randomUUID()}.db`,
+  );
   const store = new SqliteSessionStore(path);
   const sessionID = "ses_message_parity" as const;
   try {
@@ -889,7 +895,10 @@ test("recovery projects the current goal and its admitted rounds", () => {
 });
 
 test("auto-saved checkpoint + tail replay matches a full projection", () => {
-  const path = join(tmpdir(), `natalia-projection-cache-${crypto.randomUUID()}.db`);
+  const path = join(
+    tmpdir(),
+    `natalia-projection-cache-${crypto.randomUUID()}.db`,
+  );
   const store = new SqliteSessionStore(path);
   const sessionID = "ses_projection_cache" as SessionID;
   try {
@@ -900,7 +909,14 @@ test("auto-saved checkpoint + tail replay matches a full projection", () => {
       store.appendEvent(sessionID, event);
     };
     // A durable barrier auto-saves the checkpoint here (seq 4).
-    push({ type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
+    push({
+      type: "turn.submitted",
+      id: "t1",
+      text: "a",
+      byteLength: 1,
+      lineCount: 1,
+      sha256: "x",
+    });
     push({ type: "agent.selection", name: "reviewer", pending: false });
     push({ type: "model.selection", modelID: "alpha", variant: "fast" });
     push({ type: "turn.finished", id: "t1", stopReason: "done" });
@@ -910,8 +926,23 @@ test("auto-saved checkpoint + tail replay matches a full projection", () => {
     expect(checkpoint!.lastSeq).toBe(4);
 
     // A non-barrier tail: the checkpoint stays at the barrier sequence.
-    push({ type: "turn.submitted", id: "t2", text: "b", byteLength: 1, lineCount: 1, sha256: "y" });
-    push({ type: "tool.update", id: "t2:call_1", name: "read_file", callID: "call_1", status: "succeeded", summary: "read", result: "ok" });
+    push({
+      type: "turn.submitted",
+      id: "t2",
+      text: "b",
+      byteLength: 1,
+      lineCount: 1,
+      sha256: "y",
+    });
+    push({
+      type: "tool.update",
+      id: "t2:call_1",
+      name: "read_file",
+      callID: "call_1",
+      status: "succeeded",
+      summary: "read",
+      result: "ok",
+    });
     push({ type: "model.selection", modelID: "beta", variant: "careful" });
 
     const loaded = store.loadProjectionCheckpoint(sessionID);
@@ -922,7 +953,10 @@ test("auto-saved checkpoint + tail replay matches a full projection", () => {
 
     const full = foldProjection(events);
     expect(resumed).toEqual(full);
-    expect(resumed.selectedModel).toEqual({ modelID: "beta", variant: "careful" });
+    expect(resumed.selectedModel).toEqual({
+      modelID: "beta",
+      variant: "careful",
+    });
     expect(resumed.completedTurnIDs.sort()).toEqual(["t1"]);
     expect(resumed.activeTurnIDs).toEqual(["t2"]);
   } finally {
@@ -932,17 +966,36 @@ test("auto-saved checkpoint + tail replay matches a full projection", () => {
 });
 
 test("a projection checkpoint from an older state version is discarded", () => {
-  const path = join(tmpdir(), `natalia-projection-stale-${crypto.randomUUID()}.db`);
+  const path = join(
+    tmpdir(),
+    `natalia-projection-stale-${crypto.randomUUID()}.db`,
+  );
   const store = new SqliteSessionStore(path);
   const sessionID = "ses_projection_stale" as SessionID;
   try {
     store.create(sessionID, "Stale cache");
-    store.appendEvent(sessionID, { type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
+    store.appendEvent(sessionID, {
+      type: "turn.submitted",
+      id: "t1",
+      text: "a",
+      byteLength: 1,
+      lineCount: 1,
+      sha256: "x",
+    });
     const state = initProjection();
-    applyProjection(state, { type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
+    applyProjection(state, {
+      type: "turn.submitted",
+      id: "t1",
+      text: "a",
+      byteLength: 1,
+      lineCount: 1,
+      sha256: "x",
+    });
     store.saveProjectionCheckpoint(sessionID, state);
     // Simulate a checkpoint written by a future/older fold shape.
-    const db = store as unknown as { db: { run: (sql: string, params: unknown[]) => void } };
+    const db = store as unknown as {
+      db: { run: (sql: string, params: unknown[]) => void };
+    };
     db.db.run(
       `UPDATE projection_checkpoints SET state_version = state_version + 999 WHERE session_id = ?`,
       [sessionID],
@@ -955,7 +1008,10 @@ test("a projection checkpoint from an older state version is discarded", () => {
 });
 
 test("restoreProjection uses a disk checkpoint + tail and fails soft to full", () => {
-  const path = join(tmpdir(), `natalia-restore-ladder-${crypto.randomUUID()}.db`);
+  const path = join(
+    tmpdir(),
+    `natalia-restore-ladder-${crypto.randomUUID()}.db`,
+  );
   const store = new SqliteSessionStore(path);
   const sessionID = "ses_restore_ladder" as SessionID;
   try {
@@ -965,7 +1021,14 @@ test("restoreProjection uses a disk checkpoint + tail and fails soft to full", (
       events.push(event);
       store.appendEvent(sessionID, event);
     };
-    push({ type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
+    push({
+      type: "turn.submitted",
+      id: "t1",
+      text: "a",
+      byteLength: 1,
+      lineCount: 1,
+      sha256: "x",
+    });
     push({ type: "model.selection", modelID: "alpha", variant: "fast" });
 
     const full = { id: sessionID, events } as unknown as SessionRecord;
@@ -999,7 +1062,10 @@ test("restoreProjection uses a disk checkpoint + tail and fails soft to full", (
     const resumed = restoreProjection(sessionID, full, adapter);
     expect(resumed).toEqual(foldProjection(events));
     expect(resumed.completedTurnIDs).toEqual(["t1"]);
-    expect(resumed.selectedModel).toEqual({ modelID: "alpha", variant: "fast" });
+    expect(resumed.selectedModel).toEqual({
+      modelID: "alpha",
+      variant: "fast",
+    });
   } finally {
     store.close();
     rmSync(path, { force: true });
@@ -1007,18 +1073,36 @@ test("restoreProjection uses a disk checkpoint + tail and fails soft to full", (
 });
 
 test("appending durable events auto-saves a projection checkpoint", () => {
-  const path = join(tmpdir(), `natalia-projection-autosave-${crypto.randomUUID()}.db`);
+  const path = join(
+    tmpdir(),
+    `natalia-projection-autosave-${crypto.randomUUID()}.db`,
+  );
   const store = new SqliteSessionStore(path);
   const sessionID = "ses_projection_autosave" as SessionID;
   try {
     store.create(sessionID, "Autosave");
     // A non-barrier event does not persist a checkpoint yet.
-    store.appendEvent(sessionID, { type: "model.selection", modelID: "alpha", variant: "fast" });
+    store.appendEvent(sessionID, {
+      type: "model.selection",
+      modelID: "alpha",
+      variant: "fast",
+    });
     expect(store.loadProjectionCheckpoint(sessionID)).toBeUndefined();
 
     // A durable barrier (turn.finished) flushes a checkpoint.
-    store.appendEvent(sessionID, { type: "turn.submitted", id: "t1", text: "a", byteLength: 1, lineCount: 1, sha256: "x" });
-    store.appendEvent(sessionID, { type: "turn.finished", id: "t1", stopReason: "done" });
+    store.appendEvent(sessionID, {
+      type: "turn.submitted",
+      id: "t1",
+      text: "a",
+      byteLength: 1,
+      lineCount: 1,
+      sha256: "x",
+    });
+    store.appendEvent(sessionID, {
+      type: "turn.finished",
+      id: "t1",
+      stopReason: "done",
+    });
     const checkpoint = store.loadProjectionCheckpoint(sessionID);
     expect(checkpoint).toBeDefined();
     expect(checkpoint!.lastSeq).toBe(3);
@@ -1033,7 +1117,11 @@ test("appending durable events auto-saves a projection checkpoint", () => {
     expect(store.loadProjectionCheckpoint(sessionID)).toBeUndefined();
     // A new durable barrier re-saves a checkpoint reflecting the truncated log
     // (turn.submitted survived, so t1 completes again).
-    store.appendEvent(sessionID, { type: "turn.finished", id: "t1", stopReason: "done" });
+    store.appendEvent(sessionID, {
+      type: "turn.finished",
+      id: "t1",
+      stopReason: "done",
+    });
     const afterRollback = store.loadProjectionCheckpoint(sessionID);
     expect(afterRollback).toBeDefined();
     expect([...afterRollback!.state.completedTurnIDs]).toEqual(["t1"]);

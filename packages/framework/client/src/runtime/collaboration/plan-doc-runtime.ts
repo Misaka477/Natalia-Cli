@@ -496,8 +496,7 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
           const round =
             exec.session.events.filter(
               (event) =>
-                event.type === "audit.requested" &&
-                event.planID === planID,
+                event.type === "audit.requested" && event.planID === planID,
             ).length + 1;
           const alreadyRequested = exec.session.events.some(
             (event) =>

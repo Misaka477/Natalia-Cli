@@ -207,10 +207,7 @@ export async function finalizeInitialize(
     }
     const unclosed = new Set<string>();
     for (const event of session.events) {
-      if (
-        event.type === "audit.requested" &&
-        !closedPlans.has(event.planID)
-      )
+      if (event.type === "audit.requested" && !closedPlans.has(event.planID))
         unclosed.add(event.planID);
     }
     for (const planID of unclosed) {

@@ -49,7 +49,12 @@ function slugify(text: string): string {
 function parseListBody(body: string): string[] {
   return body
     .split(",")
-    .map((entry) => entry.trim().replace(/^["']|["']$/gu, "").trim())
+    .map((entry) =>
+      entry
+        .trim()
+        .replace(/^["']|["']$/gu, "")
+        .trim(),
+    )
     .filter((entry) => entry.length > 0);
 }
 
@@ -79,8 +84,7 @@ function parseAppliesTo(raw: string): ConstitutionDocAppliesTo | undefined {
     const tools = readList(record.tools);
     const paths = readList(record.paths);
     const commandPattern =
-      typeof record.commandPattern === "string" &&
-      record.commandPattern.trim()
+      typeof record.commandPattern === "string" && record.commandPattern.trim()
         ? record.commandPattern.trim()
         : undefined;
     if (tools?.length) anchor.tools = tools;
@@ -89,7 +93,9 @@ function parseAppliesTo(raw: string): ConstitutionDocAppliesTo | undefined {
   } else {
     const tools = body.match(/tools\s*:\s*\[([^\]]*)\]/iu);
     const paths = body.match(/paths\s*:\s*\[([^\]]*)\]/iu);
-    const commandPattern = body.match(/commandPattern\s*:\s*["']([^"']*)["']/iu);
+    const commandPattern = body.match(
+      /commandPattern\s*:\s*["']([^"']*)["']/iu,
+    );
     const toolList = tools ? parseListBody(tools[1]!) : [];
     const pathList = paths ? parseListBody(paths[1]!) : [];
     if (toolList.length) anchor.tools = toolList;

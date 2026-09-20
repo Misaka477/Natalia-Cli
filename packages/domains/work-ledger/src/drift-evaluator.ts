@@ -445,8 +445,7 @@ function dependencyRule(): Rule {
 export function pathInScope(path: string, scope: readonly string[]): boolean {
   return scope.some(
     (target) =>
-      Boolean(target) &&
-      (path === target || path.startsWith(`${target}/`)),
+      Boolean(target) && (path === target || path.startsWith(`${target}/`)),
   );
 }
 
@@ -558,7 +557,10 @@ function failureLoopRule(): Rule {
       const counts = new Map<string, { toolName: string; count: number }>();
       for (const failure of failures) {
         const id = `${failure.toolName}::${failure.key}`;
-        const entry = counts.get(id) ?? { toolName: failure.toolName, count: 0 };
+        const entry = counts.get(id) ?? {
+          toolName: failure.toolName,
+          count: 0,
+        };
         entry.count += 1;
         counts.set(id, entry);
       }

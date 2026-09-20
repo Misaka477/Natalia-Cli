@@ -10,11 +10,8 @@
  * panel refuse to edit, disable or delete these rules: a panel that pretended
  * otherwise would lie about the enforcement that is still active.
  */
-export const HARD_PROTECTED_CONSTITUTION_RULE_IDS: ReadonlySet<string> = new Set([
-  "C-TERM-001",
-  "C-TERM-002",
-  "C-TERM-003",
-]);
+export const HARD_PROTECTED_CONSTITUTION_RULE_IDS: ReadonlySet<string> =
+  new Set(["C-TERM-001", "C-TERM-002", "C-TERM-003"]);
 
 /**
  * True when a rule is backed by hard-coded runtime enforcement (see

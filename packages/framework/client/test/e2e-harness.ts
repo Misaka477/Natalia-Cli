@@ -199,6 +199,9 @@ export function lastEvent<T extends RuntimeEvent["type"]>(
   type: T,
 ): Extract<RuntimeEvent, { type: T }> | undefined {
   return events
-    .filter((event): event is Extract<RuntimeEvent, { type: T }> => event.type === type)
+    .filter(
+      (event): event is Extract<RuntimeEvent, { type: T }> =>
+        event.type === type,
+    )
     .at(-1);
 }

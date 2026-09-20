@@ -24,9 +24,7 @@ export function createRuntimeWorkerPool<TWorker extends Worker = Worker>(
       // An idle worker must not keep the runtime process alive: the server/
       // host handle owns liveness, and graceful shutdown closes those. Without
       // this the process hangs after dispose until the shutdown watchdog.
-      (
-        worker as Worker & { unref?: () => void }
-      ).unref?.();
+      (worker as Worker & { unref?: () => void }).unref?.();
       workers.push(worker);
     }
   }

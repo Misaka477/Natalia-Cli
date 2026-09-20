@@ -118,7 +118,9 @@ export async function loadProjectDocuments(
     );
   const agents = await readOptional(join(workspaceRoot, "AGENTS.md"));
   if (agents)
-    documents.push(withRules({ source: "agents", path: "AGENTS.md", ...agents }));
+    documents.push(
+      withRules({ source: "agents", path: "AGENTS.md", ...agents }),
+    );
   return {
     documents,
     hash: documents
@@ -157,7 +159,9 @@ export function loadProjectDocumentsSync(
       }),
     );
   if (agents)
-    documents.push(withRules({ source: "agents", path: "AGENTS.md", ...agents }));
+    documents.push(
+      withRules({ source: "agents", path: "AGENTS.md", ...agents }),
+    );
   const snapshot: ProjectDocumentSnapshot | undefined = documents.length
     ? { documents, hash }
     : undefined;
@@ -183,7 +187,8 @@ export function renderProjectDocumentsBlock(
   if (!snapshot.documents.length) return undefined;
   const body = snapshot.documents
     .map((document) => {
-      const tag = document.source === "constitution" ? "constitution" : "agents";
+      const tag =
+        document.source === "constitution" ? "constitution" : "agents";
       const ruleLines = document.rules
         .map((rule) => {
           const anchor = rule.appliesTo

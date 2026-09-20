@@ -113,8 +113,9 @@ export function logActiveHandles(label = "post-shutdown"): void {
         process as { getActiveResourcesInfo?: () => string[] }
       ).getActiveResourcesInfo?.() ?? [];
     const handles =
-      (process as { _getActiveHandles?: () => unknown[] })._getActiveHandles?.() ??
-      [];
+      (
+        process as { _getActiveHandles?: () => unknown[] }
+      )._getActiveHandles?.() ?? [];
     const names = handles.map(
       (handle) =>
         (handle as { constructor?: { name?: string } })?.constructor?.name ??

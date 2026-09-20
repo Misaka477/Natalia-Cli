@@ -268,11 +268,21 @@ export type PathClass = "source" | "test" | "docs" | "config" | "other";
 /** Classify one path by extension / layout. */
 function pathClassOf(path: string): PathClass {
   const p = path.toLowerCase().replace(/\\/gu, "/");
-  if (/\.(test|spec)\.[cm]?[jt]sx?$|__tests__\/|\/tests?\//iu.test(p)) return "test";
+  if (/\.(test|spec)\.[cm]?[jt]sx?$|__tests__\/|\/tests?\//iu.test(p))
+    return "test";
   if (/\.(md|mdx|txt|rst|adoc)$/iu.test(p)) return "docs";
-  if (/(^|\/)(package\.json|package-lock\.json|bun\.lockb?|yarn\.lock|pnpm-lock\.ya?ml|tsconfig[^/]*\.json|deno\.json|\.env[^/]*)$/iu.test(p) || /\.(ya?ml|toml|ini|cfg|conf)$/iu.test(p))
+  if (
+    /(^|\/)(package\.json|package-lock\.json|bun\.lockb?|yarn\.lock|pnpm-lock\.ya?ml|tsconfig[^/]*\.json|deno\.json|\.env[^/]*)$/iu.test(
+      p,
+    ) ||
+    /\.(ya?ml|toml|ini|cfg|conf)$/iu.test(p)
+  )
     return "config";
-  if (/\.(ts|tsx|js|jsx|mjs|cjs|rs|go|py|rb|java|kt|kts|scala|c|cc|cpp|cxx|h|hpp|cs|swift|zig|nim|lua|php|ex|exs|erl|hs|ml|clj|dart)$/iu.test(p))
+  if (
+    /\.(ts|tsx|js|jsx|mjs|cjs|rs|go|py|rb|java|kt|kts|scala|c|cc|cpp|cxx|h|hpp|cs|swift|zig|nim|lua|php|ex|exs|erl|hs|ml|clj|dart)$/iu.test(
+      p,
+    )
+  )
     return "source";
   return "other";
 }
@@ -357,7 +367,8 @@ export function evaluateCompletionCard(input: {
   const pathClass = input.changes?.length
     ? classifyPathClass(input.changes)
     : undefined;
-  const kind: TaskKind | PathClass = pathClass ?? classifyTaskKind(input.objective, input.scope ?? []);
+  const kind: TaskKind | PathClass =
+    pathClass ?? classifyTaskKind(input.objective, input.scope ?? []);
   const matrix = pathClass
     ? PATH_CLASS_EVIDENCE[pathClass]
     : MINIMUM_EVIDENCE_MATRIX[kind as TaskKind];

@@ -58,7 +58,10 @@ test("Phase 2 E2E: an approved detour absorbs its deltas into a new accepted con
     content: "# E2E detour\n\n- one concrete step\n",
     title: "E2E detour",
   });
-  const marked = await client.planDocMark!({ path: "plans/e2e-detour.md", title: "E2E detour" });
+  const marked = await client.planDocMark!({
+    path: "plans/e2e-detour.md",
+    title: "E2E detour",
+  });
   planID = marked.planID;
   await client.planDocActivate!(planID);
   await client.submitAndWait!("propose the contract then declare a detour");
@@ -121,7 +124,11 @@ test("Phase 2 E2E: a stale detour and an overlapping scopeDelta are rejected bef
           // Establish v1 with scope packages/a.
           tool: () => ({
             name: "plan_propose",
-            arguments: { planID, scope: ["packages/a"], verification: ["bun test packages/a"] },
+            arguments: {
+              planID,
+              scope: ["packages/a"],
+              verification: ["bun test packages/a"],
+            },
           }),
         },
         {
@@ -165,7 +172,10 @@ test("Phase 2 E2E: a stale detour and an overlapping scopeDelta are rejected bef
     content: "# E2E detour\n",
     title: "E2E detour",
   });
-  const marked = await client.planDocMark!({ path: "plans/e2e-detour.md", title: "E2E detour" });
+  const marked = await client.planDocMark!({
+    path: "plans/e2e-detour.md",
+    title: "E2E detour",
+  });
   planID = marked.planID;
   await client.planDocActivate!(planID);
   await client.submitAndWait!("propose then attempt invalid detours");
@@ -186,7 +196,6 @@ test("Phase 2 E2E: a stale detour and an overlapping scopeDelta are rejected bef
   await client.dispose?.();
 }, 30_000);
 
-
 test("Phase 2 E2E: Nia reviews a requested detour and records detour.reviewed (reference only)", async () => {
   const root = await officialPluginWorkspace("detour-e2e-nia-review");
   const events: RuntimeEvent[] = [];
@@ -200,7 +209,11 @@ test("Phase 2 E2E: Nia reviews a requested detour and records detour.reviewed (r
         {
           tool: () => ({
             name: "plan_propose",
-            arguments: { planID, scope: ["packages/a"], verification: ["bun test packages/a"] },
+            arguments: {
+              planID,
+              scope: ["packages/a"],
+              verification: ["bun test packages/a"],
+            },
           }),
         },
         {
@@ -254,7 +267,10 @@ test("Phase 2 E2E: Nia reviews a requested detour and records detour.reviewed (r
     content: "# E2E detour\n",
     title: "E2E detour",
   });
-  const marked = await client.planDocMark!({ path: "plans/e2e-detour.md", title: "E2E detour" });
+  const marked = await client.planDocMark!({
+    path: "plans/e2e-detour.md",
+    title: "E2E detour",
+  });
   planID = marked.planID;
   await client.planDocActivate!(planID);
   await client.submitAndWait!("propose then declare a detour");
@@ -285,7 +301,6 @@ test("Phase 2 E2E: Nia reviews a requested detour and records detour.reviewed (r
   await client.dispose?.();
 }, 30_000);
 
-
 test("Phase 2 E2E: a rejected detour leaves the contract at its current version and records Nia unavailable", async () => {
   const root = await officialPluginWorkspace("detour-e2e-reject-gate");
   const events: RuntimeEvent[] = [];
@@ -299,7 +314,11 @@ test("Phase 2 E2E: a rejected detour leaves the contract at its current version 
         {
           tool: () => ({
             name: "plan_propose",
-            arguments: { planID, scope: ["packages/a"], verification: ["bun test packages/a"] },
+            arguments: {
+              planID,
+              scope: ["packages/a"],
+              verification: ["bun test packages/a"],
+            },
           }),
         },
         {
@@ -336,17 +355,28 @@ test("Phase 2 E2E: a rejected detour leaves the contract at its current version 
     content: "# E2E detour\n",
     title: "E2E detour",
   });
-  const marked = await client.planDocMark!({ path: "plans/e2e-detour.md", title: "E2E detour" });
+  const marked = await client.planDocMark!({
+    path: "plans/e2e-detour.md",
+    title: "E2E detour",
+  });
   planID = marked.planID;
   await client.planDocActivate!(planID);
   await client.submitAndWait!("propose then declare a detour to reject");
 
   // The contract stays at v1 — a rejected detour does not absorb its deltas.
-  const accepted = events.filter((event) => event.type === "work_contract.accepted");
+  const accepted = events.filter(
+    (event) => event.type === "work_contract.accepted",
+  );
   expect(accepted).toHaveLength(1);
   expect(accepted[0]).toMatchObject({ planVersion: 1 });
-  const contract = projectedWorkContracts(events).find((c) => c.planID === planID)!;
-  expect(contract).toMatchObject({ status: "current", version: 1, scope: ["packages/a"] });
+  const contract = projectedWorkContracts(events).find(
+    (c) => c.planID === planID,
+  )!;
+  expect(contract).toMatchObject({
+    status: "current",
+    version: 1,
+    scope: ["packages/a"],
+  });
   // The detour was requested; Nia did not weigh in before the user rejected,
   // so her opinion is recorded as unavailable.
   expect(events.some((event) => event.type === "detour.requested")).toBe(true);

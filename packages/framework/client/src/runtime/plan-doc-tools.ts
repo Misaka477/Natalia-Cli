@@ -109,8 +109,7 @@ export function createPlanDocTickTool(ctx: RuntimeContext): RuntimeTool {
         task?: string;
         done?: boolean;
       };
-      if (!args.planID?.trim())
-        return "plan_doc_tick requires planID";
+      if (!args.planID?.trim()) return "plan_doc_tick requires planID";
       if (typeof args.task !== "string" || !args.task.trim())
         return "plan_doc_tick requires a non-empty task label";
       if (typeof args.done !== "boolean")

@@ -20,10 +20,8 @@ test("dedupeVirtualItems keeps one entry per logical index", () => {
 });
 
 test("duplicateValues reports each repeated value once in first-seen order", () => {
-  expect(duplicateValues(["a", "b", "a", "b", "c", "a"])).toEqual([
-    "a",
-    "b",
-  ]);
-  expect(duplicateVirtualIndexes([{ index: 1 }, { index: 2 }, { index: 1 }]))
-    .toEqual([1]);
+  expect(duplicateValues(["a", "b", "a", "b", "c", "a"])).toEqual(["a", "b"]);
+  expect(
+    duplicateVirtualIndexes([{ index: 1 }, { index: 2 }, { index: 1 }]),
+  ).toEqual([1]);
 });

@@ -429,12 +429,16 @@ export function createWorkerRuntimeClient(
       return (await request(`${stream}.chat.messages`, {
         sessionID,
       })) as Awaited<
-        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["messages"]>>
+        ReturnType<
+          NonNullable<NonNullable<RuntimeClient["naviChat"]>["messages"]>
+        >
       >;
     },
     async messagesPage(input) {
       return (await request(`${stream}.chat.messages.page`, input)) as Awaited<
-        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["messagesPage"]>>
+        ReturnType<
+          NonNullable<NonNullable<RuntimeClient["naviChat"]>["messagesPage"]>
+        >
       >;
     },
     async rollback(input, sessionID) {
@@ -442,14 +446,18 @@ export function createWorkerRuntimeClient(
         input,
         sessionID,
       })) as Awaited<
-        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["rollback"]>>
+        ReturnType<
+          NonNullable<NonNullable<RuntimeClient["naviChat"]>["rollback"]>
+        >
       >;
     },
     async modelProfile(sessionID) {
       return (await request(`${stream}.chat.model.profile`, {
         sessionID,
       })) as Awaited<
-        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["modelProfile"]>>
+        ReturnType<
+          NonNullable<NonNullable<RuntimeClient["naviChat"]>["modelProfile"]>
+        >
       >;
     },
     async setModelProfile(profile, sessionID) {
@@ -457,7 +465,9 @@ export function createWorkerRuntimeClient(
         profile,
         sessionID,
       })) as Awaited<
-        ReturnType<NonNullable<NonNullable<RuntimeClient["naviChat"]>["setModelProfile"]>>
+        ReturnType<
+          NonNullable<NonNullable<RuntimeClient["naviChat"]>["setModelProfile"]>
+        >
       >;
     },
   });
@@ -1660,9 +1670,7 @@ export async function handleWorkerRequest(
     request.method === "nia.chat.submit"
   ) {
     const surface =
-      request.method === "navi.chat.submit"
-        ? client.naviChat
-        : client.niaChat;
+      request.method === "navi.chat.submit" ? client.naviChat : client.niaChat;
     return await surface?.submit?.(request.value as never);
   }
   if (
@@ -1670,9 +1678,7 @@ export async function handleWorkerRequest(
     request.method === "nia.chat.abort"
   ) {
     const surface =
-      request.method === "navi.chat.abort"
-        ? client.naviChat
-        : client.niaChat;
+      request.method === "navi.chat.abort" ? client.naviChat : client.niaChat;
     return await surface?.abort?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,
     );

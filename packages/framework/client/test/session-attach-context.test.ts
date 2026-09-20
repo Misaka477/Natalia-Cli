@@ -89,9 +89,9 @@ test("same-id attach restores stream context snapshots without full event replay
     ).toMatchObject({
       type: "nia.context.snapshot",
     });
-    expect(
-      events.some((event) => event.type === "nia.context.snapshot"),
-    ).toBe(true);
+    expect(events.some((event) => event.type === "nia.context.snapshot")).toBe(
+      true,
+    );
   } finally {
     await client.dispose?.();
   }

@@ -59,7 +59,10 @@ export function evaluateTailScroll(
   const next = { ...state };
 
   // A prepend changes the head while an older-page anchor is pending.
-  if (next.olderAnchor !== null && next.olderAnchor.startKey !== input.firstKey) {
+  if (
+    next.olderAnchor !== null &&
+    next.olderAnchor.startKey !== input.firstKey
+  ) {
     const anchor = next.olderAnchor;
     next.olderAnchor = null;
     next.following = false;

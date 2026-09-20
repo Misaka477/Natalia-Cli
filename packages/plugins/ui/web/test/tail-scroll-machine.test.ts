@@ -60,7 +60,10 @@ test("prepend restores the older anchor and leaves follow", () => {
       visibleTop: 24,
     },
   };
-  const result = evaluateTailScroll(state, input({ firstKey: "t0", count: 20 }));
+  const result = evaluateTailScroll(
+    state,
+    input({ firstKey: "t0", count: 20 }),
+  );
   expect(result.effect).toEqual({
     type: "restore-anchor",
     anchor: state.olderAnchor!,
@@ -72,7 +75,10 @@ test("prepend restores the older anchor and leaves follow", () => {
 test("whole transcript replacement reinitializes the tail", () => {
   let state = evaluateTailScroll(initialTailScrollState(), input()).state;
   state = { ...state, following: false };
-  const replaced = evaluateTailScroll(state, input({ firstKey: "other", count: 5 }));
+  const replaced = evaluateTailScroll(
+    state,
+    input({ firstKey: "other", count: 5 }),
+  );
   expect(replaced.state.initialized).toBe(true);
   expect(replaced.effect.type).toBe("measure-and-scroll-end");
 });

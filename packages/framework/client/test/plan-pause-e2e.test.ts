@@ -24,7 +24,11 @@ test("plan_pause sets a durable paused status and resumes (EI §3.5)", async () 
       async *stream(request: ProviderStreamRequest) {
         const results = (
           request as {
-            messages: Array<{ role: string; content: string; toolCallID?: string }>;
+            messages: Array<{
+              role: string;
+              content: string;
+              toolCallID?: string;
+            }>;
           }
         ).messages.filter(
           (message) =>

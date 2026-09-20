@@ -235,9 +235,7 @@ test("fixedRowHeight collapses large tool output to its preview height", () => {
   const huge: Message = {
     ...base,
     id: "huge-out",
-    toolCalls: [
-      { name: "shell", output: "x".repeat(50_000), status: "done" },
-    ],
+    toolCalls: [{ name: "shell", output: "x".repeat(50_000), status: "done" }],
   };
   // Same message -> same height (deterministic, no DOM measurement).
   expect(fixedRowHeight(huge)).toBe(fixedRowHeight(huge));

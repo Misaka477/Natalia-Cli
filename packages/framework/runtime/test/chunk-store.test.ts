@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
@@ -161,12 +168,11 @@ test("chunk store detects a corrupted chunk on read", async () => {
     const payload = bytes(7, 200_000);
     const ref = await store.put(payload);
     const target = ref.chunks[0]!;
-    const entry = (
-      (await readFile(join(root, "packs", "index.jsonl"), "utf8"))
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as { h: string; p: number; o: number })
-    ).find((candidate) => candidate.h === target)!;
+    const entry = (await readFile(join(root, "packs", "index.jsonl"), "utf8"))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { h: string; p: number; o: number })
+      .find((candidate) => candidate.h === target)!;
     const path = join(
       root,
       "packs",
@@ -246,8 +252,12 @@ test("migrateLegacyRoots merges per-session chunk dirs into the shared root", as
 
     // Every legacy ref now resolves from the shared root, and the shared chunk
     // exists exactly once.
-    expect(await sharedStore.get(refA)).toEqual(Buffer.from("payload a ".repeat(500)));
-    expect(await sharedStore.get(refB)).toEqual(Buffer.from("payload b ".repeat(500)));
+    expect(await sharedStore.get(refA)).toEqual(
+      Buffer.from("payload a ".repeat(500)),
+    );
+    expect(await sharedStore.get(refB)).toEqual(
+      Buffer.from("payload b ".repeat(500)),
+    );
     expect(await sharedStore.get(refSharedA)).toEqual(shared);
     expect(await sharedStore.get(refSharedB)).toEqual(shared);
     const hashes = await indexHashes(root);
@@ -314,7 +324,9 @@ test("migrateLegacyRoots never deletes the shared packs directory", async () => 
     expect(await readFile(join(packs, "pack_000001.pack"), "utf8")).toBe(
       "pack-bytes",
     );
-    expect(await readdir(packs)).toEqual(expect.arrayContaining(["index.jsonl"]));
+    expect(await readdir(packs)).toEqual(
+      expect.arrayContaining(["index.jsonl"]),
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -380,9 +392,7 @@ test("GC compaction rewrites a shared pack without losing live chunks", async ()
     expect(await store.get(live)).toEqual(bytes(31, 120_000));
     expect(await store.has(dead)).toBe(false);
     expect(new Set(await indexHashes(root))).toEqual(new Set(live.chunks));
-    expect(await store.get(live, { verify: true })).toEqual(
-      bytes(31, 120_000),
-    );
+    expect(await store.get(live, { verify: true })).toEqual(bytes(31, 120_000));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

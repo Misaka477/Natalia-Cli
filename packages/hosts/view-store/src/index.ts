@@ -644,9 +644,7 @@ export function hydrateSubagentHistory(
   }
   let changed = false;
   for (const [id, incoming] of groups) {
-    const existing = options?.replace
-      ? []
-      : (state.subagentHistory[id] ?? []);
+    const existing = options?.replace ? [] : (state.subagentHistory[id] ?? []);
     const ordered =
       options?.direction === "older"
         ? [...incoming, ...existing]

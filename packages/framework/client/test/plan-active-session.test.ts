@@ -163,7 +163,7 @@ test("Nia and Navi prompts see workspace plans but only the session active plan"
     await client.planDocActivate!(marked.planID);
 
     await client.niaChat!.submit({ text: "ping" });
-    await client.naviChat!.submit({  text: "ping" });
+    await client.naviChat!.submit({ text: "ping" });
     await client.submitAndWait!("main ping");
     expect(prompts.main.join("\n")).toContain("<next_plan_handoff>");
     expect(prompts.main.join("\n")).toContain(marked.planID);

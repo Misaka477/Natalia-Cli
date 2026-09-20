@@ -92,9 +92,11 @@ test("an empty appliesTo anchor is dropped, keeping the rule warn-anchored", () 
 
 test("an annotation-only section (no prose) still yields a rule", () => {
   const rules = parseConstitutionDocument(
-    ["## Blocked", "<!-- enforcement: deny -->", '<!-- appliesTo: { tools: ["shell"] } -->'].join(
-      "\n",
-    ),
+    [
+      "## Blocked",
+      "<!-- enforcement: deny -->",
+      '<!-- appliesTo: { tools: ["shell"] } -->',
+    ].join("\n"),
     "constitution",
   );
   expect(rules).toHaveLength(1);
@@ -159,7 +161,8 @@ test("editing a prose rule rewrites its statement and keeps other rules stable",
   const before = parseConstitutionDocument(doc, "agents");
   const testing = before.find((r) => r.section === "Testing")!;
   const result = applyConstitutionDocEdit(doc, "agents", testing.id, {
-    statement: "Every source change ships a unit test and an E2E where it touches a boundary.",
+    statement:
+      "Every source change ships a unit test and an E2E where it touches a boundary.",
     enforcement: "warn",
   });
   expect(result.ok).toBe(true);
@@ -177,9 +180,11 @@ test("editing a prose rule rewrites its statement and keeps other rules stable",
 });
 
 test("editing can annotate a prose section into a hard deny rule with an anchor", () => {
-  const doc = ["## Never force-push", "", "Force-pushing rewrites shared history."].join(
-    "\n",
-  );
+  const doc = [
+    "## Never force-push",
+    "",
+    "Force-pushing rewrites shared history.",
+  ].join("\n");
   const rule = parseConstitutionDocument(doc, "constitution")[0]!;
   expect(rule.enforcement).toBe("warn");
   const result = applyConstitutionDocEdit(doc, "constitution", rule.id, {
@@ -234,7 +239,10 @@ test("editing a hard rule syncs its appliesTo anchor and can downgrade it back t
   expect(downgraded.ok).toBe(true);
   if (!downgraded.ok) return;
   expect(downgraded.content).not.toContain("<!--");
-  const after = parseConstitutionDocument(downgraded.content, "constitution")[0]!;
+  const after = parseConstitutionDocument(
+    downgraded.content,
+    "constitution",
+  )[0]!;
   expect(after).toMatchObject({ enforcement: "warn", annotated: false });
   expect(after.appliesTo).toBeUndefined();
 });
@@ -254,9 +262,14 @@ test("a deny/approval edit without an anchor is refused, not written", () => {
 
 test("editing an unknown rule id is reported, and the document is untouched", () => {
   const doc = ["## Real", "", "A rule."].join("\n");
-  const result = applyConstitutionDocEdit(doc, "constitution", "constitution:nope:9", {
-    statement: "x",
-    enforcement: "warn",
-  });
+  const result = applyConstitutionDocEdit(
+    doc,
+    "constitution",
+    "constitution:nope:9",
+    {
+      statement: "x",
+      enforcement: "warn",
+    },
+  );
   expect(result).toEqual({ ok: false, reason: "unknown document rule id" });
 });

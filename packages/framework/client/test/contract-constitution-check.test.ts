@@ -26,7 +26,10 @@ function denyRule(
 
 test("a scope entry naming a deny-covered path is a conflict", () => {
   const conflicts = checkContractAgainstConstitution({
-    entries: ["rotate the .env credentials", "refactor packages/framework/client"],
+    entries: [
+      "rotate the .env credentials",
+      "refactor packages/framework/client",
+    ],
     rules: [denyRule("C-ENV-001", ["**/.env"])],
   });
   expect(conflicts).toEqual([
@@ -102,7 +105,7 @@ test("a broad glob token conflicts when a deny pattern lives under it", () => {
 
 test("backticks and quotes around a token are stripped", () => {
   const conflicts = checkContractAgainstConstitution({
-    entries: ["edit `.env` and \"secrets/key.pem\" (then stop)"],
+    entries: ['edit `.env` and "secrets/key.pem" (then stop)'],
     rules: [
       denyRule("C-ENV-001", ["**/.env"]),
       denyRule("C-KEY-001", ["secrets/**"]),

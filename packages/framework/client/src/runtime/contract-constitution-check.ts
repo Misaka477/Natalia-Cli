@@ -54,9 +54,7 @@ export type ConstitutionConflict = {
  * trailing sentence punctuation) so `edit `.env` now` yields `.env`.
  */
 function cleanToken(raw: string): string {
-  return raw
-    .replace(/^[\s"'`([{<]+/u, "")
-    .replace(/[\s"'`)\]}>.,;:!?]+$/u, "");
+  return raw.replace(/^[\s"'`([{<]+/u, "").replace(/[\s"'`)\]}>.,;:!?]+$/u, "");
 }
 
 /**

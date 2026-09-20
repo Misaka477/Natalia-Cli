@@ -1002,18 +1002,15 @@ export class CheckpointStore {
         for (const entry of Object.values(manifest.entries))
           if (entry.objectHash) referenced.add(entry.objectHash);
       }
-      for (const hash of journal.referencedChunks())
-        referencedChunks.add(hash);
+      for (const hash of journal.referencedChunks()) referencedChunks.add(hash);
     }
     for (const id of extraReachable ?? []) {
       referenced.add(id);
       referencedChunks.add(id);
     }
-    const chunks = await this.chunks.collectGarbage(
-      referencedChunks,
-      dryRun,
-      { minAgeMs: 60_000 },
-    );
+    const chunks = await this.chunks.collectGarbage(referencedChunks, dryRun, {
+      minAgeMs: 60_000,
+    });
     if (dryRun) {
       const existing = new Set(await this.objects.list());
       const unreachable = [...existing].filter((hash) => !referenced.has(hash));

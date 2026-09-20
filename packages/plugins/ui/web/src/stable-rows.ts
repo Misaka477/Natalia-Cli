@@ -49,9 +49,9 @@ function sameSignature(a: RowSignature, b: RowSignature): boolean {
 }
 
 /** Preserve first occurrence for each transcript row id. */
-export function dedupeTranscriptRowsById<
-  T extends { id: string },
->(rows: readonly T[]): T[] {
+export function dedupeTranscriptRowsById<T extends { id: string }>(
+  rows: readonly T[],
+): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
   for (const row of rows) {

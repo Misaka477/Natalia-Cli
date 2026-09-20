@@ -183,18 +183,17 @@ test("subagent history pagination prepends older and appends newer", () => {
     direction: "older",
     subagentID: "child",
   });
-  expect(
-    state.subagentHistory.child?.map((row) => row.continuation),
-  ).toEqual([0, 1, 2]);
+  expect(state.subagentHistory.child?.map((row) => row.continuation)).toEqual([
+    0, 1, 2,
+  ]);
   hydrateSubagentHistory(state, [event(3)], {
     direction: "newer",
     subagentID: "child",
   });
-  expect(
-    state.subagentHistory.child?.map((row) => row.continuation),
-  ).toEqual([0, 1, 2, 3]);
+  expect(state.subagentHistory.child?.map((row) => row.continuation)).toEqual([
+    0, 1, 2, 3,
+  ]);
 });
-
 
 test("checkpoints accumulate and rollback tracks one operation", () => {
   let state = projectEvents([

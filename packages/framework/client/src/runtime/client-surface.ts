@@ -67,13 +67,19 @@ export function createClientSurface(
     // model. Read the ports at call time — they are installed by the event sink
     // during composition, and the workspace proxy forwards these per workspace.
     goalControl: async (action, sessionID) =>
-      (await ctx.ports.goalControl?.(action, sessionID as SessionID | undefined)) ?? {
+      (await ctx.ports.goalControl?.(
+        action,
+        sessionID as SessionID | undefined,
+      )) ?? {
         ok: false,
         action,
         message: "goal control unavailable",
       },
     goalEdit: async (input, sessionID) =>
-      (await ctx.ports.goalEdit?.(input, sessionID as SessionID | undefined)) ?? {
+      (await ctx.ports.goalEdit?.(
+        input,
+        sessionID as SessionID | undefined,
+      )) ?? {
         ok: false,
         action: "edit",
         message: "goal edit unavailable",

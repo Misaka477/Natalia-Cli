@@ -235,9 +235,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
     );
     const pendingAudits = chatSession.events
       .filter(
-        (
-          event,
-        ): event is Extract<RuntimeEvent, { type: "audit.requested" }> =>
+        (event): event is Extract<RuntimeEvent, { type: "audit.requested" }> =>
           event.type === "audit.requested" && !closedPlans.has(event.planID),
       )
       .slice(-5);

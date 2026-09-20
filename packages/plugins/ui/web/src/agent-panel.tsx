@@ -71,15 +71,12 @@ export function AgentPanel(props: {
       if (!subagentID) return;
       props.onHydrateSubagentHistory?.(page.data, {
         subagentID,
-        ...(direction === "initial"
-          ? { replace: true }
-          : { direction }),
+        ...(direction === "initial" ? { replace: true } : { direction }),
       });
     },
   });
-  const [subagentPaging, setSubagentPaging] = createSignal<PagedTranscriptState>(
-    subagentPager.snapshot(),
-  );
+  const [subagentPaging, setSubagentPaging] =
+    createSignal<PagedTranscriptState>(subagentPager.snapshot());
   onCleanup(
     subagentPager.subscribe(() => setSubagentPaging(subagentPager.snapshot())),
   );

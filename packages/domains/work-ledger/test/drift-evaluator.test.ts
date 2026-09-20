@@ -326,7 +326,12 @@ test("proseRelevanceQuestion asks when there is no contract and the activity is 
       applicableConstraints: [],
       changes: [],
       evidenceRefs: [],
-      contract: { planID: "plan:1", scope: [], verification: [], constraints: [] },
+      contract: {
+        planID: "plan:1",
+        scope: [],
+        verification: [],
+        constraints: [],
+      },
     }),
   ).toBeUndefined();
 });
@@ -360,7 +365,12 @@ test("an accepted contract is the R: scope matches are not drift and its constra
       applicableConstraints: [],
       changes: [],
       evidenceRefs: [],
-      contract: { planID: "plan:1", scope: ["packages/framework/runtime/src"], verification: [], constraints: [] },
+      contract: {
+        planID: "plan:1",
+        scope: ["packages/framework/runtime/src"],
+        verification: [],
+        constraints: [],
+      },
     }),
   ).toBeUndefined();
   // The contract's own constraint is as binding as a seeded rule.
@@ -443,7 +453,9 @@ test("every finding carries contractVersion and ruleHits (EI §8.6)", () => {
 test("no-progress window opens an advisory finding after K actions with no marker", () => {
   const evaluator = makeEvaluator();
   // 8 plain tool_call actions, no progress marker.
-  const actions = Array.from({ length: 8 }, () => ({ kind: "tool_call" as const }));
+  const actions = Array.from({ length: 8 }, () => ({
+    kind: "tool_call" as const,
+  }));
   const findings = evaluator.evaluate({
     sessionID: "ses_np",
     turnID: "t_np",
@@ -454,7 +466,9 @@ test("no-progress window opens an advisory finding after K actions with no marke
     evidenceRefs: [],
     recentActions: actions,
   });
-  const finding = findings.find((f) => f.ruleHits?.some((h) => h.rule === "no_progress"));
+  const finding = findings.find((f) =>
+    f.ruleHits?.some((h) => h.rule === "no_progress"),
+  );
   expect(finding).toBeDefined();
   expect(finding!.severity).toBe("advisory");
   // Session-scoped: the findingID carries no turnID.
@@ -476,7 +490,9 @@ test("no-progress does not fire when a progress marker is in the window", () => 
       { kind: "workspace_change" as const },
     ],
   });
-  expect(findings.some((f) => f.ruleHits?.some((h) => h.rule === "no_progress"))).toBe(false);
+  expect(
+    findings.some((f) => f.ruleHits?.some((h) => h.rule === "no_progress")),
+  ).toBe(false);
 });
 
 test("no-progress does not fire before the window is full", () => {
@@ -489,9 +505,13 @@ test("no-progress does not fire before the window is full", () => {
     applicableConstraints: [],
     changes: [],
     evidenceRefs: [],
-    recentActions: Array.from({ length: 7 }, () => ({ kind: "tool_call" as const })),
+    recentActions: Array.from({ length: 7 }, () => ({
+      kind: "tool_call" as const,
+    })),
   });
-  expect(findings.some((f) => f.ruleHits?.some((h) => h.rule === "no_progress"))).toBe(false);
+  expect(
+    findings.some((f) => f.ruleHits?.some((h) => h.rule === "no_progress")),
+  ).toBe(false);
 });
 
 test("failure loop opens a warning at the threshold and carries only the tool name + count", () => {
@@ -510,12 +530,16 @@ test("failure loop opens a warning at the threshold and carries only the tool na
       { toolName: "run_shell", key: "abc123" },
     ],
   });
-  const finding = findings.find((f) => f.ruleHits?.some((h) => h.rule === "failure_loop"));
+  const finding = findings.find((f) =>
+    f.ruleHits?.some((h) => h.rule === "failure_loop"),
+  );
   expect(finding).toBeDefined();
   expect(finding!.severity).toBe("warning");
   expect(finding!.findingID).toBe("drift:failure_loop:session:ses_fl");
   // Evidence carries the tool name + count, never the raw key/args.
-  expect(finding!.evidence.some((e) => e.includes("failure_loop:run_shell:3x"))).toBe(true);
+  expect(
+    finding!.evidence.some((e) => e.includes("failure_loop:run_shell:3x")),
+  ).toBe(true);
   expect(finding!.evidence.some((e) => e.includes("abc123"))).toBe(false);
 });
 
@@ -534,7 +558,9 @@ test("failure loop does not fire below the threshold or across different keys", 
       { toolName: "run_shell", key: "abc123" },
     ],
   });
-  expect(below.some((f) => f.ruleHits?.some((h) => h.rule === "failure_loop"))).toBe(false);
+  expect(
+    below.some((f) => f.ruleHits?.some((h) => h.rule === "failure_loop")),
+  ).toBe(false);
   const distinct = evaluator.evaluate({
     sessionID: "ses_fl",
     turnID: "t_fl",
@@ -549,7 +575,9 @@ test("failure loop does not fire below the threshold or across different keys", 
       { toolName: "run_shell", key: "ghi789" },
     ],
   });
-  expect(distinct.some((f) => f.ruleHits?.some((h) => h.rule === "failure_loop"))).toBe(false);
+  expect(
+    distinct.some((f) => f.ruleHits?.some((h) => h.rule === "failure_loop")),
+  ).toBe(false);
 });
 
 test("a change matching a deny constitution rule opens a high constitution_conflict finding", () => {
@@ -602,7 +630,10 @@ test("pathInScope matches the target itself and anything nested under it", () =>
 test("a target_drift finding is auto-corrected only when the scope absorbs it", () => {
   const finding = {
     planID: "plan_1",
-    evidence: ["outside_target:packages/b/x.ts", "outside_target:packages/b/y.ts"],
+    evidence: [
+      "outside_target:packages/b/x.ts",
+      "outside_target:packages/b/y.ts",
+    ],
   };
   // The revised scope covers every flagged path -> the premise is gone.
   expect(
@@ -615,7 +646,10 @@ test("a target_drift finding is auto-corrected only when the scope absorbs it", 
   // One path left outside -> not corrected.
   expect(
     targetDriftAbsorbedByScope({
-      finding: { planID: "plan_1", evidence: ["outside_target:packages/b/x.ts"] },
+      finding: {
+        planID: "plan_1",
+        evidence: ["outside_target:packages/b/x.ts"],
+      },
       planID: "plan_1",
       scope: ["packages/a"],
     }),
@@ -630,7 +664,10 @@ test("a target_drift finding is auto-corrected only when the scope absorbs it", 
   ).toBe(false);
   expect(
     targetDriftAbsorbedByScope({
-      finding: { planID: "plan_1", evidence: ["reference:no_accepted_contract"] },
+      finding: {
+        planID: "plan_1",
+        evidence: ["reference:no_accepted_contract"],
+      },
       planID: "plan_1",
       scope: ["packages/b"],
     }),
@@ -662,9 +699,7 @@ test("target_drift evidence shape matches the auto-correction parser", () => {
   expect(targetDrift).toBeDefined();
   expect(Array.isArray(targetDrift!.evidence)).toBe(true);
   expect(
-    targetDrift!.evidence.some((entry) =>
-      entry.startsWith("outside_target:"),
-    ),
+    targetDrift!.evidence.some((entry) => entry.startsWith("outside_target:")),
   ).toBe(true);
   expect(targetDrift!.planID).toBe("plan_1");
 });

@@ -530,9 +530,9 @@ export function createEventSink(
       event.stopReason === "done" &&
       exec?.session
     ) {
-      const niaMessages = projectedNiaChatMessages(
-        exec.session.events,
-      ).filter((message) => message.kind === "message");
+      const niaMessages = projectedNiaChatMessages(exec.session.events).filter(
+        (message) => message.kind === "message",
+      );
       const last = niaMessages[niaMessages.length - 1];
       const niaAuditWake = exec.session.events.some(
         (candidate) =>

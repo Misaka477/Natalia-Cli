@@ -152,7 +152,8 @@ export function NiaPanel(props: {
     const token = ++profileLoadToken;
     const requestedSessionID = props.sessionID;
     try {
-      const profile = await props.runtime?.niaChat?.modelProfile?.(requestedSessionID);
+      const profile =
+        await props.runtime?.niaChat?.modelProfile?.(requestedSessionID);
       if (token !== profileLoadToken || requestedSessionID !== props.sessionID)
         return;
       setModelID(profile?.normal?.modelID ?? "");
@@ -166,7 +167,9 @@ export function NiaPanel(props: {
     modelID?: string;
     reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
   }) {
-    const current = await props.runtime?.niaChat?.modelProfile?.(props.sessionID).catch(() => undefined);
+    const current = await props.runtime?.niaChat
+      ?.modelProfile?.(props.sessionID)
+      .catch(() => undefined);
     await props.runtime?.niaChat?.setModelProfile?.(
       {
         ...(current ?? {}),
@@ -231,7 +234,9 @@ export function NiaPanel(props: {
     setDraft("");
     setAttachments([]);
     try {
-      const profile = await props.runtime?.niaChat?.modelProfile?.(props.sessionID);
+      const profile = await props.runtime?.niaChat?.modelProfile?.(
+        props.sessionID,
+      );
       await props.runtime?.niaChat?.submit?.({
         text,
         sessionID: props.sessionID,

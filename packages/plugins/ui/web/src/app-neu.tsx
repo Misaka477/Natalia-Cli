@@ -61,10 +61,7 @@ import { SearchPanel } from "./search-panel";
 import { HelpPanel } from "./help-panel";
 import { StashPanel } from "./stash-panel";
 import { SandboxPanel } from "./sandbox-panel";
-import {
-  GovernancePane,
-  type GovernanceTab,
-} from "./governance-panel";
+import { GovernancePane, type GovernanceTab } from "./governance-panel";
 import { ModelPanel } from "./model-panel";
 import type { Message } from "./types";
 import { parseGoalRoundPrompt } from "./goal-round";
@@ -1728,9 +1725,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   ) {
     const hydrateStart = performance.now();
     setTranscriptHistoryLoading(true);
-    mainPager.setSource((input) =>
-      mainTranscriptPageSource(sessionID, input),
-    );
+    mainPager.setSource((input) => mainTranscriptPageSource(sessionID, input));
     try {
       await mainPager.loadInitial();
     } catch (error) {
@@ -2235,10 +2230,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
           niaPager.setSource((input) =>
             chatPageSource("nia", secondarySessionID, input),
           );
-          await Promise.all([
-            naviPager.loadInitial(),
-            niaPager.loadInitial(),
-          ]);
+          await Promise.all([naviPager.loadInitial(), niaPager.loadInitial()]);
           if (isStaleLoad()) return;
         }
         // Session loading finished; take one projection snapshot instead of

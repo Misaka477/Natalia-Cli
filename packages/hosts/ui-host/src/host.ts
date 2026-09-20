@@ -164,11 +164,7 @@ export async function createUiPluginHost<TContext = unknown>(
       return changed;
     },
     hydrateSubagentHistory(history, options) {
-      const changed = viewStore.hydrateSubagentHistory(
-        state,
-        history,
-        options,
-      );
+      const changed = viewStore.hydrateSubagentHistory(state, history, options);
       for (const listener of projectionListeners) listener(state);
       return changed;
     },
