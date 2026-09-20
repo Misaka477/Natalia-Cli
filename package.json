@@ -28,7 +28,7 @@
     "native-terminal:build-wezterm:ubuntu": "npx bun scripts/build-wezterm-ubuntu.ts",
     "smoke:native-terminal:headless": "env -u DISPLAY -u WAYLAND_DISPLAY npx bun scripts/native-terminal-headless-smoke.ts",
     "smoke:cli:automation": "npx bun scripts/cli-automation-smoke.ts",
-    "guard:imports": "npx bun run packages/tooling/testing/bin/import-guard.ts",
+    "guard:imports": "bun run packages/tooling/testing/bin/import-guard.ts",
     "guard:contract": "bun run packages/tooling/testing/bin/contract-producer-guard.ts",
     "ts:ui": "bun scripts/dev-web-ui.ts",
     "build:ast-packs": "bun scripts/build-ast-packs.ts",
