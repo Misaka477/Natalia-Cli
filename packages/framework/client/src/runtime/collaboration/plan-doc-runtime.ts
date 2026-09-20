@@ -95,7 +95,6 @@ export type PlanDocRecord = Awaited<
 type IndexEntry = PlanDocRecord;
 
 const PLAN_DIR = ".natalia/plans";
-const INDEX_FILE = join(PLAN_DIR, "index.json");
 
 function planRoot(ctx: RuntimeContext) {
   return resolve(ctx.ports.getWorkspaceRoot(), PLAN_DIR);
