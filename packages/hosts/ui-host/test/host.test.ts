@@ -357,3 +357,41 @@ test("unloading a plugin disposes the panels it mounted", async () => {
   ).rejects.toThrow(/ui plugin not loaded/);
   await host.close();
 });
+
+test("remounting the same panel key disposes the previous panel first", async () => {
+  // The web shell's side panel is keyed and re-mounts on every tab switch; it
+  // never calls an explicit unmount (audit B-03). The host's per-key dispose in
+  // mountPanel is what stops a re-mount from stacking a second live copy beside
+  // the first, so it is the invariant the component leans on.
+  const root = fakeRoot();
+  const fixture = runtimeFixture();
+  const seen: string[] = [];
+  const plugin = defineUiPlugin({
+    id: "panels.web",
+    name: "Panels",
+    version: "1.0.0",
+    panels: [
+      {
+        id: "chat",
+        title: "Chat",
+        region: "side",
+        mount: () => {
+          seen.push("mount");
+          return () => {
+            seen.push("dispose");
+          };
+        },
+      },
+    ],
+    mount: () => undefined,
+  });
+  const host = await createUiPluginHost({ root, runtime: fixture.runtime });
+  await host.load(plugin);
+
+  await host.mountPanel("panels.web", "chat", fakeRoot());
+  await host.mountPanel("panels.web", "chat", fakeRoot());
+
+  // Each re-mount tears down the panel it replaces before mounting the next.
+  expect(seen).toEqual(["mount", "dispose", "mount"]);
+  await host.close();
+});
