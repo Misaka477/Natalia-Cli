@@ -136,6 +136,10 @@ the code that writes the field — not only on the consumer that reads it.
 - `docs/api-reference.md`, `docs/types-reference.md`, `docs/config-reference.md`
   are generated. `docs:check` (inside `npm test`) fails when they are stale, and
   tells you the command to regenerate them.
+- `packages/tooling/testing/bin/contract-producer-guard.ts` fails when a contract
+  event type or enum member has nothing that produces it. Wire it, remove it, or
+  add it to that file's `ALLOWED` map with the reason it stays — the map is the
+  record of the decision, and entries that stop being needed fail the check too.
 - `packages/tooling/testing/bin/import-guard.ts` enforces the package boundary
   rules. When it flags a dependency, the fix is usually to add the package to the
   right allowlist only if the dependency is genuinely intended — it is there to
