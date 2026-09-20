@@ -8,8 +8,73 @@ bun install
 npm run verify      # format → typecheck → test (incl. docs:check) → import guard
 ```
 
-The rest of this file is the part `verify` cannot check for you. Every rule below
-is here because it was broken and something shipped that should not have.
+Everything below is the part `verify` cannot check. Each rule is here because it
+was broken and something shipped that should not have; the incidents are given so
+the rule can be judged rather than merely obeyed.
+
+## Clean, tidy, no clutter left behind
+
+Refactoring leaves orphans. Moving `sendMessage` from the controller to the
+registry left a private steer-hook map in the controller that nothing read any
+more; it was found by accident later. When you move a responsibility, grep for
+what it left behind — the same session also left nine files that `prettier` would
+have reformatted and a pair of redundant parentheses in a generated table.
+
+**Nothing you touched should be less tidy than you found it.** If a change makes
+something dead, delete it in the same commit.
+
+## Commit often
+
+Twenty-five rounds of work accumulated 129 changed files in one working tree
+before anything was committed. That is not merely inconvenient: two files were
+destroyed outright during that stretch by a tool mistake, and one was recoverable
+only because it was new enough to be untracked — the other had to be rebuilt from
+memory.
+
+A large uncommitted tree is one accident away from being a total loss, and it
+makes the history useless: fifteen unrelated concerns had to be reverse-engineered
+out of one pile afterwards.
+
+Commit each thing when it is done and verified, not when the session ends.
+
+## Finished or not started — no stubs, no half-things
+
+The same session produced roughly forty declarations that could never occur:
+
+- `rollbackState: "available"` published in a completion record while no tool, RPC
+  route or service method could invoke a rollback.
+- `GoalRoundStop.max-tokens` declared, and unreachable because a length finish
+  already throws and surfaces as `error`.
+- `turn.finished.reason: "missing_final_response"` declared and never set by any
+  producer.
+- `SandboxStatus.merge_previewed` / `merged` / `conflicted`, none of which any
+  code path could emit.
+
+Three of these were removed and the rest were made reachable, but none should have
+shipped. **A field, enum member, event type or capability that nothing produces is
+worse than absent**: it tells every later reader that a path exists.
+
+This is not a rule against deciding _not_ to build something. Declining to add a
+generic job layer over two domains that already worked was the right call, and it
+is recorded with its reasoning. The failure mode is a stub that exists without
+saying so.
+
+## Fix what you find, including what you did not write
+
+A gate that fails on pre-existing breakage is not someone else's problem. The
+gates in this repository were all red at once — a typecheck break, four import
+guard violations, eighty-six unformatted files — and each was left alone on the
+grounds that it predated the work in progress. The cost compounds:
+
+- Nobody reads a gate that always fails, so it stops catching anything. The
+  format gate's output had gone unread long enough that its count was a surprise.
+- The same investigation gets done twice. The dead enum members were eventually
+  examined properly, and they turned out to be deliberate vocabulary for a merge
+  lifecycle rather than the removals they looked like — a conclusion that would
+  have been reached sooner by looking than by deferring.
+
+Fix it, or record it explicitly as debt with a reason. Leaving it silently is what
+makes it grow.
 
 ## Verify with the repo's gate, over the whole tree
 
@@ -31,7 +96,7 @@ concurrency produces a handful of timeouts that are load, not logic — they cha
 between runs, which makes them easy to wave away and easy to stop reading. Use
 the script.
 
-## A test is not evidence until you have watched it fail
+## Test enough, and watch each test fail
 
 Write the assertion, then break the thing it is about, then confirm it goes red.
 
@@ -44,7 +109,7 @@ implementation would take.
 
 This is cheap. Delete the fix, run the one test, put the fix back.
 
-## Assert on the outcome, not on the absence of failure
+## Assert the outcome, not the absence of failure
 
 `expect(answer).not.toContain("refused")` cannot distinguish "the gate let this
 through" from "something else refused it first" — it reads as proof the gate
