@@ -1,8 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { ProviderStreamRequest } from "@natalia/runtime";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { createRealRuntimeClient } from "../src";
 import { officialPluginWorkspace } from "./plugin-test-helpers";
 import { createScriptedProvider, waitFor } from "./e2e-harness";

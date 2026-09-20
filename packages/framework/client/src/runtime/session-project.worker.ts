@@ -14,7 +14,6 @@ import {
   projectedMailboxMessages,
   projectedCollabMessages,
   projectedRuntimeNotices,
-  type SessionProjection,
 } from "@natalia/session";
 
 export type SessionProjectWorkerRequest =

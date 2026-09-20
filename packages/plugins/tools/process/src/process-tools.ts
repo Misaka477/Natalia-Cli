@@ -18,28 +18,22 @@
  * The `background_*` tools are aliases over the same registry with a shorter
  * vocabulary, not a second implementation.
  */
-import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   detachedShellPrefix,
   shellQuote,
   startDetachedProcess,
 } from "@natalia/platform";
 import {
-  isProcessRunning,
-  ownsProcess,
   processFingerprint,
   readOptionalFile,
   safeToolEnv,
-  sendProcessSignal,
   stopProcessTree,
   truncateProcessOutput,
 } from "@natalia/tools";
-import { boundToolOutput } from "@natalia/tools";
 import {
   numberOr,
-  optionalInteger,
   optionalString,
   positiveNumberOr,
   positiveNumberOrUndefined,

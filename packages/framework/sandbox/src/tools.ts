@@ -11,12 +11,7 @@
  * "isolation was unavailable" must never be indistinguishable from "isolation
  * happened".
  */
-import {
-  numberOr,
-  optionalString,
-  requireObject,
-  requireString,
-} from "@natalia/tools";
+import { optionalString, requireObject, requireString } from "@natalia/tools";
 import type {
   RuntimeTool,
   SandboxToolService,

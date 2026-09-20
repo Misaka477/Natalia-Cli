@@ -1,12 +1,11 @@
 import { DiffCache, ObjectStore } from "@natalia/object-store";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { ChunkStore } from "./chunk-store";
 import {
   CheckpointJournal,
   contextMetaOf,
   manifestMetaOf,
   type CheckpointContextMeta,
-  type StoredCheckpoint,
 } from "./checkpoint-journal";
 import { constants } from "node:fs";
 import {
@@ -15,12 +14,10 @@ import {
   copyFile,
   lstat,
   mkdir,
-  open,
   readFile,
   readdir,
   readlink,
   rename,
-  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -34,14 +31,7 @@ import {
   normalizeLinkTarget,
   type SnapshotIgnoreRule,
 } from "@natalia/platform";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-} from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type {
   CheckpointChangeKind,
   CheckpointPreview,

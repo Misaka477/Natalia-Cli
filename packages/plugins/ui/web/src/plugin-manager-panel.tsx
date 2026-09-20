@@ -1,5 +1,5 @@
 import { createSignal, For, Show, onMount } from "solid-js";
-import type { RuntimeClient, PluginStatus } from "@natalia/contracts";
+import type { PluginStatus } from "@natalia/contracts";
 import type { UiPlugin, UiPluginContext } from "@natalia/ui-host";
 
 type ElectronGlobal = {

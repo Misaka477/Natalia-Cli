@@ -14,7 +14,6 @@ import type {
   RuntimeClient,
   RuntimeEvent,
   RuntimeGitRef,
-  RuntimeNativeTerminalSession,
   RuntimeSandbox,
   RuntimeStructuredDiff,
   RuntimeTeamPR,

@@ -9,8 +9,6 @@ import {
 import {
   checkpointConfigSchema,
   contextConfigSchema,
-  endpointProtocolSchema,
-  modeConfigSchema,
   modelCatalogSchema,
   modelOverrideSchema,
   modelRefSchema,

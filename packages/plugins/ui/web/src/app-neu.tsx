@@ -2,14 +2,11 @@ import type { UiPluginContext } from "@natalia/ui-host";
 import { selectPrimaryActivity } from "@natalia/view-store";
 import type {
   ChatMessageRow,
-  RuntimeEvent,
   RuntimeModelCatalogEntry,
-  RuntimeModelSelection,
   RuntimeProjectedMessage,
   RuntimeSessionSummary,
   ChatModelProfile,
   ConfigV3,
-  RuntimeClient,
   WorkspaceSummary,
 } from "@natalia/contracts";
 import { type AppState, cloneState } from "@natalia/view-store";

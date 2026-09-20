@@ -10,7 +10,6 @@ import { buildSubmittedTurn } from "@natalia/session";
 import { createTurnController } from "@natalia/turn-orchestration";
 import type { SessionID } from "@natalia/contracts";
 import {
-  SESSION_STORE_CONTROLLER_SERVICE,
   TURN_CONTROLLER_SERVICE,
   type ProviderModelController,
   type SessionStoreController,

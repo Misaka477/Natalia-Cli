@@ -2,7 +2,6 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { expect, test } from "bun:test";
 import {
-  API_STABLE_SURFACE,
   API_VERSION,
   DEPRECATED_RUNTIME_MEMBERS,
   REQUIRED_RUNTIME_MEMBERS,

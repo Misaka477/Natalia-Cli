@@ -1,5 +1,4 @@
 import type { AgentRegistry } from "@natalia/agent";
-import type { ConfigV3 } from "@natalia/contracts";
 import type { ProviderConcurrencyLimiter } from "@natalia/runtime";
 import type {
   InteractiveWaiter,

@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
-import { applyEvent, initialState, type AppState } from "@natalia/view-store";
+import type { RuntimeClient } from "@natalia/contracts";
 import {
   acknowledgeDriftFindingViaRpc,
   collapseList,

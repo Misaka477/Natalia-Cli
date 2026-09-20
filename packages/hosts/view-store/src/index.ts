@@ -53,7 +53,6 @@ import { applyResourceEvent } from "./resources";
 import { applyStatusEvent } from "./status";
 import { applyWorkspaceEvent } from "./workspace";
 import {
-  boundTranscript,
   cloneState,
   initialState,
   synchronizeStreamSlices,

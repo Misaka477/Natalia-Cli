@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { RUNTIME_RPC_ERROR_CODES, failureKind } from "@natalia/contracts";
+import { RUNTIME_RPC_ERROR_CODES } from "@natalia/contracts";
 import type {
   RuntimeClient,
   RuntimeEvent,

@@ -16,7 +16,6 @@ import {
   deserializeProjectionState,
   projectSessionMessages,
   serializeProjectionState,
-  type ProjectionState,
   type SessionMetadata,
   type SessionRecord,
   type SessionRow,

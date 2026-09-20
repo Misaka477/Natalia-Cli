@@ -12,7 +12,6 @@ import {
   foldProjection,
   restoreProjection,
   serializeProjectionState,
-  deserializeProjectionState,
   projectSessionMessages,
   SqliteSessionStore,
 } from "../src";

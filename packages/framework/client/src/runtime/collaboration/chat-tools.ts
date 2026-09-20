@@ -26,7 +26,6 @@ import {
   type CollaborationService,
 } from "@natalia/collaboration";
 import { chatToolSummary } from "./chat-summary";
-import { createWorkspaceRuntime } from "../workspace-runtime";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";

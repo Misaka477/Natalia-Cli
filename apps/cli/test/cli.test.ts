@@ -1,7 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import {
-  chmod,
   cp,
   mkdir,
   mkdtemp as createTemporaryDirectory,
@@ -21,8 +20,6 @@ import {
   SqliteSessionStore,
   createSessionRecord,
 } from "@natalia/session";
-import type { RuntimeClient } from "@natalia/contracts";
-import { createRuntimeHttpServer } from "@natalia/transport/host";
 import {
   deleteLocalSession,
   duplicateLocalSession,

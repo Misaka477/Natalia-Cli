@@ -11,8 +11,6 @@ import {
   promoteNextTurn,
   removeAdmittedInput,
   replaceAdmittedInput,
-  type AdmittedSessionInput,
-  type SessionRecord,
 } from "@natalia/session";
 import type {
   TurnController,

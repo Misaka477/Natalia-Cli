@@ -3,7 +3,6 @@ import type {
   ModelCapabilities,
   ProviderContentPart,
   ProviderReasoningBlock,
-  RuntimeEvent,
 } from "@natalia/contracts";
 import {
   ContextLedger,
@@ -33,7 +32,7 @@ import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";
 import { cacheHitRate, totalInputTokens } from "@natalia/contracts";
-import { buildSubmittedTurn, type SessionRecord } from "@natalia/session";
+import { buildSubmittedTurn } from "@natalia/session";
 import { materializeTools } from "@natalia/tools";
 import { agentSystemPrompt } from "@natalia/agent-prompts";
 import type {

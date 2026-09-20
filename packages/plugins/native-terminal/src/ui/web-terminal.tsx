@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, onCleanup, onMount } from "solid-js";
 import { Terminal } from "@xterm/xterm";
 import { cssVar } from "@natalia/ui-kit";
 import { FitAddon } from "@xterm/addon-fit";

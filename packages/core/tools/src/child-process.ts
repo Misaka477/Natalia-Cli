@@ -12,12 +12,7 @@
  * process *group* with an identity check, because a PID can be reused between the
  * moment it was recorded and the moment a signal is sent.
  */
-import {
-  isWindows,
-  processTreeKillCommand,
-  shellQuote,
-} from "@natalia/platform";
-import { spawn } from "node:child_process";
+import { isWindows, processTreeKillCommand } from "@natalia/platform";
 import { readFile } from "node:fs/promises";
 
 /**

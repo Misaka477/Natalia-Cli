@@ -1,11 +1,5 @@
-import { createRealRuntimeClient, EGRESS_ADVISORY } from "@natalia/client";
-import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
-import { resolveConfig } from "@natalia/config";
-import { agentsFromConfig } from "@natalia/agent";
-import { userStateHome } from "@natalia/platform";
+import { createRealRuntimeClient } from "@natalia/client";
 import { pluginStoreRoot } from "./official-plugins";
-import { providerForModel } from "@natalia/runtime";
-import { createRecordedFetch, readCassette } from "@natalia/transport";
 import {
   createRuntimeDaemonStore,
   daemonToken,
@@ -15,28 +9,6 @@ import {
 } from "@natalia/transport/host";
 import { createHttpTransportHost } from "./transport-host";
 import { createPluginUiResolver } from "./plugin-ui";
-import { resolve } from "node:path";
-import { readFile } from "node:fs/promises";
-import {
-  deleteLocalSession,
-  duplicateLocalSession,
-  exportLocalSessionMetadata,
-  importLocalSessionMetadata,
-  doctorReport,
-  listLocalSessions,
-  plainStatus,
-  renameLocalSession,
-  setLocalSessionPinned,
-  sessionTable,
-  promptArguments,
-  trustList,
-  trustRemove,
-  workspaceFilesystemCommand,
-  showLocalSession,
-  startupDiagnostics,
-  localWorkGraph,
-  workGraphLines,
-} from "./index";
 import {
   valueAfter,
   daemonDir,

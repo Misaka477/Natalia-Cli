@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { SubagentRecord, SubagentID } from "./types";
+import type { SubagentRecord } from "./types";
 
 const MANIFEST = "manifest.json";
 

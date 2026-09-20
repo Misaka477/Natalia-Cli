@@ -1,10 +1,6 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
 import type { SandboxView } from "@natalia/view-store";
-import type {
-  RuntimeClient,
-  RuntimeSandbox,
-  RuntimeSandboxResource,
-} from "@natalia/contracts";
+import type { RuntimeClient, RuntimeSandbox } from "@natalia/contracts";
 
 export function SandboxPanel(props: {
   open: boolean;

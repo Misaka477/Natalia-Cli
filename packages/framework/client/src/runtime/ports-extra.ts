@@ -4,7 +4,7 @@
  * Split out of `ports.ts` to stay within the source line limit; merged into the
  * `RuntimeContext.ports` type through an intersection in `context.ts`.
  */
-import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
+import type { AgentRegistry } from "@natalia/agent";
 import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   ContextWindowResolver,

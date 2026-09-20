@@ -11,11 +11,7 @@ import {
   requireString,
 } from "@natalia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
-import type {
-  RuntimeTool,
-  ToolExecutionContext,
-  ToolFamily,
-} from "@natalia/tools";
+import type { RuntimeTool, ToolFamily } from "@natalia/tools";
 
 export const WEB_PLUGIN_ID = "natalia-tool-web";
 

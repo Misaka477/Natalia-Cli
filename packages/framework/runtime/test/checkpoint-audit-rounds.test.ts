@@ -2,11 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, test } from "bun:test";
-import {
-  CheckpointStore,
-  ContextLedger,
-  initializeDefaultCheckpointStore,
-} from "../src";
+import { ContextLedger, initializeDefaultCheckpointStore } from "../src";
 
 async function makeStore() {
   const root = await mkdtemp(join(tmpdir(), "natalia-audit-rounds-"));

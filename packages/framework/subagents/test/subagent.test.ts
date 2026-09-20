@@ -1,4 +1,4 @@
-import { expect, test, mock, afterEach } from "bun:test";
+import { expect, test, afterEach } from "bun:test";
 import { mkdtemp, mkdir, readdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

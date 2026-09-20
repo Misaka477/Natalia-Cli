@@ -10,16 +10,12 @@ import {
   TEAM_BEHAVIOR_SERVICE,
   TERMINAL_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
-  WORKSPACE_WRITE_LOCK_SERVICE,
-  SANDBOX_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-  type SandboxService,
   type SkillService,
   type StatusSnapshotController,
   type TeamBehaviorService,
   type TerminalController,
   type WorkLedgerController,
-  type WorkspaceWriteLock,
 } from "@natalia/runtime-services";
 import { createPluginsController } from "../../plugins-controller";
 import type { RuntimeContext } from "../context";

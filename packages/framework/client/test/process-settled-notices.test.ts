@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import { wireProcessSettledNotices } from "../src/runtime/initialize/process-settled-notices";
-import type {
-  RuntimeContext,
-  SessionExecutionState,
-} from "../src/runtime/context";
+import type { RuntimeContext } from "../src/runtime/context";
 
 /** A fake ledger that records what was appended. */
 function ledger() {

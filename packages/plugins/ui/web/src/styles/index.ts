@@ -2,7 +2,7 @@ import { applyUiSkin } from "@natalia/ui-kit";
 import { confirmDialogCss, nataliaNeuBaseStyles } from "./base";
 import { nataliaNeuThemeLight } from "./theme-light";
 import { nataliaNeuThemeDark } from "./theme-dark";
-import { NATALIA_SKINS, NEU_THEME_MODES, type NeuThemeMode } from "../skins";
+import { NATALIA_SKINS, type NeuThemeMode } from "../skins";
 
 export { nataliaNeuBaseStyles } from "./base";
 export { nataliaNeuThemeLight } from "./theme-light";

@@ -5,7 +5,7 @@ import type {
   WorkGraphEdgeView,
   WorkGraphNodeView,
 } from "./state";
-import type { WorkGraphEdgeKind, WorkGraphNodeKind } from "@natalia/contracts";
+import type { WorkGraphEdgeKind } from "@natalia/contracts";
 import { cacheHitRate, totalInputTokens } from "@natalia/contracts";
 
 export type WorkGraphSlice = {

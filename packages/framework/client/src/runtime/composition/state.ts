@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { CapabilityRegistry } from "@natalia/capability";
-import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   ContextWindowResolver,
   ProviderConcurrencyLimiter,

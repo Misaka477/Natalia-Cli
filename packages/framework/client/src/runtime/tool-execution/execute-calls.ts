@@ -36,7 +36,6 @@ import type {
 } from "@natalia/contracts";
 import type { ToolMaterialization } from "@natalia/tools";
 import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import type { RealRuntimeClientOptions } from "../options";
 

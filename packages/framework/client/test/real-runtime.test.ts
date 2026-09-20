@@ -41,9 +41,7 @@ import {
   createOfficialRuntimeClient,
   restoreOfficialPluginConfig,
   installFixturePlugin,
-  installPluginSdkLinks,
   officialPluginWorkspace as mkdtemp,
-  pluginSdkImportPath,
 } from "./plugin-test-helpers";
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger";

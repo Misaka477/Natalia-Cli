@@ -18,8 +18,6 @@ import {
 } from "@natalia/runtime-services";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "./context";
-
 export function createTerminalRuntime(ctx: RuntimeContext) {
   return {
     setPendingHumanTerminal,

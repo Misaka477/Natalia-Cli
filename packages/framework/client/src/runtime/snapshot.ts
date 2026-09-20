@@ -18,7 +18,7 @@ import {
   SESSION_STORE_CONTROLLER_SERVICE,
   type SessionStoreController,
 } from "@natalia/runtime-services";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent } from "@natalia/contracts";
 import type { DurableInFlightOperation } from "@natalia/session";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";

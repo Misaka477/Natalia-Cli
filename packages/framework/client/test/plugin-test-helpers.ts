@@ -22,7 +22,6 @@ import {
   createRealRuntimeClient as createRuntimeClient,
   type RealRuntimeClientOptions,
 } from "../src";
-import { CapabilityRegistry } from "@natalia/capability";
 import { pluginManifestSchema } from "@natalia/plugin";
 
 const officialPluginDistribution = resolve("dist", "ts", "plugins");

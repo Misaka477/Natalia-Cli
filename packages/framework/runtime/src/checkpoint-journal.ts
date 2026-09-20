@@ -35,9 +35,7 @@ import { once } from "node:events";
 import { join } from "node:path";
 import { ChunkStore, type ChunkRef } from "./chunk-store";
 import type {
-  CheckpointChange,
   CheckpointManifestMeta,
-  CheckpointReason,
   CheckpointRecord,
   ManifestEntry,
   WorkspaceManifest,

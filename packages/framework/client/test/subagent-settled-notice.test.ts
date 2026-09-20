@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import {
   DEFAULT_SETTLED_NOTICE_BUDGET,
   settledNoticeAllowed,

@@ -2,7 +2,6 @@ import { markRuntimeEventSessionSeq } from "@natalia/contracts";
 import { perfLog } from "./perf-log";
 import type {
   ApprovalResponse,
-  ChatModelProfile,
   QuestionResponse,
   RuntimeEvent,
   RuntimeClient,

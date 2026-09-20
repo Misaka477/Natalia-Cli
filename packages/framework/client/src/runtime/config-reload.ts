@@ -16,7 +16,6 @@ import {
   CHECKPOINT_FACTORY_SERVICE,
   type CheckpointFactory,
 } from "@natalia/runtime-services";
-import type { ConfigV3, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
 import {

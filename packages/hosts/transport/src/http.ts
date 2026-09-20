@@ -1,7 +1,7 @@
 import { gzipSync } from "node:zlib";
 import { API_VERSION, runtimeEventSessionSeq } from "@natalia/contracts";
 import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
-import { credentialSessions, handleRPCMessage, RPC_WRITE_METHODS } from "./rpc";
+import { credentialSessions, handleRPCMessage } from "./rpc";
 import type { RuntimeAuthorizationContext } from "./rpc";
 import type { RuntimeCapabilityGroup } from "@natalia/contracts";
 import {

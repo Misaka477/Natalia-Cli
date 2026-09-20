@@ -1,25 +1,5 @@
-import {
-  assertConfigApplied,
-  createRealRuntimeClient,
-  EGRESS_ADVISORY,
-  CapabilityHost,
-  type RuntimeServiceClient,
-} from "@natalia/client";
-import type { EpisodeID, RuntimeEvent, SessionID } from "@natalia/contracts";
-import { resolveConfig } from "@natalia/config";
-import { agentsFromConfig } from "@natalia/agent";
-import { userStateHome } from "@natalia/platform";
-import { providerForModel } from "@natalia/runtime";
+import { EGRESS_ADVISORY } from "@natalia/client";
 import { createRecordedFetch, readCassette } from "@natalia/transport";
-import {
-  createRuntimeDaemonStore,
-  daemonToken,
-  registerRuntimeDaemon,
-  runtimeDaemonStatus,
-  stopRuntimeDaemon,
-} from "@natalia/transport/host";
-import { resolve } from "node:path";
-import { readFile } from "node:fs/promises";
 import {
   deleteLocalSession,
   duplicateLocalSession,
@@ -31,7 +11,6 @@ import {
   renameLocalSession,
   setLocalSessionPinned,
   sessionTable,
-  promptArguments,
   trustList,
   trustRemove,
   workspaceFilesystemCommand,
@@ -40,7 +19,7 @@ import {
   localWorkGraph,
   workGraphLines,
 } from "./index";
-import { valueAfter, daemonDir, waitSignal } from "./command-helpers";
+import { valueAfter } from "./command-helpers";
 
 export async function handleLocalCommands(argv: string[]) {
   const subcommand = argv[0];

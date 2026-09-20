@@ -5,8 +5,6 @@ import {
   buildEvidenceRecorded,
   evidenceStatusForPlanState,
 } from "../src/evidence-ledger";
-import type { RuntimeEvent } from "@natalia/contracts";
-
 test("buildEvidenceRecorded carries the outcome as an evidence fact", () => {
   const event = buildEvidenceRecorded({
     id: "evidence:1",

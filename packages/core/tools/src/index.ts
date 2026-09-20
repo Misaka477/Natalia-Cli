@@ -63,8 +63,6 @@ export {
   TOOL_OUTPUT_RETENTION_MS,
   type BoundedToolOutput,
 } from "./output";
-import { optionalString, requireObject, requireString } from "./arguments";
-
 /**
  * The tool-authoring surface.
  *
@@ -85,7 +83,7 @@ export {
   timeoutSecOr,
   workspacePath,
 } from "./arguments";
-import type { RuntimeTool, ToolExecutionContext } from "./types";
+import type { RuntimeTool } from "./types";
 
 export type {
   RuntimeTool,
@@ -112,12 +110,6 @@ export type {
   ToolRenderIntent,
   ToolSchema,
 } from "./types";
-
-import {
-  encodeTerminalKey,
-  nativeTerminalReadPage,
-  nativeTerminalSearchPage,
-} from "./terminal-io";
 
 export {
   encodeTerminalKey,

@@ -2,7 +2,6 @@ import type {
   InitializeCatalogResult,
   InitializeOptions,
   InteractiveWaiter,
-  PermissionProfileCommandRules,
   RuntimeContext,
   SessionStoreController,
   ToolPolicyService,
