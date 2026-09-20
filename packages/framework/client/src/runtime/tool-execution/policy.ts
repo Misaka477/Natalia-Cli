@@ -30,7 +30,6 @@ export function createToolPolicySurface(ctx: RuntimeContext) {
     const { getActiveExec, getActiveTurnID, getSessionID, publishForSession } =
       ctx.ports;
     const toolLayer = ctx.ports.createToolPolicyLayer(exec);
-    const activeExec = getActiveExec();
     const activeTurnID = getActiveTurnID();
     const sessionID = getSessionID();
     for (const path of input.paths) {

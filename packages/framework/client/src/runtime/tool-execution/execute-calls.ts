@@ -272,7 +272,6 @@ export function createExecuteCalls(
     } = ctx.ports;
     const { executionBySession, turnSession, tools } = ctx.state;
     const sessionID = getSessionID();
-    const activeExec = getActiveExec();
     const workspaceRoot = getWorkspaceRoot();
     const runtimeContext = getRuntimeContext();
     const policy =

@@ -56,8 +56,6 @@ export function createExecuteOne(
     } = ctx.ports;
     const { executionBySession, turnSession, toolCalls } = ctx.state;
     const sessionID = getSessionID();
-    const activeExec = getActiveExec();
-    const runtimeContext = getRuntimeContext();
     // D2: same shadowing as `executeToolCalls` — this segment's events and
     // ledger belong to the turn's session.
     const exec = executionBySession.get(turnSession.get(turnID) ?? sessionID);
