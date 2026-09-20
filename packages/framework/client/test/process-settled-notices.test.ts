@@ -187,10 +187,8 @@ test("a swapped observer replaces the subscription instead of stacking one", asy
   const registry = capabilityRegistry();
   const wire = wireProcessSettledNotices(ctx, registry.api);
 
-  let first: (n: unknown) => void = () => {};
   registry.setObserver({
     subscribe: (fn) => {
-      first = fn;
       return () => {};
     },
   });

@@ -75,16 +75,12 @@ function observerFor(input: {
     input.live,
     input.initial ?? [record({ id: "proc_1", status: "running", pid: 1 })],
   );
-  let armed: (() => void) | undefined;
   const observer = new ManagedProcessObserver(src, {
     pollMs: 1_000,
     setTimer: (fn) => {
-      armed = fn;
       return { unref: () => {} } as unknown as ReturnType<typeof setTimeout>;
     },
-    clearTimer: () => {
-      armed = undefined;
-    },
+    clearTimer: () => {},
   });
   // Restored by the `afterEach` below rather than by the test, so a failing
   // assertion cannot leak a stubbed `process.kill` into later tests.
