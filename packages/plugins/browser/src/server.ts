@@ -21,11 +21,6 @@ export type BrowserBridgeServer = {
   close(): Promise<void>;
 };
 
-type CommandHandler = (
-  tabId?: string,
-  payload?: Record<string, unknown>,
-) => Promise<unknown>;
-
 type ExtensionConnection = {
   send(payload: unknown): void;
   close(): void;

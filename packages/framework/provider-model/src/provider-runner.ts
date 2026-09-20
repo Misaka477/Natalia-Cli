@@ -71,7 +71,6 @@ export function estimateProviderMessages(messages: ProviderMessage[]) {
   return tokens;
 }
 
-type TsRuntimeConfig = Awaited<ReturnType<typeof resolveConfig>>["config"];
 type PermissionMode = "ask" | "auto" | "read_only";
 const maxProtocolCorrections = 2;
 

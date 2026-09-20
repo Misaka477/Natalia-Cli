@@ -20,13 +20,6 @@ import {
 } from "../session-title";
 import type { RuntimeContext } from "./context";
 
-type TitleGenerationTask = {
-  input: string;
-  timer?: ReturnType<typeof setTimeout>;
-  controller?: AbortController;
-  promise?: Promise<void>;
-};
-
 export function createTitleGeneration(ctx: RuntimeContext) {
   return {
     rememberTitleInput,

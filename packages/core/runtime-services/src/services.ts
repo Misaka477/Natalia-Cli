@@ -837,9 +837,6 @@ export interface McpService {
   readResource(server: string, uri: string): Promise<unknown>;
 }
 
-type RuntimeMethod<K extends keyof RuntimeClient> = NonNullable<
-  RuntimeClient[K]
->;
 export interface RuntimeServiceClient extends RuntimeClient {
   service<T>(name: string): Promise<T | undefined>;
   subscribeTerminalOutput?(
