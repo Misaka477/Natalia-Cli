@@ -1,4 +1,5 @@
-export { validateToolParameters, assertValidToolParameters } from "./validate";
+export { PROCESS_OBSERVER_SERVICE } from "./types";
+export { validateToolParameters } from "./validate";
 export {
   globWorkspaceFilesBounded,
   grepWorkspaceFilesBounded,
@@ -25,6 +26,11 @@ export {
   type ParsedBashCommand,
 } from "./bash-command-policy";
 export { parseToolArguments, tryParseToolArguments } from "./tool-arguments";
+export {
+  assertValidToolParameters,
+  validateToolOutput,
+  type ToolParameterError,
+} from "./validate";
 export {
   createToolPolicyHookLayer,
   type ToolHookEvent,
@@ -96,6 +102,8 @@ export type {
   SubagentStatusView,
   SubagentStopResult,
   SubagentToolService,
+  ManagedProcessNotice,
+  ProcessObserverService,
   TerminalSessionView,
   TerminalToolService,
   ToolExecutionBoundary,

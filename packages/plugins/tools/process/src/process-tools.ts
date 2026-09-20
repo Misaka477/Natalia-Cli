@@ -47,6 +47,7 @@ import {
   requireString,
 } from "@natalia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
+import { PROCESS_OBSERVER_SERVICE } from "@natalia/tools";
 import type {
   RuntimeTool,
   ToolExecutionContext,
@@ -76,6 +77,43 @@ export type ManagedProcessInfo = {
 };
 
 export class ManagedProcessRegistry {
+  readonly observer: ManagedProcessObserver;
+  constructor() {
+    this.observer = new ManagedProcessObserver({
+      snapshot: () =>
+        [...this.processes.entries()].flatMap(([workspaceRoot, byID]) =>
+          [...byID.values()].map((info) => ({ ...info, workspaceRoot })),
+        ),
+      settle: ({ id, status }) => {
+        for (const [workspaceRoot, byID] of this.processes) {
+          const info = byID.get(id);
+          if (!info || info.status !== "running") continue;
+          info.status = status;
+          info.endedAt = new Date().toISOString();
+          const event: ManagedProcessSettledEvent = {
+            id: info.id,
+            command: info.command,
+            status,
+            workspaceRoot,
+            ...(info.startedBySessionID
+              ? { sessionID: info.startedBySessionID }
+              : {}),
+            startedAt: info.startedAt,
+            endedAt: info.endedAt,
+            // The record's `exitCode` is `number | null`; the event carries
+            // only a real code, so a null stays absent rather than becoming 0.
+            ...(info.exitCode === null || info.exitCode === undefined
+              ? {}
+              : { exitCode: info.exitCode }),
+          };
+          // Status is persisted by the next save; the observer never writes disk
+          // itself, so it cannot race a concurrent save on the same workspace.
+          return event;
+        }
+        return undefined;
+      },
+    });
+  }
   private processes = new Map<string, Map<string, ManagedProcessRuntime>>();
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>();
   private sequences = new Map<string, number>();
@@ -116,6 +154,9 @@ export class ManagedProcessRegistry {
       persistent: true,
       pid,
       startedAt: new Date().toISOString(),
+      // Who started it: a terminal notice has to reach the session that asked,
+      // because a workspace may hold several and the others did not do this work.
+      startedBySessionID: context.sessionID,
       output: "",
       outputPath,
       ready: false,
@@ -131,7 +172,107 @@ export class ManagedProcessRegistry {
     processes.set(processID, info);
     await this.save(context);
     this.scheduleDeadline(info, context);
+    // Arm the liveness sweep now that something is running.
+    this.observer.sync();
     return publicProcessInfo(info);
+  }
+
+  /**
+   * Block until a process reaches a terminal state or the budget runs out.
+   *
+   * Built on the observer rather than a second polling loop: the observer is
+   * already the thing that notices an exit, so a wait is one more subscriber
+   * rather than another timer racing the first.
+   *
+   * Returns the terminal notice, or `undefined` when the budget ran out first —
+   * a wait that timed out still leaves the caller knowing the process is alive.
+   */
+  async wait(
+    id: string,
+    context: ToolExecutionContext,
+    timeoutMs: number = DEFAULT_PROCESS_WAIT_MS,
+  ): Promise<ManagedProcessSettledEvent | undefined> {
+    await this.load(context);
+    const info = this.workspaceProcesses(context).get(id);
+    if (!info) throw new Error(`process not found: ${id}`);
+    if (info.status !== "running") {
+      const settled = this.settleFromRecord(context, info);
+      if (settled) return settled;
+      return {
+        id: info.id,
+        command: info.command,
+        status: info.status as "exited" | "stopped" | "failed",
+        workspaceRoot: context.workspaceRoot,
+        startedAt: info.startedAt,
+        endedAt: info.endedAt ?? new Date().toISOString(),
+        ...(info.startedBySessionID
+          ? { sessionID: info.startedBySessionID }
+          : {}),
+      };
+    }
+    return await new Promise<ManagedProcessSettledEvent | undefined>(
+      (resolve) => {
+        let unsubscribe = () => {};
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (result: ManagedProcessSettledEvent | undefined) => {
+          if (timer) clearTimeout(timer);
+          timer = undefined;
+          unsubscribe();
+          resolve(result);
+        };
+        unsubscribe = this.observer.subscribe((event) => {
+          if (event.id !== id || event.workspaceRoot !== context.workspaceRoot)
+            return;
+          finish(event);
+        });
+        // The observer sweeps on an interval, so a process that exited just
+        // before this wait may not have been noticed yet: check once on entry
+        // rather than waiting a whole poll for it.
+        const settled = this.settleFromRecord(context, info);
+        if (settled) {
+          finish(settled);
+          return;
+        }
+        timer = setTimeout(() => finish(undefined), Math.max(0, timeoutMs));
+        timer.unref();
+        // The observer must be armed for the subscription above to ever fire.
+        this.observer.sync();
+      },
+    );
+  }
+
+  /**
+   * Settle a record the observer has not reached yet, returning its notice.
+   *
+   * The observer's sweep is periodic, so a process that exited moments ago is
+   * still marked running. Re-checking liveness here closes that window for a
+   * caller who is about to block on it.
+   */
+  private settleFromRecord(
+    context: ToolExecutionContext,
+    info: ManagedProcessRuntime,
+  ): ManagedProcessSettledEvent | undefined {
+    if (info.status !== "running") return undefined;
+    let alive = true;
+    try {
+      if (info.pid) process.kill(info.pid, 0);
+    } catch {
+      alive = false;
+    }
+    if (alive) return undefined;
+    info.status = "exited";
+    info.endedAt = new Date().toISOString();
+    return {
+      id: info.id,
+      command: info.command,
+      status: "exited",
+      workspaceRoot: context.workspaceRoot,
+      startedAt: info.startedAt,
+      endedAt: info.endedAt,
+      ...(info.startedBySessionID
+        ? { sessionID: info.startedBySessionID }
+        : {}),
+    };
   }
 
   async list(context: ToolExecutionContext) {
@@ -181,6 +322,9 @@ export class ManagedProcessRegistry {
     info.status = "stopped";
     info.endedAt = new Date().toISOString();
     await this.save(context);
+    // A stop is a terminal transition too, so the sweep re-evaluates whether any
+    // process is still running.
+    this.observer.sync();
     return publicProcessInfo(info);
   }
 
@@ -347,6 +491,8 @@ export class ManagedProcessRegistry {
 
 type ManagedProcessRuntime = ManagedProcessInfo & {
   outputPath: string;
+  /** Session that started the process, when one did. */
+  startedBySessionID?: string;
   pidStartTicks?: string;
   commandLine?: string;
   deadlineAt?: string;
@@ -523,6 +669,80 @@ function processListTool(registry: ManagedProcessRegistry): RuntimeTool {
     parameters: { type: "object", properties: {}, additionalProperties: false },
     async execute(_input, context) {
       return JSON.stringify(await registry.list(context), null, 2);
+    },
+  };
+}
+
+function processWaitTool(registry: ManagedProcessRegistry): RuntimeTool {
+  return {
+    name: "process_wait",
+    description:
+      "Wait for a managed process to finish and return how it ended. Returns the current state instead of hanging when the timeout runs out.",
+    requiresApproval: false,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        timeoutMs: { type: "number", minimum: 0 },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          status: { type: "string" },
+          exitCode: { type: "number" },
+          timedOut: { type: "boolean" },
+        },
+        required: ["id", "status", "timedOut"],
+        additionalProperties: false,
+      },
+      presentCall(args) {
+        return {
+          kind: "generic",
+          title: requireString(requireObject(args).id, "id"),
+          summary: "wait",
+        };
+      },
+      presentResult(_args, value) {
+        const parsed = JSON.parse(value) as {
+          id?: string;
+          status?: string;
+          timedOut?: boolean;
+        } | null;
+        return {
+          kind: "generic",
+          title: parsed?.id ?? "process",
+          summary: parsed?.timedOut
+            ? `still ${parsed.status ?? "running"}`
+            : (parsed?.status ?? "finished"),
+        };
+      },
+    },
+    async execute(input, context) {
+      const args = requireObject(input);
+      const timeoutMs = numberOr(args.timeoutMs, DEFAULT_PROCESS_WAIT_MS);
+      const settled = await registry.wait(
+        requireString(args.id, "id"),
+        context,
+        timeoutMs,
+      );
+      return JSON.stringify(
+        {
+          id: requireString(args.id, "id"),
+          status: settled?.status ?? "running",
+          ...(settled?.exitCode === undefined
+            ? {}
+            : { exitCode: settled.exitCode }),
+          ...(settled?.endedAt ? { endedAt: settled.endedAt } : {}),
+          timedOut: settled === undefined,
+        },
+        null,
+        2,
+      );
     },
   };
 }
@@ -747,6 +967,7 @@ export function managedProcessTools(
     processStartTool(registry),
     processListTool(registry),
     processStatusTool(registry),
+    processWaitTool(registry),
     processOutputTool(registry),
     processReadyTool(registry),
     processStopTool(registry),
@@ -794,7 +1015,9 @@ export const PROCESS_PLUGIN_MANIFEST: PluginManifest = {
   description: "Long-running background processes.",
   entry: "index.js",
   scope: "session",
-  provides: [MANAGED_PROCESS_REGISTRY_SERVICE],
+  // The observer is declared alongside the registry so a consumer can subscribe
+  // to terminal transitions through the documented service seam.
+  provides: [MANAGED_PROCESS_REGISTRY_SERVICE, PROCESS_OBSERVER_SERVICE],
   requires: [],
   optionalRequires: [],
   conflicts: [],
@@ -810,8 +1033,185 @@ export function createProcessPlugin(): Plugin {
     setup(api) {
       registry = new ManagedProcessRegistry();
       api.services.provide(MANAGED_PROCESS_REGISTRY_SERVICE, registry);
+      // The observer is published separately from the registry so a consumer can
+      // watch terminal transitions without holding the registry itself, which
+      // owns start, stop and every write to process state.
+      api.services.provide(PROCESS_OBSERVER_SERVICE, registry.observer);
       for (const tool of managedProcessTools(registry))
         api.tools.register(tool);
     },
   };
+}
+
+/**
+ * One managed process reaching a terminal state, observed rather than polled.
+ *
+ * `refreshProcessStatus` only transitions `running → exited` when something
+ * happens to observe the process, so `list()` and `runningCount()` report a
+ * finished process as running until then. The observer closes that gap, and this
+ * is what it reports.
+ */
+/** One managed process reaching a terminal state. */
+export interface ManagedProcessSettledEvent {
+  id: string;
+  command: string;
+  status: "exited" | "stopped" | "failed";
+  exitCode?: number;
+  workspaceRoot: string;
+  /** The session that started it, when one did. */
+  sessionID?: string;
+  startedAt: string;
+  endedAt: string;
+}
+
+/**
+ * How often the observer checks liveness.
+ *
+ * A poll rather than a per-process timer: `process.kill(pid, 0)` is the only
+ * signal available for a detached child, and one interval is one thing to clear
+ * on dispose rather than one per process.
+ */
+export const DEFAULT_PROCESS_POLL_MS = 5_000;
+
+/**
+ * How long `process_wait` blocks before reporting what it has.
+ *
+ * Bounded because the wait holds a tool call, and a tool call holds a turn. The
+ * caller is told it timed out rather than left waiting indefinitely, so it can
+ * decide between waiting again and moving on.
+ */
+export const DEFAULT_PROCESS_WAIT_MS = 300_000;
+
+/** Everything the observer needs, injected so it can be driven by a clock. */
+export interface ProcessObserverOptions {
+  pollMs?: number;
+  setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimer?: (timer: ReturnType<typeof setTimeout>) => void;
+}
+
+/**
+ * An active liveness sweep over every workspace's managed processes.
+ *
+ * Deliberately idle when nothing is running: a permanently-armed interval in
+ * every session would be a timer nobody needs, and the sweep is what makes
+ * `status` honest rather than merely eventually correct.
+ */
+export class ManagedProcessObserver {
+  private readonly subscribers = new Set<
+    (event: ManagedProcessSettledEvent) => void
+  >();
+  private readonly pollMs: number;
+  private readonly setTimer: (
+    fn: () => void,
+    ms: number,
+  ) => ReturnType<typeof setTimeout>;
+  private readonly clearTimer: (timer: ReturnType<typeof setTimeout>) => void;
+  private timer?: ReturnType<typeof setTimeout>;
+  private sweeping = false;
+
+  constructor(
+    private readonly source: {
+      /** Every live process record, across every workspace this registry holds. */
+      snapshot(): Array<{
+        id: string;
+        command: string;
+        status: string;
+        exitCode?: number | null;
+        workspaceRoot: string;
+        startedAt: string;
+        endedAt?: string;
+        pid?: number | null;
+      }>;
+      /** Mark a record terminal and return it, or `undefined` if already was. */
+      settle(input: {
+        id: string;
+        workspaceRoot: string;
+        status: "exited" | "failed";
+      }): ManagedProcessSettledEvent | undefined;
+    },
+    options: ProcessObserverOptions = {},
+  ) {
+    this.pollMs = options.pollMs ?? DEFAULT_PROCESS_POLL_MS;
+    this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+    this.clearTimer = options.clearTimer ?? ((timer) => clearTimeout(timer));
+  }
+
+  /** Register a settled-notice sink. Returns the unsubscribe. */
+  subscribe(fn: (event: ManagedProcessSettledEvent) => void): () => void {
+    this.subscribers.add(fn);
+    return () => {
+      this.subscribers.delete(fn);
+    };
+  }
+
+  /** True while the sweep is armed. */
+  get armed(): boolean {
+    return this.timer !== undefined;
+  }
+
+  /**
+   * Arm the sweep when any process is running, and disarm it when none is.
+   *
+   * Called after every start, stop and settle, so the interval exists exactly as
+   * long as there is something to watch.
+   */
+  sync(): void {
+    const running = this.source
+      .snapshot()
+      .some((info) => info.status === "running");
+    if (running) {
+      if (this.timer) return;
+      const timer = this.setTimer(() => void this.sweep(), this.pollMs);
+      // Never hold the process open for a poll nobody is waiting on.
+      timer.unref?.();
+      this.timer = timer;
+      return;
+    }
+    if (this.timer) {
+      this.clearTimer(this.timer);
+      this.timer = undefined;
+    }
+  }
+
+  /** Run one sweep now. Exported so a test can drive it without a clock. */
+  async sweep(): Promise<void> {
+    if (this.sweeping) return;
+    this.sweeping = true;
+    try {
+      for (const info of this.source.snapshot()) {
+        if (info.status !== "running" || !info.pid) continue;
+        // A live pid answers signal 0; anything else has exited. The record is
+        // settled through the source so the registry stays the only writer.
+        let alive = true;
+        try {
+          process.kill(info.pid, 0);
+        } catch {
+          alive = false;
+        }
+        if (alive) continue;
+        const settled = this.source.settle({
+          id: info.id,
+          workspaceRoot: info.workspaceRoot,
+          status: "exited",
+        });
+        if (settled) this.emit(settled);
+      }
+    } finally {
+      this.sweeping = false;
+      this.sync();
+    }
+  }
+
+  /** Disarm and drop every subscriber. */
+  dispose(): void {
+    if (this.timer) {
+      this.clearTimer(this.timer);
+      this.timer = undefined;
+    }
+    this.subscribers.clear();
+  }
+
+  private emit(event: ManagedProcessSettledEvent) {
+    for (const subscriber of [...this.subscribers]) subscriber(event);
+  }
 }

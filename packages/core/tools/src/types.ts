@@ -43,6 +43,12 @@ export type SubagentRecordView = {
   id: string;
   task: string;
   mode: string;
+  /** Configured agent this subagent was spawned as, when any. */
+  agentType?: string;
+  /** Whether the subagent inherits its parent's conversation. */
+  context?: "fresh" | "fork";
+  /** Messages queued for delivery when the subagent next starts. */
+  pendingMessages?: string[];
   status: SubagentStatusView;
   attached: boolean;
   modelProfile: string;
@@ -81,6 +87,8 @@ export type SubagentEventView = {
 
 export type SubagentSpawnOptions = {
   mode?: string;
+  /** Whether the child inherits the parent's conversation. Defaults to fresh. */
+  context?: "fresh" | "fork";
   modelProfile?: string;
   allowedTools?: string[];
   excludeTools?: string[];
@@ -124,6 +132,17 @@ export type SubagentToolService = {
   requestStop(id: string, reason: string, force?: boolean): SubagentStopResult;
   stop(id: string): boolean;
   resume(id: string): Promise<boolean>;
+  /** Replace the messages queued for a subagent. */
+  setPendingMessages(id: string, messages: string[]): boolean;
+  /**
+   * Deliver a parent message to a subagent, routing by its live state.
+   * Rejects a caller that is not the subagent's parent.
+   */
+  sendMessage(
+    id: string,
+    message: string,
+    callerSession?: string,
+  ): Promise<{ route: string }>;
   retry(id: string): Promise<SubagentRecordView | undefined>;
   attach(id: string): boolean;
   detach(id: string): boolean;
@@ -378,7 +397,15 @@ export type ToolRenderIntent = {
  * verbatim, just not projected.
  */
 export type ToolOutputDefinition = {
-  /** JSON schema of the tool's output value. */
+  /**
+   * JSON schema of the tool's output value.
+   *
+   * `execute` returns the model-facing string rather than a value, so this is a
+   * contract only for the tools whose result is JSON: the execution boundary
+   * validates those against it and skips text results. It is also what a client
+   * reads to draw the result, so it has to describe the shape faithfully — a
+   * schema that disagrees with the JSON fails the call.
+   */
   schema: ToolSchema;
   /**
    * Projects the call arguments into a card, shown while the tool runs and as
@@ -497,3 +524,36 @@ export type ToolExecutionContext = {
   parentAgentID?: string;
   maxSubagentDepth?: number;
 };
+
+/**
+ * One managed process reaching a terminal state, for whoever is watching.
+ *
+ * `workspaceRoot` alone cannot address a notice — a workspace may hold several
+ * sessions — so the starter's session travels with it. A notice that landed in
+ * every session of a workspace would tell agents about work they never did.
+ */
+export interface ManagedProcessNotice {
+  id: string;
+  command: string;
+  status: "exited" | "stopped" | "failed";
+  exitCode?: number;
+  workspaceRoot: string;
+  /** The session that started the process, when it was started by one. */
+  sessionID?: string;
+  startedAt: string;
+  endedAt: string;
+}
+
+/** Service name the managed-process observer is published under. */
+export const PROCESS_OBSERVER_SERVICE = "natalia:process-observer";
+
+/**
+ * The observing half of the managed-process registry.
+ *
+ * Declared here rather than in the plugin that implements it because both sides
+ * need it and only the lower layer is shared: the plugin provides the observer,
+ * the runtime subscribes to it, and neither has to depend on the other.
+ */
+export interface ProcessObserverService {
+  subscribe(listener: (notice: ManagedProcessNotice) => void): () => void;
+}

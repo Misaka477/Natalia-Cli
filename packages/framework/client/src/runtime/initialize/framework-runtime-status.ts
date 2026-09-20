@@ -17,6 +17,7 @@ import {
 } from "@natalia/runtime-services";
 import { EGRESS_ADVISORY } from "../../egress-advisory";
 import type { RuntimeContext } from "../context";
+import { wireProcessSettledNotices } from "./process-settled-notices";
 
 export type RuntimeStatusHandle = { close(): void };
 
@@ -102,6 +103,13 @@ export function wireRuntimeStatus(ctx: RuntimeContext): RuntimeStatusHandle {
     commands,
   });
   owner.contribute("services", STATUS_SNAPSHOT_CONTROLLER_SERVICE, controller);
+  // Managed-process exits reach the session that started them. Wired here
+  // because this is where the capability registry is already in hand.
+  const unwatchProcesses = wireProcessSettledNotices(ctx, {
+    service: <T>(name: string) => registry.service<T>(name),
+    onServiceUpdate: (listener: () => void) =>
+      registry.onServiceUpdate(listener),
+  });
   owner.contribute("commands", "help", {
     name: "help",
     title: "Help",
@@ -183,6 +191,7 @@ export function wireRuntimeStatus(ctx: RuntimeContext): RuntimeStatusHandle {
   return {
     close() {
       controller.dispose();
+      unwatchProcesses();
     },
   };
 }
