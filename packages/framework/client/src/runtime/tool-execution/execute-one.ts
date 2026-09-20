@@ -46,8 +46,6 @@ export function createExecuteOne(
   ) {
     const {
       getSessionID,
-      getActiveExec,
-      getRuntimeContext,
       publishForSession,
       publishWorkGraphToolCall,
       checkConstitutionForTool,

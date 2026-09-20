@@ -5,7 +5,7 @@ import {
   RUNTIME_CAPABILITY_GROUPS,
   describeRuntimeCapabilities,
 } from "@natalia/contracts";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeClient } from "@natalia/contracts";
 import {
   RPC_INTENTIONALLY_LOCAL,
   RPC_ROUTE_MEMBERS,

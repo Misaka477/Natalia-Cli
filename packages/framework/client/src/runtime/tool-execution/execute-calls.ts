@@ -91,7 +91,7 @@ export function createExecuteCalls(
     toolResource: string,
     commandText?: string,
   ): Promise<string | undefined> {
-    const { getActiveExec, executionForTurn, publishForSession } = ctx.ports;
+    const { executionForTurn, publishForSession } = ctx.ports;
     const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
       WORK_LEDGER_CONTROLLER_SERVICE,
     );
@@ -259,7 +259,6 @@ export function createExecuteCalls(
   ): Promise<ProviderMessage[]> {
     const {
       getSessionID,
-      getActiveExec,
       getWorkspaceRoot,
       getRuntimeContext,
       publishForSession,

@@ -27,8 +27,7 @@ export function createToolPolicySurface(ctx: RuntimeContext) {
     input: { id: string; paths: string[] },
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ) {
-    const { getActiveExec, getActiveTurnID, getSessionID, publishForSession } =
-      ctx.ports;
+    const { getActiveTurnID, getSessionID, publishForSession } = ctx.ports;
     const toolLayer = ctx.ports.createToolPolicyLayer(exec);
     const activeTurnID = getActiveTurnID();
     const sessionID = getSessionID();
