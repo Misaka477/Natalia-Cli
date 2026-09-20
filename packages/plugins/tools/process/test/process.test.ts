@@ -389,3 +389,31 @@ test("managed process IDs and deadlines are isolated by workspace", async () => 
     .get("process_stop")!
     .execute({ id: "proc_same" }, { workspaceRoot: secondRoot });
 });
+
+test("unloading the process plugin terminates the processes it started", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-process-dispose-"));
+  const tools = createToolRegistry([]);
+  const pluginRegistry = createPluginRegistry({ tools });
+  await pluginRegistry.load(createProcessPlugin());
+  const started = JSON.parse(
+    await tools
+      .get("process_start")!
+      .execute(
+        { id: "proc_dispose", command: "sleep 30" },
+        { workspaceRoot: root },
+      ),
+  ) as { id: string; pid?: number };
+  expect(typeof started.pid).toBe("number");
+  const pid = started.pid!;
+  expect(processAlive(pid)).toBe(true);
+
+  await pluginRegistry.unload(PROCESS_PLUGIN_ID);
+
+  // The plugin's dispose must terminate the process tree it started, so an
+  // unload (disable / uninstall / reload) mid-run leaves no orphaned child and
+  // no armed sweep timer behind.
+  for (let attempt = 0; attempt < 50 && processAlive(pid); attempt += 1)
+    await Bun.sleep(20);
+  expect(processAlive(pid)).toBe(false);
+  expect(tools.has("process_start")).toBe(false);
+});

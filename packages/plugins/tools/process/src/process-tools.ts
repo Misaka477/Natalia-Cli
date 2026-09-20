@@ -114,6 +114,39 @@ export class ManagedProcessRegistry {
       },
     });
   }
+
+  /**
+   * Release everything the registry holds when its owning plugin unloads: the
+   * observer's poll loop, every per-process deadline timer, and any process
+   * still running. Without this, disabling or uninstalling the plugin mid-run
+   * orphans child processes and leaves the sweep timer armed (audit
+   * uninstall-safety). Best-effort per process: one failure to stop does not
+   * abandon the rest.
+   */
+  async dispose(): Promise<void> {
+    this.observer.dispose();
+    for (const timer of this.deadlines.values()) clearTimeout(timer);
+    this.deadlines.clear();
+    const running: ManagedProcessRuntime[] = [];
+    for (const byID of this.processes.values())
+      for (const info of byID.values())
+        if (info.status === "running" && info.pid) running.push(info);
+    await Promise.allSettled(
+      running.map((info) =>
+        stopProcessTree(
+          info.pid!,
+          info.stopTimeoutMs ?? 1000,
+          info.pidStartTicks,
+        ),
+      ),
+    );
+    const endedAt = new Date().toISOString();
+    for (const info of running) {
+      info.status = "stopped";
+      info.endedAt = endedAt;
+    }
+    this.processes.clear();
+  }
   private processes = new Map<string, Map<string, ManagedProcessRuntime>>();
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>();
   private sequences = new Map<string, number>();
@@ -1039,6 +1072,14 @@ export function createProcessPlugin(): Plugin {
       api.services.provide(PROCESS_OBSERVER_SERVICE, registry.observer);
       for (const tool of managedProcessTools(registry))
         api.tools.register(tool);
+    },
+    async dispose() {
+      // The framework releases the service/tool registrations on unload, but
+      // not the processes, deadline timers, or the observer's poll loop the
+      // registry owns — dispose those here so an unload mid-run leaves nothing
+      // running.
+      await registry?.dispose();
+      registry = undefined;
     },
   };
 }
