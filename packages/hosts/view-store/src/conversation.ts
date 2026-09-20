@@ -908,7 +908,6 @@ function applyAgentChatEvent(
       );
       if (event.text && !alreadyRendered)
         upsertInto(target.messages, currentID, "assistant", event.text);
-      const settled = target.messages.find((block) => block.id === currentID);
       delete target.streams[key];
       delete target.streams[`chat:${event.messageID}:thinking`];
       delete target.streamPhases[`chat:${event.messageID}`];
@@ -970,9 +969,6 @@ function applyAgentChatEvent(
         event.summary,
         event.status,
         { tool },
-      );
-      const toolBlock = target.messages.find(
-        (block) => block.id === `chat:${event.id}:tool`,
       );
       return true;
     }

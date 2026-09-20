@@ -256,7 +256,6 @@ export async function compactContext(
   });
   if (!hasRange)
     return { compacted: false, skipped: "nothing_to_compact" as const };
-  const preservedIDs = new Set(preserved.map((entry) => entry.id));
   const retained = preserved.filter((entry) => entry.role !== "resource");
   const beforeTokens = options.beforeTokens ?? ledger.effectiveTokens();
   const started = options.now?.() ?? new Date();

@@ -392,7 +392,6 @@ function agentWaitTool(): RuntimeTool {
       presentCall(args) {
         const ids = (requireObject(args).ids as unknown[]).map(String);
         const until = requireObject(args).until as string;
-        const suffix = until === "any_terminal" ? "any" : "all";
         return {
           kind: "generic",
           title: until === "any_terminal" ? "any" : "all",
