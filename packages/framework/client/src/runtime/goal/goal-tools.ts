@@ -33,6 +33,20 @@ function numberArg(value: unknown): number | undefined {
 export function goalTools(
   ctx: RuntimeContext,
   goalRuntime: GoalRuntime,
+  options: {
+    /**
+     * Runs the configured completion check. Absent, or a workspace with no
+     * configured command, means no check and the completion is accepted exactly
+     * as before.
+     */
+    completionCheck?: () =>
+      | {
+          ok: boolean;
+          command?: string;
+          detail?: string;
+        }
+      | undefined;
+  } = {},
 ): RuntimeTool[] {
   const sessionID = (context: { sessionID?: string }) =>
     (context.sessionID ?? ctx.ports.getSessionID()) as SessionID | undefined;
@@ -203,9 +217,25 @@ export function goalTools(
           case "resume":
             event = service.resume(exec.session.id, current).event;
             break;
-          case "complete":
+          case "complete": {
+            // The model's own claim used to be the whole authority. A configured
+            // check makes it checkable — and a human's completion is still the
+            // authority, for the same reason a human may stop a goal immediately.
+            const check = !isHumanTurn(exec)
+              ? options.completionCheck?.()
+              : undefined;
+            if (check && !check.ok)
+              return [
+                "update_goal complete is refused: the configured completion check failed.",
+                check.command ? `Command: ${check.command}` : undefined,
+                check.detail ?? "The check reported failure without detail.",
+                "The objective is not demonstrably met. Keep the goal active and continue, or use ask_user if this needs a human decision.",
+              ]
+                .filter(Boolean)
+                .join("\n");
             event = service.complete(exec.session.id, current).event;
             break;
+          }
           case "blocked": {
             const message = stringArg(args.blocked_reason);
             if (!message) return "update_goal blocked requires blocked_reason";
@@ -217,7 +247,13 @@ export function goalTools(
               current.roundsStarted < BLOCKED_AFTER_CONSECUTIVE_ROUNDS
             )
               return `update_goal blocked is refused until the same condition has persisted for at least ${BLOCKED_AFTER_CONSECUTIVE_ROUNDS} goal rounds (currently ${current.roundsStarted}). If work remains, keep the goal active and continue; if you need a human decision, use ask_user.`;
-            const reason: GoalBlockReason = { code: "model-reported", message };
+            // A member of the closed `GoalBlockCode` set, like the codes the goal
+            // driver emits: a misspelling here is a compile error rather than a
+            // durable snapshot a consumer cannot name.
+            const reason: GoalBlockReason = {
+              code: "model-reported",
+              message,
+            };
             event = service.block(exec.session.id, current, reason).event;
             break;
           }

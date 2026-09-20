@@ -11,6 +11,13 @@
  * completion, cancellation, error, a provider budget stop or the round cap.
  */
 import { buildGoalRound, type GoalRoundEvent } from "./builders";
+import type { RuntimeEvent } from "@natalia/contracts";
+
+/** One durable round-cost event, booked when a round settles. */
+export type GoalRoundCostEvent = Extract<
+  RuntimeEvent,
+  { type: "goal.round.cost" }
+>;
 import type { GoalBlockReason } from "@natalia/contracts";
 import type { GoalService } from "./service";
 import type { GoalView } from "./types";
@@ -50,7 +57,15 @@ export function renderGoalRoundPrompt(
   );
 }
 
-export type GoalRoundStop = "done" | "error" | "cancelled" | "max-tokens";
+/**
+ * How a goal round ended, as the runtime reports it.
+ *
+ * `error` covers a round the provider stopped early — including a token-cap
+ * truncation, which surfaces as an error carrying the finish reason. There is no
+ * separate `max-tokens` because it would be a label with no behaviour of its
+ * own: both block the goal, and the finish reason already travels in the error.
+ */
+export type GoalRoundStop = "done" | "error" | "cancelled";
 
 /**
  * The linked plan's status, surfaced into the goal round (EI Open Question:
@@ -63,6 +78,43 @@ export type GoalLinkedPlanStatus = {
   /** The plan's lifecycle state (marked … completed). */
   lifecycle: string;
 };
+
+/**
+ * Which budget, if any, the goal has exhausted.
+ *
+ * Round caps are checked separately at the round boundary, because a round is
+ * admitted or refused rather than interrupted. Token and wall-clock caps are also
+ * checked here rather than mid-round: a goal already over budget must not start
+ * another round it cannot finish.
+ */
+export function goalBudgetExhausted(
+  goal: Pick<
+    GoalView,
+    | "maxGoalTokens"
+    | "maxGoalWallClockMs"
+    | "spentGoalTokens"
+    | "goalWallClockMs"
+  >,
+): GoalBlockReason | undefined {
+  if (goal.maxGoalTokens > 0 && goal.spentGoalTokens >= goal.maxGoalTokens)
+    return {
+      code: "token-limit",
+      message:
+        `Goal reached its configured limit of ${goal.maxGoalTokens} tokens ` +
+        `(spent ${goal.spentGoalTokens}).`,
+    };
+  if (
+    goal.maxGoalWallClockMs > 0 &&
+    goal.goalWallClockMs >= goal.maxGoalWallClockMs
+  )
+    return {
+      code: "time-limit",
+      message:
+        `Goal reached its configured limit of ${goal.maxGoalWallClockMs}ms of ` +
+        `work (used ${goal.goalWallClockMs}ms).`,
+    };
+  return undefined;
+}
 
 /** Everything the driver needs from the runtime, injected for testability. */
 export type GoalRoundHost = {
@@ -82,7 +134,10 @@ export type GoalRoundHost = {
   /** Persists and publishes a durable goal event. */
   publish(
     sessionID: string,
-    event: GoalRoundEvent | import("./builders").GoalChangedEvent,
+    event:
+      | GoalRoundEvent
+      | GoalRoundCostEvent
+      | import("./builders").GoalChangedEvent,
   ): void;
   /**
    * Optional: the linked plan's live status for the round prompt. A goal
@@ -175,6 +230,14 @@ export class GoalRoundDriver {
       });
       return;
     }
+    // Token and wall-clock caps are checked here rather than mid-round, so a goal
+    // that is over budget never starts another round it cannot finish. Both read
+    // the folded accumulators, so a restart resumes with the same figures.
+    const exhausted = goalBudgetExhausted(goal);
+    if (exhausted) {
+      this.stop(sessionID, goal, exhausted);
+      return;
+    }
     const round = goal.roundsStarted + 1;
     const reservation: Reservation = {
       goalID: goal.goalID,
@@ -259,12 +322,46 @@ export class GoalRoundDriver {
     );
   }
 
+  /**
+   * Books one finished goal round's cost.
+   *
+   * The numbers come from the turn's own report, and they are published as a
+   * durable event rather than added to an in-memory total: the accumulators are
+   * derived by replay, so a restart resumes with exactly the figures the log
+   * says instead of whatever the last process happened to know.
+   */
+  private bookRoundCost(
+    sessionID: string,
+    goal: GoalView,
+    reservation: Reservation,
+    tokens: number,
+    durationMs: number,
+  ): void {
+    this.host.publish(sessionID, {
+      type: "goal.round.cost",
+      id: this.host.nextEventId(),
+      goalID: goal.goalID,
+      revision: goal.revision,
+      round: reservation.round,
+      at: this.host.now(),
+      tokens,
+      durationMs,
+    });
+  }
+
   /** Classifies a finished turn and stops continuation when appropriate. */
-  settle(sessionID: string, turnID: string, stopReason: GoalRoundStop): void {
+  settle(
+    sessionID: string,
+    turnID: string,
+    stopReason: GoalRoundStop,
+    cost?: { tokens: number; durationMs: number },
+  ): void {
     const reservation = this.reservations.get(sessionID);
     const wasGoalRound = reservation?.messageID === turnID;
     if (wasGoalRound) this.reservations.delete(sessionID);
-    const goal = this.host.current(sessionID);
+    // Mutable: re-read after a round's cost is booked, so a stop writes
+    // the figures that include it rather than the ones loaded before it.
+    let goal = this.host.current(sessionID);
     if (!goal) return;
     this.trace("settle", {
       sessionID,
@@ -291,6 +388,21 @@ export class GoalRoundDriver {
       }
       return;
     }
+    // A cancelled or errored round still consumed its tokens and its wall clock,
+    // so it is booked before classification: skipping it would let a goal that
+    // fails every round spend without ever hitting a budget.
+    if (cost && wasGoalRound) {
+      this.bookRoundCost(
+        sessionID,
+        goal,
+        reservation!,
+        cost.tokens,
+        cost.durationMs,
+      );
+      // Re-read: `goal` above was loaded before the cost was booked, so stopping
+      // with it would write a snapshot that says the round spent nothing.
+      goal = this.host.current(sessionID) ?? goal;
+    }
     switch (stopReason) {
       case "cancelled":
         this.stop(
@@ -304,12 +416,6 @@ export class GoalRoundDriver {
         this.stop(sessionID, goal, {
           code: "turn-error",
           message: "the goal round ended with an error",
-        });
-        return;
-      case "max-tokens":
-        this.stop(sessionID, goal, {
-          code: "max-tokens",
-          message: "the goal round exhausted its token budget",
         });
         return;
       default:

@@ -26,6 +26,7 @@ import type {
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { goalTools } from "./goal-tools";
+import { runCompletionCheck } from "./goal-completion-check";
 
 export type GoalRuntime = {
   service: GoalService;
@@ -270,7 +271,9 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
       };
     try {
       const result = service.edit(sessionID, current, {
-        ...(input.objective !== undefined ? { objective: input.objective } : {}),
+        ...(input.objective !== undefined
+          ? { objective: input.objective }
+          : {}),
         ...(input.maxGoalRounds !== undefined
           ? { maxGoalRounds: input.maxGoalRounds }
           : {}),
@@ -351,7 +354,17 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
           : event.stopReason === "error"
             ? "error"
             : "done";
-      driver.settle(exec.session.id, event.id, stop);
+      // The turn's own report is the round's cost: input plus output tokens, and
+      // its wall clock. A turn that reports neither books nothing, so a goal
+      // without a budget never blocks on a figure it cannot observe.
+      const tokens =
+        event.inputTokens === undefined && event.outputTokens === undefined
+          ? undefined
+          : (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
+      driver.settle(exec.session.id, event.id, stop, {
+        tokens: tokens ?? 0,
+        durationMs: event.durationMs ?? 0,
+      });
       requestDrive(exec);
     },
     requestDrive,
@@ -359,6 +372,14 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
       service.disarm(sessionID);
     },
   };
-  runtime.tools = goalTools(ctx, runtime);
+  runtime.tools = goalTools(ctx, runtime, {
+    // The configured command, read at call time rather than captured here, so a
+    // config reload takes effect without rebuilding the tool.
+    completionCheck: () =>
+      runCompletionCheck({
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        command: ctx.ports.getTsRuntimeConfig()?.goal.completionCommand,
+      }),
+  });
   return runtime;
 }

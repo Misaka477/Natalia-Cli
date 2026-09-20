@@ -49,6 +49,10 @@ test("same-id attach re-publishes an existing goal as a live goal.status", async
       objective: "resume the plan",
       phase: "active",
       maxGoalRounds: 256,
+      maxGoalTokens: 0,
+      maxGoalWallClockMs: 0,
+      spentGoalTokens: 0,
+      goalWallClockMs: 0,
     },
     roundsStarted: 0,
     at: "2026-01-01T00:00:00.000Z",
@@ -178,6 +182,10 @@ test("pause hard-stops the running goal round and edit steers it", async () => {
       objective: "steady the boat",
       phase: "active",
       maxGoalRounds: 256,
+      maxGoalTokens: 0,
+      maxGoalWallClockMs: 0,
+      spentGoalTokens: 0,
+      goalWallClockMs: 0,
     },
     roundsStarted: 0,
     at: new Date().toISOString(),
@@ -237,7 +245,9 @@ test("pause hard-stops the running goal round and edit steers it", async () => {
     await client.goalControl?.("resume", sessionID);
     await waitUntil(
       () =>
-        events.some((event) => event.type === "goal.round" && event.round === 1),
+        events.some(
+          (event) => event.type === "goal.round" && event.round === 1,
+        ),
       "goal round 1 admission",
     );
     await waitUntil(
@@ -287,7 +297,9 @@ test("pause hard-stops the running goal round and edit steers it", async () => {
     // first provider call blocks. Pausing then hard-stops that in-flight round.
     await waitUntil(
       () =>
-        events.some((event) => event.type === "goal.round" && event.round === 2),
+        events.some(
+          (event) => event.type === "goal.round" && event.round === 2,
+        ),
       "goal round 2 admission",
     );
     await waitUntil(

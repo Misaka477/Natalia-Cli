@@ -4,6 +4,7 @@ import {
   GoalRoundDriver,
   GoalService,
   buildGoalChanged,
+  foldGoal,
   renderGoalRoundPrompt,
   type GoalRoundHost,
 } from "../src";
@@ -50,11 +51,13 @@ function harness(
     objective: string,
     maxGoalRounds?: number,
     planID?: string,
+    budget?: { maxGoalTokens?: number; maxGoalWallClockMs?: number },
   ) => {
     const result = service.create("s1", service.current("s1", events), {
       objective,
       ...(maxGoalRounds === undefined ? {} : { maxGoalRounds }),
       ...(planID === undefined ? {} : { planID }),
+      ...(budget ?? {}),
     });
     host.publish("s1", result.event);
     return result;
@@ -179,6 +182,10 @@ test("a recovery seed keeps current() correct without a replayed journal", () =>
     objective: "resume the plan",
     phase: "paused",
     maxGoalRounds: 256,
+    maxGoalTokens: 0,
+    maxGoalWallClockMs: 0,
+    spentGoalTokens: 0,
+    goalWallClockMs: 0,
     roundsStarted: 2,
     createdAt: at,
     updatedAt: at,
@@ -230,6 +237,10 @@ test("seed(undefined) leaves journal folding intact", () => {
       objective: "legacy",
       phase: "active",
       maxGoalRounds: 256,
+      maxGoalTokens: 0,
+      maxGoalWallClockMs: 0,
+      spentGoalTokens: 0,
+      goalWallClockMs: 0,
     },
     roundsStarted: 0,
   });
@@ -267,6 +278,10 @@ test("renderGoalRoundPrompt carries the linked plan's lifecycle when present", (
       objective: "ship the feature",
       phase: "active",
       maxGoalRounds: 0,
+      maxGoalTokens: 0,
+      maxGoalWallClockMs: 0,
+      spentGoalTokens: 0,
+      goalWallClockMs: 0,
       roundsStarted: 0,
       activation: "armed",
       createdAt: "now",
@@ -288,6 +303,10 @@ test("renderGoalRoundPrompt carries the linked plan's lifecycle when present", (
       objective: "ship the feature",
       phase: "active",
       maxGoalRounds: 0,
+      maxGoalTokens: 0,
+      maxGoalWallClockMs: 0,
+      spentGoalTokens: 0,
+      goalWallClockMs: 0,
       roundsStarted: 0,
       activation: "armed",
       createdAt: "now",
@@ -334,4 +353,143 @@ test("driver omits the plan block when the plan is gone", async () => {
   h.seed("plan vanished", undefined, "plan_gone");
   await h.driver.drive("s1");
   expect(h.admitted[0]!.text).not.toContain("Linked plan");
+});
+
+test("a goal over its token budget does not start another round", async () => {
+  // Rounds are a poor proxy for cost: ten short exchanges and ten file reads are
+  // the same round count and an order of magnitude apart in tokens.
+  const { driver, events, host, service } = harness();
+  const seeded = service.create("s1", undefined, {
+    objective: "spend carefully",
+    maxGoalRounds: 100,
+    maxGoalTokens: 1000,
+  });
+  host.publish("s1", seeded.event);
+
+  // Two rounds, each spending 600 tokens, put the goal over before the third.
+  await driver.drive("s1");
+  driver.settle("s1", "goal_goal_1_round_1", "done", {
+    tokens: 600,
+    durationMs: 10,
+  });
+  await driver.drive("s1");
+  driver.settle("s1", "goal_goal_1_round_2", "done", {
+    tokens: 600,
+    durationMs: 10,
+  });
+
+  const blocked = await driver.drive("s1");
+  expect(blocked).toBeUndefined();
+
+  const goal = service.current("s1", events);
+  expect(goal?.phase).toBe("blocked");
+  expect(goal?.blockedReason?.code).toBe("token-limit");
+  expect(goal?.spentGoalTokens).toBe(1200);
+});
+
+test("a goal over its wall-clock budget does not start another round", async () => {
+  const { driver, events, host, service } = harness();
+  const seeded = service.create("s1", undefined, {
+    objective: "be quick",
+    maxGoalRounds: 100,
+    maxGoalWallClockMs: 5_000,
+  });
+  host.publish("s1", seeded.event);
+
+  await driver.drive("s1");
+  driver.settle("s1", "goal_goal_1_round_1", "done", {
+    tokens: 10,
+    durationMs: 3_000,
+  });
+  await driver.drive("s1");
+  driver.settle("s1", "goal_goal_1_round_2", "done", {
+    tokens: 10,
+    durationMs: 3_000,
+  });
+
+  await driver.drive("s1");
+
+  const goal = service.current("s1", events);
+  expect(goal?.phase).toBe("blocked");
+  expect(goal?.blockedReason?.code).toBe("time-limit");
+  expect(goal?.goalWallClockMs).toBe(6_000);
+});
+
+test("a failed round still books its cost, so a goal cannot spend by failing", async () => {
+  // An errored round consumed its tokens and its wall clock before it failed, so
+  // it is booked. Skipping it would let a goal that fails every round spend
+  // without ever reaching a budget.
+  const { driver, events, host, service } = harness();
+  const seeded = service.create("s1", undefined, {
+    objective: "fail expensively",
+    maxGoalRounds: 100,
+    maxGoalTokens: 1000,
+  });
+  host.publish("s1", seeded.event);
+
+  await driver.drive("s1");
+  // The round errored, and the goal is blocked for it — so the round it did run
+  // is the only one that can carry cost.
+  driver.settle("s1", "goal_goal_1_round_1", "error", {
+    tokens: 400,
+    durationMs: 50,
+  });
+
+  const goal = service.current("s1", events);
+  expect(goal?.spentGoalTokens).toBe(400);
+  expect(goal?.goalWallClockMs).toBe(50);
+  expect(goal?.blockedReason?.code).toBe("turn-error");
+  // The blocked snapshot carries the spend, so a later resume cannot pretend the
+  // failed round was free.
+  const blocked = events.find(
+    (event) => event.type === "goal.changed" && event.operation === "blocked",
+  );
+  expect(
+    blocked && blocked.type === "goal.changed"
+      ? blocked.snapshot?.spentGoalTokens
+      : undefined,
+  ).toBe(400);
+});
+
+test("spend survives replay, so a restart resumes with the same figures", async () => {
+  // The accumulators are derived from the durable cost events rather than held
+  // as an in-memory total, so replay reaches exactly what the log says.
+  const { driver, events, host, service } = harness();
+  const seeded = service.create("s1", undefined, {
+    objective: "replay me",
+    maxGoalRounds: 100,
+    maxGoalTokens: 1000,
+  });
+  host.publish("s1", seeded.event);
+  await driver.drive("s1");
+  driver.settle("s1", "goal_goal_1_round_1", "done", {
+    tokens: 400,
+    durationMs: 40,
+  });
+
+  const replayed = foldGoal([
+    seeded.event,
+    ...events.filter((event) => event.type !== "goal.changed"),
+  ]);
+  expect(replayed?.spentGoalTokens).toBe(400);
+  expect(replayed?.goalWallClockMs).toBe(40);
+  expect(replayed?.roundsStarted).toBe(1);
+});
+
+test("a goal with no budget never blocks on a figure it cannot observe", async () => {
+  const { driver, events, host, service } = harness();
+  const seeded = service.create("s1", undefined, { objective: "unbounded" });
+  host.publish("s1", seeded.event);
+
+  for (let round = 0; round < 3; round += 1) {
+    await driver.drive("s1");
+    driver.settle("s1", `goal_goal_1_round_${round + 1}`, "done", {
+      tokens: 10_000,
+      durationMs: 60_000,
+    });
+  }
+  await driver.drive("s1");
+
+  const goal = service.current("s1", events);
+  expect(goal?.phase).toBe("active");
 });

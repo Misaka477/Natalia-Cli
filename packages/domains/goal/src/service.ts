@@ -33,6 +33,10 @@ export type CreateGoalInput = {
   objective: string;
   /** 0 means unlimited. */
   maxGoalRounds?: number;
+  /** Cumulative token cap for the whole goal; 0 means unlimited. */
+  maxGoalTokens?: number;
+  /** Cumulative goal-work wall-clock cap in ms; 0 means unlimited. */
+  maxGoalWallClockMs?: number;
   planID?: string;
 };
 
@@ -40,6 +44,10 @@ export type EditGoalInput = {
   objective?: string;
   /** 0 means unlimited. */
   maxGoalRounds?: number;
+  /** Cumulative token cap for the whole goal; 0 means unlimited. */
+  maxGoalTokens?: number;
+  /** Cumulative goal-work wall-clock cap in ms; 0 means unlimited. */
+  maxGoalWallClockMs?: number;
   planID?: string;
 };
 
@@ -61,6 +69,12 @@ function snapshotOf(
     objective: view.objective,
     phase,
     maxGoalRounds: view.maxGoalRounds,
+    // Budget and spend carry forward with the snapshot, so a later mutation
+    // cannot silently reset what the goal has already consumed.
+    maxGoalTokens: view.maxGoalTokens,
+    maxGoalWallClockMs: view.maxGoalWallClockMs,
+    spentGoalTokens: view.spentGoalTokens,
+    goalWallClockMs: view.goalWallClockMs,
     ...(view.planID ? { planID: view.planID } : {}),
   };
 }
@@ -73,6 +87,15 @@ export class GoalService {
    * a tail (or still empty). `null` is a tombstone: the goal was cleared.
    */
   private readonly views = new Map<string, GoalView | null>();
+  /**
+   * Cost events already applied to the cached view, per session.
+   *
+   * `current()` is called repeatedly against a growing journal tail, so charging
+   * by scanning would bill the same round twice. Keying on the event id makes
+   * the accounting idempotent without needing to reason about where the tail
+   * starts.
+   */
+  private readonly chargedCosts = new Map<string, Set<string>>();
 
   constructor(private readonly ports: GoalServicePorts) {}
 
@@ -131,25 +154,39 @@ export class GoalService {
   ): GoalView | undefined {
     if (!this.views.has(sessionID))
       return this.withActivation(sessionID, foldGoal(events));
-    const cached = this.views.get(sessionID) ?? undefined;
+    // Mutable because settled costs are charged into it below.
+    let cached = this.views.get(sessionID) ?? undefined;
     if (!cached) return undefined;
-    // Admitted rounds are appended to the journal before the cache is told
-    // (unit callers publish directly), so charge the highest matching round.
+    // Admitted rounds and settled costs are appended to the journal before the
+    // cache is told (unit callers publish directly), so charge them here — the
+    // same accounting `foldGoal` does from scratch, applied incrementally.
     let roundsStarted = cached.roundsStarted;
+    const charged = this.chargedCosts.get(sessionID) ?? new Set<string>();
+    this.chargedCosts.set(sessionID, charged);
     for (const event of events) {
-      if (
-        event.type === "goal.round" &&
-        event.goalID === cached.goalID &&
-        event.revision === cached.revision &&
-        event.round > roundsStarted
-      )
-        roundsStarted = event.round;
+      if (event.type !== "goal.round" && event.type !== "goal.round.cost")
+        continue;
+      // A cost for a superseded revision belongs to the goal it was billed
+      // against, not to the current one.
+      if (event.goalID !== cached.goalID || event.revision !== cached.revision)
+        continue;
+      if (event.type === "goal.round") {
+        if (event.round > roundsStarted) roundsStarted = event.round;
+        continue;
+      }
+      if (charged.has(event.id)) continue;
+      charged.add(event.id);
+      cached = {
+        ...cached,
+        spentGoalTokens: cached.spentGoalTokens + event.tokens,
+        goalWallClockMs: cached.goalWallClockMs + event.durationMs,
+      };
     }
-    if (roundsStarted !== cached.roundsStarted) {
-      const advanced = { ...cached, roundsStarted };
-      this.views.set(sessionID, advanced);
-      return this.withActivation(sessionID, advanced);
-    }
+    // The round count is charged into the cache too, or the next call would
+    // re-derive it from a journal that has not grown.
+    if (roundsStarted !== cached.roundsStarted)
+      cached = { ...cached, roundsStarted };
+    this.views.set(sessionID, cached);
     return this.withActivation(sessionID, cached);
   }
 
@@ -222,6 +259,12 @@ export class GoalService {
       objective,
       phase: "active",
       maxGoalRounds: input.maxGoalRounds ?? DEFAULT_MAX_GOAL_ROUNDS,
+      // A fresh goal has spent nothing and, unless asked otherwise, has no
+      // budget beyond its round cap.
+      maxGoalTokens: input.maxGoalTokens ?? 0,
+      maxGoalWallClockMs: input.maxGoalWallClockMs ?? 0,
+      spentGoalTokens: 0,
+      goalWallClockMs: 0,
       ...(input.planID ? { planID: input.planID } : {}),
     };
     return this.emit(sessionID, "create", snapshot, 0, current, at);
@@ -260,6 +303,13 @@ export class GoalService {
         : {}),
       ...(current.lastStop ? { lastStop: current.lastStop } : {}),
       maxGoalRounds: input.maxGoalRounds ?? current.maxGoalRounds,
+      // Budgets are editable alongside the round cap; spend always carries
+      // forward, because an edit revising the objective cannot unspend it.
+      maxGoalTokens: input.maxGoalTokens ?? current.maxGoalTokens,
+      maxGoalWallClockMs:
+        input.maxGoalWallClockMs ?? current.maxGoalWallClockMs,
+      spentGoalTokens: current.spentGoalTokens,
+      goalWallClockMs: current.goalWallClockMs,
       ...((input.planID ?? current.planID)
         ? { planID: input.planID ?? current.planID }
         : {}),

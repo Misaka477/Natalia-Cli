@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { GoalBlockCode } from "@natalia/contracts";
 import type { GoalSnapshot, RuntimeEvent } from "@natalia/contracts";
 import { foldGoal } from "../src";
 
@@ -11,6 +12,11 @@ function snap(overrides: Partial<GoalSnapshot> = {}): GoalSnapshot {
     objective: "ship the thing",
     phase: "active",
     maxGoalRounds: 256,
+    // A goal without a budget beyond its round cap, and nothing spent.
+    maxGoalTokens: 0,
+    maxGoalWallClockMs: 0,
+    spentGoalTokens: 0,
+    goalWallClockMs: 0,
     ...overrides,
   };
 }
@@ -98,7 +104,9 @@ test("block records a reason and resume clears it", () => {
   const blocked = snap({
     revision: 2,
     phase: "blocked",
-    blockedReason: { code: "usage-limited", message: "quota" },
+    // A code from the closed set: the value is incidental to what this test
+    // checks, which is that a block records a reason and a resume clears it.
+    blockedReason: { code: "round-limit", message: "quota" },
   });
   const goal = foldGoal([
     changed("create", snap()),
@@ -195,4 +203,36 @@ test("strict fold refuses malformed or illegal records", () => {
       goalRound("goal_1", 1, 2),
     ]),
   ).toThrow(/exceeds maxGoalRounds/);
+});
+
+test("a block reason's code comes from the closed set, so a typo cannot reach durable state", () => {
+  // The closed set is the point: before it, a misspelled code from any of the
+  // three producers rolled forward into the durable snapshot, where a consumer
+  // switching on the code fell through to a default and the goal displayed as
+  // blocked with no reason it could name.
+  const codes: GoalBlockCode[] = [
+    "round-limit",
+    "turn-error",
+    "model-reported",
+    "queue-failed",
+    "cancelled",
+    "max-tokens",
+  ];
+  // Every code a producer can emit folds to a usable reason, rather than being
+  // accepted and then lost at the rendering boundary.
+  for (const code of codes) {
+    const goal = foldGoal([
+      changed("create", snap()),
+      changed(
+        "blocked",
+        snap({
+          revision: 2,
+          phase: "blocked",
+          blockedReason: { code, message: "why" },
+        }),
+      ),
+    ]);
+    expect(goal?.blockedReason?.code).toBe(code);
+    expect(goal?.blockedReason?.message).toBe("why");
+  }
 });

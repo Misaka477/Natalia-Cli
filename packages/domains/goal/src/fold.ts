@@ -165,7 +165,8 @@ export function foldGoalStep(
     )
       throw new Error("goal roundsStarted must not go backwards");
     assertTransition(current, event.operation, snapshot, event.roundsStarted);
-    const sameGoal = current !== undefined && current.goalID === snapshot.goalID;
+    const sameGoal =
+      current !== undefined && current.goalID === snapshot.goalID;
     return {
       ...snapshot,
       roundsStarted: event.roundsStarted,
@@ -173,6 +174,28 @@ export function foldGoalStep(
       updatedAt: event.at,
       // Replay never arms continuation.
       activation: "disarmed",
+    };
+  }
+  if (event.type === "goal.round.cost") {
+    if (current === undefined) return current;
+    // A cost for a superseded revision is ignored, not charged — the same rule
+    // the admission event follows, so a late report cannot bill a retired goal.
+    if (event.goalID !== current.goalID || event.revision !== current.revision)
+      return current;
+    if (event.round !== current.roundsStarted)
+      throw new Error(
+        `goal round ${event.round} cost is out of sequence (expected the admitted round ${current.roundsStarted})`,
+      );
+    if (!Number.isFinite(event.tokens) || event.tokens < 0)
+      throw new Error("goal round cost tokens must be a non-negative number");
+    if (!Number.isFinite(event.durationMs) || event.durationMs < 0)
+      throw new Error(
+        "goal round cost durationMs must be a non-negative number",
+      );
+    return {
+      ...current,
+      spentGoalTokens: current.spentGoalTokens + event.tokens,
+      goalWallClockMs: current.goalWallClockMs + event.durationMs,
     };
   }
   if (event.type === "goal.round") {
