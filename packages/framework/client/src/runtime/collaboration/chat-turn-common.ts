@@ -9,7 +9,6 @@ import {
 import {
   ContextLedger,
   contextEntriesToProviderMessages,
-  DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
   type ContextEntry,
   type ProviderMessage,
   type StreamingProvider,
@@ -333,6 +332,13 @@ export async function compactChatBeforeProviderStep(
       role: "user" | "chat" | "system";
       text: string;
     }>;
+    /**
+     * Whether this request runs the model-free tool-result prune. The chat
+     * streams issue one provider request per step, so only the turn's first
+     * request may rewrite the ledger — a later rewrite invalidates the prefix
+     * cache the earlier requests of the same turn just wrote.
+     */
+    prune: boolean;
     publishCompacted(summary: string, compactedThroughMessageID: string): void;
     publishCompactionEvent(
       event: import("@natalia/contracts").RuntimeEvent,
@@ -433,9 +439,13 @@ export async function compactChatBeforeProviderStep(
         message.contentParts = original.contentParts;
       if (original.providerMetadata)
         message.providerMetadata = original.providerMetadata;
-      if (original.textSignature) message.textSignature = original.textSignature;
+      if (original.textSignature)
+        message.textSignature = original.textSignature;
     }
-    if (runtimeInstruction && rebuilt[0]?.content !== runtimeInstruction.content)
+    if (
+      runtimeInstruction &&
+      rebuilt[0]?.content !== runtimeInstruction.content
+    )
       rebuilt.unshift(runtimeInstruction);
     if (phase === "compact") {
       const rebuiltKeys = new Set(
@@ -473,20 +483,18 @@ export async function compactChatBeforeProviderStep(
     system,
     tools: stream.tools,
     contextWindow: budget.max,
+    // The stream budget already carries the preserved tail and prune options
+    // (plan §2.3): the pipeline reads them, so chat does not re-read config.
     budget,
-    preserve: {
-      recentMessages:
-        ctx.ports.getTsRuntimeConfig()?.context.preservedRecentMessages ?? 10,
-      recentTokens:
-        ctx.ports.getTsRuntimeConfig()?.context.preservedRecentTokens ?? 0,
-    },
+    prune: stream.prune,
     outbound: messages,
     rebuildOutbound,
-    // Chat now shares the model-free prune path; the rebuild above carries the
-    // truncated tool results into the real outbound messages, not just the ledger.
-    pruneOptions: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
     provider,
     instruction: stream.instruction,
+    // The workspace's standing preference for what a summary must keep. Read
+    // here because every stream — main, Navi, Nia — compacts through this one
+    // helper, so the instruction cannot be hardcoded per stream.
+    userInstruction: ctx.ports.getTsRuntimeConfig()?.context.customInstruction,
     compactionEnabled:
       ctx.ports.getTsRuntimeConfig()?.context.compactionEnabled ?? true,
     signal,

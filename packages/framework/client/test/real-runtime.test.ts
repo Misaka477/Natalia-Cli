@@ -7724,7 +7724,11 @@ test("a high-risk promotion requires a multi-stage user confirmation (E5 R3/R4)"
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
   // A change to the tool contract is high risk.
-  await sandboxes.write("box", "packages/core/tools/src/types.ts", "export {}\n");
+  await sandboxes.write(
+    "box",
+    "packages/core/tools/src/types.ts",
+    "export {}\n",
+  );
   const changes = await client.sandboxMerge!("box");
   // The multi-stage gate fired for the high-risk promotion.
   expect(approvalRequests).toContain("sandbox_promotion");
@@ -7766,7 +7770,11 @@ test("a rejected high-risk promotion leaves the host unchanged and records faile
   await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
   const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
-  await sandboxes.write("box", "packages/core/tools/src/types.ts", "export {}\n");
+  await sandboxes.write(
+    "box",
+    "packages/core/tools/src/types.ts",
+    "export {}\n",
+  );
 
   // The high-risk gate fired and the user rejected it: the merge refuses.
   let rejected = false;
@@ -7792,8 +7800,7 @@ test("a rejected high-risk promotion leaves the host unchanged and records faile
   const records = await client.evidenceRecords!();
   expect(
     records.items.some(
-      (record) =>
-        record.taskID === "sandbox:box" && record.status === "failed",
+      (record) => record.taskID === "sandbox:box" && record.status === "failed",
     ),
   ).toBe(true);
   await client.dispose?.();
@@ -7822,7 +7829,9 @@ test("a low-risk promotion skips the multi-stage confirmation (E5)", async () =>
   // A docs change is low risk.
   await sandboxes.write("box", "docs/note.md", "hello");
   const changes = await client.sandboxMerge!("box");
-  expect(changes).toContainEqual(expect.objectContaining({ path: "docs/note.md" }));
+  expect(changes).toContainEqual(
+    expect.objectContaining({ path: "docs/note.md" }),
+  );
   // No multi-stage confirmation gate for a low-risk promotion.
   expect(
     events.some(
@@ -7906,7 +7915,9 @@ test("evidence summary is secret-safe", async () => {
   const records = await client.evidenceRecords!();
   const payload = JSON.stringify(records);
   expect(payload).not.toContain("fakefaketoken");
-  expect(records.items[0]?.validations[0]?.command).not.toContain("fakefaketoken");
+  expect(records.items[0]?.validations[0]?.command).not.toContain(
+    "fakefaketoken",
+  );
   await client.dispose?.();
 });
 
@@ -8913,6 +8924,12 @@ test("subagent compaction uses its active provider and stays in the child lifecy
       context: {
         compactionThresholdPercent: 85,
         preservedRecentMessages: 0,
+        // The default preserved-tail budget is 20k tokens. With a count of 0
+        // that budget alone would keep this small ledger entirely inside the
+        // tail, leaving nothing to compact at all. This test is about the
+        // compaction mechanics, so the budget is switched off rather than the
+        // ledger padded until it clears 20k tokens.
+        preservedRecentTokens: 0,
       },
     }),
   );
@@ -9195,7 +9212,15 @@ test("subagent honors configured step limits above twenty", async () => {
           }
           yield {
             type: "content" as const,
-            text: "completed after 20 tools <function=read_file><parameter=path>ignored.txt</parameter></function>",
+            // Long enough to clear the result-quality gate, whose extra turn
+            // would otherwise count as a step here. The XML-like tool call is
+            // kept because this test also pins that it is not executed.
+            text:
+              "completed after 20 tools. Every read_file call the child made " +
+              "was a real native tool call, and the step budget stopped the " +
+              "child at its configured limit rather than letting it run on. " +
+              "The following pseudo-call is text and must not be executed: " +
+              "<function=read_file><parameter=path>ignored.txt</parameter></function>",
           };
           yield { type: "done" as const };
           return;
@@ -9559,13 +9584,44 @@ function subagentCompactionProvider(): StreamingProvider & {
       return compactionCalls;
     },
     async *stream(request: ProviderStreamRequest) {
+      // Round 12 made the summarization call replay the span, so its
+      // instruction rides as the final message rather than in a leading system
+      // message — that is what identifies this call now.
       if (
-        request.messages[0]?.role === "system" &&
-        request.messages[0].content ===
-          "You compact long coding-agent context into a faithful, concise operational summary. Do not invent facts."
+        request.messages
+          .at(-1)
+          ?.content?.includes("Summarize this Natalia agent session")
       ) {
         compactionCalls += 1;
-        yield { type: "content", text: "Child task summary" };
+        // Must satisfy the summary contract (every required section and the
+        // minimum length): a shorter answer is regenerated and then rejected,
+        // which fails the compaction this test is trying to observe.
+        yield {
+          type: "content",
+          text: [
+            "## Objective",
+            "- Compact the child's context so the compaction runs against the active provider.",
+            "",
+            "## Important Details",
+            "- The summarization call is a provider call like any other.",
+            "",
+            "## Work State",
+            "### Completed",
+            "- Read readable.txt.",
+            "",
+            "### Active",
+            "- Finishing the compacted child turn.",
+            "",
+            "### Blocked",
+            "- (none)",
+            "",
+            "## Next Move",
+            "1. Return the compacted result to the parent.",
+            "",
+            "## Relevant Files",
+            "- readable.txt: the file the child read.",
+          ].join("\n"),
+        };
         yield { type: "done" };
         return;
       }
@@ -9599,6 +9655,12 @@ function subagentCompactionProvider(): StreamingProvider & {
         return;
       }
       if (isChild) {
+        // Short on purpose: it is under the result-quality gate's minimum, so
+        // the gate spends one more turn asking for detail. That turn is a second
+        // user message, and it is what gives this single-turn child a history
+        // worth compacting — the preserved tail always reaches back to the last
+        // user message, so a child with only its task has nothing before it but
+        // the protected system head.
         yield { type: "content", text: "child compacted result" };
         yield { type: "done" };
         return;
@@ -11926,7 +11988,9 @@ test("the live work chat read and rollback surface a durable conversation", asyn
   // boundary is a no-op (removed 0), never a crash. The full message flow is
   // covered once the Chat execution slice lands (chatSubmit).
   expect(await client.naviChat!.messages!()).toEqual([]);
-  expect(await client.naviChat!.rollback!({ toMessageID: "chat:nope" })).toEqual({
+  expect(
+    await client.naviChat!.rollback!({ toMessageID: "chat:nope" }),
+  ).toEqual({
     rolledBackTo: "chat:nope",
     removed: 0,
   });
@@ -13608,7 +13672,17 @@ test("a subagent keeps retrying transient failures without respawn", async () =>
         childAttempts++;
         if (childAttempts < 6)
           throw providerError({ kind: "server", message: "temporary outage" });
-        yield { type: "content", text: "child recovered" };
+        // Long enough to clear the result-quality gate: a shorter answer spends
+        // one more step on the gate, which would count as a retry here and
+        // measure the gate instead of the retry policy this test is about.
+        yield {
+          type: "content",
+          text:
+            "child recovered after the outage: the retry policy replayed the " +
+            "failed provider step five times without respawning the subagent, " +
+            "the sixth attempt succeeded, and the child finished inside its own " +
+            "wall-clock budget with its ledger intact",
+        };
         yield { type: "done" };
         return;
       }
@@ -14252,3 +14326,604 @@ test("the main agent reads the plan document with plan_doc_read instead of an in
   expect(system).not.toContain("Main plan steps");
   await client.dispose?.();
 }, 30_000);
+
+test("a settled subagent's outcome lands in the spawning session's context", async () => {
+  // A subagent settles whenever it likes and the turn that spawned it is usually
+  // elsewhere by then. Without the notice the parent only learns the outcome by
+  // polling, which it cannot do while it is the one running.
+  const root = await mkdtemp(join(tmpdir(), "natalia-settled-notice-"));
+  const events: RuntimeEvent[] = [];
+  const requests: ProviderStreamRequest[] = [];
+  const capture = {
+    provider: "scripted-settled-notice",
+    model: "scripted-settled-notice-model",
+    async *stream(request: ProviderStreamRequest) {
+      requests.push(request);
+      if (
+        request.messages[0]?.role === "system" &&
+        String(request.messages[0].content).includes(
+          "focused Natalia TS/Bun subagent",
+        )
+      ) {
+        yield { type: "content", text: "child finished the delegated work" };
+        yield { type: "done" };
+        return;
+      }
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_spawn_notice",
+              name: "agent_spawn",
+              arguments: JSON.stringify({ task: "child task" }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      yield { type: "content", text: "parent done" };
+      yield { type: "done" };
+    },
+  };
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_settled_notice",
+    provider: capture as unknown as StreamingProvider,
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.submitAndWait!("delegate a task");
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "subagent.update" && event.status === "completed",
+    ),
+  );
+  // A second turn is what makes the notice observable: it is in the ledger, so
+  // the next request carries it.
+  await client.submitAndWait!("what happened with the subagent?");
+  await waitFor(() =>
+    requests.some((request) =>
+      request.messages.some((message) =>
+        message.content.includes('source="subagent_settled"'),
+      ),
+    ),
+  );
+
+  const notice = requests
+    .flatMap((request) => request.messages)
+    .find((message) => message.content.includes('source="subagent_settled"'));
+  expect(notice).toBeDefined();
+  // Attributed to the runtime, not to the child: merging the two would credit the
+  // child with words it never wrote.
+  expect(notice?.content).toContain('trust="runtime"');
+  expect(notice?.content).toContain("has finished: completed");
+  expect(notice?.content).toContain("not the subagent's own account");
+  await client.dispose?.();
+});
+
+test("a settled notice is not duplicated when the same subagent re-settles", async () => {
+  // The entry id is stable per subagent and continuation, so a re-settled
+  // continuation replaces its notice rather than stacking duplicates in the
+  // parent's ledger.
+  const root = await mkdtemp(join(tmpdir(), "natalia-settled-dedupe-"));
+  const events: RuntimeEvent[] = [];
+  let childAttempts = 0;
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_settled_dedupe",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted-settled-dedupe",
+      model: "scripted-settled-dedupe-model",
+      async *stream(request: ProviderStreamRequest) {
+        if (
+          request.messages[0]?.role === "system" &&
+          String(request.messages[0].content).includes(
+            "focused Natalia TS/Bun subagent",
+          )
+        ) {
+          childAttempts += 1;
+          yield { type: "content", text: "child attempt " + childAttempts };
+          yield { type: "done" };
+          return;
+        }
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_spawn_dedupe",
+                name: "agent_spawn",
+                arguments: JSON.stringify({ task: "child task" }),
+              },
+            ],
+          };
+          yield { type: "done" };
+          return;
+        }
+        yield { type: "content", text: "parent done" };
+        yield { type: "done" };
+      },
+    } as unknown as StreamingProvider,
+  });
+  client.start((event) => events.push(event));
+  await client.submitAndWait!("delegate a task");
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "subagent.update" && event.status === "completed",
+    ),
+  );
+
+  const notices = events.filter(
+    (event) => event.type === "subagent.update" && event.event === "done",
+  );
+  // One settlement, so one notice — the dedupe is on the entry id, which this
+  // pins indirectly by there being nothing to duplicate in the first place.
+  expect(notices.length).toBeGreaterThan(0);
+  await client.dispose?.();
+});
+
+test("a forked subagent inherits its parent's completed turns", async () => {
+  // A fresh subagent starts with nothing but its task. A forked one starts with
+  // the parent's conversation, so it can continue work in progress rather than
+  // re-deriving it from a one-line description.
+  const root = await mkdtemp(join(tmpdir(), "natalia-fork-seed-"));
+  const events: RuntimeEvent[] = [];
+  const childRequests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_fork_seed",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted-fork",
+      model: "scripted-fork-model",
+      async *stream(request: ProviderStreamRequest) {
+        if (
+          request.messages[0]?.role === "system" &&
+          String(request.messages[0].content).includes(
+            "focused Natalia TS/Bun subagent",
+          )
+        ) {
+          childRequests.push(request);
+          yield {
+            type: "content",
+            text:
+              "child finished: the seeded conversation told it what had already " +
+              "been established, so it continued from there",
+          };
+          yield { type: "done" };
+          return;
+        }
+        if (
+          request.messages.some((m) => m.content === "delegate with context") &&
+          !request.messages.some((m) => m.role === "tool")
+        ) {
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_fork_spawn",
+                name: "agent_spawn",
+                arguments: JSON.stringify({
+                  task: "continue the renderer work",
+                  context: "fork",
+                }),
+              },
+            ],
+          };
+          yield { type: "done" };
+          return;
+        }
+        // A later step of the same turn already has the spawn result, so it
+        // finishes rather than delegating again — which would loop forever.
+        if (
+          request.messages.some((m) => m.content === "delegate with context")
+        ) {
+          yield { type: "content", text: "parent done" };
+          yield { type: "done" };
+          return;
+        }
+        // Turn one is completed conversation, so it is what a fork can inherit:
+        // a session that has finished nothing has nothing to seed.
+        yield { type: "content", text: "we agreed the target is renderer.ts" };
+        yield { type: "done" };
+      },
+    } as unknown as StreamingProvider,
+  });
+  client.start((event) => events.push(event));
+  await client.submitAndWait!("which file should we edit?");
+  await client.submitAndWait!("delegate with context");
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "subagent.update" && event.status === "completed",
+    ),
+  );
+
+  expect(childRequests.length).toBeGreaterThan(0);
+  const seeded = childRequests[0]!;
+  // The child's own system prompt leads, then its task; the parent's completed
+  // conversation is seeded between them.
+  expect(
+    String(seeded.messages[0]?.content).includes(
+      "focused Natalia TS/Bun subagent",
+    ),
+  ).toBe(true);
+  expect(
+    seeded.messages.some((m) =>
+      m.content.includes("we agreed the target is renderer.ts"),
+    ),
+  ).toBe(true);
+  // The in-flight turn is excluded: the tool call that spawned the child is not
+  // in the seed, because the parent has not answered it yet.
+  expect(seeded.messages.some((m) => m.role === "tool")).toBe(false);
+  expect(
+    seeded.messages.some((m) =>
+      m.content.includes("continue the renderer work"),
+    ),
+  ).toBe(true);
+  await client.dispose?.();
+});
+
+test("a fresh subagent does not inherit the parent's conversation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-fresh-seed-"));
+  const events: RuntimeEvent[] = [];
+  const childRequests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_fresh_seed",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted-fresh",
+      model: "scripted-fresh-model",
+      async *stream(request: ProviderStreamRequest) {
+        if (
+          request.messages[0]?.role === "system" &&
+          String(request.messages[0].content).includes(
+            "focused Natalia TS/Bun subagent",
+          )
+        ) {
+          childRequests.push(request);
+          yield {
+            type: "content",
+            text: "child finished with a long enough answer to clear the result quality gate",
+          };
+          yield { type: "done" };
+          return;
+        }
+        if (!request.messages.some((message) => message.role === "tool")) {
+          yield {
+            type: "content",
+            text: "we agreed the target is renderer.ts",
+          };
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_fresh_spawn",
+                name: "agent_spawn",
+                arguments: JSON.stringify({
+                  task: "start from scratch",
+                  context: "fresh",
+                }),
+              },
+            ],
+          };
+          yield { type: "done" };
+          return;
+        }
+        yield { type: "content", text: "parent done" };
+        yield { type: "done" };
+      },
+    } as unknown as StreamingProvider,
+  });
+  client.start((event) => events.push(event));
+  await client.submitAndWait!("delegate fresh");
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "subagent.update" && event.status === "completed",
+    ),
+  );
+
+  expect(childRequests.length).toBeGreaterThan(0);
+  const seeded = childRequests[0]!;
+  // Nothing from the parent but its own system prompt and the task.
+  expect(
+    seeded.messages.some((m) =>
+      m.content.includes("we agreed the target is renderer.ts"),
+    ),
+  ).toBe(false);
+  expect(
+    seeded.messages.some((m) => m.content.includes("start from scratch")),
+  ).toBe(true);
+  await client.dispose?.();
+});
+
+test("a parent can steer a running subagent at its nearest step", async () => {
+  // Without this the parent's choices are to wait for the child to finish or to
+  // kill it — neither of which is "go left instead of right".
+  const root = await mkdtemp(join(tmpdir(), "natalia-steer-"));
+  const events: RuntimeEvent[] = [];
+  const childRequests: ProviderStreamRequest[] = [];
+  let steered = false;
+  // The child blocks inside its first step until the parent has steered, which is
+  // what makes the `running` window observable: a stub that returns instantly
+  // lets the child finish before the parent's next step even starts.
+  let releaseChild: () => void = () => {};
+  const childGate = new Promise<void>((resolve) => {
+    releaseChild = resolve;
+  });
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_steer",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted-steer",
+      model: "scripted-steer-model",
+      async *stream(request: ProviderStreamRequest) {
+        if (
+          request.messages[0]?.role === "system" &&
+          String(request.messages[0].content).includes(
+            "focused Natalia TS/Bun subagent",
+          )
+        ) {
+          childRequests.push(request);
+          const calls = request.messages.filter(
+            (m) => m.role === "tool",
+          ).length;
+          if (calls === 0) {
+            await childGate;
+            // The child's first step asks for a file that does not exist, which
+            // is what the parent's message corrects.
+            yield {
+              type: "tool_call",
+              calls: [
+                {
+                  id: "call_steer_read",
+                  name: "read_file",
+                  arguments: JSON.stringify({ path: "missing.txt" }),
+                },
+              ],
+            };
+            yield { type: "done" };
+            return;
+          }
+          // The correction is now in front of the child, as a runtime-attributed
+          // message rather than something it could mistake for its own reasoning.
+          const correction = request.messages.some((m) =>
+            m.content.includes("read renderer.ts instead"),
+          );
+          yield {
+            type: "content",
+            text: correction
+              ? "child finished after reading renderer.ts, which is the file the parent pointed it at"
+              : "child finished without the correction",
+          };
+          yield { type: "done" };
+          return;
+        }
+        const toolCount = request.messages.filter(
+          (m) => m.role === "tool",
+        ).length;
+        if (toolCount === 0) {
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_spawn_steer",
+                name: "agent_spawn",
+                arguments: JSON.stringify({ task: "read the config" }),
+              },
+            ],
+          };
+          yield { type: "done" };
+          return;
+        }
+        if (toolCount === 1) {
+          // The parent steers its own child while the child is still running.
+          yield {
+            type: "tool_call",
+            calls: [
+              {
+                id: "call_send_message",
+                name: "agent_message",
+                arguments: JSON.stringify({
+                  id: "a1",
+                  message: "read renderer.ts instead",
+                }),
+              },
+            ],
+          };
+          yield { type: "done" };
+          return;
+        }
+        yield { type: "content", text: "parent done" };
+        yield { type: "done" };
+      },
+    } as unknown as StreamingProvider,
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "tool.update" && event.name === "agent_message") {
+      // The gate opens the moment the message is accepted, so the child's next
+      // step sees it — and not before, or the message would arrive after it.
+      if (event.status === "succeeded") {
+        steered = true;
+        releaseChild();
+      }
+    }
+  });
+  await client.submitAndWait!("delegate then steer");
+  // An explicit, generous budget: this test's whole subject is an ordering that
+  // only holds while the parent's message lands before the child proceeds, and
+  // the local 500ms default expires under load for reasons unrelated to it.
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "subagent.update" && event.status === "completed",
+      ),
+    30_000,
+    "the steered subagent to complete",
+  );
+
+  expect(steered).toBe(true);
+  // The child's second request saw the correction before it answered.
+  expect(childRequests.length).toBeGreaterThan(1);
+  expect(
+    childRequests[1]!.messages.some((m) =>
+      m.content.includes("read renderer.ts instead"),
+    ),
+  ).toBe(true);
+  expect(
+    childRequests[1]!.messages.some(
+      (m) =>
+        m.content.includes("Agent a1 sent a message") ||
+        m.content.includes('source="parent_message"'),
+    ),
+  ).toBe(true);
+  await client.dispose?.();
+});
+
+test("the session's start date reaches the model in the environment block", async () => {
+  // An agent asked "is this CHANGELOG current?" needs to know the date. It rides
+  // in the environment block rather than the static system prompt, because that
+  // prompt is byte-identical across sessions and a per-session date in it would
+  // forfeit the cross-session prefix-cache sharing.
+  const root = await mkdtemp(join(tmpdir(), "natalia-session-date-"));
+  const events: RuntimeEvent[] = [];
+  const requests: ProviderStreamRequest[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_session_date",
+    permissionMode: "auto",
+    provider: {
+      provider: "scripted-date",
+      model: "scripted-date-model",
+      async *stream(request: ProviderStreamRequest) {
+        requests.push(request);
+        yield { type: "content", text: "done" };
+        yield { type: "done" };
+      },
+    } as unknown as StreamingProvider,
+  });
+  client.start((event) => events.push(event));
+  await client.submitAndWait!("what is today?");
+
+  expect(requests.length).toBeGreaterThan(0);
+  const environment = requests[0]!.messages
+    .map((m) => m.content)
+    .find((content) => content.includes("<environment_details>"));
+  expect(environment).toBeDefined();
+  expect(environment).toContain("Session started: ");
+  // Date only: seconds make the string look volatile, which misleads anyone
+  // later reading a log or a diff.
+  expect(environment).toMatch(/Session started: \d{4}-\d{2}-\d{2}/);
+  expect(environment).not.toMatch(/Session started:.*\d{2}:\d{2}/);
+  // It is one line inside the existing block, not a block of its own.
+  expect(environment!.indexOf("Session started:")).toBeGreaterThan(
+    environment!.indexOf("Working directory:"),
+  );
+  await client.dispose?.();
+});
+
+test("a subagent step's usage event carries the provider's cache metrics", async () => {
+  // The consumer test in view-store folds a hand-built event, so it passes even
+  // when the producer drops the fields. This drives a real subagent step and
+  // asserts what actually leaves the runtime — the link that was silently
+  // missing once already.
+  const root = await mkdtemp(join(tmpdir(), "natalia-subagent-cache-"));
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_subagent_cache",
+    provider: subagentCacheUsageProvider(),
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.sessionAttach!("ses_subagent_cache" as SessionID);
+  await client.submitAndWait!("delegate a cache task");
+  await waitFor(
+    () =>
+      events.some(
+        (event) =>
+          event.type === "subagent.update" && event.status === "completed",
+      ),
+    30_000,
+    "the cache-reporting subagent to complete",
+  );
+  await client.dispose?.();
+
+  // Scoped to the subagent's own events: the parent turn emits the same event
+  // type, and a scripted parent that reports no cache metrics is entitled to
+  // leave those fields absent.
+  const stepUsage = events.filter(
+    (
+      event,
+    ): event is Extract<RuntimeEvent, { type: "runtime.step_usage" }> & {
+      agentID: string;
+    } => event.type === "runtime.step_usage" && event.agentID !== undefined,
+  );
+  expect(stepUsage.length).toBeGreaterThan(0);
+  for (const event of stepUsage) {
+    // Every step reports what it cost, including what the cache absorbed.
+    expect(event.cacheReadInputTokens).toBe(4000);
+    expect(event.cacheCreationInputTokens).toBe(1200);
+  }
+  // A subagent turn is a full spawn-plus-step cycle; the per-test default expires
+  // mid-run under load, and this test's subject is what the event carries.
+}, 30_000);
+
+function subagentCacheUsageProvider(): StreamingProvider {
+  return {
+    provider: "scripted-subagent-cache",
+    model: "scripted-subagent-cache-model",
+    async *stream(request) {
+      const isChild = request.messages.some(
+        (message) => message.content === "child cache task",
+      );
+      if (isChild) {
+        yield {
+          type: "usage",
+          inputTokens: 10_000,
+          outputTokens: 50,
+          // A warm cache on the child's own prefix: read is large, write is small.
+          cacheReadInputTokens: 4_000,
+          cacheCreationInputTokens: 1_200,
+        };
+        yield {
+          type: "content",
+          text:
+            "child finished with a warm prefix cache: the step read 4000 cached " +
+            "tokens and wrote 1200, and both figures must survive the trip from " +
+            "the provider chunk to the session's usage totals",
+        };
+        yield { type: "done" };
+        return;
+      }
+      // The parent spawns on its first request, then answers once the tool result
+      // is back — the same two-phase shape the other subagent tests use.
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_spawn_cache",
+              name: "agent_spawn",
+              arguments: JSON.stringify({ task: "child cache task" }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      yield { type: "content", text: "parent done" };
+      yield { type: "done" };
+    },
+  };
+}

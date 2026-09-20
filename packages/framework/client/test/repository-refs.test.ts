@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   captureManifestRef,
+  captureRepositoryEvidenceFields,
+  captureRepositoryRefFields,
   captureRepositoryRefsSync,
 } from "../src/runtime/repository-refs";
 import { buildEvidenceRecorded } from "@natalia/governance-ledger";
@@ -85,4 +87,40 @@ test("buildEvidenceRecorded carries the repository refs", () => {
   expect("repositoryVersion" in bare).toBe(false);
   expect("commit" in bare).toBe(false);
   expect("manifestRef" in bare).toBe(false);
+});
+
+test("captureRepositoryRefFields spreads the version and commit only when present", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "natalia-refs-fields-"));
+  try {
+    // No git repo: the fields object stays empty instead of holding blanks.
+    const bare = captureRepositoryRefFields(dir);
+    expect(bare).toEqual({});
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+  const repo = await makeGitRepo();
+  if (!repo) return; // git unavailable in this environment
+  try {
+    const fields = captureRepositoryRefFields(repo);
+    expect(fields.commit).toMatch(/^[0-9a-f]{40}$/u);
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+test("captureRepositoryEvidenceFields unions the sync refs with the manifest ref", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "natalia-refs-evidence-"));
+  try {
+    await mkdir(join(dir, ".natalia"), { recursive: true });
+    await writeFile(
+      join(dir, ".natalia", "models-dev-catalog.json"),
+      JSON.stringify({ models: ["a"] }),
+    );
+    const fields = await captureRepositoryEvidenceFields(dir);
+    expect(fields.manifestRef).toMatch(/^models-dev-catalog:[0-9a-f]+$/u);
+    // No git repo: commit stays absent rather than an empty string.
+    expect("commit" in fields).toBe(false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

@@ -30,6 +30,7 @@ import { createWorkspaceRuntime } from "../workspace-runtime";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";
+import { captureRepositoryEvidenceFields } from "../repository-refs";
 import { createDetourReviewTool } from "../plan-contract-tools";
 
 const CHAT_READ_ONLY_TOOLS = new Set([
@@ -929,11 +930,19 @@ export function createChatTools(ctx: RuntimeContext) {
                   validations?: unknown[];
                   knownGaps?: string[];
                   recordedAt: string;
+                  repositoryVersion?: string;
+                  commit?: string;
+                  manifestRef?: string;
                 }) => import("@natalia/contracts").RuntimeEvent;
               }>(GOVERNANCE_LEDGER_CONTROLLER_SERVICE);
               if (governanceLedger) {
                 const now = new Date().toISOString();
                 evidenceID = `evidence:${args.planID}:audit:${round}`;
+                // EI E2: an audit round is evidence like any other — stamp the
+                // same repository refs as every other evidence writer.
+                const repoRefs = await captureRepositoryEvidenceFields(
+                  ctx.ports.getWorkspaceRoot(),
+                );
                 ctx.ports.publishForSession(
                   owner,
                   governanceLedger.buildEvidenceRecorded({
@@ -953,6 +962,7 @@ export function createChatTools(ctx: RuntimeContext) {
                     ],
                     ...(args.gaps?.length ? { knownGaps: args.gaps } : {}),
                     recordedAt: now,
+                    ...repoRefs,
                   }),
                 );
               }

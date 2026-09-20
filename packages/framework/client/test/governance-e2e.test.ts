@@ -251,6 +251,23 @@ test("Phase -1 E2E: Navi plan_propose lands a user accepted WorkContract read by
 
 test("Phase 0 E2E: Nia audit_report writes evidence visible to projection and runtime reads", async () => {
   const root = await officialPluginWorkspace("governance-e2e-audit");
+  // EI E2: the audit evidence must carry the same repository refs as every
+  // other evidence writer. A seed commit gives the workspace a HEAD to stamp.
+  const git = (args: string[]) =>
+    Bun.spawnSync(["git", ...args], {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  git(["init", "-q"]);
+  git(["config", "user.email", "test@example.com"]);
+  git(["config", "user.name", "test"]);
+  await writeFile(join(root, "refs-seed.txt"), "seed");
+  git(["add", "refs-seed.txt"]);
+  const committed = git(["commit", "-q", "-m", "seed"]).success;
+  const gitHead = committed
+    ? git(["rev-parse", "HEAD"]).stdout.toString().trim()
+    : undefined;
   const events: RuntimeEvent[] = [];
   let planID = "";
   const client = createRealRuntimeClient({
@@ -296,12 +313,19 @@ test("Phase 0 E2E: Nia audit_report writes evidence visible to projection and ru
     taskID: planID,
     status: "validated",
   });
+  // EI E2: the audit evidence stamps the repository refs of the tree it audited.
+  if (gitHead !== undefined) {
+    expect(projected[0]).toMatchObject({ commit: gitHead });
+  }
   const evidence = await client.evidenceRecords!({ sessionID: "ses_e2e_audit" });
   expect(evidence.items).toHaveLength(1);
   expect(evidence.items[0]).toMatchObject({
     taskID: planID,
     status: "validated",
   });
+  if (gitHead !== undefined) {
+    expect(evidence.items[0]).toMatchObject({ commit: gitHead });
+  }
   const state = reduceRuntimeEvents(events);
   expect(state.evidence).toHaveLength(1);
   expect(state.evidence[0]).toMatchObject({ taskID: planID });

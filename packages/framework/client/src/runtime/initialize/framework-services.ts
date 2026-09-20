@@ -134,9 +134,25 @@ export async function wireFrameworkServices(
   const subagents = createSubagentsController({
     workDir: workspaceRoot,
     sessionID: ctx.ports.getSessionID,
+    // Bounds a run that is stuck rather than merely slow: without it such a run
+    // continues until the session ends, paying for every step it takes.
+    wallClockBudgetMs:
+      ctx.ports.getTsRuntimeConfig()?.runtime.subagentWallClockMs,
   });
   subagentsOwner.contribute("services", SUBAGENTS_SERVICE, subagents);
-  for (const tool of agentTools()) {
+  // The configured subagent-mode agents are the spawnable types. Advertising
+  // them without saying what tools each one has leaves the model guessing, which
+  // is the one distinction the choice turns on.
+  const agentTypeViews = (ctx.ports.getAgentRegistry()?.list() ?? []).map(
+    (agent) => ({
+      name: agent.name,
+      description: agent.description,
+      mode: agent.mode,
+      allowedTools: agent.allowedTools,
+      excludedTools: agent.excludedTools,
+    }),
+  );
+  for (const tool of agentTools(agentTypeViews)) {
     subagentsOwner.contribute("tools", tool.name, tool);
     if (ctx.state.tools.get(tool.name))
       throw new Error(`framework tool already registered: ${tool.name}`);

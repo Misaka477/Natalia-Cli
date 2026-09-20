@@ -19,6 +19,7 @@ import {
   sessionWindowEvents,
 } from "./session-event-window";
 import { riskTierForChanges, riskTierForPath } from "@natalia/sandbox";
+import { captureRepositoryEvidenceFields } from "./repository-refs";
 
 async function appendSandboxMutation(
   ctx: RuntimeContext,
@@ -222,7 +223,7 @@ export function createSandboxRuntime(
       const taskID = `sandbox:${id}`;
       const objective = `promote sandbox ${id}`;
       const redact = (text: string) => ctx.ports.redactToolOutput(text, true);
-      const publishPromotionEvidence = (input: {
+      const publishPromotionEvidence = async (input: {
         status: "promoted" | "failed";
         result: "passed" | "failed";
         output: string;
@@ -236,6 +237,11 @@ export function createSandboxRuntime(
           safeSummary: redact(input.output),
           durationMs: input.durationMs,
         });
+        // EI E2: a promotion is evidence like any other — stamp the same
+        // repository refs as every other evidence writer.
+        const repoRefs = await captureRepositoryEvidenceFields(
+          ctx.ports.getWorkspaceRoot(),
+        );
         const evidence = ledger.buildEvidenceRecorded({
           id: `evidence:${Date.now().toString(36)}:${ctx.ports.nextEvidenceSequence()}`,
           taskID,
@@ -248,6 +254,7 @@ export function createSandboxRuntime(
           })),
           validations: [outcome],
           knownGaps: input.knownGaps,
+          ...repoRefs,
         });
         ctx.ports.publishForSession(owner, evidence);
         return { evidence, outcome };
@@ -256,7 +263,7 @@ export function createSandboxRuntime(
       try {
         validation = await sandboxes.validate(id, command);
       } catch (error) {
-        publishPromotionEvidence({
+        await publishPromotionEvidence({
           status: "failed",
           result: "failed",
           output: error instanceof Error ? error.message : String(error),
@@ -267,7 +274,7 @@ export function createSandboxRuntime(
       }
       const durationMs = performance.now() - startedAt;
       if (!validation.ok) {
-        publishPromotionEvidence({
+        await publishPromotionEvidence({
           status: "failed",
           result: "failed",
           output: validation.output,
@@ -311,7 +318,7 @@ export function createSandboxRuntime(
               sessionID: owner.session.id,
             });
           if (!response || response.decision === "reject") {
-            publishPromotionEvidence({
+            await publishPromotionEvidence({
               status: "failed",
               result: "failed",
               output: "high-risk promotion rejected by the user",
@@ -367,7 +374,7 @@ export function createSandboxRuntime(
         mutationRegistry()?.settle(operationID);
         ctx.ports.publishForSession(owner, sandboxes.updateEvent(id));
         ctx.ports.publishForSession(owner, sandboxes.auditEvent(id, "merge"));
-        const { evidence, outcome } = publishPromotionEvidence({
+        const { evidence, outcome } = await publishPromotionEvidence({
           status: "promoted",
           result: "passed",
           output: validation.output,
@@ -393,7 +400,7 @@ export function createSandboxRuntime(
         );
         return changes;
       } catch (error) {
-        publishPromotionEvidence({
+        await publishPromotionEvidence({
           status: "failed",
           result: "failed",
           output: error instanceof Error ? error.message : String(error),

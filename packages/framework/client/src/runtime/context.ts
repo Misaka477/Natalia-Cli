@@ -48,6 +48,7 @@ import type {
   CheckpointFactory,
   InteractiveWaiterDeps,
   ProviderRunnerInput,
+  ProviderUsage,
   RuntimeContextLedger,
   RuntimeServiceClient,
   SkillMetadata,
@@ -157,7 +158,13 @@ export type RuntimeState = {
   selectedModel?: { modelID?: string; variant?: string };
   pendingAgent?: AgentDefinition;
   agentRegistry?: AgentRegistry;
-  lastProviderUsage?: { inputTokens: number; outputTokens: number };
+  /**
+   * The latest provider usage sample. Typed by the shared `ProviderUsage`
+   * rather than an inline `{inputTokens, outputTokens}`: a narrower local
+   * declaration compiles while dropping the cache fields, and the loss only
+   * shows up as an implausible hit rate.
+   */
+  lastProviderUsage?: ProviderUsage;
   sessionPersistence: Promise<void>;
   sessionPersistenceBySession: Map<SessionID, Promise<void>>;
   nativeRuntimeID: string;

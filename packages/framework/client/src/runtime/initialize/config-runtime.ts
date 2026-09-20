@@ -85,6 +85,11 @@ export async function configureRuntime(
       tsConfig.config,
       scope.selectedAgent?.model ?? tsConfig.config.defaultModel,
       scope.selectedAgent?.variant,
+      // The session id is the cache key: it routes this session's requests onto
+      // the provider's cache shard. Per-session rather than global, so a
+      // subagent or collaborator stream does not evict the main one. Sent only
+      // when the endpoint declares it accepts a key.
+      { sessionID: ctx.state.sessionID },
     );
     if (configured) {
       scope.provider = configured;

@@ -12,6 +12,7 @@ import type { ProviderToolCall } from "@natalia/runtime";
 import {
   requiresForcedGitApprovalAst,
   timeoutSecOr,
+  validateToolOutput,
   type RuntimeTool,
 } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
@@ -344,6 +345,20 @@ export async function runExecuteStage(
       if (timeoutTimer) clearTimeout(timeoutTimer);
       exec?.activeAbort?.signal.removeEventListener("abort", cancelExecution);
     });
+    // A declared output shape is a contract for the tools whose result is JSON.
+    // One that has drifted from its implementation fails here, naming the paths,
+    // instead of handing the model a shape it was told to expect differently.
+    const outputErrors = tool.output
+      ? validateToolOutput(tool.output.schema, completeResult)
+      : [];
+    if (outputErrors.length > 0) {
+      throw new Error(
+        `tool "${tool.name}" returned output that does not match its ` +
+          `declared schema: ${outputErrors
+            .map((error) => `${error.path}: ${error.message}`)
+            .join("; ")}`,
+      );
+    }
     // The tool.s own final content invariant runs exactly once, pre-redaction.
     const finalizedContent =
       tool.output?.finalizeContent?.(completeResult) ?? completeResult;

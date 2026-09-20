@@ -8,6 +8,10 @@ import { installSubagents } from "./subagent-runner";
 import { recoverSession } from "./session-recovery";
 import { finalizeInitialize } from "./finalize";
 import { perfLog } from "@natalia/runtime-services";
+import {
+  loadProviderAdapterModules,
+  providerAdapterModuleRequests,
+} from "@natalia/runtime";
 
 export function createInitialize(
   ctx: RuntimeContext,
@@ -23,6 +27,26 @@ export function createInitialize(
     try {
       const config = await configureCatalog(ctx, options);
       mark("configureCatalog");
+      // Custom provider adapters load once, here, before any dispatch: dynamic
+      // import is asynchronous and `providerFromKind` is not, so registering
+      // eagerly is what keeps the request path synchronous. A module that fails
+      // is reported rather than thrown, so one broken adapter does not stop the
+      // session from starting.
+      const adapterResults = await loadProviderAdapterModules({
+        workspaceRoot: ctx.ports.getWorkspaceRoot(),
+        requests: providerAdapterModuleRequests(config.runtimeConfig.providers),
+      });
+      for (const result of adapterResults) {
+        if (!result.ok)
+          ctx.ports.publish({
+            type: "diagnostic",
+            level: "warning",
+            message:
+              `provider adapter module for "${result.providerID}" did not ` +
+              `load (${result.module}): ${result.error}`,
+          });
+      }
+      mark("providerAdapterModules");
       await configureRuntime(ctx, options, config);
       mark("configureRuntime");
     } catch (error) {

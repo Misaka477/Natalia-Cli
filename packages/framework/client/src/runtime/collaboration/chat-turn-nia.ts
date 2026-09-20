@@ -74,7 +74,10 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           ctx.ports.modelRefKeyForSelection(undefined, chatModel),
         )
       : input.exec.runtimeContextConfig;
-    input.exec.niaTokenMeter.setContextWindow("stream", activeContextBudget.max);
+    input.exec.niaTokenMeter.setContextWindow(
+      "stream",
+      activeContextBudget.max,
+    );
     const reportAttachmentDiagnostic = (message: string) =>
       ctx.ports.publishForSession(input.exec, {
         type: "diagnostic",
@@ -339,6 +342,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
             contextWindow: activeContextBudget.max,
             compactionID: `nia-chat:${input.exec.session.id}`,
             durableMessages: history.durableMessages,
+            prune: step === 1,
             instruction:
               "Compact the older Nia audit chat history while preserving concrete user goals, decisions, identifiers, tool outcomes, findings, and unresolved questions.",
             publishCompacted: (summary, compactedThroughMessageID) =>

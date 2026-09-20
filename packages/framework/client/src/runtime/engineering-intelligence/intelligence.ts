@@ -61,6 +61,7 @@ import {
 } from "../session-event-window";
 import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
+import { captureRepositoryEvidenceFields } from "../repository-refs";
 
 /**
  * The `ClientSurfaceOptions` the engineering-intelligence surface shares with
@@ -760,6 +761,12 @@ export function createIntelligenceSurface(
         safeSummary,
         durationMs: performance.now() - startedAt,
       });
+      // EI E2: a runtime-recorded validation is evidence like any other — stamp
+      // the same repository refs as the record_validation tool so "which tree
+      // validated this" is answerable from the record alone.
+      const repoRefs = await captureRepositoryEvidenceFields(
+        ctx.ports.getWorkspaceRoot(),
+      );
       const event = requireGovernanceLedger().buildEvidenceRecorded({
         id: `evidence:${Date.now().toString(36)}:${ctx.ports.nextEvidenceSequence()}`,
         taskID: input.taskID,
@@ -767,6 +774,7 @@ export function createIntelligenceSurface(
         status: result === "passed" ? "validated" : "failed",
         validations: [outcome],
         knownGaps: input.knownGaps,
+        ...repoRefs,
       });
       ctx.ports.publishForSession(owner, event);
       return {

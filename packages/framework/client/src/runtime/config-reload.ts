@@ -7,6 +7,7 @@
  * state through `RuntimeContext` ports.
  */
 import { agentsFromConfig } from "@natalia/agent";
+import { renderSubagentTypes } from "@natalia/subagents";
 import { resolveConfig } from "@natalia/config";
 import { ensureBashCommandParser } from "@natalia/tools";
 import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
@@ -23,6 +24,35 @@ import type { RealRuntimeClientOptions } from "./options";
  * The checkpoint factory owns per-session controllers; a config reload must
  * reset them so the next initialization reads the new checkpoint settings.
  */
+/**
+ * Re-render the `agent_spawn` description from the current agent registry.
+ *
+ * The request builder reads each tool's description per step, so mutating it in
+ * place is enough — no re-registration, and the tool's identity (name,
+ * parameters) is untouched so the request prefix does not churn.
+ */
+function refreshAgentSpawnDescription(
+  ctx: RuntimeContext,
+  registry: import("@natalia/agent").AgentRegistry,
+) {
+  const spawn = ctx.state.tools.get("agent_spawn");
+  if (!spawn) return;
+  spawn.description = [
+    "Spawn an isolated TS/Bun subagent task.",
+    renderSubagentTypes(
+      registry.list().map((agent) => ({
+        name: agent.name,
+        description: agent.description,
+        mode: agent.mode,
+        allowedTools: agent.allowedTools,
+        excludedTools: agent.excludedTools,
+      })),
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function resetCheckpointFactory(ctx: RuntimeContext) {
   ctx.ports
     .resolveService<
@@ -176,6 +206,10 @@ export function createConfigReload(
       const selectedAgentName = getSelectedAgent()?.name;
       const agentRegistry = agentsFromConfig(tsConfig.config);
       setAgentRegistry(agentRegistry);
+      // Re-render the advertised spawn types: the request builder reads each
+      // tool's description per step, so updating it in place keeps the types
+      // current without disturbing the tool's identity or the request prefix.
+      refreshAgentSpawnDescription(ctx, agentRegistry);
       setSelectedAgent(
         selectedAgentName
           ? (agentRegistry.select(selectedAgentName) ?? agentRegistry.default())

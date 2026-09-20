@@ -318,6 +318,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
             contextWindow: activeContextBudget.max,
             compactionID: `navi-chat:${input.exec.session.id}`,
             durableMessages: history.durableMessages,
+            prune: step === 1,
             instruction:
               "Compact the older Navi chat history while preserving concrete user goals, decisions, identifiers, tool outcomes, and unresolved questions.",
             publishCompacted: (summary, compactedThroughMessageID) =>

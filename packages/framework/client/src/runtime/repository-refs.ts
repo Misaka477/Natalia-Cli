@@ -58,3 +58,32 @@ export async function captureManifestRef(
     return undefined;
   }
 }
+
+/**
+ * The spread-ready evidence fields for one workspace: every evidence writer
+ * (the record_validation tool, a runtime validation, a Nia audit round, a
+ * sandbox promotion) stamps the same refs so "which tree validated this" is
+ * always answerable from the record alone (EI E2).
+ */
+export function captureRepositoryRefFields(workspaceRoot: string): {
+  repositoryVersion?: string;
+  commit?: string;
+} {
+  const refs = captureRepositoryRefsSync(workspaceRoot);
+  return {
+    ...(refs.repositoryVersion
+      ? { repositoryVersion: refs.repositoryVersion }
+      : {}),
+    ...(refs.commit ? { commit: refs.commit } : {}),
+  };
+}
+
+/** `captureRepositoryRefFields` plus the async manifest ref. */
+export async function captureRepositoryEvidenceFields(
+  workspaceRoot: string,
+): Promise<RepositoryRefs> {
+  const refs: RepositoryRefs = captureRepositoryRefFields(workspaceRoot);
+  const manifestRef = await captureManifestRef(workspaceRoot);
+  if (manifestRef) refs.manifestRef = manifestRef;
+  return refs;
+}

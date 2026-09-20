@@ -8,7 +8,6 @@ import type {
   RuntimeServiceClient,
 } from "@natalia/runtime-services";
 import type {
-  ChatChannel,
   ChatMessageRow,
   ChatModelProfile,
   ChatStreamSurface,
@@ -117,16 +116,18 @@ async function streamExec(ctx: RuntimeContext, sessionID?: string) {
   return ctx.ports.getActiveExec();
 }
 
-/** Project one channel's durable chat rows from raw session events. */
-function projectChatRows(
-  channel: ChatChannel,
-  events: RuntimeEvent[],
-): ChatMessageRow[] {
-  const projected =
-    channel === "nia"
-      ? projectedNiaChatMessages(events)
-      : projectedNaviChatMessages(events);
-  return projected.map((message) => ({
+/**
+ * Stream-owned chat row projection. Navi and Nia each project their own
+ * durable `*.chat.*` events into rows; the row no longer carries a channel tag
+ * (the surface it came from is the identity), and no shared projector takes a
+ * channel parameter (three-stream P1).
+ */
+function toChatRow(
+  message:
+    | ReturnType<typeof projectedNaviChatMessages>[number]
+    | ReturnType<typeof projectedNiaChatMessages>[number],
+): ChatMessageRow {
+  return {
     messageID: message.messageID,
     role: message.role,
     text: message.text,
@@ -134,8 +135,15 @@ function projectChatRows(
     ...(message.kind ? { kind: message.kind } : {}),
     ...(message.tool ? { tool: message.tool } : {}),
     ...(message.attachments ? { attachments: message.attachments } : {}),
-    channel,
-  }));
+  };
+}
+
+function projectNaviChatRows(events: RuntimeEvent[]): ChatMessageRow[] {
+  return projectedNaviChatMessages(events).map(toChatRow);
+}
+
+function projectNiaChatRows(events: RuntimeEvent[]): ChatMessageRow[] {
+  return projectedNiaChatMessages(events).map(toChatRow);
 }
 
 function scheduleChatTitle(
@@ -173,7 +181,7 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
       // shared event window only holds the newest page and can silently drop
       // older chat once the session tail is tool/turn traffic.
       await ensureSessionFullEvents(ctx, exec);
-      return projectChatRows("navi", exec.session.events);
+      return projectNaviChatRows(exec.session.events);
     },
     async rollback(input, sessionID) {
       const exec = await streamExec(ctx, sessionID);
@@ -300,7 +308,7 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
       // shared event window only holds the newest page and can silently drop
       // older chat once the session tail is tool/turn traffic.
       await ensureSessionFullEvents(ctx, exec);
-      return projectChatRows("nia", exec.session.events);
+      return projectNiaChatRows(exec.session.events);
     },
     async rollback(input, sessionID) {
       const exec = await streamExec(ctx, sessionID);
@@ -421,15 +429,33 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
 export function createChatSurface(ctx: RuntimeContext): Surface {
   const navi = createNaviChatSurface(ctx);
   const nia = createNiaChatSurface(ctx);
-  const messagesPage = async (
-    channel: "navi" | "nia",
-    input: { sessionID?: string; cursor?: string; limit?: number },
-  ) => {
+  // Each stream owns its history page source (three-stream P1: no shared
+  // channel-parameterized pager).
+  const naviMessagesPage = async (input: {
+    sessionID?: string;
+    cursor?: string;
+    limit?: number;
+  }) => {
     const exec = await streamExec(ctx, input.sessionID);
     if (!exec) return { data: [], cursor: {} };
     await ensureSessionFullEvents(ctx, exec);
     return paginateTranscript(
-      projectChatRows(channel, exec.session.events),
+      projectNaviChatRows(exec.session.events),
+      input.cursor,
+      input.limit,
+      "chat",
+    );
+  };
+  const niaMessagesPage = async (input: {
+    sessionID?: string;
+    cursor?: string;
+    limit?: number;
+  }) => {
+    const exec = await streamExec(ctx, input.sessionID);
+    if (!exec) return { data: [], cursor: {} };
+    await ensureSessionFullEvents(ctx, exec);
+    return paginateTranscript(
+      projectNiaChatRows(exec.session.events),
       input.cursor,
       input.limit,
       "chat",
@@ -442,7 +468,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
     setModelProfile: (profile, sessionID) =>
       navi.setModelProfile(profile, sessionID),
     messages: (sessionID) => navi.messages(sessionID),
-    messagesPage: (input) => messagesPage("navi", input),
+    messagesPage: (input) => naviMessagesPage(input),
     rollback: (input, sessionID) => navi.rollback(input, sessionID),
   };
   const niaChat: ChatStreamSurface = {
@@ -452,7 +478,7 @@ export function createChatSurface(ctx: RuntimeContext): Surface {
     setModelProfile: (profile, sessionID) =>
       nia.setModelProfile(profile, sessionID),
     messages: (sessionID) => nia.messages(sessionID),
-    messagesPage: (input) => messagesPage("nia", input),
+    messagesPage: (input) => niaMessagesPage(input),
     rollback: (input, sessionID) => nia.rollback(input, sessionID),
   };
   return {

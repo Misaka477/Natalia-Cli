@@ -1,7 +1,11 @@
 import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
 import type { CapabilityRegistryHost } from "@natalia/capability";
 import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
-import type { ProviderToolCall, StreamingProvider } from "@natalia/runtime";
+import type {
+  ContextEntry,
+  ProviderToolCall,
+  StreamingProvider,
+} from "@natalia/runtime";
 import type {
   InteractiveWaiterDeps,
   RuntimeContextLedger,
@@ -151,10 +155,22 @@ export type SubagentSupport = {
     runner: SubagentRunnerContext,
     reason: "done" | "cancelled" | "error",
   ): void;
+  /** Register the ledger a subagent's current run is writing to. */
+  registerSubagentLedger(
+    agentId: string,
+    ledger: RuntimeContextLedger,
+  ): RuntimeContextLedger;
+  /** Drop a subagent's live ledger, when its run ends. */
+  unregisterSubagentLedger(agentId: string): void;
+  /** Queue a parent message for a subagent with no live runner. */
+  queueSubagentMessage(agentId: string, message: string): boolean;
+  /** How many subagents currently hold a live ledger. */
+  liveSubagentLedgerCount(): number;
   createSubagentContext(
     system: string,
     task: string,
     planPointer?: { planID: string; documentPath: string; version: number },
+    forkSeed?: { entries: readonly ContextEntry[] },
   ): RuntimeContextLedger;
   runSubagentProviderStep(
     ledger: RuntimeContextLedger,
@@ -177,6 +193,7 @@ export type SubagentSupport = {
     output: string,
     calls: ProviderToolCall[],
   ): void;
+
   appendSubagentToolResult(
     ledger: RuntimeContextLedger,
     runner: SubagentRunnerContext,

@@ -38,7 +38,6 @@ export function createSessionAttach(ctx: RuntimeContext) {
     // explicitly; attach must not force a full journal load on every switch.
     const meter = exec.tokenMeter;
     type SnapshotRecord = {
-      channel?: "navi" | "nia";
       agentID?: string;
       usedTokens: number;
       pressureTokens?: number;
@@ -49,24 +48,28 @@ export function createSessionAttach(ctx: RuntimeContext) {
       messageTokens?: number;
       source: "estimate" | "provider_usage";
     };
+    /** The stream-owned event type a stream publishes; `undefined` is the main lane. */
+    const snapshotEventType = (stream: "navi" | "nia" | undefined) =>
+      stream === "navi"
+        ? "navi.context.snapshot"
+        : stream === "nia"
+          ? "nia.context.snapshot"
+          : "context.snapshot";
     const latestSnapshot = (
-      channel: "navi" | "nia" | undefined,
+      stream: "navi" | "nia" | undefined,
       agentID?: string,
     ): SnapshotRecord | undefined => {
       for (let index = exec.session.events.length - 1; index >= 0; index -= 1) {
         const event = exec.session.events[index];
         if (!event) continue;
         const streamMatches =
-          channel === "navi"
-            ? event.type === "navi.context.snapshot" ||
+          stream === undefined
+            ? event.type === "context.snapshot" &&
+              (event as { channel?: string }).channel === undefined
+            : event.type === snapshotEventType(stream) ||
+              // Legacy journals wrote one shared event with a channel tag.
               (event.type === "context.snapshot" &&
-                event.channel === "navi")
-            : channel === "nia"
-              ? event.type === "nia.context.snapshot" ||
-                (event.type === "context.snapshot" &&
-                  event.channel === "nia")
-              : event.type === "context.snapshot" &&
-                event.channel === undefined;
+                (event as { channel?: string }).channel === stream);
         if (
           streamMatches &&
           "usedTokens" in event &&
@@ -77,53 +80,32 @@ export function createSessionAttach(ctx: RuntimeContext) {
       }
       return undefined;
     };
-    const publishSnapshot = (data: {
-      channel?: "navi" | "nia";
-      agentID?: string;
-      usedTokens: number;
-      pressureTokens?: number;
-      projectedTokens?: number;
-      contextWindow?: number;
-      systemTokens?: number;
-      toolsTokens?: number;
-      messageTokens?: number;
-      source: "estimate" | "provider_usage";
-    }) => {
+    const publishSnapshot = (
+      stream: "navi" | "nia" | undefined,
+      data: {
+        agentID?: string;
+        usedTokens: number;
+        pressureTokens?: number;
+        projectedTokens?: number;
+        contextWindow?: number;
+        systemTokens?: number;
+        toolsTokens?: number;
+        messageTokens?: number;
+        source: "estimate" | "provider_usage";
+      },
+    ) => {
       const at = new Date().toISOString();
-      const { channel, ...payload } = data;
-      if (channel === "navi")
-        ctx.ports.publishForSession(exec, {
-          type: "navi.context.snapshot",
-          ...payload,
-          at,
-        });
-      else if (channel === "nia")
-        ctx.ports.publishForSession(exec, {
-          type: "nia.context.snapshot",
-          ...payload,
-          at,
-        });
-      else
-        ctx.ports.publishForSession(exec, {
-          type: "context.snapshot",
-          ...payload,
-          at,
-        });
+      ctx.ports.publishForSession(exec, {
+        type: snapshotEventType(stream),
+        ...data,
+        at,
+      });
     };
-    const publishExistingSnapshot = (snapshot: {
-      channel?: "navi" | "nia";
-      agentID?: string;
-      usedTokens: number;
-      pressureTokens?: number;
-      projectedTokens?: number;
-      contextWindow?: number;
-      systemTokens?: number;
-      toolsTokens?: number;
-      messageTokens?: number;
-      source: "estimate" | "provider_usage";
-    }) =>
-      publishSnapshot({
-        ...(snapshot.channel ? { channel: snapshot.channel } : {}),
+    const publishExistingSnapshot = (
+      stream: "navi" | "nia" | undefined,
+      snapshot: SnapshotRecord,
+    ) =>
+      publishSnapshot(stream, {
         ...(snapshot.agentID ? { agentID: snapshot.agentID } : {}),
         usedTokens: snapshot.usedTokens,
         ...(snapshot.pressureTokens === undefined
@@ -146,52 +128,55 @@ export function createSessionAttach(ctx: RuntimeContext) {
           : { messageTokens: snapshot.messageTokens }),
         source: snapshot.source,
       });
-    const chatContextWindow = async (channel: "navi" | "nia") => {
-      const config = ctx.ports.getTsRuntimeConfig();
-      const profile =
-        channel === "navi"
-          ? exec.naviChatModelProfile?.normal
-          : exec.niaChatModelProfile?.normal;
-      if (!config || !exec.provider) return exec.runtimeContextConfig.max;
-      try {
-        const budget = await ctx.ports.resolveContextStatusConfig(
-          config,
-          exec.provider,
-          ctx.ports.getContextWindowResolver(),
-          ctx.ports.modelRefKeyForSelection(undefined, profile),
-        );
-        return budget.max;
-      } catch {
-        return exec.runtimeContextConfig.max;
-      }
-    };
-    for (const channel of ["navi", "nia"] as const) {
-      const existing = latestSnapshot(channel);
+    /**
+     * One stream's meter surface, named by its own event type rather than a
+     * shared channel identity: both streams run the identical publish path,
+     * each publishing its snapshot to its own event (three-stream P1 — no
+     * `for (const channel of ["navi", "nia"])` fork in attach).
+     */
+    const seedStream = async (stream: "navi" | "nia") => {
+      const existing = latestSnapshot(stream);
       // Attach no longer replays the full durable log, so an existing durable
       // snapshot must be re-published to the live sink or the UI would never
       // see it after a restart. Republish it verbatim instead of inventing a
       // fresh estimate; if it lacks a context window the meter cannot render,
       // so fall through and compute a usable one below.
       if (existing && (existing.contextWindow ?? 0) > 0) {
-        publishExistingSnapshot(existing);
-        continue;
+        publishExistingSnapshot(stream, existing);
+        return;
       }
       const messages =
-        channel === "navi"
+        stream === "navi"
           ? naviChatProviderMessagesFromHistory(exec)
           : niaChatProviderMessagesFromHistory(exec);
-      if (!messages.length) continue;
-      const streamMeter =
-        channel === "navi" ? exec.naviTokenMeter : exec.niaTokenMeter;
-      const contextWindow = await chatContextWindow(channel);
+      if (!messages.length) return;
+      const streamMeter = stream === "navi" ? exec.naviTokenMeter : exec.niaTokenMeter;
+      const profile =
+        stream === "navi"
+          ? exec.naviChatModelProfile?.normal
+          : exec.niaChatModelProfile?.normal;
+      const config = ctx.ports.getTsRuntimeConfig();
+      let contextWindow = exec.runtimeContextConfig.max;
+      if (config && exec.provider) {
+        try {
+          const budget = await ctx.ports.resolveContextStatusConfig(
+            config,
+            exec.provider,
+            ctx.ports.getContextWindowResolver(),
+            ctx.ports.modelRefKeyForSelection(undefined, profile),
+          );
+          contextWindow = budget.max;
+        } catch {
+          contextWindow = exec.runtimeContextConfig.max;
+        }
+      }
       streamMeter.measureRequest("stream", {
         tools: undefined,
         messages,
         contextWindow,
       });
       const projection = streamMeter.project("stream");
-      publishSnapshot({
-        channel,
+      publishSnapshot(stream, {
         usedTokens:
           projection.projectedTokens ??
           projection.pressureTokens ??
@@ -205,7 +190,9 @@ export function createSessionAttach(ctx: RuntimeContext) {
         contextWindow,
         source: projection.source,
       });
-    }
+    };
+    await seedStream("navi");
+    await seedStream("nia");
 
     const byAgent = new Map<string, TokenMeterMessage[]>();
     for (const event of exec.session.events) {
@@ -232,9 +219,11 @@ export function createSessionAttach(ctx: RuntimeContext) {
       }
     }
     for (const [agentID, messages] of byAgent) {
+      // Subagents publish to the main lane's event, distinguished by agentID —
+      // never by a stream channel.
       const existing = latestSnapshot(undefined, agentID);
       if (existing && (existing.contextWindow ?? 0) > 0) {
-        publishExistingSnapshot(existing);
+        publishExistingSnapshot(undefined, existing);
         continue;
       }
       if (!messages.length) continue;
@@ -245,7 +234,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
         contextWindow: exec.runtimeContextConfig.max,
       });
       const projection = meter.project(scope);
-      publishSnapshot({
+      publishSnapshot(undefined, {
         agentID,
         usedTokens:
           projection.projectedTokens ??

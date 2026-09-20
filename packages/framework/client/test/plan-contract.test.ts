@@ -709,6 +709,23 @@ test("work_graph_query resolves a plan path and paginates the graph", async () =
 
 test("record_validation runs a command and writes evidence", async () => {
   const root = await officialPluginWorkspace("plan-contract-validation");
+  // EI E2: the recorded evidence stamps the workspace repository refs. A seed
+  // commit gives this temp workspace a HEAD; without git the refs stay absent.
+  const git = (args: string[]) =>
+    Bun.spawnSync(["git", ...args], {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  git(["init", "-q"]);
+  git(["config", "user.email", "test@example.com"]);
+  git(["config", "user.name", "test"]);
+  await writeFile(join(root, "refs-seed.txt"), "seed");
+  git(["add", "refs-seed.txt"]);
+  const committed = git(["commit", "-q", "-m", "seed"]).success;
+  const gitHead = committed
+    ? git(["rev-parse", "HEAD"]).stdout.toString().trim()
+    : undefined;
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
@@ -764,6 +781,9 @@ test("record_validation runs a command and writes evidence", async () => {
     objective: "the runtime package typechecks",
     status: "validated",
   });
+  if (gitHead !== undefined) {
+    expect(evidence[0]).toMatchObject({ commit: gitHead });
+  }
   await client.dispose?.();
 }, 30_000);
 
