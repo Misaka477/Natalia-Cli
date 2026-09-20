@@ -1,3 +1,4 @@
+import type { ContextEntry, ProviderUsageView } from "@natalia/runtime";
 import type {
   CompactionService,
   ContextLedgerFactory,
@@ -17,8 +18,8 @@ import type {
 import {
   TokenMeter,
   contextEntriesToProviderMessages,
-  DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
   requestHeaderKey,
+  type ContextBudget,
 } from "@natalia/runtime";
 import { createInitializeRuntime } from "./runtime";
 
@@ -150,9 +151,14 @@ export async function createSubagentSupport(
     system: string,
     task: string,
     planPointer?: { planID: string; documentPath: string; version: number },
+    forkSeed?: { entries: readonly ContextEntry[] },
   ) {
     const ledger = resolvedContextLedgerFactory.create();
     ledger.add({ id: "system", role: "system", content: system });
+    // A forked child inherits the completed turns of its parent's conversation
+    // before its own task, so it can continue work in progress rather than
+    // re-deriving it from a one-line description.
+    for (const entry of forkSeed?.entries ?? []) ledger.add(entry);
     ledger.add({ id: "task", role: "user", content: task });
     // ADR D4/B2: the plan正文 is never injected — the subagent reads the plan
     // file itself with read_file. Only the low-churn pointer (planID + path +
@@ -165,6 +171,37 @@ export async function createSubagentSupport(
         content: `<runtime_context source="plan_ptr" trust="runtime" revision="1">\nThe session has an active plan you must follow:\nplanID: ${planPointer.planID} · version: ${planPointer.version}\npath: ${planPointer.documentPath}\nRead the plan file with read_file before acting on it. If the path is missing or the read fails, say so instead of guessing the plan.\n</runtime_context>`,
       });
     return ledger;
+  }
+  /**
+   * The live ledger of every subagent currently inside a run.
+   *
+   * Steering a running child means appending to this, because the child's
+   * provider messages are rebuilt from the ledger on every step — so a message
+   * added here is in front of the child at its nearest step, and nowhere else
+   * can put it there. The map is dropped when the run ends, which is why a
+   * message that arrives with no entry is queued on the record instead.
+   */
+  const liveSubagentLedgers = new Map<string, RuntimeContextLedger>();
+  /** First call registers the ledger; later calls return it for steering. */
+  function registerSubagentLedger(
+    agentId: string,
+    ledger: RuntimeContextLedger,
+  ) {
+    if (!liveSubagentLedgers.has(agentId))
+      liveSubagentLedgers.set(agentId, ledger);
+    return liveSubagentLedgers.get(agentId)!;
+  }
+  function unregisterSubagentLedger(agentId: string) {
+    liveSubagentLedgers.delete(agentId);
+  }
+  /** Queue a message for a subagent that has no live runner. */
+  function queueSubagentMessage(agentId: string, message: string) {
+    const record = subagents?.get(agentId);
+    if (!record) return false;
+    const pending = [...(record.pendingMessages ?? []), message];
+    // The record is persisted by the store, so the message survives the child's
+    // next continuation rather than living only in this process.
+    return subagents?.setPendingMessages?.(agentId, pending) ?? false;
   }
   const tokenMeters = new WeakMap<RuntimeContextLedger, TokenMeter>();
   function tokenMeterFor(ledger: RuntimeContextLedger): TokenMeter {
@@ -223,7 +260,7 @@ export async function createSubagentSupport(
     ledger: RuntimeContextLedger,
     runner: SubagentRunnerContext,
     tools: RuntimeTool[],
-    contextConfig: { max: number; thresholdPercent: number; reserved: number },
+    contextConfig: ContextBudget,
   ): number {
     const meter = tokenMeterFor(ledger);
     const measured = meter.measureRequest(`subagent:${runner.agentId}`, {
@@ -240,11 +277,7 @@ export async function createSubagentSupport(
     runner: SubagentRunnerContext,
     step: number,
     activeProvider: StreamingProvider,
-    activeContextConfig: {
-      max: number;
-      thresholdPercent: number;
-      reserved: number;
-    },
+    activeContextConfig: ContextBudget,
     allowToolCalls = true,
   ) {
     const id = subagentTurnID(runner);
@@ -257,7 +290,13 @@ export async function createSubagentSupport(
           const calls: ProviderToolCall[] = [];
           let protocolViolation = "";
           let providerUsage:
-            | { inputTokens: number; outputTokens: number }
+            | Pick<
+                ProviderUsageView,
+                | "inputTokens"
+                | "outputTokens"
+                | "cacheCreationInputTokens"
+                | "cacheReadInputTokens"
+              >
             | undefined;
           const providerMessages = subagentProviderMessages(ledger);
           const toolSchemas = subagentToolSchemas(visibleTools);
@@ -304,6 +343,18 @@ export async function createSubagentSupport(
               providerUsage = {
                 inputTokens: chunk.inputTokens,
                 outputTokens: chunk.outputTokens,
+                // Cache metrics are what say whether a subagent's prefix is being
+                // reused. Dropping them here left the subagent pane reporting
+                // full-price input on every step however warm its cache was, so
+                // nothing could tell a subagent from a bad one.
+                ...(chunk.cacheCreationInputTokens === undefined
+                  ? {}
+                  : {
+                      cacheCreationInputTokens: chunk.cacheCreationInputTokens,
+                    }),
+                ...(chunk.cacheReadInputTokens === undefined
+                  ? {}
+                  : { cacheReadInputTokens: chunk.cacheReadInputTokens }),
               };
           }
           if (providerUsage) {
@@ -326,6 +377,20 @@ export async function createSubagentSupport(
               id: `${id}:usage:${attempt}`,
               inputTokens: providerUsage.inputTokens,
               outputTokens: providerUsage.outputTokens,
+              // Forwarded rather than dropped: the event already carries them and
+              // the store already folds them, so this was the one link missing
+              // between a subagent's cache behaviour and its reported cost.
+              ...(providerUsage.cacheCreationInputTokens === undefined
+                ? {}
+                : {
+                    cacheCreationInputTokens:
+                      providerUsage.cacheCreationInputTokens,
+                  }),
+              ...(providerUsage.cacheReadInputTokens === undefined
+                ? {}
+                : {
+                    cacheReadInputTokens: providerUsage.cacheReadInputTokens,
+                  }),
             });
           }
           return { output, thinking, calls, protocolViolation };
@@ -360,19 +425,19 @@ export async function createSubagentSupport(
             : undefined,
         tools: toolSchemas,
         contextWindow: activeContextConfig.max,
+        // The exec budget carries the preserved tail and prune options; the
+        // subagent no longer reads raw config for its own copy (plan §2.3).
         budget: activeContextConfig,
-        preserve: {
-          recentMessages:
-            scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
-          recentTokens:
-            scope.tsRuntimeConfig?.context.preservedRecentTokens ?? 0,
-        },
+        // Prune once per subagent turn, on its first provider request. A
+        // per-request prune would rewrite the ledger between requests and
+        // invalidate the prefix cache each of them just wrote.
+        prune: step === 1,
         outbound: providerMessages,
         rebuildOutbound: (
           entries: Parameters<typeof contextEntriesToProviderMessages>[0],
         ) => contextEntriesToProviderMessages(entries),
-        // Subagents now share the model-free prune path with the main runner.
-        pruneOptions: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
+        // Subagents share the model-free prune path with the main runner; the
+        // prune options and preserved tail come from the exec budget.
         provider: activeProvider,
         instruction:
           "Compact before this subagent provider request while preserving the active task.",
@@ -394,12 +459,9 @@ export async function createSubagentSupport(
         ledger,
         provider: activeProvider,
         budget: activeContextConfig,
-        preservedRecentMessages:
-          scope.tsRuntimeConfig?.context.preservedRecentMessages ?? 2,
-        preservedRecentTokens:
-          scope.tsRuntimeConfig?.context.preservedRecentTokens ?? 0,
-        maxOverflowRetries:
-          scope.tsRuntimeConfig?.context.maxOverflowRetries ?? 1,
+        preservedRecentMessages: activeContextConfig.preservedRecentMessages,
+        preservedRecentTokens: activeContextConfig.preservedRecentTokens,
+        maxOverflowRetries: activeContextConfig.maxOverflowRetries,
         instruction: "Recover this subagent from the provider context limit.",
         signal: runner.signal,
         runStep,
@@ -453,6 +515,7 @@ export async function createSubagentSupport(
       });
     return result;
   }
+
   function appendSubagentAssistant(
     ledger: RuntimeContextLedger,
     runner: SubagentRunnerContext,
@@ -496,6 +559,10 @@ export async function createSubagentSupport(
     beginSubagentConversation,
     finishSubagentConversation,
     createSubagentContext,
+    registerSubagentLedger,
+    unregisterSubagentLedger,
+    queueSubagentMessage,
+    liveSubagentLedgerCount: () => liveSubagentLedgers.size,
     runSubagentProviderStep,
     appendSubagentAssistant,
     appendSubagentToolResult,

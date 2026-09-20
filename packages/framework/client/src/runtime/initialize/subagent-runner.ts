@@ -1,6 +1,7 @@
 import type {
   InitializeOptions,
   RuntimeContext,
+  RuntimeContextLedger,
   RuntimeEvent,
   SandboxService,
   SessionExecutionState,
@@ -11,6 +12,15 @@ import type {
   SubagentsService,
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
+import { ensureUsableResult } from "./subagent-result-gate";
+import { forkSeedEntries } from "./subagent-fork-seed";
+import { parentMessageContent } from "./subagent-steer";
+import {
+  DEFAULT_SETTLED_NOTICE_BUDGET,
+  settledNoticeAllowed,
+  settledNoticeEntryID,
+  subagentSettledNoticeContent,
+} from "./subagent-settled-notice";
 import { activePlanForExec } from "../collaboration/plan-doc-runtime";
 
 /**
@@ -31,6 +41,23 @@ function subagentPlanPointer(ctx: RuntimeContext, exec: SessionExecutionState) {
     // needs a stable, honest value, and the plan file read carries the truth.
     version: 1,
   };
+}
+
+/**
+ * The system prompt for a subagent spawned as a configured agent type.
+ *
+ * The type's own prompt replaces the generic one rather than being appended to
+ * it: a type exists to say "you are this kind of worker", and a generic
+ * instruction bolted in front of it dilutes exactly that. `undefined` when the
+ * subagent was not spawned as a type, so the generic prompt still applies.
+ */
+function agentTypeSystemPrompt(
+  scope: ReturnType<typeof createInitializeRuntime>,
+  agentType: string | undefined,
+): string | undefined {
+  if (!agentType) return undefined;
+  const definition = scope.agentRegistry?.get(agentType);
+  return definition?.systemPrompt || undefined;
 }
 
 export async function installSubagents(
@@ -62,11 +89,79 @@ export async function installSubagents(
     beginSubagentConversation,
     finishSubagentConversation,
     createSubagentContext,
+    registerSubagentLedger,
+    unregisterSubagentLedger,
+    queueSubagentMessage,
+    liveSubagentLedgerCount,
     runSubagentProviderStep,
     appendSubagentAssistant,
     appendSubagentToolResult,
     executeSubagentToolCall,
   } = support;
+  /**
+   * Adopt the ledger this subagent's run writes to, so a parent can steer it.
+   *
+   * The ledger is registered before the run begins and dropped when it ends,
+   * which is what makes "is there a live runner" a fact rather than a guess from
+   * the recorded status. Messages the parent queued while no runner was live are
+   * drained here, before the first step, so nothing sent during a gap is lost.
+   */
+  /**
+   * Drop a subagent's live ledger and steer hook when its run ends.
+   *
+   * Until this runs the child is steerable; after it a message queues instead.
+   * Leaving either in place would let a parent steer a subagent whose ledger no
+   * longer exists, which would look like a delivery that went nowhere.
+   */
+  function releaseSubagentSteering(runner: SubagentRunnerContext) {
+    unregisterSubagentLedger(runner.agentId);
+    subagentsController.setSteerHook?.(runner.agentId, undefined);
+  }
+
+  function adoptSubagentLedger(
+    runner: SubagentRunnerContext,
+    record:
+      | {
+          id: string;
+          pendingMessages?: string[];
+          parentAgentID?: string;
+        }
+      | undefined,
+    create: () => RuntimeContextLedger,
+  ): RuntimeContextLedger {
+    const ledger = create();
+    registerSubagentLedger(runner.agentId, ledger);
+    // Live-delivery hook: a message appended here is in front of the child at its
+    // nearest step, because its provider messages are rebuilt from this ledger
+    // every step. Registered for the run and dropped with it.
+    subagentsController.setSteerHook?.(runner.agentId, (message) => {
+      ledger.add({
+        id: `steer:${runner.agentId}:${ledger.snapshot().entries.length + 1}`,
+        role: "dynamic",
+        content: parentMessageContent(
+          record?.parentAgentID ?? "parent",
+          runner.agentId,
+          message,
+        ),
+      });
+      return "delivered";
+    });
+    for (const message of record?.pendingMessages ?? []) {
+      ledger.add({
+        id: `pending:${runner.agentId}:${ledger.snapshot().entries.length + 1}`,
+        role: "dynamic",
+        content: parentMessageContent(
+          record?.id ?? "parent",
+          runner.agentId,
+          message,
+        ),
+      });
+    }
+    if (record?.pendingMessages?.length)
+      subagentsController.setPendingMessages(runner.agentId, []);
+    return ledger;
+  }
+
   async function runSandboxedSubagent(
     task: string,
     runner: SubagentRunnerContext,
@@ -78,6 +173,7 @@ export async function installSubagents(
       await runSandboxedSubagentInner(task, runner, exec, activeProvider);
     } finally {
       releaseSandboxedSubagentSlot();
+      releaseSubagentSteering(runner);
     }
   }
   async function runSandboxedSubagentInner(
@@ -119,11 +215,21 @@ export async function installSubagents(
     runner.log(`accepted (sandboxed): ${task}`);
     runner.setStatus("running");
     beginSubagentConversation(runner, task);
-    const ledger = createSubagentContext(
-      scope.teamBehavior()?.sandboxedSubagentSystemPrompt(writePaths) ??
-        "You are a focused Natalia TS/Bun subagent. Use the provided native tools to inspect, edit, and validate the workspace. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
-      task,
-      subagentPlanPointer(ctx, exec),
+    const ledger = adoptSubagentLedger(runner, record, () =>
+      createSubagentContext(
+        scope.teamBehavior()?.sandboxedSubagentSystemPrompt(writePaths) ??
+          agentTypeSystemPrompt(scope, record.agentType) ??
+          "You are a focused Natalia TS/Bun subagent. Use the provided native tools to inspect, edit, and validate the workspace. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
+        task,
+        subagentPlanPointer(ctx, exec),
+        // A fork inherits the parent's completed turns; a fresh subagent gets
+        // nothing but its task. The seed comes from the *parent's* ledger — the
+        // `exec` this runner resolves — so it is the conversation the child is
+        // meant to continue.
+        record?.context === "fork"
+          ? { entries: forkSeedEntries(exec.context.snapshot().entries) }
+          : undefined,
+      ),
     );
     const repeatedCalls = new Map<string, number[]>();
     const maxSubagentSteps = scope.effectiveMaxSteps(exec);
@@ -154,11 +260,32 @@ export async function installSubagents(
         !isLastStep,
       );
       if (!calls.length || isLastStep) {
+        // A one-word answer leaves the parent with nothing to act on, so give
+        // it one turn to say more before settling for it.
+        const usable = await ensureUsableResult({
+          ledger,
+          setStatus: runner.setStatus,
+          step,
+          output,
+          minChars: scope.tsRuntimeConfig?.runtime.subagentMinResultChars ?? 0,
+          // No tools: a follow-up that could start new work would spend the
+          // budget again instead of reporting what it already did.
+          runStep: (extraStep) =>
+            runSubagentProviderStep(
+              ledger,
+              [],
+              runner,
+              extraStep,
+              activeProvider,
+              activeContextConfig,
+              false,
+            ),
+        });
         const finalOutput =
-          output.trim() ||
+          usable.trim() ||
           (isLastStep || step > 1
             ? scope.MISSING_FINAL_RESPONSE_FALLBACK
-            : output);
+            : usable);
         appendSubagentAssistant(ledger, runner, step, finalOutput, []);
         if (isLastStep && calls.length)
           publishSubagentEvent(runner, {
@@ -181,6 +308,7 @@ export async function installSubagents(
         }
         runner.log(finalOutput.trim() || "completed without text output");
         finishSubagentConversation(runner, "done");
+        releaseSubagentSteering(runner);
         return;
       }
       appendSubagentAssistant(ledger, runner, step, output, calls);
@@ -214,10 +342,20 @@ export async function installSubagents(
         return await runSandboxedSubagent(task, runner, exec, activeProvider);
       const allowed = record?.allowedTools ?? [];
       const excluded = new Set(record?.excludeTools ?? []);
-      const ledger = createSubagentContext(
-        "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. When a tool is needed, call it through the provider's native structured tool-calling interface; never write XML, JSON, Markdown, or prose that imitates a tool call in assistant content. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
-        task,
-        subagentPlanPointer(ctx, exec),
+      const ledger = adoptSubagentLedger(runner, record, () =>
+        createSubagentContext(
+          agentTypeSystemPrompt(scope, record.agentType) ??
+            "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. When a tool is needed, call it through the provider's native structured tool-calling interface; never write XML, JSON, Markdown, or prose that imitates a tool call in assistant content. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
+          task,
+          subagentPlanPointer(ctx, exec),
+          // A fork inherits the parent's completed turns; a fresh subagent gets
+          // nothing but its task. The seed comes from the *parent's* ledger —
+          // the `exec` this runner resolves — so it is the conversation the
+          // child is meant to continue.
+          record?.context === "fork"
+            ? { entries: forkSeedEntries(exec.context.snapshot().entries) }
+            : undefined,
+        ),
       );
       const repeatedCalls = new Map<string, number[]>();
       runner.log(`accepted: ${task}`);
@@ -250,11 +388,31 @@ export async function installSubagents(
           !isLastStep,
         );
         if (!calls.length || isLastStep) {
+          // A one-word answer leaves the parent with nothing to act on, so give
+          // it one turn to say more before settling for it.
+          const usable = await ensureUsableResult({
+            ledger,
+            setStatus: runner.setStatus,
+            step,
+            output,
+            minChars:
+              scope.tsRuntimeConfig?.runtime.subagentMinResultChars ?? 0,
+            runStep: (extraStep) =>
+              runSubagentProviderStep(
+                ledger,
+                [],
+                runner,
+                extraStep,
+                activeProvider,
+                activeContextConfig,
+                false,
+              ),
+          });
           const finalOutput =
-            output.trim() ||
+            usable.trim() ||
             (isLastStep || step > 1
               ? scope.MISSING_FINAL_RESPONSE_FALLBACK
-              : output);
+              : usable);
           appendSubagentAssistant(ledger, runner, step, finalOutput, []);
           if (isLastStep && calls.length)
             publishSubagentEvent(runner, {
@@ -277,6 +435,7 @@ export async function installSubagents(
           }
           runner.log(finalOutput.trim() || "completed without text output");
           finishSubagentConversation(runner, "done");
+          releaseSubagentSteering(runner);
           return;
         }
         appendSubagentAssistant(ledger, runner, step, output, calls);
@@ -300,6 +459,7 @@ export async function installSubagents(
         runner,
         runner.signal.aborted ? "cancelled" : "error",
       );
+      releaseSubagentSteering(runner);
       throw error;
     }
   });
@@ -341,5 +501,64 @@ export async function installSubagents(
     );
     if (event.event === "created" || event.event === "done")
       scope.scheduleRuntimeStatusSnapshot();
+    // A subagent settles whenever it likes, and the turn that spawned it is
+    // usually elsewhere by then — so the outcome is written into the parent's
+    // ledger as runtime context rather than left for it to poll for.
+    if (event.event === "done" || event.event === "stopped")
+      reportSubagentSettled(event);
   });
+
+  /**
+   * Write one terminal outcome into the spawning session's ledger.
+   *
+   * The entry id is stable per subagent and continuation, so a re-settled
+   * continuation replaces its earlier notice instead of stacking duplicates, and
+   * the budget caps how much of a session's context the notices may consume.
+   */
+  function reportSubagentSettled(event: {
+    agentId: string;
+    status: string;
+    parentSessionID?: string;
+    continuation?: number;
+    stopReason?: string;
+  }) {
+    if (!event.parentSessionID) return;
+    const exec = scope.executionBySession.get(
+      event.parentSessionID as SessionID,
+    );
+    if (!exec) return;
+    const continuation = event.continuation ?? 0;
+    const entryID = settledNoticeEntryID(event.agentId, continuation);
+    // The ledger rejects a duplicate id, so an already-reported continuation is
+    // skipped rather than rewritten: the outcome has not changed.
+    if (exec.context.snapshot().entries.some((entry) => entry.id === entryID))
+      return;
+    const existing = exec.context
+      .snapshot()
+      .entries.filter((entry) =>
+        entry.id.startsWith("subagent_settled:"),
+      ).length;
+    if (
+      !settledNoticeAllowed(
+        existing,
+        scope.tsRuntimeConfig?.runtime.subagentSettledNotices ??
+          DEFAULT_SETTLED_NOTICE_BUDGET,
+      )
+    )
+      return;
+    const record = subagentsController.get(event.agentId);
+    exec.context.add({
+      id: entryID,
+      role: "dynamic",
+      content: subagentSettledNoticeContent({
+        agentId: event.agentId,
+        status: event.status,
+        continuation,
+        ...(event.stopReason ? { stopReason: event.stopReason } : {}),
+        // The subagent's own last output, so the parent does not have to make a
+        // second call to learn what it got.
+        finalResult: record?.outputs.at(-1)?.text,
+      }),
+    });
+  }
 }
