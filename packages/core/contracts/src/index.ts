@@ -2,6 +2,7 @@ export * from "./capabilities";
 export * from "./constitution";
 export * from "./events";
 export * from "./failures";
+export * from "./interactive";
 export * from "./permission-families";
 export * from "./refusals";
 export * from "./schemas";

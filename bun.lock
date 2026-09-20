@@ -80,7 +80,6 @@
       "name": "@natalia/contracts",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/ui-model": "workspace:*",
         "zod": "3.25.76",
       },
     },
@@ -426,6 +425,9 @@
     "packages/hosts/ui-model": {
       "name": "@natalia/ui-model",
       "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
     },
     "packages/hosts/view-store": {
       "name": "@natalia/view-store",

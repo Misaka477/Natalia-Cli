@@ -1,56 +1,21 @@
-export type ApprovalDecision = "once" | "session" | "reject";
+import type {
+  ApprovalDecision,
+  ApprovalRequest,
+  ApprovalResponse,
+  QuestionItem,
+  QuestionOption,
+  QuestionRequest,
+  QuestionResponse,
+} from "@natalia/contracts";
 
-export type ApprovalRequest = {
-  id: string;
-  title: string;
-  preview: string;
-  detail?: string;
-  keyArguments?: string[];
-  sensitive?: boolean;
-  risk?: "terminal_low" | "terminal_high";
-  scope?: string;
-  expiresAt?: string;
-  revocable?: boolean;
-  /** False hides the session-wide grant action for forced approvals. */
-  allowSession?: boolean;
-};
-
-export type ApprovalResponse = {
-  requestID: string;
-  decision: ApprovalDecision;
-  feedback?: string;
-  /** Optional routing hints for multi-workspace clients. */
-  sessionID?: string;
-  workspaceID?: string;
-};
-
-export type QuestionOption = {
-  label: string;
-  description?: string;
-};
-
-export type QuestionItem = {
-  id: string;
-  header: string;
-  question: string;
-  options: QuestionOption[];
-  multiple?: boolean;
-  custom?: boolean;
-};
-
-export type QuestionRequest = {
-  id: string;
-  title: string;
-  questions: QuestionItem[];
-};
-
-export type QuestionResponse = {
-  requestID: string;
-  answers: string[][];
-  rejected?: boolean;
-  /** Optional routing hints for multi-workspace clients. */
-  sessionID?: string;
-  workspaceID?: string;
+export type {
+  ApprovalDecision,
+  ApprovalRequest,
+  ApprovalResponse,
+  QuestionItem,
+  QuestionOption,
+  QuestionRequest,
+  QuestionResponse,
 };
 
 // ---------------------------------------------------------------------------

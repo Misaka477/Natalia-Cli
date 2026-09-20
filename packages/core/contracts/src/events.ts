@@ -2,7 +2,7 @@ import type {
   ApprovalResponse,
   QuestionItem,
   QuestionResponse,
-} from "@natalia/ui-model";
+} from "./interactive";
 import type {
   AgentConfig,
   AgentPermissionRules,
@@ -10,7 +10,6 @@ import type {
   MCPServerConfig,
   PermissionProfile,
 } from "./schemas";
-export type { ApprovalResponse, QuestionResponse } from "@natalia/ui-model";
 
 export type SessionID = `ses_${string}`;
 export type EpisodeID = `epi_${string}`;
