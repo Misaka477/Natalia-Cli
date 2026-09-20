@@ -6,6 +6,7 @@ import {
   saveNataliaLock,
   setPluginEnabled,
   uninstallPlugin,
+  type PackageManagerRun,
 } from "@natalia/installer";
 import { cp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -53,11 +54,23 @@ type PluginRuntime = Pick<
   "pluginInstall" | "pluginUninstall" | "pluginSetEnabled" | "pluginCatalog"
 >;
 
-export function createPluginRuntime(ctx: RuntimeContext): PluginRuntime {
+export function createPluginRuntime(
+  ctx: RuntimeContext,
+  seams?: { runPackageManager?: PackageManagerRun },
+): PluginRuntime {
   async function requirePluginStore(): Promise<string> {
     if (!ctx.state.pluginStoreRoot)
       throw new Error("plugin store is not configured for this runtime");
     return ctx.state.pluginStoreRoot;
+  }
+
+  // Every plugin mutation reconciles the live plugin set on a config reload.
+  // Refuse while a turn is running or an approval/question is pending so the
+  // reload cannot tear a plugin out from under a live execution — and, for
+  // uninstall, so files are never deleted for a reload that then gets blocked.
+  function assertPluginMutationAllowed(): void {
+    const blocked = ctx.ports.configReloadBlockedReason?.();
+    if (blocked) throw new Error(blocked);
   }
 
   return {
@@ -70,6 +83,7 @@ export function createPluginRuntime(ctx: RuntimeContext): PluginRuntime {
     },
     async pluginInstall(input) {
       const pluginStoreRoot = await requirePluginStore();
+      assertPluginMutationAllowed();
       const official = OFFICIAL_PLUGIN_PACKAGES.find(
         (plugin) => plugin.packageName === input.spec,
       );
@@ -79,21 +93,40 @@ export function createPluginRuntime(ctx: RuntimeContext): PluginRuntime {
             pluginStoreRoot,
             spec: input.spec,
             workspaceRoot: ctx.ports.getWorkspaceRoot(),
+            runPackageManager: seams?.runPackageManager,
           });
       await ctx.ports.reloadConfigFromDisk?.();
       return result;
     },
     async pluginUninstall(input) {
       const pluginStoreRoot = await requirePluginStore();
+      // Uninstall is a delete-then-reload transaction: `uninstallPlugin`
+      // removes the package and its lock entry, and only the subsequent config
+      // reload actually unloads the plugin from the runtime. Refuse while a
+      // turn is running or an approval/question is pending — otherwise the
+      // reload is blocked and the files are already gone, leaving a plugin
+      // running in memory with no package on disk (audit finding B-01).
+      assertPluginMutationAllowed();
       const result = await uninstallPlugin({
         pluginStoreRoot,
         pluginID: input.pluginID,
+        runPackageManager: seams?.runPackageManager,
       });
-      await ctx.ports.reloadConfigFromDisk?.();
+      // The files are already deleted; the reload is what releases the plugin.
+      // If it did not apply, the runtime still holds a plugin whose package is
+      // gone — surface that instead of reporting a clean uninstall.
+      const reload = await ctx.ports.applyConfigFromDisk?.();
+      if (reload && !reload.applied) {
+        throw new Error(
+          reload.reason ??
+            `plugin ${input.pluginID} was removed from disk but the runtime did not unload it`,
+        );
+      }
       return result;
     },
     async pluginSetEnabled(input) {
       const pluginStoreRoot = await requirePluginStore();
+      assertPluginMutationAllowed();
       const result = await setPluginEnabled({
         pluginStoreRoot,
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
