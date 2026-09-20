@@ -44,6 +44,18 @@ export type SessionExecutionState = {
   selectedModel?: { modelID?: string; variant?: string };
   reasoningEffort?: RuntimeReasoningEffort;
   lastProviderUsage?: { inputTokens: number; outputTokens: number };
+  /**
+   * Calendar date this session's execution state was first built, fixed for the
+   * session's life. It is snapshotted rather than read per request so the model
+   * never sees two contradictory dates for when the session began.
+   */
+  sessionStartedAt: string;
+  /**
+   * The date the session's history currently reflects. Rolls forward when the
+   * day changes under a long-running session, which appends one `dynamic` notice
+   * rather than rewriting anything already said.
+   */
+  currentDate: string;
   activeSkill?: SkillMetadata;
   endTurnWaitingHuman?: { terminalID: string; reason: string };
   lastSubmitted?: SubmittedTurn;

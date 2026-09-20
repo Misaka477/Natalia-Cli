@@ -139,6 +139,13 @@ export function createTurnRunner(
         exec.selectedAgent = agent;
         if (exec === activeExec) setSelectedAgent(agent);
       },
+      // The session's date, snapshotted when its execution state was built and
+      // rolled forward only by appending a notice — never by rewriting history.
+      sessionStartedAt: () => exec.sessionStartedAt,
+      sessionCurrentDate: () => exec.currentDate,
+      recordSessionDate: (date) => {
+        exec.currentDate = date;
+      },
       pendingAgent: () => exec.pendingAgent,
       setPendingAgent: (agent) => {
         exec.pendingAgent = agent;

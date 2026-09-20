@@ -13,6 +13,8 @@ import {
 } from "@natalia/config";
 import { modelRefKey, parseModelRef, type ModelRef } from "@natalia/contracts";
 import {
+  assertContextBudgetInvariants,
+  DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
   knownModelOutputLimit,
   modelsDevModelLimits,
   providerForModel,
@@ -51,6 +53,13 @@ export function defaultContextStatusConfig(): RuntimeContextStatusConfig {
     max,
     thresholdPercent: Number(process.env.NATALIA_CONTEXT_THRESHOLD ?? 85),
     reserved: Math.max(1, reserved.tokens),
+    reservedSource: reserved.source,
+    // Schema defaults, applied here so a pre-config default is still a complete
+    // budget rather than a partially-filled one (plan §2.3).
+    preservedRecentMessages: 10,
+    preservedRecentTokens: 0,
+    maxOverflowRetries: 1,
+    prune: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
   };
 }
 
@@ -60,7 +69,24 @@ async function resolveContextStatusConfig(
   resolver: ContextWindowResolver,
   selectedRef?: string,
 ) {
-  if (!selectedRef && !config.defaultModel) return defaultContextStatusConfig();
+  // The policy half of the budget always comes from the workspace config, even
+  // when no model was selected (window/reserve then fall back to the env
+  // default). Otherwise a workspace that lowers `preservedRecentMessages` would
+  // be silently ignored by every stream (plan §2.3).
+  const applyPolicy = (
+    base: RuntimeContextStatusConfig,
+  ): RuntimeContextStatusConfig => {
+    const budget: RuntimeContextStatusConfig = {
+      ...base,
+      preservedRecentMessages: config.context.preservedRecentMessages,
+      preservedRecentTokens: config.context.preservedRecentTokens,
+      maxOverflowRetries: config.context.maxOverflowRetries,
+    };
+    assertContextBudgetInvariants(budget);
+    return budget;
+  };
+  if (!selectedRef && !config.defaultModel)
+    return applyPolicy(defaultContextStatusConfig());
   const resolveStart = performance.now();
   const mark = (name: string) =>
     perfLog(
@@ -70,7 +96,7 @@ async function resolveContextStatusConfig(
     config,
     selectedRef ?? config.defaultModel!,
   );
-  if (!effective) return defaultContextStatusConfig();
+  if (!effective) return applyPolicy(defaultContextStatusConfig());
   mark("effective");
   const executingModel = provider?.model ?? effective.ref.model;
   const selectionMatchesProvider = executingModel === effective.ref.model;
@@ -124,7 +150,7 @@ async function resolveContextStatusConfig(
     contextWindow.tokens,
     effective.limits.inputLimit ?? contextWindow.tokens,
   );
-  return {
+  const budget: RuntimeContextStatusConfig = {
     max: effectiveWindow,
     thresholdPercent:
       effective.limits.compactionThresholdPercent ??
@@ -135,7 +161,17 @@ async function resolveContextStatusConfig(
         ? reserved.tokens
         : Math.min(20_000, reserved.tokens),
     ),
+    reservedSource: reserved.source,
+    // `applyPolicy` below fills the preserved-recent / overflow policy from the
+    // workspace config for every return path (plan §2.3).
+    preservedRecentMessages: config.context.preservedRecentMessages,
+    preservedRecentTokens: config.context.preservedRecentTokens,
+    maxOverflowRetries: config.context.maxOverflowRetries,
+    prune: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
   };
+  // Config-time invariant: a preserved tail above the compaction threshold can
+  // never be satisfied, so reject it here instead of spinning at runtime.
+  return applyPolicy(budget);
 }
 
 function shouldProbeProviderMetadata(baseURL?: string) {

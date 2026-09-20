@@ -28,6 +28,7 @@ import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
 import { filterRuntimeRetainedEvents } from "../session-event-retention";
 import { perfLog } from "@natalia/runtime-services";
+import { today } from "@natalia/runtime";
 
 const MAX_IDLE_SESSION_EXECUTIONS = Math.max(
   64,
@@ -319,9 +320,17 @@ export function createSessionExecution(
       checkpointHasSummary,
       fastPath,
     });
+    // Snapshotted before the state is built so the restore path below can reuse
+    // it for the resumed session rather than re-reading the clock.
+    const sessionDate = today();
     const exec: SessionExecutionState = {
       session: loaded,
       context: execContext,
+      // The session's date is snapshotted here, on the one path that builds the
+      // state, so a later session-resume reuses the value its history was
+      // recorded against rather than re-reading the clock.
+      sessionStartedAt: sessionDate,
+      currentDate: sessionDate,
       attachmentReferences: new Map(
         projection.replayableEvents.flatMap((event) =>
           event.type === "turn.submitted" && event.attachments?.length

@@ -20,6 +20,7 @@ import {
 } from "../session-project-client";
 import type { InitializeScope } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";
+import { today } from "@natalia/runtime";
 
 type LoadedSession = Awaited<ReturnType<SessionStoreController["load"]>>;
 type RecoveryView = NonNullable<LoadedSession["recovery"]>;
@@ -149,9 +150,14 @@ export class SessionRecoveryCoordinator {
     const durableEventCount = await this.sessionStore
       .eventCount(scope.sessionID)
       .catch(() => session.events.length);
+    // Same snapshot rule as the main path: the date is taken once, when the
+    // state is built, and reused rather than re-read on every request.
+    const sessionDate = today();
     const initialExec: SessionExecutionState = {
       session,
       context: scope.runtimeContext,
+      sessionStartedAt: sessionDate,
+      currentDate: sessionDate,
       attachmentReferences: scope.attachmentReferences,
       toolCalls: scope.toolCalls,
       provider: scope.provider,
