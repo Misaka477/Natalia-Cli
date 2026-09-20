@@ -9,7 +9,7 @@ import { recoverSession } from "./session-recovery";
 import { finalizeInitialize } from "./finalize";
 import { perfLog } from "@natalia/runtime-services";
 import {
-  loadProviderAdapterModules,
+  reloadProviderAdapterModules,
   providerAdapterModuleRequests,
 } from "@natalia/runtime";
 
@@ -32,7 +32,7 @@ export function createInitialize(
       // eagerly is what keeps the request path synchronous. A module that fails
       // is reported rather than thrown, so one broken adapter does not stop the
       // session from starting.
-      const adapterResults = await loadProviderAdapterModules({
+      const adapterResults = await reloadProviderAdapterModules({
         workspaceRoot: ctx.ports.getWorkspaceRoot(),
         requests: providerAdapterModuleRequests(config.runtimeConfig.providers),
       });

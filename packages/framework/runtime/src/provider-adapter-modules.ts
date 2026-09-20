@@ -18,6 +18,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   registerProviderAdapter,
+  unregisterProviderAdapters,
   type AnyProviderAdapter,
   type ProviderAdapterOptions,
 } from "./provider-adapters";
@@ -79,6 +80,12 @@ export interface ProviderAdapterModuleRequest {
 }
 
 /** The outcome of loading one module. */
+export interface ProviderAdapterModuleLoad {
+  readonly results: readonly ProviderAdapterModuleResult[];
+  /** Withdraw every adapter this call registered. */
+  withdraw(): void;
+}
+
 export interface ProviderAdapterModuleResult {
   readonly providerID: string;
   readonly module: string;
@@ -100,8 +107,9 @@ export interface ProviderAdapterModuleResult {
 export async function loadProviderAdapterModules(input: {
   workspaceRoot: string;
   requests: readonly ProviderAdapterModuleRequest[];
-}): Promise<ProviderAdapterModuleResult[]> {
+}): Promise<ProviderAdapterModuleLoad> {
   const results: ProviderAdapterModuleResult[] = [];
+  const registered: string[] = [];
   for (const request of input.requests) {
     try {
       const entry = validateProviderAdapterPath(
@@ -118,6 +126,7 @@ export async function loadProviderAdapterModules(input: {
             `declares "${request.format}"; they must match`,
         );
       registerProviderAdapter(adapter, entry);
+      registered.push(entry);
       results.push({ providerID: request.providerID, module: entry, ok: true });
     } catch (error) {
       results.push({
@@ -128,7 +137,39 @@ export async function loadProviderAdapterModules(input: {
       });
     }
   }
-  return results;
+  return {
+    results,
+    withdraw() {
+      // By module path, which is the source id each was registered under. A
+      // module that failed to load registered nothing, so withdrawing the ones
+      // that succeeded is exactly the whole set.
+      for (const entry of registered) unregisterProviderAdapters(entry);
+    },
+  };
+}
+
+/**
+ * The adapter modules currently registered, and the only way to replace them.
+ *
+ * Held here rather than by a caller because there are two: initialization loads
+ * them once, and a config reload must replace them when the configured set
+ * changes. A holder in each caller would let the two disagree about which
+ * modules are live — and `registerProviderAdapter` throws on a duplicate format,
+ * so a disagreement surfaces as a failed reload rather than a stale adapter.
+ */
+let currentLoad: ProviderAdapterModuleLoad | undefined;
+
+/**
+ * Load the configured adapter modules, withdrawing whatever a previous call
+ * loaded. Safe to call repeatedly, which is what a config reload needs.
+ */
+export async function reloadProviderAdapterModules(input: {
+  workspaceRoot: string;
+  requests: readonly ProviderAdapterModuleRequest[];
+}): Promise<readonly ProviderAdapterModuleResult[]> {
+  currentLoad?.withdraw();
+  currentLoad = await loadProviderAdapterModules(input);
+  return currentLoad.results;
 }
 
 /** Every module-provided format, for diagnostics and tests. */

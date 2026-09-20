@@ -19,6 +19,10 @@ import {
 import type { ConfigV3, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
+import {
+  providerAdapterModuleRequests,
+  reloadProviderAdapterModules,
+} from "@natalia/runtime";
 
 /**
  * The checkpoint factory owns per-session controllers; a config reload must
@@ -157,6 +161,7 @@ export function createConfigReload(
   }> {
     const {
       getWorkspaceRoot,
+      publish,
       getExecutionBySession,
       getTsRuntimeConfig,
       setTsRuntimeConfig,
@@ -250,6 +255,25 @@ export function createConfigReload(
       )
         await ensureBashCommandParser().catch(() => undefined);
       if (!options.provider) {
+        // Adapter modules track the configured set: without this, a reload that
+        // adds or removes an `endpointProtocol.module` leaves the old set live,
+        // and `providerForModel` below resolves a format from it. Withdrawing
+        // first also keeps the second load from tripping the duplicate-format
+        // guard, which would fail the reload rather than replace the adapter.
+        const adapterResults = await reloadProviderAdapterModules({
+          workspaceRoot: getWorkspaceRoot(),
+          requests: providerAdapterModuleRequests(tsConfig.config.providers),
+        });
+        for (const result of adapterResults) {
+          if (!result.ok)
+            publish({
+              type: "diagnostic",
+              level: "warning",
+              message:
+                `provider adapter module for "${result.providerID}" did not ` +
+                `load (${result.module}): ${result.error}`,
+            });
+        }
         const configured = providerForModel(
           tsConfig.config,
           getSelectedAgent()?.model ?? tsConfig.config.defaultModel,

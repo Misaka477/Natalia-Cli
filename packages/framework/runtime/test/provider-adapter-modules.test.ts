@@ -7,6 +7,7 @@ import {
   getProviderAdapter,
   loadProviderAdapterModules,
   providerAdapterModuleRequests,
+  reloadProviderAdapterModules,
   validateProviderAdapterPath,
   type ProviderAdapterOptions,
 } from "../src";
@@ -52,7 +53,7 @@ test("loads a local module and registers it under its declared format", async ()
     ],
   });
 
-  expect(results).toEqual([
+  expect(results.results).toEqual([
     { providerID: "mine", module: join(root, "adapters/mine.ts"), ok: true },
   ]);
   const adapter = getProviderAdapter("my-format");
@@ -119,8 +120,8 @@ test("a missing module is reported, not thrown", async () => {
     ],
   });
 
-  expect(results[0].ok).toBe(false);
-  expect(results[0].error).toBeTruthy();
+  expect(results.results[0].ok).toBe(false);
+  expect(results.results[0].error).toBeTruthy();
   expect(getProviderAdapter("gone-format")).toBeUndefined();
 });
 
@@ -133,8 +134,8 @@ test("a module without a default export is reported with the reason", async () =
     requests: [{ providerID: "e", format: "e", module: "./adapters/empty.ts" }],
   });
 
-  expect(results[0].ok).toBe(false);
-  expect(results[0].error).toMatch(/default-export an adapter object/);
+  expect(results.results[0].ok).toBe(false);
+  expect(results.results[0].error).toMatch(/default-export an adapter object/);
 });
 
 test("an adapter missing its format or factory is rejected by shape", async () => {
@@ -161,8 +162,8 @@ test("an adapter missing its format or factory is rejected by shape", async () =
     ],
   });
 
-  expect(noFormat[0].error).toMatch(/non-empty `format` string/);
-  expect(noCreate[0].error).toMatch(/`create\(options\)` factory/);
+  expect(noFormat.results[0].error).toMatch(/non-empty `format` string/);
+  expect(noCreate.results[0].error).toMatch(/`create\(options\)` factory/);
 });
 
 test("an adapter whose format disagrees with the endpoint is rejected", async () => {
@@ -186,8 +187,8 @@ test("an adapter whose format disagrees with the endpoint is rejected", async ()
     ],
   });
 
-  expect(results[0].ok).toBe(false);
-  expect(results[0].error).toMatch(/they must match/);
+  expect(results.results[0].ok).toBe(false);
+  expect(results.results[0].error).toMatch(/they must match/);
   expect(getProviderAdapter("actual-format")).toBeUndefined();
 });
 
@@ -223,6 +224,68 @@ test("re-registering the same module is a conflict, not a silent replace", async
     ],
   });
 
-  expect(again[0].ok).toBe(false);
-  expect(again[0].error).toMatch(/already registered/);
+  expect(again.results[0].ok).toBe(false);
+  expect(again.results[0].error).toMatch(/already registered/);
+});
+
+test("reloading withdraws the previous set before loading the new one", async () => {
+  // The duplicate-format guard makes this a correctness requirement, not a
+  // tidiness one: loading a second time without withdrawing throws, which would
+  // surface as a failed config reload rather than a replaced adapter.
+  const root = await workspace();
+  await writeAdapter(root, "adapters/mine.ts", ADAPTER_SRC("my-format"));
+
+  const first = await reloadProviderAdapterModules({
+    workspaceRoot: root,
+    requests: [
+      { providerID: "mine", format: "my-format", module: "./adapters/mine.ts" },
+    ],
+  });
+  expect(first[0].ok).toBe(true);
+  expect(getProviderAdapter("my-format")).toBeDefined();
+
+  const second = await reloadProviderAdapterModules({
+    workspaceRoot: root,
+    requests: [
+      { providerID: "mine", format: "my-format", module: "./adapters/mine.ts" },
+    ],
+  });
+
+  // Same format, same module: reloaded rather than rejected.
+  expect(second[0].ok).toBe(true);
+  expect(getProviderAdapter("my-format")).toBeDefined();
+});
+
+test("reloading with an empty set withdraws everything", async () => {
+  // Removing the endpoint from config must remove the adapter, or a stale
+  // format stays resolvable after the user took it away.
+  const root = await workspace();
+  await writeAdapter(root, "adapters/mine.ts", ADAPTER_SRC("my-format"));
+  await reloadProviderAdapterModules({
+    workspaceRoot: root,
+    requests: [
+      { providerID: "mine", format: "my-format", module: "./adapters/mine.ts" },
+    ],
+  });
+  expect(getProviderAdapter("my-format")).toBeDefined();
+
+  await reloadProviderAdapterModules({ workspaceRoot: root, requests: [] });
+
+  expect(getProviderAdapter("my-format")).toBeUndefined();
+});
+
+test("a module that failed to load leaves nothing to withdraw", async () => {
+  // A failed module registered nothing, so withdrawing must not remove an
+  // adapter some other source registered under a different path.
+  const root = await workspace();
+  const load = await loadProviderAdapterModules({
+    workspaceRoot: root,
+    requests: [
+      { providerID: "gone", format: "gone-format", module: "./nope.ts" },
+    ],
+  });
+  expect(load.results[0].ok).toBe(false);
+
+  expect(() => load.withdraw()).not.toThrow();
+  expect(getProviderAdapter("gone-format")).toBeUndefined();
 });
