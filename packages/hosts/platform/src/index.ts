@@ -340,20 +340,6 @@ export function userRuntimeHome(input: PlatformInput = {}): string | undefined {
   return env.XDG_RUNTIME_DIR;
 }
 
-/**
- * The current user's home directory.
- *
- * Windows exposes it as `USERPROFILE` and normally leaves `HOME` unset, so
- * reading `HOME` alone resolves to nothing there. The POSIX branch stays
- * `HOME` first so its resolution order is unchanged.
- */
-export function userHomeDirectory(input: PlatformInput = {}): string {
-  const env = input.env ?? process.env;
-  if (isWindows(input.os))
-    return usableDirectory([env.USERPROFILE, env.HOME], safeHomedir);
-  return env.HOME ?? safeHomedir();
-}
-
 function userHome(input: PlatformInput): string {
   const env = input.env ?? process.env;
   return usableDirectory([env.USERPROFILE, env.HOME], safeHomedir);
