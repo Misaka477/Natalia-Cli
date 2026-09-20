@@ -229,6 +229,13 @@ for (const manifest of await workspacePackageManifests("packages")) {
     failures.push(
       `${manifest.path}: plugin package must depend on @natalia/plugin`,
     );
+  // §3.6.8: the testing tooling must never be a production dependency — it
+  // belongs in devDependencies (audit A-04/A-05). Mechanized here so a package
+  // cannot quietly reintroduce a production edge to tooling/testing.
+  if (manifest.dependencies?.["@natalia/testing"] !== undefined)
+    failures.push(
+      `${manifest.path}: @natalia/testing must be a devDependency, not a production dependency`,
+    );
 }
 for (const dir of dependencyGuarded)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
