@@ -11,12 +11,57 @@ export const TOKEN_METER_CHARS_PER_TOKEN = 4;
 export const TOKEN_METER_BLOCK_OVERHEAD = 4;
 export const TOKEN_METER_ROLE_OVERHEAD = 4;
 
+/**
+ * Pixels per token for vision input, from the providers' published vision
+ * accounting (Anthropic bills roughly width × height / 750). A meter that
+ * ignored dimensions entirely would read a 5 MiB screenshot as zero and never
+ * fire compaction, which is the bug this exists to fix.
+ */
+export const TOKEN_METER_IMAGE_PIXELS_PER_TOKEN = 750;
+
+/**
+ * Assumed cost of one image whose dimensions are unknown.
+ *
+ * Sits above the largest image that can reach the meter after admission-time
+ * scaling: with the default 1568px long-edge limit the maximum area is
+ * 1568² ≈ 2.46 MP, which prices at ~3.3k tokens. A constant below that would
+ * price a dimension-less image cheaper than a known large one, which is the
+ * under-counting this whole estimator exists to prevent. Unknown dimensions are
+ * the legacy inline-attachment path; scaled attachments always carry theirs.
+ */
+export const TOKEN_METER_IMAGE_UNKNOWN_TOKENS = 4096;
+
+/**
+ * The dimension facts the meter needs from an image attachment.
+ *
+ * `mediaType` is declared only so a legacy inline attachment — which carries a
+ * media type and a data URL but no dimensions — is assignable here. Without a
+ * shared property TypeScript's weak-type check rejects it, and every call site
+ * would need its own mapping that could later drop the dimensions by accident.
+ */
+export interface TokenMeterImage {
+  readonly width?: number;
+  readonly height?: number;
+  readonly mediaType?: string;
+}
+
+/**
+ * A provider-reported usage sample.
+ *
+ * The cache field names match the wire spelling every other layer uses
+ * (`ProviderStreamChunk`, `ProviderUsage`, `SessionUsageStats`). They were once
+ * `cacheReadTokens` / `cacheWriteTokens`, which made `ProviderUsage` silently
+ * assignable to this type while dropping both fields — TypeScript allows it
+ * because the required fields agree and these are optional, so the cache read
+ * vanished at the boundary and the meter under-counted every cached request.
+ * One vocabulary is the only defence against that.
+ */
 export interface ProviderUsageView {
   inputTokens: number;
   outputTokens: number;
   reasoningTokens?: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
 }
 
 export interface TokenMeterMessage {
@@ -30,6 +75,13 @@ export interface TokenMeterMessage {
   }[];
   toolName?: string;
   toolCallID?: string;
+  /**
+   * Image and video attachments on the message. Carried separately from
+   * `content` because the providers put them in their own content blocks, so a
+   * meter that only reads `content` would price a screenshot at nothing.
+   */
+  images?: readonly TokenMeterImage[];
+  videos?: readonly TokenMeterImage[];
 }
 
 /**
@@ -171,6 +223,45 @@ export function estimateMeterMessage(message: TokenMeterMessage): number {
   tokens += estimateToolCalls(message.toolCalls);
   tokens += estimateUnknown(message.toolName);
   tokens += estimateUnknown(message.toolCallID);
+  tokens += estimateVisualInput(message.images);
+  tokens += estimateVisualInput(message.videos);
+  return tokens;
+}
+
+/**
+ * Price one message's image/video attachments by their published vision
+ * accounting rather than their byte length.
+ *
+ * Without this a message carrying attachments costs only its text: the
+ * compaction trigger reads the request total, so a session that accumulates
+ * screenshots never compacts and eventually exceeds the real context window.
+ *
+ * There is deliberately no per-image ceiling. Attachment admission already
+ * bounds the pixel count, and a ceiling below that bound under-counts — a
+ * 1568px image (the post-scaling maximum) is ~2k tokens, and a GIF, which is
+ * never scaled, can reach the full admission budget. Under-counting is the
+ * failure this function exists to prevent, so the formula is allowed to run.
+ */
+export function estimateVisualInput(
+  attachments: readonly TokenMeterImage[] | undefined,
+): number {
+  if (!attachments?.length) return 0;
+  let tokens = 0;
+  for (const attachment of attachments) {
+    tokens += TOKEN_METER_BLOCK_OVERHEAD;
+    const width = attachment.width;
+    const height = attachment.height;
+    if (
+      typeof width !== "number" ||
+      typeof height !== "number" ||
+      width <= 0 ||
+      height <= 0
+    ) {
+      tokens += TOKEN_METER_IMAGE_UNKNOWN_TOKENS;
+      continue;
+    }
+    tokens += Math.ceil((width * height) / TOKEN_METER_IMAGE_PIXELS_PER_TOKEN);
+  }
   return tokens;
 }
 
@@ -178,16 +269,16 @@ function usageTotal(usage: ProviderUsageView): number {
   return (
     usage.inputTokens +
     usage.outputTokens +
-    (usage.cacheReadTokens ?? 0) +
-    (usage.cacheWriteTokens ?? 0)
+    (usage.cacheReadInputTokens ?? 0) +
+    (usage.cacheCreationInputTokens ?? 0)
   );
 }
 
 function promptPressure(usage: ProviderUsageView): number {
   return (
     usage.inputTokens +
-    (usage.cacheReadTokens ?? 0) +
-    (usage.cacheWriteTokens ?? 0)
+    (usage.cacheReadInputTokens ?? 0) +
+    (usage.cacheCreationInputTokens ?? 0)
   );
 }
 

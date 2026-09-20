@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import {
+  cacheHitRate,
+  type RuntimeEvent,
+  type SessionID,
+} from "@natalia/contracts";
 import {
   applyEvent,
   boundTranscript,
@@ -1682,7 +1686,6 @@ test("chat attachments project into Navi and Nia rows and hydrate intact", () =>
       role: "user",
       text: "hydrated image",
       at: "t3",
-      channel: "navi",
       attachments: [attachment],
     },
   ]);
@@ -1891,7 +1894,6 @@ test("durable chat thinking replaces live deltas and restores thinking after res
       role: "chat",
       text: "complete Navi reasoning",
       at: "",
-      channel: "navi",
       kind: "thinking",
     },
   ]);
@@ -1901,7 +1903,6 @@ test("durable chat thinking replaces live deltas and restores thinking after res
       role: "chat",
       text: "complete Nia reasoning",
       at: "",
-      channel: "nia",
       kind: "thinking",
     },
   ]);
@@ -1954,7 +1955,6 @@ test("hydrating chat rows splits Navi and Nia into independent streams", () => {
       role: "user",
       text: "hi navi",
       at: "t1",
-      channel: "navi",
     },
   ]);
   hydrateNiaMessages(state, [
@@ -1963,7 +1963,6 @@ test("hydrating chat rows splits Navi and Nia into independent streams", () => {
       role: "chat",
       text: "audit result",
       at: "t2",
-      channel: "nia",
     },
   ]);
   expect(changed).toBe(true);
@@ -1983,7 +1982,6 @@ test("paged chat hydration prepends older and appends newer in order", () => {
         role: "chat",
         text: "new",
         at: "t2",
-        channel: "navi",
       },
     ],
     { replace: true },
@@ -1996,7 +1994,6 @@ test("paged chat hydration prepends older and appends newer in order", () => {
         role: "chat",
         text: "old",
         at: "t1",
-        channel: "navi",
       },
     ],
     { direction: "older" },
@@ -2009,7 +2006,6 @@ test("paged chat hydration prepends older and appends newer in order", () => {
         role: "chat",
         text: "newest",
         at: "t3",
-        channel: "navi",
       },
     ],
     { direction: "newer" },
@@ -2884,13 +2880,63 @@ test("buildWorkGraphFileNavigation answers why-changed from a file path (WG5)", 
   const toolNode = `wg:tool:${turnID}:${callID}`;
   const changeNode = `wg:change:${turnID}:${path}`;
   const events = [
-    { type: "workgraph.node_added", id: goalNode, nodeID: goalNode, kind: "goal", summary: "ship feature", sessionID },
-    { type: "workgraph.node_added", id: actionNode, nodeID: actionNode, kind: "agent_action", summary: "agent acted", sessionID, turnID },
-    { type: "workgraph.edge_added", id: `e:toward:${actionNode}`, sourceID: goalNode, targetID: actionNode, kind: "toward" },
-    { type: "workgraph.node_added", id: toolNode, nodeID: toolNode, kind: "tool_call", summary: "run_shell succeeded", sessionID, turnID },
-    { type: "workgraph.edge_added", id: `e:caused:${toolNode}`, sourceID: actionNode, targetID: toolNode, kind: "caused" },
-    { type: "workgraph.node_added", id: changeNode, nodeID: changeNode, kind: "workspace_change", summary: "run_shell changed", target: path, sessionID, turnID },
-    { type: "workgraph.edge_added", id: `e:modified:${changeNode}`, sourceID: toolNode, targetID: changeNode, kind: "modified" },
+    {
+      type: "workgraph.node_added",
+      id: goalNode,
+      nodeID: goalNode,
+      kind: "goal",
+      summary: "ship feature",
+      sessionID,
+    },
+    {
+      type: "workgraph.node_added",
+      id: actionNode,
+      nodeID: actionNode,
+      kind: "agent_action",
+      summary: "agent acted",
+      sessionID,
+      turnID,
+    },
+    {
+      type: "workgraph.edge_added",
+      id: `e:toward:${actionNode}`,
+      sourceID: goalNode,
+      targetID: actionNode,
+      kind: "toward",
+    },
+    {
+      type: "workgraph.node_added",
+      id: toolNode,
+      nodeID: toolNode,
+      kind: "tool_call",
+      summary: "run_shell succeeded",
+      sessionID,
+      turnID,
+    },
+    {
+      type: "workgraph.edge_added",
+      id: `e:caused:${toolNode}`,
+      sourceID: actionNode,
+      targetID: toolNode,
+      kind: "caused",
+    },
+    {
+      type: "workgraph.node_added",
+      id: changeNode,
+      nodeID: changeNode,
+      kind: "workspace_change",
+      summary: "run_shell changed",
+      target: path,
+      sessionID,
+      turnID,
+    },
+    {
+      type: "workgraph.edge_added",
+      id: `e:modified:${changeNode}`,
+      sourceID: toolNode,
+      targetID: changeNode,
+      kind: "modified",
+    },
   ] as unknown as RuntimeEvent[];
 
   const state = projectEvents(events);
@@ -2908,11 +2954,50 @@ test("buildWorkGraphFileNavigation answers why-changed from a file path (WG5)", 
   expect(whyIDs).toContain(goalNode);
 
   // A suffix match on the basename also resolves the same node.
-  expect(buildWorkGraphFileNavigation(state, "app.ts").matches.map((n) => n.nodeID)).toEqual([changeNode]);
+  expect(
+    buildWorkGraphFileNavigation(state, "app.ts").matches.map((n) => n.nodeID),
+  ).toEqual([changeNode]);
 
   // An unknown path returns no matches and no fabricated cause.
   const missing = buildWorkGraphFileNavigation(state, "does/not/exist.ts");
   expect(missing.matches).toEqual([]);
   expect(missing.whyChanged).toEqual([]);
   expect(missing.whatChanged).toEqual([]);
+});
+
+test("a subagent step's cache metrics fold into the session totals", () => {
+  // A subagent publishes the same `runtime.step_usage` shape as the main runner
+  // and carries no channel tag, so its cache traffic reaches the session totals
+  // the dashboard's hit rate is computed from. Before the subagent carried these
+  // fields, its steps reported full-price input however warm their cache was.
+  const state = projectEvents([
+    {
+      type: "runtime.step_usage",
+      id: "a1:usage:1",
+      inputTokens: 1_000,
+      outputTokens: 200,
+      cacheReadInputTokens: 40_000,
+      cacheCreationInputTokens: 2_000,
+      llmMs: 1_500,
+    } as unknown as RuntimeEvent,
+    {
+      type: "runtime.step_usage",
+      id: "a1:usage:2",
+      inputTokens: 900,
+      outputTokens: 150,
+      // A step with no cache metrics still contributes its plain tokens.
+      llmMs: 1_200,
+    } as unknown as RuntimeEvent,
+  ]);
+
+  expect(state.sessionUsage.steps).toBe(2);
+  expect(state.sessionUsage.inputTokens).toBe(1_900);
+  expect(state.sessionUsage.cacheReadInputTokens).toBe(40_000);
+  expect(state.sessionUsage.cacheCreationInputTokens).toBe(2_000);
+  // The write-aware rate counts cache writes, so a subagent warming a prefix is
+  // not reported as if it had hit one.
+  expect(cacheHitRate(state.sessionUsage)).toBeCloseTo(
+    40_000 / (1_900 + 40_000 + 2_000),
+    10,
+  );
 });

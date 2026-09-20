@@ -15,7 +15,7 @@ export class FakeCompactor {
   constructor(
     private readonly outcomes: Array<
       CompactionResult | "timeout" | "failure"
-    > = [{ summary: "compact summary", tokens: 100 }],
+    > = [{ summary: "compact summary", tokens: 4 }],
   ) {}
 
   async compact(input: CompactionInput) {
@@ -32,7 +32,10 @@ export class FakeCompactor {
       ]
         .filter(Boolean)
         .join("\n"),
-      tokens: outcome?.tokens ?? 100,
+      // Small by default: a compaction whose summary is not smaller than the
+      // span it replaces is rejected, and a fixture claiming a large summary
+      // for a small span would be asserting an impossible compaction.
+      tokens: outcome?.tokens ?? 4,
     };
   }
 }

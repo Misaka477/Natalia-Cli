@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
 import {
+  TOKEN_METER_BLOCK_OVERHEAD,
+  TOKEN_METER_IMAGE_PIXELS_PER_TOKEN,
+  TOKEN_METER_IMAGE_UNKNOWN_TOKENS,
+  TOKEN_METER_ROLE_OVERHEAD,
   TokenMeter,
   estimateMeterMessage,
   estimateTokenText,
@@ -147,4 +151,165 @@ test("recordUsage and measureRequest share one header key per envelope", () => {
     contextWindow: 100_000,
   });
   expect(changedTools.source).toBe("estimate");
+});
+
+test("estimateVisualInput prices an image by its dimensions, not its bytes", () => {
+  // 1568x882 is the post-scaling maximum for the default long-edge limit, and
+  // is worth ~1.8k tokens. A meter that read only `content` would price this
+  // message at its text alone.
+  const withImage = estimateMeterMessage({
+    role: "user",
+    content: "看看这张截图",
+    images: [{ width: 1568, height: 882 }],
+  });
+  const textOnly = estimateMeterMessage({
+    role: "user",
+    content: "看看这张截图",
+  });
+
+  expect(withImage).toBeGreaterThan(textOnly + 1000);
+  expect(withImage - textOnly).toBe(
+    Math.ceil((1568 * 882) / TOKEN_METER_IMAGE_PIXELS_PER_TOKEN) +
+      TOKEN_METER_BLOCK_OVERHEAD,
+  );
+});
+
+test("estimateVisualInput never under-counts a large image", () => {
+  // A 40 MP image — the admission pixel ceiling — must not collapse to a small
+  // number. Under-counting is what stops compaction from firing at all.
+  const huge = estimateMeterMessage({
+    role: "user",
+    content: "",
+    images: [{ width: 8000, height: 5000 }],
+  });
+
+  expect(huge).toBeGreaterThan(50_000);
+});
+
+test("estimateVisualInput prices an image with unknown dimensions conservatively", () => {
+  const unknown = estimateMeterMessage({
+    role: "user",
+    content: "",
+    images: [{}],
+  });
+  const known = estimateMeterMessage({
+    role: "user",
+    content: "",
+    images: [{ width: 1568, height: 882 }],
+  });
+
+  expect(unknown).toBeGreaterThan(known);
+  expect(unknown - known).toBe(
+    TOKEN_METER_IMAGE_UNKNOWN_TOKENS -
+      Math.ceil((1568 * 882) / TOKEN_METER_IMAGE_PIXELS_PER_TOKEN),
+  );
+});
+
+test("estimateVisualInput prices videos the same way as images", () => {
+  const video = estimateMeterMessage({
+    role: "user",
+    content: "",
+    videos: [{ width: 1920, height: 1080 }],
+  });
+  const image = estimateMeterMessage({
+    role: "user",
+    content: "",
+    images: [{ width: 1920, height: 1080 }],
+  });
+
+  expect(video).toBe(image);
+});
+
+test("a message with no attachments is priced exactly as before", () => {
+  expect(estimateMeterMessage({ role: "user", content: "plain text" })).toBe(
+    TOKEN_METER_ROLE_OVERHEAD + estimateTokenText("plain text"),
+  );
+});
+
+test("measureRequest counts attachment pressure that content alone would miss", () => {
+  const meter = new TokenMeter();
+  const messages = [
+    { role: "user", content: "第一张", images: [{ width: 1568, height: 882 }] },
+    { role: "assistant", content: "看到了" },
+    { role: "user", content: "第二张", images: [{ width: 1568, height: 882 }] },
+  ];
+  const textOnly = [
+    { role: "user", content: "第一张" },
+    { role: "assistant", content: "看到了" },
+    { role: "user", content: "第二张" },
+  ];
+
+  const withImages = meter.measureRequest("with", {
+    messages: messages as never,
+    contextWindow: 200_000,
+  });
+  const withoutImages = meter.measureRequest("without", {
+    messages: textOnly as never,
+    contextWindow: 200_000,
+  });
+
+  // Two screenshots must move the request total by thousands of tokens, or the
+  // compaction trigger below never fires for an image-heavy session.
+  expect(withImages.messageTokens).toBeGreaterThan(
+    withoutImages.messageTokens + 3000,
+  );
+});
+
+test("recordUsage keeps the cache read instead of dropping it at the boundary", () => {
+  // The token meter's usage view once spelled these fields `cacheReadTokens` /
+  // `cacheWriteTokens` while every other layer used `cacheReadInputTokens` /
+  // `cacheCreationInputTokens`. TypeScript allowed the mismatch — the required
+  // fields agree and these are optional — so the cache read silently vanished
+  // and the meter under-counted every cached request, on Anthropic as much as
+  // on OpenAI. This pins the two vocabularies together.
+  const meter = new TokenMeter();
+  meter.recordUsage(
+    "anthropic",
+    {
+      inputTokens: 12_000,
+      outputTokens: 4,
+      cacheReadInputTokens: 11_000,
+      cacheCreationInputTokens: 20_000,
+    },
+    { headerKey: "h" },
+  );
+
+  expect(meter.project("anthropic").pressureTokens).toBe(
+    12_000 + 11_000 + 20_000,
+  );
+});
+
+test("recordUsage prices an OpenAI sample, which reports a read but no write", () => {
+  const meter = new TokenMeter();
+  meter.recordUsage(
+    "openai",
+    { inputTokens: 900, outputTokens: 2, cacheReadInputTokens: 800 },
+    { headerKey: "h" },
+  );
+
+  expect(meter.project("openai").pressureTokens).toBe(900 + 800);
+});
+
+test("measureRequest prefers the provider sample once the cache read is counted", () => {
+  // A cached request's true total includes the read, so the sample must beat
+  // the heuristic estimate before it is trusted as the compaction anchor.
+  const meter = new TokenMeter();
+  const envelope = {
+    messages: [{ role: "user", content: "short" }],
+    system: "s",
+    tools: undefined,
+    contextWindow: 200_000,
+  };
+  // The sample is only reused while the header it priced is still current, so
+  // record it against the same key measureRequest will derive.
+  meter.recordUsage(
+    "cached",
+    { inputTokens: 2_000, outputTokens: 10, cacheReadInputTokens: 100_000 },
+    { headerKey: requestHeaderKey(envelope) },
+  );
+
+  const measured = meter.measureRequest("cached", envelope);
+
+  expect(measured.source).toBe("provider_usage");
+  expect(measured.totalTokens).toBe(2_000 + 10 + 100_000);
 });
