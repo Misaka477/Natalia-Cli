@@ -5,4 +5,5 @@ export * from "./failures";
 export * from "./permission-families";
 export * from "./refusals";
 export * from "./schemas";
+export * from "./token-usage";
 export * from "./workspace-observation";

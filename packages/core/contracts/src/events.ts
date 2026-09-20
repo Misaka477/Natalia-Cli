@@ -657,8 +657,36 @@ export type NamespacedCollabMessageEventData =
 /** Durable lifecycle phase of a same-session goal. */
 export type GoalPhase = "active" | "paused" | "blocked" | "complete";
 
+/**
+ * Why a goal is blocked, as a machine code.
+ *
+ * A closed set rather than a free string: three sites set it — the goal driver
+ * when a round cap or a turn error stops continuation, and the goal tools when
+ * the model itself reports a blocker. A free string let a typo in any of them
+ * reach durable state, where a consumer switching on the code would silently
+ * fall through to a default and the goal would display as blocked with no
+ * reason it could name.
+ */
+export type GoalBlockCode =
+  /** The admitted goal-round cap was reached. */
+  | "round-limit"
+  /** A goal round's turn failed. */
+  | "turn-error"
+  /** The model reported a blocker from inside a goal round. */
+  | "model-reported"
+  /** A goal round could not be queued. */
+  | "queue-failed"
+  /** Automatic continuation was cancelled. */
+  | "cancelled"
+  /** The goal round exhausted its token budget. */
+  | "max-tokens"
+  /** The goal's cumulative token budget was exhausted. */
+  | "token-limit"
+  /** The goal's cumulative wall-clock budget was exhausted. */
+  | "time-limit";
+
 /** Stable machine code plus human text explaining a blocked goal. */
-export type GoalBlockReason = { code: string; message: string };
+export type GoalBlockReason = { code: GoalBlockCode; message: string };
 
 /**
  * Why automatic continuation last stopped. Explanatory only: `phase` stays the
@@ -702,6 +730,26 @@ export type GoalSnapshot = {
   lastStop?: GoalLastStop;
   /** Admitted goal-round cap; 0 means unlimited. */
   maxGoalRounds: number;
+  /**
+   * Cumulative token cap for the whole goal; 0 means unlimited.
+   *
+   * Separate from `maxGoalRounds` because rounds are a poor proxy for cost: ten
+   * short exchanges and ten file reads are the same round count and an order of
+   * magnitude apart in tokens.
+   */
+  maxGoalTokens: number;
+  /** Cumulative goal-work wall-clock cap in ms; 0 means unlimited. */
+  maxGoalWallClockMs: number;
+  /**
+   * Tokens the goal's rounds have spent, carried forward by settled rounds.
+   *
+   * Derived from the durable `goal.round.cost` events rather than stored as a
+   * running total, so a restart replays to exactly the same figure instead of
+   * trusting whatever the last process happened to know.
+   */
+  spentGoalTokens: number;
+  /** Wall-clock the goal's rounds have consumed, in ms. */
+  goalWallClockMs: number;
   /** Optional plan this goal works toward (goal → plan, one-way reference). */
   planID?: string;
 };
@@ -1555,6 +1603,18 @@ type RuntimeEventData =
       round: number;
       at: string;
     }
+  | {
+      type: "goal.round.cost";
+      id: string;
+      goalID: string;
+      revision: number;
+      round: number;
+      at: string;
+      /** Tokens the round spent, input plus output. */
+      tokens: number;
+      /** Wall-clock the round consumed, ms. */
+      durationMs: number;
+    }
   | { type: "status.update"; status: string; detail?: string }
   | {
       type: "status.snapshot";
@@ -1575,16 +1635,16 @@ type RuntimeEventData =
       thresholdPercent: number;
       reserved: number;
       trigger?: CompactionTrigger;
-        /** Model-visible message/tool surface tokens (the message bucket). */
-        surfaceTokens?: number;
-        /** Conservative full-request tokens (header + surface). */
-        requestTokens?: number;
-        /** systemTokens + toolsTokens. */
-        headerTokens?: number;
-        /** System-prompt tokens, counted once in the header only. */
-        systemTokens?: number;
-        /** Tool-definition tokens, counted once in the header only. */
-        toolsTokens?: number;
+      /** Model-visible message/tool surface tokens (the message bucket). */
+      surfaceTokens?: number;
+      /** Conservative full-request tokens (header + surface). */
+      requestTokens?: number;
+      /** systemTokens + toolsTokens. */
+      headerTokens?: number;
+      /** System-prompt tokens, counted once in the header only. */
+      systemTokens?: number;
+      /** Tool-definition tokens, counted once in the header only. */
+      toolsTokens?: number;
     }
   | {
       /** Durable shared TokenMeter projection for one stream. */
@@ -1596,10 +1656,10 @@ type RuntimeEventData =
       contextWindow?: number;
       source: "estimate" | "provider_usage";
       at: string;
-        /** Three-bucket header breakdown, when the request was measured. */
-        systemTokens?: number;
-        toolsTokens?: number;
-        messageTokens?: number;
+      /** Three-bucket header breakdown, when the request was measured. */
+      systemTokens?: number;
+      toolsTokens?: number;
+      messageTokens?: number;
     }
   | {
       /** Navi-owned context status. */
@@ -1610,16 +1670,16 @@ type RuntimeEventData =
       thresholdPercent: number;
       reserved: number;
       trigger?: CompactionTrigger;
-        /** Model-visible message/tool surface tokens (the message bucket). */
-        surfaceTokens?: number;
-        /** Conservative full-request tokens (header + surface). */
-        requestTokens?: number;
-        /** systemTokens + toolsTokens. */
-        headerTokens?: number;
-        /** System-prompt tokens, counted once in the header only. */
-        systemTokens?: number;
-        /** Tool-definition tokens, counted once in the header only. */
-        toolsTokens?: number;
+      /** Model-visible message/tool surface tokens (the message bucket). */
+      surfaceTokens?: number;
+      /** Conservative full-request tokens (header + surface). */
+      requestTokens?: number;
+      /** systemTokens + toolsTokens. */
+      headerTokens?: number;
+      /** System-prompt tokens, counted once in the header only. */
+      systemTokens?: number;
+      /** Tool-definition tokens, counted once in the header only. */
+      toolsTokens?: number;
     }
   | {
       /** Nia-owned context status. */
@@ -1630,16 +1690,16 @@ type RuntimeEventData =
       thresholdPercent: number;
       reserved: number;
       trigger?: CompactionTrigger;
-        /** Model-visible message/tool surface tokens (the message bucket). */
-        surfaceTokens?: number;
-        /** Conservative full-request tokens (header + surface). */
-        requestTokens?: number;
-        /** systemTokens + toolsTokens. */
-        headerTokens?: number;
-        /** System-prompt tokens, counted once in the header only. */
-        systemTokens?: number;
-        /** Tool-definition tokens, counted once in the header only. */
-        toolsTokens?: number;
+      /** Model-visible message/tool surface tokens (the message bucket). */
+      surfaceTokens?: number;
+      /** Conservative full-request tokens (header + surface). */
+      requestTokens?: number;
+      /** systemTokens + toolsTokens. */
+      headerTokens?: number;
+      /** System-prompt tokens, counted once in the header only. */
+      systemTokens?: number;
+      /** Tool-definition tokens, counted once in the header only. */
+      toolsTokens?: number;
     }
   | {
       /** Navi-owned TokenMeter projection. */
@@ -1650,10 +1710,10 @@ type RuntimeEventData =
       contextWindow?: number;
       source: "estimate" | "provider_usage";
       at: string;
-        /** Three-bucket header breakdown, when the request was measured. */
-        systemTokens?: number;
-        toolsTokens?: number;
-        messageTokens?: number;
+      /** Three-bucket header breakdown, when the request was measured. */
+      systemTokens?: number;
+      toolsTokens?: number;
+      messageTokens?: number;
     }
   | {
       /** Nia-owned TokenMeter projection. */
@@ -1664,10 +1724,10 @@ type RuntimeEventData =
       contextWindow?: number;
       source: "estimate" | "provider_usage";
       at: string;
-        /** Three-bucket header breakdown, when the request was measured. */
-        systemTokens?: number;
-        toolsTokens?: number;
-        messageTokens?: number;
+      /** Three-bucket header breakdown, when the request was measured. */
+      systemTokens?: number;
+      toolsTokens?: number;
+      messageTokens?: number;
     }
   | {
       type: "compaction.begin";
@@ -4084,9 +4144,9 @@ export type RuntimeClient = {
    * changes the runtime could not attribute to a tool call, surfaced for
    * diagnosis, never silently folded into the causal chain.
    */
-  unattributedChanges?(sessionID?: string): Promise<
-    Array<{ nodeID: string; path: string; sessionID?: string }>
-  >;
+  unattributedChanges?(
+    sessionID?: string,
+  ): Promise<Array<{ nodeID: string; path: string; sessionID?: string }>>;
   /**
    * Record a completion card: the fixed report structure that answers "is it
    * really done, what evidence is missing". changeSummary is safe prose — never
@@ -4403,7 +4463,6 @@ export type ChatMessageRow = {
   text: string;
   at: string;
   attachments?: LocalAttachment[];
-  channel?: ChatChannel;
   kind?: "message" | "thinking" | "tool" | "compaction" | "collab";
   tool?: {
     /** Durable event id, stable across replay and live hydration. */

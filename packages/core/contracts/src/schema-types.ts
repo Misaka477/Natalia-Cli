@@ -7,6 +7,9 @@ export type SandboxBackend = z.infer<
   typeof foundation.sandboxConfigSchema
 >["backend"];
 
+/** The goal completion check, straight from the config schema. */
+export type GoalConfig = z.infer<typeof foundation.goalConfigSchema>;
+
 export type ConfigV3 = z.infer<typeof config.configV3Schema>;
 export type PluginPackageSource = z.infer<
   typeof config.pluginPackageSourceSchema

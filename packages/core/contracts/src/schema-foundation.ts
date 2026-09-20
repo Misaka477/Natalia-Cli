@@ -53,9 +53,71 @@ export const sandboxConfigSchema = z.object({
   promoteCommand: z.string().trim().min(1).default("npm run typecheck"),
 });
 
+/**
+ * Wall-clock budget for one subagent run, in milliseconds.
+ *
+ * Bounds a run that is stuck rather than merely slow: a provider call that
+ * never returns, or a step that takes minutes. Without it such a run continues
+ * until the session ends, paying for every step it takes. `0` disables the
+ * budget.
+ *
+ * The budget is per run, not per subagent: each retry is a deliberate new run
+ * with its own budget, so an operator who retries is choosing to spend again.
+ */
+export const subagentWallClockMs = z.number().int().min(0).default(900_000);
+
+/**
+ * Goal completion verification.
+ *
+ * A goal used to be complete because whoever reported it said so, which put the
+ * authority entirely in the model's own claim. `command` makes that claim
+ * checkable: it runs before a *model-initiated* completion is accepted, and a
+ * non-zero exit refuses the completion with the exit code and output so the
+ * model can see why.
+ *
+ * Empty by default. A workspace that does not configure a check behaves exactly
+ * as before — an invented default command would fail every workspace that has no
+ * test suite, and a silently passing one would be theatre.
+ */
+export const goalConfigSchema = z
+  .object({
+    completionCommand: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
 export const runtimeConfigSchema = z.object({
   maxStepsPerTurn: z.number().int().positive().optional(),
   subagentDepth: z.number().int().min(1).max(8).default(1),
+  /** Milliseconds one subagent run may take before the runtime stops it. */
+  subagentWallClockMs: subagentWallClockMs,
+  /**
+   * Shortest acceptable final answer from a subagent. A shorter one is followed
+   * by exactly one turn asking for the missing detail.
+   *
+   * `0` disables the gate. The parent receives only the subagent's final text,
+   * so a one-word answer leaves it with nothing to act on and no way to tell
+   * that from a complete one.
+   */
+  subagentMinResultChars: z.number().int().min(0).default(200),
+  /**
+   * Settled-outcome notices one session's ledger will carry.
+   *
+   * A subagent settles whenever it likes and the turn that spawned it is usually
+   * elsewhere by then, so the outcome is written into the ledger as runtime
+   * context instead of left for the parent to poll for. The number is a budget
+   * because each notice is context the parent pays for on every later request,
+   * and a session that delegates a great deal must not have its prompt consumed
+   * by its own bookkeeping. Each notice is deduplicated per subagent and
+   * continuation, so the cap is on distinct children, not on re-settles.
+   */
+  subagentSettledNotices: z
+    .number()
+    .int()
+    .min(0)
+    .refine((value) => value === 0 || Number.isFinite(value), {
+      message: "must be a non-negative integer",
+    })
+    .default(20),
   collaboration: z
     .object({
       /**
@@ -90,13 +152,34 @@ export const runtimeConfigSchema = z.object({
 export const contextConfigSchema = z.object({
   autoDetectWindow: z.boolean().default(true),
   compactionEnabled: z.boolean().default(true),
+  /**
+   * The user's own instruction, layered onto every compaction prompt.
+   *
+   * A workspace often knows what a summary must keep that a generic one would
+   * drop — changelog dates, ticket ids, which test names matter. This is where
+   * that goes, rather than each stream hardcoding its own version of it.
+   *
+   * Absent by default: an invented instruction would be a guess at what the
+   * workspace cares about.
+   */
+  customInstruction: z.string().trim().min(1).optional(),
   compactionThresholdPercent: z.number().int().min(50).max(99).default(85),
   reservedOutputTokens: z
     .union([z.literal("auto"), z.number().int().positive()])
     .default("auto"),
   preservedRecentMessages: z.number().int().min(0).default(10),
   /** When > 0, an absolute token budget for the recent tail. */
-  preservedRecentTokens: z.number().int().min(0).default(0),
+  /**
+   * Recent-context tokens always kept verbatim across a compaction.
+   *
+   * A floor rather than a ceiling: the preserved tail is whichever of this and
+   * `preservedRecentMessages` reaches further back. Sized like the other
+   * harnesses' defaults — pi keeps 20k, opencode clamps to 2k–15k — because a
+   * count alone cannot say how much context a turn holds: ten short exchanges
+   * and ten file reads are the same count and an order of magnitude apart in
+   * tokens.
+   */
+  preservedRecentTokens: z.number().int().min(0).default(20_000),
   /** Bounded overflow recovery attempts before surfacing context_limit. */
   maxOverflowRetries: z.number().int().min(0).max(3).default(1),
 });
@@ -207,12 +290,63 @@ export const providerRequestDefaultsSchema = z
  * secrets and request-level defaults are nested so a partial overlay can
  * update one without replacing the others.
  */
+/**
+ * How an endpoint speaks to its provider.
+ *
+ * `format` names the wire format and is the only thing that selects an adapter.
+ * It is optional so an existing configuration keeps loading, but the loader
+ * warns with the exact JSON to add: a format inferred from `driver` is a guess
+ * about what a human meant to type, and the adapter seam exists precisely so
+ * that choice is declared instead of guessed.
+ */
+/**
+ * Optional cache extensions an endpoint declares it accepts.
+ *
+ * Every field is optional and every absent one means off: an undeclared
+ * capability costs one unused optimisation, while an assumed one makes every
+ * request fail against a parameter the deployment never accepted.
+ */
+export const endpointCapabilitiesSchema = z
+  .object({
+    supportsLongCacheRetention: z.boolean().optional(),
+    supportsCacheControlOnTools: z.boolean().optional(),
+    sendSessionAffinityHeaders: z.boolean().optional(),
+    sessionAffinityFormat: z.enum(["openrouter"]).optional(),
+    supportsPromptCacheKey: z.boolean().optional(),
+    promptCacheKeyField: z
+      .enum(["promptCacheKey", "prompt_cache_key"])
+      .optional(),
+    supportsExplicitPromptCacheMode: z.boolean().optional(),
+  })
+  .strict();
+
+export const endpointProtocolSchema = z
+  .object({
+    format: z.string().min(1).optional(),
+    /**
+     * Local module exporting the adapter for a custom format, resolved against
+     * the workspace root. Present only for formats this package does not ship;
+     * the built-in families need no module.
+     */
+    module: z.string().min(1).optional(),
+    /** Declared optional cache extensions; absent means none are used. */
+    capabilities: endpointCapabilitiesSchema.optional(),
+    /**
+     * How long this endpoint's prompt cache should be retained. A preference,
+     * not a capability: asking for `long` on an endpoint that has not declared
+     * `supportsLongCacheRetention` degrades to `short` rather than failing.
+     */
+    cacheRetention: z.enum(["none", "short", "long"]).optional(),
+  })
+  .strict();
+
 export const providerConfigSchema = z.object({
   name: z.string().min(1),
   driver: z.string().min(1),
   enabled: z.boolean().default(true),
   connection: providerConnectionSchema,
   requestDefaults: providerRequestDefaultsSchema,
+  protocol: endpointProtocolSchema.optional(),
 });
 
 export const modelOverrideRequestDefaultsSchema = z

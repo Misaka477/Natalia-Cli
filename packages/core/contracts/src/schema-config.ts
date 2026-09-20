@@ -9,6 +9,7 @@ import {
 import {
   checkpointConfigSchema,
   contextConfigSchema,
+  endpointProtocolSchema,
   modeConfigSchema,
   modelCatalogSchema,
   modelOverrideSchema,
@@ -16,6 +17,7 @@ import {
   providerConfigSchema,
   runtimeConfigSchema,
   sandboxConfigSchema,
+  goalConfigSchema,
   teamConfigSchema,
 } from "./schema-foundation";
 export const skillsConfigSchema = z.object({
@@ -158,6 +160,7 @@ export const configV3Schema = z.object({
   version: z.literal(3),
   runtime: runtimeConfigSchema.default({}),
   sandbox: sandboxConfigSchema.default({}),
+  goal: goalConfigSchema.default({}),
   team: teamConfigSchema.default({}),
   context: contextConfigSchema.default({}),
   checkpoint: checkpointConfigSchema,
