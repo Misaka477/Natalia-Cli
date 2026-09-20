@@ -42,8 +42,24 @@ export type PrepareContextRequestInput = {
   tools: unknown;
   /** Capacity of the route/model for this request. */
   contextWindow: number;
-  budget: { max: number; thresholdPercent: number; reserved: number };
-  preserve: { recentMessages?: number; recentTokens?: number };
+  /**
+   * The resolved context budget. The three window fields are required; the
+   * policy fields (preserved tail, prune options) are read from here when the
+   * caller does not pass explicit overrides, so the pipeline defaults to the
+   * same centralized budget every other stream uses (plan §2.3).
+   */
+  budget: {
+    max: number;
+    thresholdPercent: number;
+    reserved: number;
+    preservedRecentMessages?: number;
+    preservedRecentTokens?: number;
+    prune?: ToolResultPruneOptions;
+  };
+  /** Explicit preserved-tail overrides; otherwise the budget policy applies. */
+  preserve?: { recentMessages?: number; recentTokens?: number };
+  /** The user's standing instruction, layered onto the compaction prompt. */
+  userInstruction?: string;
   /**
    * The outbound provider messages about to be sent. The pipeline measures
    * this first, then replaces it via `rebuildOutbound` after prune/compaction.
@@ -59,8 +75,23 @@ export type PrepareContextRequestInput = {
     entries: ContextEntry[],
     phase: "prune" | "compact",
   ) => ProviderMessage[];
-  /** When provided, model-free tool-result pruning runs before deciding. */
+  /** Tool-result prune configuration; ignored unless {@link prune} is true. */
   pruneOptions?: Partial<ToolResultPruneOptions>;
+  /**
+   * Whether this request runs the model-free tool-result prune.
+   *
+   * Pruning rewrites live ledger entries, and every provider request writes a
+   * prefix-cache breakpoint at the end of its stable region. A rewrite between
+   * two requests of the same turn therefore invalidates everything after the
+   * rewritten entry for the rest of that turn, so the prune must run **once per
+   * turn, on the turn's first provider request** — never once per step.
+   *
+   * The caller owns the turn boundary, so this is required rather than
+   * inferred: the three shipped paths pass `step === 1`. There is no default
+   * that preserves the old per-step behaviour, because a path that forgot to
+   * opt out would silently pay for a full context re-bill on every step.
+   */
+  prune: boolean;
   /** Active provider used to build the summarizer for this request. */
   provider: StreamingProvider;
   prefixMessages?: ProviderMessage[];
@@ -98,7 +129,17 @@ export type PrepareContextRequestResult = {
 export async function prepareContextRequest(
   input: PrepareContextRequestInput,
 ): Promise<PrepareContextRequestResult> {
-  const { ledger, meter, scope, budget, preserve } = input;
+  const { ledger, meter, scope, budget } = input;
+  // Centralized budget policy: an explicit caller override wins, then the
+  // resolved budget, then the historical pipeline default (plan §2.3).
+  const preserve = {
+    recentMessages:
+      input.preserve?.recentMessages ?? budget.preservedRecentMessages ?? 10,
+    recentTokens: input.preserve?.recentTokens ?? budget.preservedRecentTokens,
+  };
+  const pruneOptions = input.prune
+    ? (input.pruneOptions ?? budget.prune)
+    : undefined;
   let outbound = input.outbound;
 
   const measure = (): TokenMeasurement =>
@@ -130,11 +171,11 @@ export async function prepareContextRequest(
 
   let pruned = 0;
 
-  // Model-free prune is cheap and keeps old tool results bounded on every
-  // step (the main path's established behaviour); only the expensive LLM
-  // summarize is gated behind the decision below.
-  if (input.pruneOptions) {
-    const outcome = ledger.pruneToolResults(input.pruneOptions);
+  // Model-free prune is cheap and keeps old tool results bounded; it runs on
+  // the turn's first request only (see {@link PrepareContextRequestInput.prune}).
+  // Only the expensive LLM summarize stays gated behind the decision below.
+  if (pruneOptions) {
+    const outcome = ledger.pruneToolResults(pruneOptions);
     pruned = outcome.pruned;
     if (pruned > 0)
       outbound = input.rebuildOutbound(ledger.snapshot().entries, "prune");
@@ -146,29 +187,42 @@ export async function prepareContextRequest(
   publishSurface(measured);
 
   if (decision === "none" || decision === "nothing_to_compact") {
-    return { outbound, decision, compacted: false, pruned, used: measured.totalTokens };
+    return {
+      outbound,
+      decision,
+      compacted: false,
+      pruned,
+      used: measured.totalTokens,
+    };
   }
 
-  const outcome = await compactContext(ledger, providerCompactor(input.provider, input.signal), {
-    id: `${input.id}:preflight:${input.step ?? 0}`,
-    trigger: decision === "ratio" ? "ratio" : "reserved",
-    maxTokens: budget.max,
-    thresholdPercent: budget.thresholdPercent,
-    reservedTokens: budget.reserved,
-    preservedRecentMessages: preserve.recentMessages ?? 10,
-    ...(preserve.recentTokens === undefined
-      ? {}
-      : { preservedRecentTokens: preserve.recentTokens }),
-    ...(input.prefixMessages ? { prefixMessages: input.prefixMessages } : {}),
-    ...(input.instruction ? { instruction: input.instruction } : {}),
-    ...(input.compactionEnabled === undefined
-      ? {}
-      : { enabled: input.compactionEnabled }),
-    beforeTokens: measured.totalTokens,
-    retry: { ...(input.retry ?? {}), signal: input.signal },
-    onEvent: input.publish,
-    now: input.now,
-  });
+  const outcome = await compactContext(
+    ledger,
+    providerCompactor(input.provider, input.signal),
+    {
+      id: `${input.id}:preflight:${input.step ?? 0}`,
+      trigger: decision === "ratio" ? "ratio" : "reserved",
+      maxTokens: budget.max,
+      thresholdPercent: budget.thresholdPercent,
+      reservedTokens: budget.reserved,
+      preservedRecentMessages: preserve.recentMessages ?? 10,
+      ...(preserve.recentTokens === undefined
+        ? {}
+        : { preservedRecentTokens: preserve.recentTokens }),
+      ...(input.prefixMessages ? { prefixMessages: input.prefixMessages } : {}),
+      ...(input.instruction ? { instruction: input.instruction } : {}),
+      ...(input.userInstruction
+        ? { userInstruction: input.userInstruction }
+        : {}),
+      ...(input.compactionEnabled === undefined
+        ? {}
+        : { enabled: input.compactionEnabled }),
+      beforeTokens: measured.totalTokens,
+      retry: { ...(input.retry ?? {}), signal: input.signal },
+      onEvent: input.publish,
+      now: input.now,
+    },
+  );
 
   if (outcome.compacted) {
     // The provider usage anchor described the pre-compaction surface; drop it

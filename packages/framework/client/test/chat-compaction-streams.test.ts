@@ -74,6 +74,7 @@ test("Navi and Nia compaction retain independent ledgers, providers, and durable
         meter: new TokenMeter(),
         compactionID: `${type}:ses_compaction`,
         instruction: `${type} instruction`,
+        prune: true,
         durableMessages: [
           { messageID: `${type}-1`, role: "user", text: "first" },
           { messageID: `${type}-2`, role: "chat", text: "answer" },
@@ -139,6 +140,7 @@ test("a truncated stream history resets only its own compaction ledger", async (
     compactionID: "navi:ses_rollback",
     instruction: "Navi instruction",
     durableMessages: [],
+    prune: true,
     publishCompacted: () => undefined,
     publishCompactionEvent: () => undefined,
   };

@@ -318,7 +318,20 @@ export class ContextLedger {
   ) {
     if (expectedRevision !== undefined && this.revision !== expectedRevision)
       throw new Error("context surface changed during compaction");
+    // A leading system entry is the agent's own prompt, not conversation. The
+    // main runner re-unshifts it after compaction but the subagent path rebuilds
+    // straight from the ledger, so it has to survive here or the subagent loses
+    // its instructions and nothing fails loudly. It is re-inserted ahead of the
+    // summary unless the preserved tail already starts with it, so a tail that
+    // covers the whole ledger does not gain a duplicate.
+    const systemHead =
+      this.entries[0]?.role === "system" &&
+      preserved[0]?.role !== "system" &&
+      preserved[0]?.id !== this.entries[0]!.id
+        ? [this.entries[0]!]
+        : [];
     this.entries = [
+      ...systemHead,
       summary,
       ...preserved,
       ...this.resources.map(resourceToContextEntry),
@@ -392,6 +405,50 @@ export function decideCompaction(input: {
   return overRatio ? "ratio" : "reserved";
 }
 
+/**
+ * The runtime's context policy: the window, the compaction boundary and how much
+ * recent work always survives one. Assembled from config with schema defaults
+ * applied, so a partially-configured workspace still gets a complete budget.
+ */
+export type ContextBudget = {
+  max: number;
+  thresholdPercent: number;
+  reserved: number;
+  /** Where `reserved` came from, so a diagnostic can say so. */
+  reservedSource: ReservedResolution["source"];
+  preservedRecentMessages: number;
+  preservedRecentTokens: number;
+  maxOverflowRetries: number;
+  /** Tool-result pruning policy applied before a compaction is considered. */
+  prune: ToolResultPruneOptions;
+};
+
+/** The compaction boundary in tokens: the ratio of the window. */
+export function contextThresholdTokens(budget: {
+  max: number;
+  thresholdPercent: number;
+}): number {
+  return Math.floor((budget.max * budget.thresholdPercent) / 100);
+}
+
+/**
+ * Config-time invariant: `preservedRecentTokens` must sit below the compaction
+ * threshold. Otherwise the preserved tail can never satisfy the trigger and
+ * every step would compact in vain — fail fast instead of spinning.
+ * `0` disables the absolute tail budget, so it is always valid.
+ */
+export function assertContextBudgetInvariants(budget: ContextBudget): void {
+  if (budget.preservedRecentTokens <= 0) return;
+  const threshold = contextThresholdTokens(budget);
+  if (budget.preservedRecentTokens >= threshold)
+    throw new Error(
+      `invalid context budget: preservedRecentTokens (${budget.preservedRecentTokens}) ` +
+        `must stay below the compaction threshold (${threshold} tokens = ` +
+        `${budget.thresholdPercent}% of ${budget.max}); lower the preserved tail ` +
+        `or raise context.compactionThresholdPercent`,
+    );
+}
+
 export type PreserveOptions = {
   recentMessages?: number;
   recentTokens?: number;
@@ -414,13 +471,25 @@ export function selectCompactableRange(
   entries: ContextEntry[],
   options: PreserveOptions,
 ): CompactableRange {
-  const preserved =
-    options.recentTokens && options.recentTokens > 0
-      ? preserveRecentWithToolPairsByTokens(entries, options.recentTokens)
-      : preserveRecentWithToolPairs(entries, options.recentMessages ?? 10);
+  // Both constraints apply, and the tail is whichever reaches further back: a
+  // message count cannot say how much context a turn holds, and a token budget
+  // cannot say "always keep the last few exchanges".
+  const preserved = preserveRecentTail(entries, {
+    recentMessages: options.recentMessages,
+    recentTokens: options.recentTokens,
+  });
   const preservedIDs = new Set(preserved.map((entry) => entry.id));
+  // The leading system entry is the agent's own prompt and is never compacted:
+  // a compaction that could swallow it would let the next one try again on the
+  // same head, which is what made an early version of this settle only after
+  // several passes.
+  const systemHeadID =
+    entries[0]?.role === "system" ? entries[0]!.id : undefined;
   const compactable = entries.filter(
-    (entry) => entry.role !== "resource" && !preservedIDs.has(entry.id),
+    (entry) =>
+      entry.role !== "resource" &&
+      !preservedIDs.has(entry.id) &&
+      entry.id !== systemHeadID,
   );
   const hasRange =
     compactable.length > 0 &&
@@ -485,14 +554,16 @@ export function contextStatusBuckets(projection: {
   systemTokens?: number;
   toolsTokens?: number;
   messageTokens?: number;
-}): Pick<
-  ContextStatus,
-  | "surfaceTokens"
-  | "requestTokens"
-  | "headerTokens"
-  | "systemTokens"
-  | "toolsTokens"
-> | undefined {
+}):
+  | Pick<
+      ContextStatus,
+      | "surfaceTokens"
+      | "requestTokens"
+      | "headerTokens"
+      | "systemTokens"
+      | "toolsTokens"
+    >
+  | undefined {
   const { systemTokens, toolsTokens, messageTokens } = projection;
   if (
     systemTokens === undefined ||
@@ -542,6 +613,81 @@ export function preserveRecentWithToolPairs(
   );
 }
 
+/** Index of the first entry a count-based tail would keep. */
+function countBasedStart(entries: ContextEntry[], recentCount: number): number {
+  return Math.max(0, entries.length - Math.max(0, recentCount));
+}
+
+/**
+ * Index of the first entry a token-budget tail would keep.
+ *
+ * At least the newest entry is always kept, even when it alone exceeds the
+ * budget, so compaction never drops the context of the step being prepared.
+ */
+function tokenBasedStart(entries: ContextEntry[], tokenBudget: number): number {
+  if (tokenBudget <= 0) return entries.length;
+  let start = entries.length;
+  let tokens = 0;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]!;
+    const entryTokens = entry.tokens ?? estimateTokens(entry.content);
+    if (start < entries.length && tokens + entryTokens > tokenBudget) break;
+    tokens += entryTokens;
+    start = index;
+  }
+  return start;
+}
+
+/**
+ * Index of the first entry to keep so the tail ends with a user message.
+ *
+ * A tail made only of assistant replies and tool exchanges leaves the model
+ * with no statement of what the user currently wants, and Anthropic accepts
+ * such a request, so nothing fails loudly — the work simply drifts. Reaching
+ * back to the last user message costs a bounded number of older entries.
+ *
+ * Only ever moves the start earlier, never trims a tail the other constraints
+ * already produced.
+ */
+function userMessageStart(entries: ContextEntry[], from: number): number {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index]!.role !== "user") continue;
+    // Already inside the tail: leave the count and token constraints alone.
+    // Only a tail with no user message reaches further back.
+    return index >= from ? from : index;
+  }
+  // The ledger holds no user message at all, so there is nothing to reach.
+  return from;
+}
+
+/**
+ * Retain the newest suffix that satisfies every constraint, keeping whichever
+ * reaches furthest back.
+ *
+ * A count and a token budget are **unions, not alternatives**: a message count
+ * cannot express how much context a turn holds, and a token budget cannot
+ * express "always keep the last few exchanges". Taking the earlier of the two
+ * start indices means each constraint is a floor, and the tail is whichever the
+ * two imply.
+ */
+export function preserveRecentTail(
+  entries: ContextEntry[],
+  options: { recentMessages?: number; recentTokens?: number },
+): ContextEntry[] {
+  const base = Math.min(
+    countBasedStart(entries, options.recentMessages ?? 0),
+    tokenBasedStart(entries, options.recentTokens ?? 0),
+  );
+  const withUser = userMessageStart(entries, base);
+  // Reaching back must not consume the whole compactable range: compaction that
+  // never fires grows the context without bound, which is the failure this tail
+  // exists to prevent. When the tail would have to swallow everything to gain a
+  // user message, it goes without — the summary replacing the compacted region
+  // carries the user's intent, so the tail is not left without it.
+  const start = withUser > 0 ? withUser : base;
+  return closeToolPairs(entries, entries.slice(start));
+}
+
 /**
  * Retains the newest suffix that fits a token budget. At least the newest
  * entry is retained even when it alone exceeds the budget, so compaction never
@@ -553,16 +699,10 @@ export function preserveRecentWithToolPairsByTokens(
   tokenBudget: number,
 ): ContextEntry[] {
   if (tokenBudget <= 0) return [];
-  let start = entries.length;
-  let tokens = 0;
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index]!;
-    const entryTokens = entry.tokens ?? estimateTokens(entry.content);
-    if (start < entries.length && tokens + entryTokens > tokenBudget) break;
-    tokens += entryTokens;
-    start = index;
-  }
-  return closeToolPairs(entries, entries.slice(start));
+  return closeToolPairs(
+    entries,
+    entries.slice(tokenBasedStart(entries, tokenBudget)),
+  );
 }
 
 const TOOL_RESULT_PRUNE_MARKER = "tool result truncated for context";

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
   ContextLedger,
+  DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
   TokenMeter,
   contextEntriesToProviderMessages,
   type ContextEntry,
@@ -12,9 +13,34 @@ import { prepareContextRequest } from "../src";
 
 const TRUNCATION_MARKER = "tool result truncated for context";
 
+/** A summary satisfying the compaction contract, for stub providers. */
+const CONFORMING_SUMMARY = [
+  "## Objective",
+  "- Keep the request honest.",
+  "",
+  "## Important Details",
+  "- The contract is enforced now.",
+  "",
+  "## Work State",
+  "### Completed",
+  "- (none)",
+  "",
+  "### Active",
+  "- Compacting the request.",
+  "",
+  "### Blocked",
+  "- (none)",
+  "",
+  "## Next Move",
+  "1. Rebuild the outbound.",
+  "",
+  "## Relevant Files",
+  "- packages/framework/runtime/src/compaction.ts: the contract.",
+].join("\n");
+
 function scriptedProvider(
   counter: { calls: number },
-  summary = "compacted summary",
+  summary = CONFORMING_SUMMARY,
 ): StreamingProvider {
   return {
     provider: "scripted",
@@ -67,6 +93,9 @@ const baseInput = (overrides: Record<string, unknown>) => ({
   tools: undefined as unknown,
   contextWindow: 100_000,
   budget: { max: 100_000, thresholdPercent: 85, reserved: 4096 },
+  // Every scenario here is a turn's first provider request, which is the only
+  // request allowed to rewrite the ledger. `prune: false` tests the opposite.
+  prune: true,
   preserve: { recentMessages: 1 },
   rebuildOutbound: rebuild,
   ...overrides,
@@ -150,6 +179,44 @@ test("prepareContextRequest prunes model-free before summarizing and rebuilds th
   expect(rebuiltText).toContain(TRUNCATION_MARKER);
 });
 
+test("prepareContextRequest refuses to prune a later request of the same turn", async () => {
+  // Every provider request writes a prefix-cache breakpoint at the end of its
+  // stable region. Pruning rewrites live ledger entries, so a prune on the
+  // turn's second request would invalidate the prefix the first request just
+  // cached and re-bill the whole tail. Only `prune: true` may rewrite.
+  const ledger = makeLedger();
+  ledger.add({ id: "c1", role: "tool_call", content: "shell x", pairID: "c1" });
+  ledger.add({
+    id: "r1",
+    role: "tool_result",
+    content: "x".repeat(400_000),
+    pairID: "c1",
+  });
+  ledger.add({ id: "u1", role: "user", content: "latest question" });
+  const meter = new TokenMeter();
+  const events: RuntimeEvent[] = [];
+  const { emitStatus, emitSnapshot } = collectEvents(events);
+
+  const result = await prepareContextRequest(
+    baseInput({
+      ledger,
+      meter,
+      outbound: rebuild(ledger.snapshot().entries),
+      provider: scriptedProvider({ calls: 0 }),
+      prune: false,
+      pruneOptions: { thresholdChars: 8192, headChars: 4096, tailChars: 1024 },
+      publish: (event: RuntimeEvent) => events.push(event),
+      emitStatus,
+      emitSnapshot,
+    }) as never,
+  );
+
+  expect(result.pruned).toBe(0);
+  expect(
+    result.outbound.map((message) => message.content).join("\n"),
+  ).not.toContain(TRUNCATION_MARKER);
+});
+
 test("prepareContextRequest summarizes when pressure survives pruning", async () => {
   const ledger = makeLedger();
   // No tool results to prune; the pressure is genuine message surface that
@@ -185,7 +252,7 @@ test("prepareContextRequest summarizes when pressure survives pruning", async ()
   expect(["ratio", "reserved"]).toContain(result.decision);
   // The rebuilt outbound now carries the summary entry.
   const hasSummary = result.outbound.some((message) =>
-    message.content.includes("compacted summary"),
+    message.content.includes(CONFORMING_SUMMARY),
   );
   expect(hasSummary).toBe(true);
   expect(events.some((event) => event.type === "compaction.begin")).toBe(true);
@@ -236,7 +303,16 @@ test("prepareContextRequest does not re-summarize when a prior compaction left o
   // A deliberately large summary keeps the post-compaction request over the
   // threshold, so the second preflight must stop at nothing_to_compact rather
   // than summarize the lone summary again.
-  const provider = scriptedProvider(counter, "z".repeat(400_000));
+  // Large enough to keep the post-compaction request over the threshold, and
+  // shaped to satisfy the summary contract so the size is what is under test
+  // rather than the structure.
+  const provider = scriptedProvider(
+    counter,
+    CONFORMING_SUMMARY.replace(
+      "- The contract is enforced now.",
+      `- ${"z".repeat(400_000)}`,
+    ),
+  );
   const events: RuntimeEvent[] = [];
   const { emitStatus, emitSnapshot } = collectEvents(events);
   const build = () =>
@@ -263,4 +339,50 @@ test("prepareContextRequest does not re-summarize when a prior compaction left o
   expect(second.compacted).toBe(false);
   expect(second.decision).toBe("nothing_to_compact");
   expect(counter.calls).toBe(1);
+});
+
+test("prepareContextRequest derives the preserved tail and prune options from the budget", async () => {
+  // No explicit `preserve`/`pruneOptions`: the budget policy must apply, so the
+  // preserved tail is honoured (nothing compactable when every entry falls in
+  // it) instead of the pipeline silently using its own default.
+  const big = "x".repeat(400);
+  const ledger = new ContextLedger();
+  ledger.add({ id: "u1", role: "user", content: big, tokens: 120 });
+  const meter = new TokenMeter();
+  const events: RuntimeEvent[] = [];
+  const result = await prepareContextRequest({
+    id: "budget-policy",
+    step: 0,
+    ledger,
+    meter,
+    scope: "main",
+    system: undefined,
+    tools: undefined,
+    contextWindow: 100,
+    budget: {
+      max: 100,
+      thresholdPercent: 50,
+      reserved: 10,
+      preservedRecentMessages: 5,
+      preservedRecentTokens: 0,
+      prune: DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
+    },
+    prune: true,
+    outbound: [{ role: "user", content: big }],
+    rebuildOutbound: () => [{ role: "user", content: big }],
+    provider: {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield { type: "content" as const, text: "summary" };
+      },
+    },
+    publish: (event) => events.push(event),
+    emitStatus: () => {},
+    emitSnapshot: () => {},
+  });
+  // The single entry sits inside the preserved tail, so there is nothing to
+  // compact and no summarizer round trip happens.
+  expect(result.decision).toBe("nothing_to_compact");
+  expect(result.compacted).toBe(false);
 });
