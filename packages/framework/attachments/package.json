@@ -9,8 +9,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/runtime-services": "workspace:*",
+    "@jsquash/jpeg": "1.6.0",
+    "@jsquash/png": "3.1.1",
+    "@jsquash/resize": "2.1.1",
+    "@jsquash/webp": "1.5.0",
     "@natalia/contracts": "workspace:*",
+    "@natalia/runtime-services": "workspace:*",
     "@natalia/session": "workspace:*"
   }
 }

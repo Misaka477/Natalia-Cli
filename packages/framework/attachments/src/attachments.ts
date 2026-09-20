@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  copyFile,
   mkdir,
   readdir,
   realpath,
@@ -11,6 +10,7 @@ import {
 import { basename, join, relative, resolve } from "node:path";
 import type { LocalAttachment } from "@natalia/contracts";
 import { modelVisibleEvents, type SessionRecord } from "@natalia/session";
+import { DEFAULT_MAX_IMAGE_LONG_EDGE, scaleImage } from "./image-scale";
 
 export type AttachmentLimits = {
   /** Maximum bytes for one image attachment. */
@@ -21,6 +21,12 @@ export type AttachmentLimits = {
   maxMessageImageBytes: number;
   /** Maximum decoded pixels for one image attachment. */
   maxImagePixels: number;
+  /**
+   * Longest edge allowed before an image is scaled down. Anthropic resamples
+   * anything over 1568px itself, so scaling here first keeps the stored bytes
+   * deterministic and far smaller. Scaled once at admission and never again.
+   */
+  maxImageLongEdge: number;
 };
 
 /** Reference limits from the attachment research pass; callers may override. */
@@ -29,12 +35,41 @@ export const DEFAULT_ATTACHMENT_LIMITS: AttachmentLimits = {
   maxImagesPerMessage: 20,
   maxMessageImageBytes: 100 * 1024 * 1024,
   maxImagePixels: 40_000_000,
+  maxImageLongEdge: DEFAULT_MAX_IMAGE_LONG_EDGE,
 };
 
 function resolveAttachmentLimits(
   overrides: Partial<AttachmentLimits> | undefined,
 ): AttachmentLimits {
   return { ...DEFAULT_ATTACHMENT_LIMITS, ...overrides };
+}
+
+/**
+ * Apply the one-time admission-time downscale. Returns the bytes and dimensions
+ * that will be stored, which are the originals unless the image was over the
+ * long-edge limit and the codec succeeded.
+ *
+ * Doing this before anything is written keeps the stored file, its sha256 and
+ * its recorded dimensions in agreement — a caller that copies the source file
+ * while reporting a scaled hash would disagree with itself.
+ */
+async function prepareImageForStorage(input: {
+  bytes: Uint8Array;
+  mediaType: string;
+  dimensions: ImageDimensions | undefined;
+  limits: AttachmentLimits;
+}): Promise<{ bytes: Uint8Array; dimensions: ImageDimensions | undefined }> {
+  if (!input.dimensions) return { bytes: input.bytes, dimensions: undefined };
+  const scaled = await scaleImage({
+    bytes: input.bytes,
+    mediaType: input.mediaType,
+    maxLongEdge: input.limits.maxImageLongEdge,
+  });
+  if (!scaled) return { bytes: input.bytes, dimensions: input.dimensions };
+  return {
+    bytes: scaled.bytes,
+    dimensions: { width: scaled.width, height: scaled.height },
+  };
 }
 
 type ImageDimensions = { width: number; height: number };
@@ -114,13 +149,22 @@ export async function storeLocalAttachments(input: {
           });
         })()
       : undefined;
+    // Scale before the bytes enter the accepted set, so everything downstream
+    // — the stored file, its sha256, its recorded byteLength and dimensions —
+    // describes the same representation.
+    const prepared = await prepareImageForStorage({
+      bytes,
+      mediaType,
+      dimensions,
+      limits,
+    });
     accepted.push({
       source,
-      bytes,
+      bytes: prepared.bytes,
       filename,
       mediaType,
-      byteLength: info.size,
-      ...(dimensions ? { dimensions } : {}),
+      byteLength: prepared.bytes.byteLength,
+      ...(prepared.dimensions ? { dimensions: prepared.dimensions } : {}),
     });
   }
 
@@ -128,7 +172,9 @@ export async function storeLocalAttachments(input: {
     accepted.map(async (item) => {
       const id = `att_${randomUUID().replace(/-/gu, "")}`;
       const target = join(store, `${id}-${item.filename}`);
-      await copyFile(item.source, target, 0);
+      // Write the prepared bytes rather than copying the source: they differ
+      // whenever the image was scaled, and the recorded sha256 hashes them.
+      await writeFile(target, item.bytes, { mode: 0o600 });
       return {
         id,
         path: relative(root, target),
@@ -169,18 +215,24 @@ export async function storeLocalAttachmentBytes(input: {
         limits,
       })
     : undefined;
+  const prepared = await prepareImageForStorage({
+    bytes: input.data,
+    mediaType,
+    dimensions,
+    limits,
+  });
   const id = `att_${randomUUID().replace(/-/gu, "")}`;
   const target = join(store, `${id}-${filename}`);
-  await writeFile(target, input.data, { mode: 0o600 });
+  await writeFile(target, prepared.bytes, { mode: 0o600 });
   return {
     id,
     path: relative(root, target),
     filename,
     mediaType,
-    byteLength: input.data.byteLength,
-    sha256: createHash("sha256").update(input.data).digest("hex"),
-    ...(dimensions
-      ? { width: dimensions.width, height: dimensions.height }
+    byteLength: prepared.bytes.byteLength,
+    sha256: createHash("sha256").update(prepared.bytes).digest("hex"),
+    ...(prepared.dimensions
+      ? { width: prepared.dimensions.width, height: prepared.dimensions.height }
       : {}),
   } satisfies LocalAttachment;
 }
