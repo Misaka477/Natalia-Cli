@@ -21,7 +21,7 @@ export type ProviderModelHandle = { close(): void };
 export function wireProviderModel(ctx: RuntimeContext): ProviderModelHandle {
   const registry = ctx.state.capabilityRegistry;
   const deps = ctx.state.initialize;
-  const input = deps.providerModelPluginInput(ctx.ports.getTsRuntimeConfig());
+  const input = deps.providerModelPluginInput();
   const owner = registry.registerOwner({
     id: "natalia-provider-model",
     name: "Provider Model",

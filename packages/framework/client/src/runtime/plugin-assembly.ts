@@ -77,9 +77,7 @@ export function createPluginAssembly(
     };
   }
 
-  function providerModelPluginInput(
-    config?: ConfigV3,
-  ): import("@natalia/runtime-services").ProviderModelControllerInput {
+  function providerModelPluginInput(): import("@natalia/runtime-services").ProviderModelControllerInput {
     const {
       getProvider,
       setProvider,

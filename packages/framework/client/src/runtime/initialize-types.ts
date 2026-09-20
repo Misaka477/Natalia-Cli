@@ -48,9 +48,7 @@ export type InitializeDependencies = {
   mcpPluginInput: (
     config: ConfigV3,
   ) => import("@natalia/runtime-services").McpInput | undefined;
-  providerModelPluginInput: (
-    config?: ConfigV3,
-  ) => import("@natalia/runtime-services").ProviderModelControllerInput;
+  providerModelPluginInput: () => import("@natalia/runtime-services").ProviderModelControllerInput;
   wireFrameworkServices: (
     ctx: import("./context").RuntimeContext,
     options: InitializeOptions,
