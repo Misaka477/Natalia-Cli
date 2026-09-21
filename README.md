@@ -6,19 +6,18 @@
 
 ## English
 
-Natalia is a local-first coding-agent runtime built with TypeScript and Bun. It ships three front ends:
+Natalia is a local-first coding-agent runtime built with TypeScript and Bun. It ships two front ends:
 
 - **CLI** (`apps/cli`)
 - **Web shell** (`apps/web`, package `@natalia/web-shell`)
-- **Desktop** (`apps/desktop`, package `@natalia/desktop`)
 
-All three use the same `RuntimeClient`, event model, and plugin registry.
+Both use the same `RuntimeClient`, event model, and plugin registry.
 
 ### Highlights
 
 - Durable local sessions backed by JSON or SQLite, with history, context compaction, recovery, and session forks.
 - Multi-workspace support in one host process; each workspace owns its own runtime and session store.
-- Multiple concurrent sessions per workspace, presented as a workspace -> session tree in web/desktop.
+- Multiple concurrent sessions per workspace, presented as a workspace -> session tree in the web shell.
 - Streaming provider adapters for OpenAI-compatible APIs, Anthropic, and Gemini.
 - Typed tool execution through schema validation, policy, conditional approval, audit, and secret-redaction boundaries.
 - Checkpoint creation, preview, dry-run rollback, and confirmed rollback with safety checkpoints.
@@ -36,7 +35,7 @@ Natalia has three layers: **kernel + framework + plugin**.
 - The framework composes product internals: sessions, providers, policy, checkpoints, workspaces, and runtime composition.
 - Product features use one trusted in-process plugin system; official plugins and user-installed packages have the same permissions and lifecycle.
 - The CLI is the authoritative maintenance entry point.
-- Web and Desktop are UI hosts over the same `RuntimeClient`, event stream, workspace manager, and command catalog.
+- The CLI and the web shell are entry points over the same `RuntimeClient`, event stream, workspace manager, and command catalog.
 
 ### Requirements
 
@@ -68,19 +67,11 @@ npm run ts:ui
 
 This starts a local runtime and the Vite dev server for `@natalia/web-shell`.
 
-#### Desktop
-
-```bash
-npm --workspace @natalia/desktop run dev
-```
-
-The desktop app starts a local runtime automatically and opens the Electron window.
-
 ### Documentation
 
 Every doc below is bilingual in a single file (English + Chinese).
 
-- [Getting started](docs/getting-started.md) — install, provider setup, CLI/web/desktop, workspaces and sessions.
+- [Getting started](docs/getting-started.md) — install, provider setup, CLI/web shell, workspaces and sessions.
 - [API reference](docs/api-reference.md) — the stable HTTP/RPC protocol: auth, failure kinds, events, the write surface.
 - [Types reference](docs/types-reference.md) — complete field shapes of every result type, nested objects expanded.
 - [Config reference](docs/config-reference.md) — the full `.natalia/config.json` shape (types, optionality, defaults).
@@ -120,7 +111,7 @@ The local transport supports authenticated HTTP/RPC/SSE, WebSocket, Unix sockets
 
 Sessions persist under `<workspace>/.natalia/sessions/`. Context checkpoints, settled tool results, approvals/questions, and workspace state allow a user to reopen a session and continue.
 
-The host supports multiple workspaces in one process. Each workspace has its own runtime client and session store; web/desktop render a workspace -> session tree from projected runtime state.
+The host supports multiple workspaces in one process. Each workspace has its own runtime client and session store; the web shell renders a workspace -> session tree from projected runtime state.
 
 CLI session commands:
 
@@ -164,15 +155,14 @@ Natalia 是使用 TypeScript 和 Bun 构建的 local-first coding-agent runtime�
 
 - **CLI**（`apps/cli`）
 - **Web shell**（`apps/web`，包名 `@natalia/web-shell`）
-- **Desktop**（`apps/desktop`，包名 `@natalia/desktop`）
 
-三者共用同一套 `RuntimeClient`、事件模型和插件注册表。
+两者共用同一套 `RuntimeClient`、事件模型和插件注册表。
 
 ### 主要能力
 
 - 基于 JSON 或 SQLite 的持久化会话，支持历史、上下文压缩、恢复和会话分支。
 - 一个 host 进程内支持多 workspace；每个 workspace 有自己的 runtime 和 session store。
-- 每个 workspace 支持多个并发 session，Web/Desktop 以 workspace -> session 树展示。
+- 每个 workspace 支持多个并发 session，Web shell 以 workspace -> session 树展示。
 - 支持 OpenAI-compatible、Anthropic、Gemini 的流式 provider adapter。
 - 类型化工具执行，带 schema 校验、策略、条件审批、审计和 secret 脱敏边界。
 - Checkpoint 创建、预览、dry-run 回滚、确认回滚与安全 checkpoint。
@@ -190,7 +180,7 @@ Natalia 分三层：**kernel + framework + plugin**。
 - framework 组合产品内部能力：session、provider、policy、checkpoint、workspace、runtime composition。
 - 产品能力走同一套可信进程内插件系统；官方插件与用户安装包权限和生命周期相同。
 - CLI 是权威维护入口。
-- Web 和 Desktop 是基于同一 `RuntimeClient`、事件流、workspace manager 和 command catalog 的 UI host。
+- CLI 和 Web shell 是基于同一 `RuntimeClient`、事件流、workspace manager 和 command catalog 的入口。
 
 ### 环境要求
 
@@ -222,19 +212,11 @@ npm run ts:ui
 
 这会启动本地 runtime 和 `@natalia/web-shell` 的 Vite dev server。
 
-#### Desktop
-
-```bash
-npm --workspace @natalia/desktop run dev
-```
-
-Desktop 会自动启动本地 runtime 并打开 Electron 窗口。
-
 ### 文档
 
 以下每份文档都是单文件双语（English + 中文）。
 
-- [快速开始](docs/getting-started.md) — 安装、provider 配置、CLI/Web/Desktop、workspace 与 session。
+- [快速开始](docs/getting-started.md) — 安装、provider 配置、CLI/Web shell、workspace 与 session。
 - [API 参考](docs/api-reference.md) — 稳定 HTTP/RPC 协议：鉴权、失败分类、事件流、写面。
 - [类型参考](docs/types-reference.md) — 每个结果类型的完整字段形状，嵌套对象已展开。
 - [配置参考](docs/config-reference.md) — `.natalia/config.json` 的完整形状（类型、可选性、默认值）。
@@ -274,7 +256,7 @@ npm run ts:cli -- plugin uninstall yourco.plugin
 
 Session 保存在 `<workspace>/.natalia/sessions/`。checkpoint、已结算工具结果、审批/提问和 workspace 状态允许用户重新打开会话继续。
 
-宿主支持一个进程内多 workspace。每个 workspace 有自己的 runtime client 和 session store；Web/Desktop 从同一份 projection 渲染 workspace -> session 树。
+宿主支持一个进程内多 workspace。每个 workspace 有自己的 runtime client 和 session store；Web shell 从同一份 projection 渲染 workspace -> session 树。
 
 CLI session 命令：
 

@@ -38,9 +38,6 @@ export function TerminalPane(
 ) {
   const [tabs, setTabs] = createSignal<TerminalTab[]>([]);
   const [activeID, setActiveID] = createSignal<string>();
-  const desktop =
-    typeof window !== "undefined" &&
-    Boolean((window as { electron?: unknown }).electron);
   const [limitError, setLimitError] = createSignal<string>();
   const [sessions, setSessions] = createSignal<RuntimeNativeTerminalSession[]>(
     [],
@@ -92,7 +89,7 @@ export function TerminalPane(
     const sessionID = props.sessionID;
     const runtimeURL = props.runtimeURL;
     const key = `${sessionID ?? ""}\0${runtimeURL ?? ""}`;
-    if (!sessionID || (!runtimeURL && !desktop)) {
+    if (!sessionID || !runtimeURL) {
       setTabs([]);
       setActiveID();
       setLimitError();
@@ -268,7 +265,7 @@ export function TerminalPane(
   return (
     <div class="terminal-pane">
       <Show
-        when={props.sessionID && (props.runtimeURL || desktop)}
+        when={props.sessionID && props.runtimeURL}
         fallback={
           <div class="terminal-output">
             <div class="terminal-line terminal-line-header">

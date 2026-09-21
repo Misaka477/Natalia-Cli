@@ -6,7 +6,7 @@
   "description": "Long-running background processes.",
   "entry": "index.js",
   "scope": "session",
-  "provides": ["managedProcessRegistry"],
+  "provides": ["managedProcessRegistry", "natalia:process-observer"],
   "requires": [],
   "optionalRequires": [],
   "conflicts": [],

@@ -99,12 +99,12 @@ The host injects three public ports:
 
 The UI package does not import an internal UI host, checkpoint controller,
 registry, or transport implementation. It only uses these public ports and
-public `@natalia/contracts` types. This lets a web, desktop, or custom
+public `@natalia/contracts` types. This lets a web or custom
 renderer use the same runtime without sharing current UI state or components.
 
 ### Dynamic panel registration
 
-Web/desktop shells use a separate renderer-facing panel protocol for feature
+Web shells use a separate renderer-facing panel protocol for feature
 panels. A plugin package can declare `ui.entry` in its manifest; the shell
 discovers it from the same `pluginCatalog` used for official and third-party
 plugins and loads it through `GET /plugins/<pluginId>/ui.js`. The UI module
@@ -199,7 +199,7 @@ async function openRestore(input, checkpointID) {
 message IDs follow `${turnID}:user`, `${turnID}:assistant`, and related segment
 forms, so a UI can derive the turn ID and filter checkpoints with
 `checkpoint.turnID === turnID`. This supports a `Restore...` action on either a
-user message or an assistant reply without coupling to the web/desktop UI renderer.
+user message or an assistant reply without coupling to the web UI renderer.
 
 Show every `CheckpointPreview.changes` item with its `add`, `modify`, `delete`,
 `rename`, `mode`, or `symlink` kind, plus context truncation, resource policies,
@@ -235,7 +235,7 @@ natalia-ts ui ui.web
 
 `natalia-ts ui <kind>` runs the UI in-process against a real runtime;
 `natalia-ts ui` without a kind lists the available UI kinds from enabled
-installed and path plugins. The web shell, desktop app, and every installed UI share one generic host,
+installed and path plugins. The web shell and every installed UI share one generic host,
 `createUiAdapterHost` (`@natalia/client`): it resolves the workspace config,
 discovers enabled plugins, loads only adapter-capable process plugins into one
 process registry, and materializes the requested kind(s) against one shared
@@ -334,12 +334,12 @@ host 注入三个公共端口：
 | `input.commands.list()` / `execute()` | 列出并执行 host 的权威 command catalog。通过 command `name` 定位，向 `execute` 传入原始命令与已解析参数。                                                               |
 
 UI package 不应导入内部 UI host、checkpoint controller、registry 或 transport 实现，只能
-使用这些公共 port 与公开的 `@natalia/contracts` type。因此 web、desktop 或自定义
+使用这些公共 port 与公开的 `@natalia/contracts` type。因此 web 或自定义
 renderer 都可使用同一 runtime，而不依赖当前 UI 的 state 或组件。
 
 ### 动态面板注册
 
-Web/Desktop 对功能面板使用独立的 renderer 面板协议。插件包可以在 manifest
+Web 对功能面板使用独立的 renderer 面板协议。插件包可以在 manifest
 里声明 `ui.entry`；shell 从同一份 `pluginCatalog` 发现官方/第三方插件，并通过
 `GET /plugins/<pluginId>/ui.js` 加载。UI 模块导出 `createUiPlugin()`：
 
@@ -428,7 +428,7 @@ async function openRestore(input, checkpointID) {
 `checkpointList()` 返回带 `turnID` 的 `RuntimeCheckpoint`。transcript message ID 采用
 `${turnID}:user`、`${turnID}:assistant` 及相关 segment 形式，因此 UI 可以解析 turn ID，
 再用 `checkpoint.turnID === turnID` 过滤 checkpoint。这样能在 user message 或 assistant
-reply 上提供 `Restore...`，而不耦合 web/desktop UI renderer。
+reply 上提供 `Restore...`，而不耦合 web UI renderer。
 
 展示每个 `CheckpointPreview.changes` 的 `add`、`modify`、`delete`、`rename`、`mode` 或
 `symlink` 类型，并展示 context truncation、resource policy、warning 和 `complete` 状态。
@@ -458,7 +458,7 @@ natalia-ts ui ui.web
 ```
 
 `natalia-ts ui <kind>` 在进程内对真实 runtime 挂载该 UI；`natalia-ts ui`（不带 kind）
-列出已启用已安装/path 插件贡献的可用 UI kind。Web shell、Desktop 与所有已安装 UI 共用同一个通用 host
+列出已启用已安装/path 插件贡献的可用 UI kind。Web shell 与所有已安装 UI 共用同一个通用 host
 `createUiAdapterHost`（`@natalia/client`）：解析 workspace 配置、发现已启用插件、只把
 adapter-capable 的 process 插件装入一个进程 registry，并对同一个共享
 `UiAdapterMountInput` materialize 请求的 kind(s)。关闭幂等且 fail-closed（先

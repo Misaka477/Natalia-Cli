@@ -7,28 +7,6 @@ import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 
-type ElectronGlobal = {
-  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-  on<T>(channel: string, listener: (payload: T) => void): () => void;
-};
-
-function getElectronGlobal(): ElectronGlobal | undefined {
-  return (globalThis as { electron?: ElectronGlobal }).electron;
-}
-
-async function callRuntime<T = unknown>(
-  ipc: {
-    invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-  },
-  method: string,
-  params?: Record<string, unknown>,
-): Promise<T> {
-  return await ipc.invoke<T>("runtime_call", {
-    method,
-    params: params ?? {},
-  });
-}
-
 export type WebTerminalApi = {
   clear(): void;
   findNext(query: string): boolean;
@@ -82,7 +60,6 @@ export function WebTerminal(props: WebTerminalProps) {
   let fit: FitAddon | undefined;
   let searchAddon: SearchAddon | undefined;
   let socket: WebSocket | undefined;
-  let ipcUnlisten: (() => void) | undefined;
   let windowResizeHandler: (() => void) | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
@@ -92,8 +69,6 @@ export function WebTerminal(props: WebTerminalProps) {
   let lastResizeKey = "";
   let lastInputSentAt: number | undefined;
   let lastEchoLogged = false;
-  const electron = getElectronGlobal();
-  const desktop = electron;
 
   function fitSafely() {
     if (!host || !fit) return;
@@ -140,16 +115,6 @@ export function WebTerminal(props: WebTerminalProps) {
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "resize", rows, cols }));
       return;
-    }
-    if (desktop) {
-      void callRuntime(desktop, "nativeTerminal.resize", {
-        id: props.terminalID,
-        rows,
-        cols,
-        sessionID: props.sessionID,
-      }).catch((error) => {
-        console.error("[web-terminal] resize failed", error);
-      });
     }
   }
 
@@ -222,123 +187,8 @@ export function WebTerminal(props: WebTerminalProps) {
       if (term && fit) {
         fitSafely();
         const { rows, cols } = clampResize(term.rows, term.cols);
-        if (validResize(rows, cols))
-          void callRuntime(desktop!, "nativeTerminal.resize", {
-            id: props.terminalID,
-            rows,
-            cols,
-            sessionID: props.sessionID,
-          }).catch((error) => {
-            console.error("[web-terminal] resize failed", error);
-          });
+        if (validResize(rows, cols)) sendResize(rows, cols, "ready");
       }
-    }
-  }
-
-  async function ipcConnect() {
-    if (closed || fatal || !props.sessionID || !props.terminalID || !desktop)
-      return;
-    const previous = ipcUnlisten;
-    ipcUnlisten = undefined;
-    previous?.();
-
-    try {
-      ipcUnlisten = electron.on<{ id: string; message: ServerMessage }>(
-        "natalia-terminal-output",
-        (event) => {
-          if (event.id !== props.terminalID) return;
-          handleServerMessage(event.message);
-        },
-      );
-      if (closed) return;
-
-      const listed =
-        (await callRuntime<
-          Array<{
-            id: string;
-            status: string;
-            sessionID?: string;
-          }>
-        >(desktop, "nativeTerminal.list", { sessionID: props.sessionID })) ??
-        [];
-      if (closed) return;
-      let session = listed.find((item) => item.id === props.terminalID);
-      if (
-        !session ||
-        (session.sessionID && session.sessionID !== props.sessionID)
-      ) {
-        session =
-          (await callRuntime<{ id: string; status: string } | undefined>(
-            desktop,
-            "nativeTerminal.start",
-            {
-              command: props.command || "bash",
-              id: props.terminalID,
-              sessionID: props.sessionID,
-            },
-          )) ?? undefined;
-      } else {
-      }
-      if (!session) {
-        fatal = true;
-        if (!lastError) {
-          lastError = "native terminal start failed";
-          term?.writeln("\r\n[native terminal start failed]");
-        }
-        console.error(
-          "[web-terminal] native terminal start returned no session",
-        );
-        return;
-      }
-      sessionReady = true;
-
-      if (closed) return;
-      const subscribeResult =
-        (await desktop!.invoke<{ subscribed?: boolean; reused?: boolean }>(
-          "terminal_output_subscribe",
-          {
-            sessionId: props.sessionID,
-            terminalId: props.terminalID,
-          },
-        )) ?? {};
-      if (closed) return;
-
-      if (subscribeResult.reused) {
-        // The terminal WebSocket bridge replays the current PTY buffer through
-        // `subscribeOutput` on every new WebSocket connection. Do not also
-        // write nativeTerminal.read here: the plain-text snapshot would be
-        // duplicated next to the ANSI-colored live replay and produce a grey
-        // uncolored duplicate of the prompt.
-      }
-
-      // The terminal WebSocket bridge will send a `restore` message with the
-      // full raw PTY buffer. Avoid also writing nativeTerminal.read here: the
-      // plain text snapshot can overlap with live raw output and make the
-      // terminal screen render incorrectly.
-      console.log("[web-terminal] waiting for restore from terminal bridge");
-      if (term && fit) {
-        try {
-          fitSafely();
-          const { rows, cols } = clampResize(term.rows, term.cols);
-          if (validResize(rows, cols))
-            await callRuntime(desktop, "nativeTerminal.resize", {
-              id: props.terminalID,
-              rows,
-              cols,
-              sessionID: props.sessionID,
-            });
-        } catch {
-          // fit can throw while restoring
-        }
-      }
-    } catch (error) {
-      const text = error instanceof Error ? error.message : String(error);
-      console.error("[web-terminal] ipcConnect failed", error);
-      if (text !== lastError) {
-        lastError = text;
-        term?.writeln(`\r\n[${text}]`);
-      }
-      scheduleReconnect();
     }
   }
 
@@ -348,14 +198,9 @@ export function WebTerminal(props: WebTerminalProps) {
       fatal ||
       !props.sessionID ||
       !props.terminalID ||
-      (!props.runtimeURL && !desktop)
+      !props.runtimeURL
     )
       return;
-    if (desktop && !props.runtimeURL) {
-      console.log("[web-terminal] using desktop IPC transport");
-      void ipcConnect();
-      return;
-    }
     console.log("[web-terminal] using WebSocket transport");
     const previous = socket;
     socket = undefined;
@@ -506,15 +351,6 @@ export function WebTerminal(props: WebTerminalProps) {
         socket.send(JSON.stringify({ type: "input", data }));
         return;
       }
-      if (desktop) {
-        void callRuntime(desktop, "nativeTerminal.write", {
-          id: props.terminalID,
-          input: data,
-          sessionID: props.sessionID,
-        }).catch((error) => {
-          console.error("[web-terminal] write failed", error);
-        });
-      }
     });
     term.onResize(({ cols, rows }) => {
       if (closed) return;
@@ -599,7 +435,6 @@ export function WebTerminal(props: WebTerminalProps) {
     closed = true;
     props.registerApi?.(undefined);
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    ipcUnlisten?.();
     if (windowResizeHandler)
       window.removeEventListener("resize", windowResizeHandler);
     socket?.close();

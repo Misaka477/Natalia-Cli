@@ -161,15 +161,6 @@ Production build:
 npm --workspace @natalia/web-shell run build
 ```
 
-## Desktop
-
-```bash
-npm --workspace @natalia/desktop run dev
-```
-
-- Starts the Electron desktop app.
-- The desktop app uses the same web shell UI and starts a local runtime automatically.
-
 ## UI
 
 ```bash
@@ -180,7 +171,7 @@ npm run ts:cli -- ui <kind>
 - `ui` lists the UI adapter kinds contributed by enabled installed and path plugins.
 - `ui <kind>` mounts that UI adapter in-process against a real runtime and waits for `SIGINT`/`SIGTERM`, then closes the adapter, the plugin registry, and the runtime.
 
-Every UI — the web shell, the desktop app, or a freshly installed package — is launched through the same generic UI host (`createUiAdapterHost` in `@natalia/client`); see the [plugin guide](plugin-guide.md#6-ui-adapters).
+Every UI — the web shell or a freshly installed package — is launched through the same generic UI host (`createUiAdapterHost` in `@natalia/client`); see the [plugin guide](plugin-guide.md#6-ui-adapters).
 
 ## Current Help Behavior
 
@@ -319,15 +310,6 @@ npm run ts:ui
 npm --workspace @natalia/web-shell run build
 ```
 
-## Desktop
-
-```bash
-npm --workspace @natalia/desktop run dev
-```
-
-- 启动 Electron 桌面应用。
-- Desktop 使用同一套 Web shell UI，并自动启动本地 runtime。
-
 ## UI
 
 ```bash
@@ -338,7 +320,7 @@ npm run ts:cli -- ui <kind>
 - `ui` 列出已启用 installed/path 插件贡献的 UI adapter kinds。
 - `ui <kind>` 在进程内对真实 runtime 挂载该 UI，并等待 `SIGINT`/`SIGTERM`，然后关闭 adapter、plugin registry 和 runtime。
 
-每个 UI——Web shell、Desktop 或新安装的包——都通过同一个通用 UI host（`@natalia/client` 的 `createUiAdapterHost`）启动；详见 [plugin guide](plugin-guide.md#6-ui-adapters)。
+每个 UI——Web shell 或新安装的包——都通过同一个通用 UI host（`@natalia/client` 的 `createUiAdapterHost`）启动；详见 [plugin guide](plugin-guide.md#6-ui-adapters)。
 
 ## 当前 Help 行为
 

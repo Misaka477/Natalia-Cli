@@ -19,15 +19,6 @@ import type {
 } from "@natalia/contracts";
 import { callRuntimeRPC } from "@natalia/transport";
 
-type ElectronGlobal = {
-  invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-  on<T>(channel: string, listener: (payload: T) => void): () => void;
-};
-
-function getElectronGlobal(): ElectronGlobal | undefined {
-  return (globalThis as { electron?: ElectronGlobal }).electron;
-}
-
 export const RPC_METHOD_ROUTES: Record<string, string> = {
   submit: "prompt",
   submitAndWait: "submit.andWait",
@@ -335,16 +326,12 @@ export type WebRuntimeOptions = {
 /**
  * Real browser runtime client.
  *
- * In the plain web shell it speaks the framework RPC protocol to a running
- * Natalia runtime/daemon and consumes the /events SSE stream. Inside the
- * Electron desktop shell the same shape is backed by IPC: method calls go
- * through `runtime_call` and runtime events are forwarded from the main process
- * as `natalia-runtime-event` events.
+ * The web shell speaks the framework RPC protocol to a running Natalia
+ * runtime/daemon and consumes the /events SSE stream.
  */
 export function createWebRuntimeClient(
   options: WebRuntimeOptions,
 ): RuntimeClient {
-  const electron = getElectronGlobal();
   const call = <T>(
     method: string,
     params?: Record<string, unknown>,
@@ -356,18 +343,6 @@ export function createWebRuntimeClient(
     perfLog(
       `[perf] rpc start ${method} +${(callStart - startupBase).toFixed(1)}ms`,
     );
-    if (electron && !options.url) {
-      return electron
-        .invoke<T>("runtime_call", {
-          method,
-          params: params ?? {},
-        })
-        .finally(() => {
-          perfLog(
-            `[perf] ipc ${method} ${(performance.now() - callStart).toFixed(1)}ms`,
-          );
-        });
-    }
     return callRuntimeRPC<T>({
       url: options.url,
       token: options.token,
@@ -558,18 +533,6 @@ export function createWebRuntimeClient(
     // session, but retain all sessions so background projections stay current.
     sessionLoadGlobal().__nataliaReplayingHistory = true;
     liveBuffer.length = 0;
-
-    // Electron: receive runtime events through the main-process IPC bridge.
-    if (electron) {
-      electron.on<RuntimeEvent>("natalia-runtime-event", (event) => {
-        emitLive(event);
-      });
-      electron.on<RuntimeEvent[]>("natalia-runtime-events", (events) => {
-        for (const event of events) emitLive(event);
-      });
-      await restoreRecentSession();
-      return;
-    }
 
     void runWebSSE();
   }

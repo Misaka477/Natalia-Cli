@@ -265,7 +265,7 @@ the _capability records loaded into this runtime_, while availability lists
 _which API members are implemented and reachable_. The names are close; the
 facts are not.
 
-The worker channel (used by the web/desktop UI) has its own route table and its own honest
+The worker channel (used by the web UI) has its own route table and its own honest
 report. Its gaps — `workgraph.*` and the intelligence queries are not routed
 there — show up as `implemented_unreachable` rather than being silent.
 
@@ -397,7 +397,7 @@ Three behaviours worth knowing before you build on them:
   `/checkpoints`, `/rollback`): a provider must be present, a turn actually
   runs, and the command handles the rest. The dedicated members are
   `checkpointList`, `checkpointPreview` and `checkpointRollback` (see the
-  generated route table); the aliases exist for the web/desktop UI's convenience. Use
+  generated route table); the aliases exist for the web UI's convenience. Use
   the dedicated members from an integration.
 - **The dedicated checkpoint members.** `checkpointList()` lists the records
   (`sequence`, `reason` — e.g. `turn_begin`, `context-limit` — `complete`,
@@ -498,7 +498,7 @@ delivering it.
 **Config writes use the same refusal semantics as reload.** `config.update`
 (`sdk.updateConfig({ patch, scope })`) writes the patch, merges it, and applies
 it; applying under a running turn is refused as a value (`applied: false` with a
-reason), the same shape as `reloadConfig`. The web/desktop UI's settings menu and a remote
+reason), the same shape as `reloadConfig`. The web UI's settings menu and a remote
 consumer go through the same route.
 
 ### Attachments (images, video and text)
@@ -526,7 +526,7 @@ request:
 - Bytes matching no known type are refused; a path outside the workspace is
   refused. An attachment with an image-looking filename but non-image bytes is
   sniffed and refused, not trusted.
-- **The web/desktop UI queues attachments through its composer.** The exact
+- **The web UI queues attachments through its composer.** The exact
   gestures are UI-specific; the underlying runtime behavior is the same for
   every host.
 
@@ -1749,7 +1749,7 @@ SDK 认识的更新，所有调用面都会以 `RuntimeVersionMismatchError` 大
 `capabilities`（RPC 路由）与 availability 是两件不同的事实：前者列出*加载进这个
 runtime 的能力记录*，后者列出*实现了哪些 API 成员且可达*。名字相近，事实不同。
 
-worker 通道（Web/Desktop UI 使用）有自己的路由表与自己的如实报告。它的缺口——
+worker 通道（Web UI 使用）有自己的路由表与自己的如实报告。它的缺口——
 `workgraph.*` 与 intelligence 查询未在其上路由——以 `implemented_unreachable`
 呈现，而不是沉默。
 
@@ -1929,7 +1929,7 @@ task 文档。
 
 **config 写与 reload 同一拒绝语义。** `config.update`
 （`sdk.updateConfig({ patch, scope })`）写入 patch、合并并应用；回合进行中拒绝应用
-是值（`applied: false` 带原因），与 `reloadConfig` 同形状。Web/Desktop UI 设置菜单与远程消费
+是值（`applied: false` 带原因），与 `reloadConfig` 同形状。Web UI 设置菜单与远程消费
 者走同一条路。
 
 ### 附件（图片、视频与文本）
@@ -1952,7 +1952,7 @@ provider 请求：
   附件存储拒绝 `application/pdf`，若旧数据仍到达 lowering，则忽略并记 diagnostic。
 - 字节不匹配任何已知类型被拒；越出 workspace 的路径被拒。文件名像图片但字节
   不是图片的附件被嗅探拒绝，而不是被信任。
-- **Web/Desktop UI 通过输入框入队附件。** 具体交互方式由各 UI 决定；底层
+- **Web UI 通过输入框入队附件。** 具体交互方式由各 UI 决定；底层
   runtime 行为对所有 host 一致。
 
 ### 管理面（配置面）

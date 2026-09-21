@@ -15,21 +15,9 @@ startRendererMemoryTrace();
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root mount point");
 
-const electron = (
-  globalThis as {
-    electron?: {
-      runtimeInfo?: () => Promise<{ url?: string; token?: string }>;
-    };
-  }
-).electron;
-const injected = electron?.runtimeInfo
-  ? await electron.runtimeInfo()
-  : undefined;
 const runtimeURL =
-  injected?.url ||
   (import.meta as { env?: Record<string, string> }).env
-    ?.VITE_NATALIA_RUNTIME_URL ||
-  "http://127.0.0.1:8790";
+    ?.VITE_NATALIA_RUNTIME_URL || "http://127.0.0.1:8790";
 
 const runtime = createWebRuntimeClient({
   url: runtimeURL,
@@ -43,9 +31,8 @@ const host = await createUiPluginHost({
   extra: {
     uiPluginRegistry: UI_PLUGIN_REGISTRY,
     runtimeURL,
-    token: injected?.token,
-    syncPluginUiBundles: () =>
-      syncPluginUiBundles(host, runtime, runtimeURL, injected?.token),
+
+    syncPluginUiBundles: () => syncPluginUiBundles(host, runtime, runtimeURL),
   },
   preferences: createLocalPreferenceStore(),
 });
@@ -57,7 +44,7 @@ for (const entry of UI_PLUGIN_REGISTRY) {
 
 // Load renderer-side UI bundles contributed by installed/enabled plugins.
 // This is the unified path for official and third-party feature UI.
-await loadPluginUiBundles(host, runtime, runtimeURL, injected?.token);
+await loadPluginUiBundles(host, runtime, runtimeURL);
 
 // Load the Neumorphism dark UI plugin
 await host.load(createNataliaNeuPlugin());

@@ -27,7 +27,7 @@ plugin commands.
 
 Plugins do not wrap Natalia's own framework. Agent turn/step execution,
 providers and model selection, sessions and configuration, transport/SDK/daemon,
-CLI/web/desktop UI hosts, permissions and approval, sandbox, checkpoint, engineering
+CLI/web UI hosts, permissions and approval, sandbox, checkpoint, engineering
 intelligence, workspace, runtime status, and diagnostics are constructed and
 owned directly by the runtime or host. They have no plugin manifest, unloadable
 plugin ID, `plugins.enabled` gate, or plugin-catalog entry. A package is a plugin
@@ -118,7 +118,7 @@ npm run ts:cli -- plugin install ./yourco-natalia-demo-1.0.0.tgz
 npm run ts:cli -- plugin doctor
 ```
 
-The web/desktop Plugin Manager can install, enable, disable, uninstall, audit, and
+The web shell Plugin Manager can install, enable, disable, uninstall, audit, and
 repair the same instance store. Doctor and reconcile do not replace
 `plugin install`.
 
@@ -153,7 +153,7 @@ the target directory already exists. Natalia installs `src/index.js`; a
 TypeScript scaffold also writes `src/index.ts` for editing, but the published
 entry remains JavaScript so the installed package does not depend on Bun or a
 TypeScript source loader. A UI package is a normal plugin; it is installed,
-uninstalled, enabled, and disabled with the same commands. The web/desktop Plugin
+uninstalled, enabled, and disabled with the same commands. The web shell Plugin
 Manager can also audit and repair the instance plugin store.
 
 The package declares every Natalia package it imports as a dependency:
@@ -389,7 +389,7 @@ requires `name`, `title`, and `run(invocation?)`; invocation contains `raw`,
 
 ### Renderer-side UI manifests
 
-The v2 manifest may declare a renderer-side UI entry that web/desktop loads
+The v2 manifest may declare a renderer-side UI entry that the web shell loads
 through the same dynamic plugin catalog path used for every plugin:
 
 ```json
@@ -561,7 +561,7 @@ explicitly disables that ID.
 These CLI commands persist desired state; they do not directly mutate a plugin
 registry already running in another process. A long-running client must reload
 its configuration/reconcile its desired catalog, or be restarted. A newly
-started CLI, web/desktop UI, UI host, or daemon reads the new state. Runtime RPC
+started CLI, web shell, UI host, or daemon reads the new state. Runtime RPC
 `pluginUnload` and `pluginReload` are process-local operations and do not replace
 the durable CLI commands.
 
@@ -720,7 +720,7 @@ The host injects three public ports:
 
 The UI package does not import an internal UI host, checkpoint controller,
 registry, or transport implementation. It only uses these public ports and
-public `@natalia/contracts` types. This lets a web, desktop, or custom
+public `@natalia/contracts` types. This lets a web or custom
 renderer use the same runtime without sharing current UI state or components.
 
 ### Checkpoints and message-level restore
@@ -756,7 +756,7 @@ async function openRestore(input, checkpointID) {
 message IDs follow `${turnID}:user`, `${turnID}:assistant`, and related segment
 forms, so a UI can derive the turn ID and filter checkpoints with
 `checkpoint.turnID === turnID`. This supports a `Restore...` action on either a
-user message or an assistant reply without coupling to the web/desktop UI renderer.
+user message or an assistant reply without coupling to the web UI renderer.
 
 Show every `CheckpointPreview.changes` item with its `add`, `modify`, `delete`,
 `rename`, `mode`, or `symlink` kind, plus context truncation, resource policies,
@@ -792,7 +792,7 @@ natalia-ts ui ui.web
 
 `natalia-ts ui <kind>` runs the UI in-process against a real runtime;
 `natalia-ts ui` without a kind lists the available UI kinds from enabled
-installed and path plugins. The web shell, desktop app, and every installed UI share one generic host,
+installed and path plugins. The web shell and every installed UI share one generic host,
 `createUiAdapterHost` (`@natalia/client`): it resolves the workspace config,
 discovers enabled plugins, loads only adapter-capable process plugins into one
 process registry, and materializes the requested kind(s) against one shared
@@ -885,7 +885,7 @@ Natalia 只有一种插件。官方插件和用户安装插件使用同一 regis
 命令。
 
 插件不用于包装 Natalia 框架自身。Agent turn/step、Provider 与模型选择、会话与配置、
-传输/SDK/daemon、CLI/web/desktop UI host、权限与审批、sandbox、checkpoint、工程智能、workspace、
+传输/SDK/daemon、CLI/web UI host、权限与审批、sandbox、checkpoint、工程智能、workspace、
 runtime status 和 diagnostics 都由 runtime/host 直接构造并管理。这些能力没有插件
 manifest、可卸载 plugin ID 或 `plugins.enabled` 开关，也不会出现在插件 catalog 中。
 只有移除后仍能保持 runtime 核心语义完整的扩展包才是插件；例如独立模型工具和 UI
@@ -971,7 +971,7 @@ npm run ts:cli -- plugin install ./yourco-natalia-demo-1.0.0.tgz
 npm run ts:cli -- plugin doctor
 ```
 
-web/desktop Plugin Manager 也能对同一实例 store 执行安装、启用、禁用、卸载、审计和修复。
+web shell Plugin Manager 也能对同一实例 store 执行安装、启用、禁用、卸载、审计和修复。
 `doctor` / `reconcile` 不能替代 `plugin install`。
 
 ## 3. 单包布局
@@ -1002,7 +1002,7 @@ natalia-ts plugin create ./my-ts --id yourco.ts --language ts
 解析；`--workspace` 不会改变脚手架输出位置。目标目录已存在时创建会失败。Natalia
 安装的是 `src/index.js`；TypeScript 脚手架额外写入 `src/index.ts` 供编辑，但发布
 入口仍是 JavaScript，因此安装后的包不依赖 Bun 或 TypeScript 源码 loader。UI 包是
-普通插件，使用同一套安装、卸载、启用和禁用命令。web/desktop Plugin Manager 也可以审计和
+普通插件，使用同一套安装、卸载、启用和禁用命令。web shell Plugin Manager 也可以审计和
 修复实例 plugin-store。
 
 包必须把实现直接导入的每个 Natalia 包声明为依赖：
@@ -1220,7 +1220,7 @@ const contents = await ctx.resources.read({
 
 ### Renderer UI 清单
 
-v2 manifest 可以声明供 web/desktop 使用的 renderer UI 入口，并通过统一的
+v2 manifest 可以声明供 web shell 使用的 renderer UI 入口，并通过统一的
 动态插件 catalog 加载：
 
 ```json
@@ -1372,7 +1372,7 @@ natalia-ts plugin install ./yourco-natalia-demo-1.0.0.tgz
 
 这些 CLI 命令持久化 desired state，不会直接修改另一个进程中已经运行的 plugin
 registry。长时间运行的 client 必须重新加载配置/协调 desired catalog，或者重启进程。
-新启动的 CLI、Web/Desktop UI、UI host 或 daemon 会读取新状态。runtime RPC 的 `pluginUnload` 和
+新启动的 CLI、Web shell、UI host 或 daemon 会读取新状态。runtime RPC 的 `pluginUnload` 和
 `pluginReload` 是进程局部操作，不能替代持久化 CLI 命令。
 
 使用相同 package name 和 plugin ID 再次安装就是升级/重装路径。新包必须通过 staging
@@ -1518,7 +1518,7 @@ host 注入三个公共端口：
 | `input.commands.list()` / `execute()` | 列出并执行 host 的权威 command catalog。通过 command `name` 定位，向 `execute` 传入原始命令与已解析参数。                                                               |
 
 UI package 不应导入内部 UI host、checkpoint controller、registry 或 transport 实现，只能
-使用这些公共 port 与公开的 `@natalia/contracts` type。因此 web、desktop 或自定义
+使用这些公共 port 与公开的 `@natalia/contracts` type。因此 web 或自定义
 renderer 都可使用同一 runtime，而不依赖当前 UI 的 state 或组件。
 
 ### Checkpoint 与消息级 restore
@@ -1553,7 +1553,7 @@ async function openRestore(input, checkpointID) {
 `checkpointList()` 返回带 `turnID` 的 `RuntimeCheckpoint`。transcript message ID 采用
 `${turnID}:user`、`${turnID}:assistant` 及相关 segment 形式，因此 UI 可以解析 turn ID，
 再用 `checkpoint.turnID === turnID` 过滤 checkpoint。这样能在 user message 或 assistant
-reply 上提供 `Restore...`，而不耦合 web/desktop UI renderer。
+reply 上提供 `Restore...`，而不耦合 web UI renderer。
 
 展示每个 `CheckpointPreview.changes` 的 `add`、`modify`、`delete`、`rename`、`mode` 或
 `symlink` 类型，并展示 context truncation、resource policy、warning 和 `complete` 状态。
@@ -1583,7 +1583,7 @@ natalia-ts ui ui.web
 ```
 
 `natalia-ts ui <kind>` 在进程内对真实 runtime 挂载该 UI；`natalia-ts ui`（不带 kind）
-列出已启用已安装/path 插件贡献的可用 UI kind。Web shell、Desktop 与所有已安装 UI 共用同一个通用 host
+列出已启用已安装/path 插件贡献的可用 UI kind。Web shell 与所有已安装 UI 共用同一个通用 host
 `createUiAdapterHost`（`@natalia/client`）：解析 workspace 配置、发现已启用插件、只把
 adapter-capable 的 process 插件装入一个进程 registry，并对同一个共享
 `UiAdapterMountInput` materialize 请求的 kind(s)。关闭幂等且 fail-closed（先

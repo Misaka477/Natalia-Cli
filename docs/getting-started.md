@@ -10,7 +10,6 @@ Natalia is a local-first coding-agent runtime. This guide covers installing the 
 
 - **CLI** (`apps/cli`)
 - **Web shell** (`apps/web`, package `@natalia/web-shell`)
-- **Desktop** (`apps/desktop`, package `@natalia/desktop`)
 
 There is no legacy TUI application in the current tree.
 
@@ -111,29 +110,19 @@ Production build:
 npm --workspace @natalia/web-shell run build
 ```
 
-## 6. Desktop
-
-The desktop app is an Electron wrapper around the same web shell UI.
-
-```bash
-npm --workspace @natalia/desktop run dev
-```
-
-It starts the runtime automatically and opens the desktop window with workspace/session navigation.
-
-## 7. Multi-workspace
+## 6. Multi-workspace
 
 Natalia supports multiple workspaces in one host process. Each workspace has its own runtime client and session store; they share the same global config path and plugin store.
 
-- Add a workspace through the web/desktop workspace panel.
+- Add a workspace through the web shell workspace panel.
 - Activate a workspace to make it the active runtime.
 - Use `NATALIA_WORKSPACES_FILE` to point at a workspace registry JSON when embedding the runtime.
 
-The web/desktop UI renders a workspace tree and the workspace -> session tree from the same projected state.
+The web shell renders a workspace tree and the workspace -> session tree from the same projected state.
 
-## 8. Multi-session
+## 7. Multi-session
 
-A workspace can run multiple sessions concurrently. The web/desktop UI shows sessions in a tree and allows attaching, resuming, and switching between them.
+A workspace can run multiple sessions concurrently. The web shell shows sessions in a tree and allows attaching, resuming, and switching between them.
 
 CLI session commands operate on session records:
 
@@ -145,7 +134,7 @@ npm run ts:cli -- session pin <id>
 npm run ts:cli -- session delete <id>
 ```
 
-## 9. Where data lives
+## 8. Where data lives
 
 | Data                                    | Location                                |
 | --------------------------------------- | --------------------------------------- |
@@ -155,7 +144,7 @@ npm run ts:cli -- session delete <id>
 
 Override global paths with `NATALIA_CONFIG` and `NATALIA_WORKSPACES_FILE`.
 
-## 10. Troubleshooting
+## 9. Troubleshooting
 
 - `provider: not configured` — set `NATALIA_PROVIDER` / `NATALIA_API_KEY` / `NATALIA_MODEL` or fill `.natalia/config.json`.
 - `No real provider configured` — restart the runtime after changing provider config.
@@ -169,7 +158,6 @@ Natalia 是 local-first 的 coding-agent runtime。本指南覆盖安装工作�
 
 - **CLI**（`apps/cli`）
 - **Web shell**（`apps/web`，包名 `@natalia/web-shell`）
-- **Desktop**（`apps/desktop`，包名 `@natalia/desktop`）
 
 当前代码树中没有旧的 TUI 应用。
 
@@ -270,29 +258,19 @@ npm run ts:ui
 npm --workspace @natalia/web-shell run build
 ```
 
-## 6. Desktop
-
-Desktop 是基于同一 Web shell UI 的 Electron 桌面应用。
-
-```bash
-npm --workspace @natalia/desktop run dev
-```
-
-它会自动启动 runtime，并打开带 workspace/session 导航的桌面窗口。
-
-## 7. 多 Workspace
+## 6. 多 Workspace
 
 Natalia 支持在一个 host 进程里同时管理多个 workspace。每个 workspace 有独立的 runtime client 和 session store；它们共享同一个 global config 路径和 plugin store。
 
-- 通过 Web/Desktop 的 workspace 面板添加 workspace。
+- 通过 Web shell 的 workspace 面板添加 workspace。
 - 激活 workspace 后它成为 active runtime。
 - 嵌入 runtime 时可用 `NATALIA_WORKSPACES_FILE` 指定 workspace registry JSON。
 
-Web/Desktop UI 从同一份 projection 渲染 workspace 树和 workspace -> session 树。
+Web shell 从同一份 projection 渲染 workspace 树和 workspace -> session 树。
 
-## 8. 多 Session
+## 7. 多 Session
 
-同一个 workspace 可以并发运行多个 session。Web/Desktop UI 用 session 树展示它们，并支持附加、恢复和切换。
+同一个 workspace 可以并发运行多个 session。Web shell 用 session 树展示它们，并支持附加、恢复和切换。
 
 CLI session 命令操作 session 记录：
 
@@ -304,7 +282,7 @@ npm run ts:cli -- session pin <id>
 npm run ts:cli -- session delete <id>
 ```
 
-## 9. 数据存放位置
+## 8. 数据存放位置
 
 | 数据                                | 位置                                    |
 | ----------------------------------- | --------------------------------------- |
@@ -314,7 +292,7 @@ npm run ts:cli -- session delete <id>
 
 可用 `NATALIA_CONFIG` 和 `NATALIA_WORKSPACES_FILE` 覆盖全局路径。
 
-## 10. 故障排查
+## 9. 故障排查
 
 - `provider: not configured`：设置 `NATALIA_PROVIDER` / `NATALIA_API_KEY` / `NATALIA_MODEL`，或填写 `.natalia/config.json`。
 - `No real provider configured`：修改 provider 配置后重启 runtime。

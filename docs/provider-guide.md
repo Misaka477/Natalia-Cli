@@ -126,7 +126,7 @@ Two ways:
 Model discovery (`discoverProviderModels`) hits `{baseURL}/v1/models` for
 OpenAI-compatible kinds, `/models` with an `x-api-key` for Anthropic and an
 `x-goog-api-key` for Gemini — implement a compatible endpoint if you want the
-web/desktop UI's "add provider" flow to list your models.
+web UI's "add provider" flow to list your models.
 
 ## 7. Checklist for a new adapter
 
@@ -249,7 +249,7 @@ runtime 对 provider 错误分类，让消费者拿到机器可读的失败而�
 
 模型发现（`discoverProviderModels`）：OpenAI 兼容 kind 打
 `{baseURL}/v1/models`，Anthropic 带 `x-api-key`、Gemini 带 `x-goog-api-key`
-打 `/models`——想要 Web/Desktop UI 的"添加 provider"流程列出你的模型，就实现兼容端点。
+打 `/models`——想要 Web UI 的"添加 provider"流程列出你的模型，就实现兼容端点。
 
 ## 7. 新适配器检查单
 
