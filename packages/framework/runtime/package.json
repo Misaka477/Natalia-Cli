@@ -13,11 +13,11 @@
     "@natalia/config": "workspace:*",
     "@natalia/object-store": "workspace:*",
     "@natalia/platform": "workspace:*",
-    "@natalia/session": "workspace:*",
     "@natalia/tools": "workspace:*",
     "@natalia/diff-wasm": "workspace:*"
   },
   "devDependencies": {
+    "@natalia/session": "workspace:*",
     "@natalia/testing": "workspace:*"
   }
 }

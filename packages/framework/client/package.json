@@ -35,7 +35,6 @@
     "@natalia/tools": "workspace:*",
     "@natalia/tool-policy": "workspace:*",
     "@natalia/turn-orchestration": "workspace:*",
-    "@natalia/ui-model": "workspace:*",
     "@natalia/work-ledger": "workspace:*",
     "@natalia/workspace": "workspace:*",
     "@natalia/goal": "workspace:*",
@@ -44,6 +43,7 @@
   "devDependencies": {
     "@natalia/installer": "workspace:*",
     "@natalia/testing": "workspace:*",
+    "@natalia/ui-model": "workspace:*",
     "@natalia/view-store": "workspace:*"
   }
 }

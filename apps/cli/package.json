@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@natalia/agent": "workspace:*",
-    "@natalia/capability": "workspace:*",
     "@natalia/client": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
@@ -25,9 +24,12 @@
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",
-    "@natalia/session": "workspace:*",
     "@natalia/session-store": "workspace:*",
     "@natalia/transport": "workspace:*",
     "@natalia/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@natalia/capability": "workspace:*",
+    "@natalia/session": "workspace:*"
   }
 }

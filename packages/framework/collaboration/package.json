@@ -13,7 +13,9 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",
-    "@natalia/tools": "workspace:*",
+    "@natalia/tools": "workspace:*"
+  },
+  "devDependencies": {
     "@natalia/work-ledger": "workspace:*"
   }
 }

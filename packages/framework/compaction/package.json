@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "@natalia/runtime-services": "workspace:*",
-    "@natalia/context-ledger": "workspace:*",
     "@natalia/contracts": "workspace:*",
-    "@natalia/retry": "workspace:*",
     "@natalia/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@natalia/context-ledger": "workspace:*",
+    "@natalia/retry": "workspace:*"
   }
 }

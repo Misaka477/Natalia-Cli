@@ -10,14 +10,16 @@
   },
   "dependencies": {
     "@natalia/runtime-services": "workspace:*",
-    "@natalia/attachments": "workspace:*",
-    "@natalia/compaction": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
-    "@natalia/retry": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/tools": "workspace:*",
     "@natalia/agent-prompts": "workspace:*"
+  },
+  "devDependencies": {
+    "@natalia/attachments": "workspace:*",
+    "@natalia/compaction": "workspace:*",
+    "@natalia/retry": "workspace:*"
   }
 }
