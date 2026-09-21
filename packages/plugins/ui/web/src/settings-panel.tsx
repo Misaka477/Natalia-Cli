@@ -510,7 +510,11 @@ export function SettingsPanel(props: {
       });
     },
     "Max Retry": () => {
-      const current = String(props.config?.runtime?.maxAttemptsPerStep ?? 3);
+      const effective =
+        props.config?.runtime?.maxAttemptsPerStep ??
+        props.config?.runtime?.retry?.maxAttemptsPerStep;
+      const current =
+        effective === null || effective === undefined ? "" : String(effective);
       openEdit("单步最大重试次数", current, (raw) => {
         const value = Number(raw);
         if (Number.isInteger(value) && value > 0)
@@ -636,7 +640,12 @@ export function SettingsPanel(props: {
       case "Max Steps":
         return String(config.runtime?.maxStepsPerTurn ?? "unlimited");
       case "Max Retry":
-        return String(config.runtime?.maxAttemptsPerStep ?? 3);
+        const retryCap =
+          config.runtime?.maxAttemptsPerStep ??
+          config.runtime?.retry?.maxAttemptsPerStep;
+        return retryCap === null || retryCap === undefined
+          ? "不限制"
+          : String(retryCap);
       case "Request Timeout": {
         const seconds = config.runtime?.timeouts?.requestSec ?? 0;
         return seconds > 0 ? `${seconds}s` : "不设置";

@@ -14904,3 +14904,74 @@ function subagentCacheUsageProvider(): StreamingProvider {
     },
   };
 }
+
+test("runtime.maxAttemptsPerStep caps the retry policy the runtime uses", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-subagent-retry-cap-"));
+  await mkdir(join(root, ".natalia"), { recursive: true });
+  await writeFile(
+    join(root, ".natalia", "config.json"),
+    JSON.stringify({
+      version: 3,
+      runtime: {
+        maxAttemptsPerStep: 2,
+        retry: { initialBackoffMs: 1, maxBackoffMs: 1, jitterMs: 0 },
+      },
+    }),
+  );
+  let childAttempts = 0;
+  const provider: StreamingProvider = {
+    provider: "scripted-subagent-retry-cap",
+    model: "scripted-subagent-retry-cap-model",
+    async *stream(request) {
+      const isChild = request.messages.some(
+        (message) => message.content === "child transient task",
+      );
+      if (isChild) {
+        childAttempts++;
+        // Would recover on the sixth attempt, but the top-level cap of 2 must
+        // stop the retry loop first — the runtime reads runtime.maxAttemptsPerStep
+        // as an override of retry.maxAttemptsPerStep (whose default is null =
+        // unlimited). Without that override this reaches 6.
+        if (childAttempts < 6)
+          throw providerError({ kind: "server", message: "temporary outage" });
+        yield { type: "content", text: "child recovered" };
+        yield { type: "done" };
+        return;
+      }
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield {
+          type: "tool_call",
+          calls: [
+            {
+              id: "call_retry_cap",
+              name: "agent_spawn",
+              arguments: JSON.stringify({ task: "child transient task" }),
+            },
+          ],
+        };
+        yield { type: "done" };
+        return;
+      }
+      yield { type: "content", text: "parent complete" };
+      yield { type: "done" };
+    },
+  };
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID: "ses_subagent_retry_cap",
+    provider,
+    permissionMode: "auto",
+  });
+  client.start((event) => events.push(event));
+  await client.submitAndWait!("delegate capped retry work");
+  await waitFor(() =>
+    events.some(
+      (event) =>
+        event.type === "subagent.update" &&
+        (event.status === "failed" || event.status === "completed"),
+    ),
+  );
+  // The cap of 2 wins: the child never reaches the sixth (recovering) attempt.
+  expect(childAttempts).toBe(2);
+});

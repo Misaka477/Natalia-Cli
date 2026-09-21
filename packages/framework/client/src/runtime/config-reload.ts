@@ -193,7 +193,9 @@ export function createConfigReload(
       resetCheckpointFactory(ctx);
       setMaxSteps(tsConfig.config.runtime.maxStepsPerTurn);
       setRetryPolicy({
-        maxAttemptsPerStep: tsConfig.config.runtime.retry.maxAttemptsPerStep,
+        maxAttemptsPerStep:
+          tsConfig.config.runtime.maxAttemptsPerStep ??
+          tsConfig.config.runtime.retry.maxAttemptsPerStep,
         initialBackoffMs: tsConfig.config.runtime.retry.initialBackoffMs,
         maxBackoffMs: tsConfig.config.runtime.retry.maxBackoffMs,
         jitterMs: tsConfig.config.runtime.retry.jitterMs,

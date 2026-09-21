@@ -129,7 +129,7 @@ export const runtimeConfigSchema = z.object({
     })
     .default({}),
   timeouts: timeoutSchema.default({}),
-  maxAttemptsPerStep: z.number().int().positive().default(3),
+  maxAttemptsPerStep: z.number().int().positive().optional(),
   /**
    * Max in-flight provider requests per provider id, keyed by provider. This is
    * the fan-out ceiling: N parallel sub-agents each take a slot before calling

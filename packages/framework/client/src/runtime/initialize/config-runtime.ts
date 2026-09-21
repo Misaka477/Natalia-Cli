@@ -43,7 +43,9 @@ export async function configureRuntime(
   if (!resolvedWaiter)
     throw new Error("collaboration waiter unavailable (natalia-collaboration)");
   scope.retryPolicy = {
-    maxAttemptsPerStep: tsConfig.config.runtime.retry.maxAttemptsPerStep,
+    maxAttemptsPerStep:
+      tsConfig.config.runtime.maxAttemptsPerStep ??
+      tsConfig.config.runtime.retry.maxAttemptsPerStep,
     initialBackoffMs: tsConfig.config.runtime.retry.initialBackoffMs,
     maxBackoffMs: tsConfig.config.runtime.retry.maxBackoffMs,
     jitterMs: tsConfig.config.runtime.retry.jitterMs,
