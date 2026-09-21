@@ -136,6 +136,7 @@ export {
 export {
   isProcessRunning,
   ownsProcess,
+  parseProcStatStartTicks,
   processFingerprint,
   readOptionalFile,
   safeToolEnv,

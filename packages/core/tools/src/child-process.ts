@@ -114,6 +114,19 @@ export function isProcessRunning(pid: number) {
   }
 }
 
+/**
+ * Reads field 22 (starttime) from a `/proc/<pid>/stat` line. Field 2 (`comm`) is
+ * parenthesized and may itself contain spaces or parentheses, so the line must
+ * be split AFTER the last `)` — splitting the whole line on whitespace shifts
+ * every later field whenever `comm` has a space, silently reading the wrong
+ * value (itrealvalue instead of starttime) and weakening the pid-reuse check.
+ * Post-`)` fields are 0-indexed from `state`, so starttime is index 19.
+ */
+export function parseProcStatStartTicks(statLine: string): string | undefined {
+  const afterComm = statLine.slice(statLine.lastIndexOf(")") + 1);
+  return afterComm.trim().split(/\s+/u)[19];
+}
+
 export async function processFingerprint(pid: number) {
   if (process.platform !== "linux") return {};
   try {
@@ -121,9 +134,8 @@ export async function processFingerprint(pid: number) {
       readFile(`/proc/${pid}/stat`, "utf8"),
       readFile(`/proc/${pid}/cmdline`, "utf8"),
     ]);
-    const fields = statLine.trim().split(/\s+/u);
     return {
-      pidStartTicks: fields[21],
+      pidStartTicks: parseProcStatStartTicks(statLine),
       commandLine: commandLine.replace(/\0/gu, " ").trim(),
     };
   } catch {
