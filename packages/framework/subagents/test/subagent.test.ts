@@ -74,6 +74,25 @@ test("spawn creates record and runs runner", async () => {
   expect(rec.outputs[1].text).toBe("done: test task");
 });
 
+test("a runner that sets an unknown status fails the run instead of storing it", async () => {
+  const dir = await tempDir();
+  const bogusStatusRunner = (
+    _task: string,
+    ctx: { setStatus: (status: string) => void },
+  ) => {
+    ctx.setStatus("not-a-real-status");
+  };
+  const reg = new SubagentRegistry({
+    runner: bogusStatusRunner,
+    workDir: dir,
+  });
+  const rec = await reg.spawn("task");
+  // The record's status is the closed SubagentStatus union; an unknown value is
+  // rejected at the write, failing the run — never silently stored.
+  expect(rec.status).toBe("failed");
+  expect(rec.activityDetail).toContain("invalid subagent status");
+});
+
 test("spawn rejects empty task", async () => {
   const reg = new SubagentRegistry({
     runner: immediateRunner,

@@ -17,7 +17,7 @@ test("team_fanout + team_review drive a fan-out from a tool context", async () =
       const manifest = await sandboxes.create(context.agentId);
       await writeFile(join(manifest.root, "output.txt"), `from ${task}`);
       context.log("ok");
-      context.setStatus("done");
+      context.setStatus("running");
     },
   });
   const fanout = createTeamFanoutTool({

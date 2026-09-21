@@ -18,6 +18,30 @@ import { formatStatusCounts, truncate } from "./format";
 
 const DEFAULT_STALL_MS = 30_000;
 
+/**
+ * Every status a subagent record may carry. A `Record<SubagentStatus, true>`
+ * (not a hand-written list) so adding a union member without listing it here
+ * fails typecheck — the completeness the audit mechanizes elsewhere.
+ */
+const SUBAGENT_STATUS_MEMBER: Record<SubagentStatus, true> = {
+  idle: true,
+  running: true,
+  paused: true,
+  stopped: true,
+  completed: true,
+  failed: true,
+};
+
+/**
+ * `RunnerContext.setStatus` takes a plain string (it is the shared tool/host
+ * surface), but a record's status is the closed `SubagentStatus` union. Narrow
+ * with a runtime check instead of an `as any` cast: an unknown status is a bug
+ * to surface, not a value to silently store into the record.
+ */
+function isSubagentStatus(value: string): value is SubagentStatus {
+  return Object.hasOwn(SUBAGENT_STATUS_MEMBER, value);
+}
+
 export type StopResult =
   | { outcome: "stopped"; id: string }
   | { outcome: "not_found"; id: string }
@@ -327,7 +351,9 @@ export class SubagentRegistry {
         });
       },
       setStatus: (s: string) => {
-        (record as any).status = s;
+        if (!isSubagentStatus(s))
+          throw new Error(`invalid subagent status: ${s}`);
+        record.status = s;
         record.updatedAt = this.clock();
         record.lastActivityAt = this.clock();
         this.addAudit({
@@ -372,7 +398,7 @@ export class SubagentRegistry {
         const finalStatus = abortController.signal.aborted
           ? "stopped"
           : "completed";
-        (record as any).status = finalStatus;
+        record.status = finalStatus;
         record.phase = "finalizing";
         record.activityDetail = finalStatus;
         record.endedAt = this.clock();
@@ -392,7 +418,7 @@ export class SubagentRegistry {
           abortController.signal.aborted
             ? "stopped"
             : "failed";
-        (record as any).status = finalStatus;
+        record.status = finalStatus;
         record.phase = "finalizing";
         record.activityDetail =
           finalStatus === "stopped" ? "aborted" : String(err);

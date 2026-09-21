@@ -31,7 +31,7 @@ test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each
       );
       await writeFile(join(manifest.root, "output.txt"), `made by ${task}`);
       context.log("complete");
-      context.setStatus("done");
+      context.setStatus("running");
     },
   });
 
@@ -68,7 +68,7 @@ test("runFanOut gates each PR with build evidence from the candidate worktree", 
       const pass = task.includes("pass");
       if (pass) await writeFile(join(manifest.root, "build-pass"), "1");
       context.log(pass ? "ok" : "broken");
-      context.setStatus("done");
+      context.setStatus("running");
     },
   });
 
@@ -126,7 +126,7 @@ test("reviewPRs promotes approved PRs into the system slot and sends back the re
       const manifest = await sandboxes.create(context.agentId);
       await writeFile(join(manifest.root, "output.txt"), `from ${task}`);
       context.log("ok");
-      context.setStatus("done");
+      context.setStatus("running");
     },
   });
 
@@ -207,7 +207,7 @@ test("runFanOut caps concurrent spawns with maxConcurrent", async () => {
       const manifest = await sandboxes.create(context.agentId);
       await writeFile(join(manifest.root, "out.txt"), task);
       context.log("ok");
-      context.setStatus("done");
+      context.setStatus("running");
     },
   });
   // Count in-flight spawn calls: maxConcurrent caps the spawn burst.
@@ -294,7 +294,7 @@ test("an approved PR releases its candidate sandbox", async () => {
       const manifest = await sandboxes.create(context.agentId);
       await writeFile(join(manifest.root, "output.txt"), `from ${task}`);
       context.log("ok");
-      context.setStatus("done");
+      context.setStatus("running");
     },
   });
   const prs = await runFanOut({
@@ -341,7 +341,7 @@ test("a PR sent back for changes keeps its candidate for the sub-agent to redo",
       const manifest = await sandboxes.create(context.agentId);
       await writeFile(join(manifest.root, "output.txt"), `from ${task}`);
       context.log("ok");
-      context.setStatus("done");
+      context.setStatus("running");
     },
   });
   const prs = await runFanOut({
