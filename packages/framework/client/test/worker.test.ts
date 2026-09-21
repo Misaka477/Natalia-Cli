@@ -5,7 +5,10 @@ import { join } from "node:path";
 import {
   createOfficialRuntimeClient as createRealRuntimeClient,
   officialPluginWorkspace as mkdtemp,
+  useWorkspaceCleanup,
 } from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 import type {
   MCPCatalogSnapshot,
   RuntimeClient,

@@ -2,7 +2,12 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { ProviderStreamRequest } from "@natalia/runtime";
 import { createRealRuntimeClient } from "../src";
-import { officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  officialPluginWorkspace,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 
 /**
  * EI §3.5 correction action "暂停 plan": the main agent pauses/resumes a plan

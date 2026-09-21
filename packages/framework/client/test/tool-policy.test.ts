@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import {
   createOfficialRuntimeClient as createRealRuntimeClient,
   officialPluginWorkspace as mkdtemp,
+  useWorkspaceCleanup,
 } from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 import {
   createToolPolicyHookLayer,
   type ToolHooks,

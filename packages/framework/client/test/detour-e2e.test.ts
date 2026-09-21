@@ -2,7 +2,12 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { projectedWorkContracts } from "@natalia/session";
 import { createRealRuntimeClient } from "../src";
-import { officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  officialPluginWorkspace,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 import { createScriptedProvider, waitFor } from "./e2e-harness";
 
 const SESSION = "ses_e2e_detour" as SessionID;

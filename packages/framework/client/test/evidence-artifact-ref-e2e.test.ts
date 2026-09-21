@@ -3,7 +3,12 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { SessionID } from "@natalia/contracts";
 import { createRealRuntimeClient } from "../src";
-import { officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  officialPluginWorkspace,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 import { createScriptedProvider } from "./e2e-harness";
 
 /**

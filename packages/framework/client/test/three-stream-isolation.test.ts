@@ -7,7 +7,12 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createRealRuntimeClient } from "../src";
-import { officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  officialPluginWorkspace,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 
 type ChatRequest = {
   channel: "navi" | "nia";

@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SessionID } from "@natalia/contracts";
 import { createRealRuntimeClient } from "../src";
-import { officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  officialPluginWorkspace,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 import { createScriptedProvider } from "./e2e-harness";
 
 const SESSION = "ses_e2e_workgraph_integrity" as SessionID;

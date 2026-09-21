@@ -7,7 +7,12 @@ import { createPluginAdapterMaterializer } from "@natalia/plugin";
 import { createToolRegistry } from "@natalia/tools";
 import { discoverDesiredPluginEntries } from "../src/plugin-discovery";
 import { createPluginsController } from "../src/plugins-controller";
-import { pluginSdkImportPath } from "./plugin-test-helpers";
+import {
+  pluginSdkImportPath,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 
 const pluginID = "lifecycle.symmetry";
 const packageName = "lifecycle-symmetry-plugin";

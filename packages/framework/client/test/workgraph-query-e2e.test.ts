@@ -2,7 +2,12 @@ import { expect, test } from "bun:test";
 import type { SessionID } from "@natalia/contracts";
 import type { ProviderStreamRequest } from "@natalia/runtime";
 import { createRealRuntimeClient } from "../src";
-import { officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  officialPluginWorkspace,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 
 const SESSION = "ses_e2e_workgraph_query" as SessionID;
 

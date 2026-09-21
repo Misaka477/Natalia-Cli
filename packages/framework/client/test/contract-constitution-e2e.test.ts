@@ -3,7 +3,12 @@ import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { ProviderStreamRequest } from "@natalia/runtime";
 import { projectedWorkContracts } from "@natalia/session";
 import { createRealRuntimeClient } from "../src";
-import { officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  officialPluginWorkspace,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 
 /**
  * EI Open Question "契约 handoff 撞 constitution" — decided: 拦在 propose /

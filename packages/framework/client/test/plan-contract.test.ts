@@ -7,7 +7,12 @@ import type {
   StreamingProvider,
 } from "@natalia/runtime";
 import { createRealRuntimeClient } from "../src";
-import { officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  officialPluginWorkspace,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 import {
   projectedRuntimeNotices,
   projectedWorkContracts,

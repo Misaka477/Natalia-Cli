@@ -16,7 +16,10 @@ import type { PluginConfigSnapshot } from "../src/plugins-controller";
 import {
   installPluginSdkLinks,
   pluginSdkImportPath,
+  useWorkspaceCleanup,
 } from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 
 async function pluginWorkspace() {
   const root = await mkdtemp(join(tmpdir(), "natalia-plugins-controller-"));

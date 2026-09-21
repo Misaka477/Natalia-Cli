@@ -15,7 +15,10 @@ import { createUiAdapterHost } from "../src/ui-host";
 import {
   installPluginSdkLinks,
   pluginSdkImportPath,
+  useWorkspaceCleanup,
 } from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 
 const SDK = pluginSdkImportPath();
 

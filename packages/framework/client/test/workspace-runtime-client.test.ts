@@ -17,7 +17,10 @@ import {
 import {
   officialPluginWorkspace,
   officialPluginStoreRoot,
+  useWorkspaceCleanup,
 } from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 
 function emptyManager(): WorkspaceManager {
   return {

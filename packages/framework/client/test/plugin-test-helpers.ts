@@ -9,8 +9,8 @@ import {
   rm,
   stat,
 } from "node:fs/promises";
-import { afterEach } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach } from "bun:test";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -33,16 +33,89 @@ const officialPluginTestWorkspaces = resolve(
 const officialPluginConfigFixture = "official-plugin-config.test.json";
 const officialPluginStoreSuffix = "-plugin-store";
 const testWorkspaces = new Set<string>();
+const allWorkspaces = new Set<string>();
+const trackedClients = new Set<{ dispose?: () => Promise<void> }>();
 
-afterEach(async () => {
-  const workspaces = [...testWorkspaces];
-  testWorkspaces.clear();
-  await Promise.all(
-    workspaces.map((workspace) =>
-      rm(workspace, { recursive: true, force: true }),
-    ),
-  );
-});
+/**
+ * Registers this test file's workspace cleanup.
+ *
+ * Every test file that creates workspaces through this helper MUST call this
+ * once at module scope. A module-scope `afterEach` inside an imported helper
+ * only attaches to the first file that loads the module in a bun process
+ * (probe: two files sharing one helper leave the second file's workspaces
+ * behind), so the hooks have to be registered from the test file itself.
+ *
+ * The dispose-then-remove order is load-bearing: an undisposed runtime client
+ * keeps async session persistence alive, and its next flush does
+ * `mkdir(<workspace>/.natalia/sessions, { recursive: true })` — recreating the
+ * workspace directory seconds after the removal, which is how a fully green
+ * suite still left ~60 directories per run. Disposing first lands the flush
+ * inside the workspace while it still exists, so the removal sticks.
+ *
+ * The one bounded settle lives in the afterAll pass rather than per test: a
+ * child execution (a subagent's checkpoint journal) can write one file after
+ * the parent dispose returns, so every workspace gets one re-removal after a
+ * short delay — once per file instead of once per test, which keeps the suite
+ * from paying hundreds of sleeps. The consequence of getting any of this
+ * wrong is not a dirty directory: one leaked workspace per test filled the
+ * disk until every verify failed with ENOSPC (95,927 leftovers exhausted
+ * btrfs metadata). The test-workspace hygiene guard at the end of `npm test`
+ * fails loudly on any residue, so a forgotten call cannot pass silently.
+ */
+export function useWorkspaceCleanup(): void {
+  afterEach(async () => {
+    const clients = [...trackedClients];
+    trackedClients.clear();
+    for (const client of clients) {
+      try {
+        await client.dispose?.();
+      } catch {
+        // A test that already disposed, or a client torn down mid-flight, is
+        // not a cleanup failure; the workspace removal below still runs.
+      }
+    }
+    const workspaces = [...testWorkspaces];
+    testWorkspaces.clear();
+    await Promise.all(
+      workspaces.map((workspace) =>
+        rm(workspace, { recursive: true, force: true }),
+      ),
+    );
+  });
+  afterAll(async () => {
+    // Late child writes land here: a child execution's deferred flush can
+    // recreate a removed workspace well after its test ended — under load the
+    // lag reaches seconds (observed: a subagent's constitution write landing
+    // long after its parent client disposed). Sweep in bounded passes and stop
+    // the moment nothing survives, so a clean file pays nothing. rmSync is
+    // deliberate: this runs at teardown and must not depend on further
+    // event-loop turns.
+    for (let pass = 0; pass < 8; pass++) {
+      if (pass > 0) await new Promise((resolve) => setTimeout(resolve, 250));
+      let remaining = 0;
+      for (const workspace of allWorkspaces) {
+        try {
+          rmSync(workspace, { recursive: true, force: true });
+          if (existsSync(workspace)) remaining++;
+        } catch {
+          remaining++;
+        }
+      }
+      if (remaining === 0) break;
+    }
+    allWorkspaces.clear();
+  });
+}
+
+/**
+ * Registers a path outside `officialPluginWorkspace` for the same per-file
+ * sweep — for artifacts a test derives from its workspace (e.g. the governance
+ * ledger root real-runtime.test.ts points at a sibling directory). Unregistered
+ * artifacts accumulate exactly like leaked workspaces did.
+ */
+export function registerTestArtifact(path: string): void {
+  allWorkspaces.add(path);
+}
 
 export async function officialPluginWorkspace(prefix: string) {
   await assertOfficialPluginDistribution();
@@ -53,6 +126,8 @@ export async function officialPluginWorkspace(prefix: string) {
   testWorkspaces.add(workspaceRoot);
   const pluginStoreRoot = officialPluginStoreRoot(workspaceRoot);
   testWorkspaces.add(pluginStoreRoot);
+  allWorkspaces.add(workspaceRoot);
+  allWorkspaces.add(pluginStoreRoot);
   await initializeOfficialPlugins({
     pluginStoreRoot,
     distributionRoot: officialPluginDistribution,
@@ -91,6 +166,10 @@ export function createOfficialRuntimeClient(
     client.dispose = async () => {
       await dispose();
     };
+  // Tracked so `useWorkspaceCleanup()` can dispose before removing the
+  // workspace — otherwise the runtime's deferred session flush recreates the
+  // directory after removal (see the hook's doc comment).
+  trackedClients.add(client);
   return client;
 }
 

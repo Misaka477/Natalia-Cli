@@ -11,7 +11,12 @@ import {
   projectedWorkGraphNodes,
 } from "@natalia/session";
 import { createRealRuntimeClient } from "../src";
-import { officialPluginWorkspace } from "./plugin-test-helpers";
+import {
+  officialPluginWorkspace,
+  useWorkspaceCleanup,
+} from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 import {
   createScriptedProvider,
   reduceRuntimeEvents,

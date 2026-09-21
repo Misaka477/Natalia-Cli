@@ -4,7 +4,10 @@ import { join } from "node:path";
 import {
   createOfficialRuntimeClient,
   officialPluginWorkspace,
+  useWorkspaceCleanup,
 } from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 
 test("two sessions submit and finish concurrently without cross-cancel", async () => {
   const workspaceRoot = await officialPluginWorkspace("multi-session-parallel");
