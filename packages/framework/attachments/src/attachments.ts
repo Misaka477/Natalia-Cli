@@ -99,6 +99,21 @@ function assertImageAdmission(input: {
   return dimensions;
 }
 
+/**
+ * True when `candidate` escapes `canonicalDir`. Both must already be realpath'd
+ * so a symlinked root cannot make an in-dir path look like an escape. A real
+ * escape is a leading ".." path SEGMENT or an absolute result (a different
+ * drive on Windows); matching the whole first segment, not a ".." prefix, keeps
+ * an in-dir name like "..config" from being misreported.
+ *
+ * The single confinement check for the attachment store and its readers — kept
+ * in one place because the copies had drifted (a stale startsWith("..") form
+ * survived in the readers after the store was corrected).
+ */
+function escapesDir(canonicalDir: string, candidate: string): boolean {
+  const rel = relative(canonicalDir, candidate);
+  return isAbsolute(rel) || rel.split(/[/\\]/u)[0] === "..";
+}
 export async function storeLocalAttachments(input: {
   workspaceRoot: string;
   paths: string[];
@@ -126,11 +141,7 @@ export async function storeLocalAttachments(input: {
   let imageBytes = 0;
   for (const path of input.paths) {
     const source = await realpath(resolve(root, path));
-    // Reject a real escape — a leading ".." segment, or an absolute result
-    // (a different drive on Windows). Match the whole first segment, not a
-    // ".." prefix, so an in-workspace name like "..config" is not misreported.
-    const rel = relative(canonicalRoot, source);
-    if (isAbsolute(rel) || rel.split(/[/\\]/u)[0] === "..")
+    if (escapesDir(canonicalRoot, source))
       throw new Error(`attachment path escapes workspace: ${path}`);
     const info = await stat(source);
     if (!info.isFile()) throw new Error(`attachment is not a file: ${path}`);
@@ -252,7 +263,10 @@ export async function attachmentDataURL(
 ) {
   const root = resolve(workspaceRoot);
   const path = await realpath(resolve(root, attachment.path));
-  if (relative(join(root, ".natalia", "attachments"), path).startsWith(".."))
+  // realpath the store too, so a symlinked workspace does not make an in-store
+  // path look like an escape (the store write and this read must agree).
+  const store = await realpath(join(root, ".natalia", "attachments"));
+  if (escapesDir(store, path))
     throw new Error(`attachment store path escapes root: ${attachment.id}`);
   const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
   return `data:${attachment.mediaType};base64,${Buffer.from(bytes).toString("base64")}`;
@@ -266,7 +280,10 @@ export async function attachmentText(
     throw new Error(`attachment is not text: ${attachment.id}`);
   const root = resolve(workspaceRoot);
   const path = await realpath(resolve(root, attachment.path));
-  if (relative(join(root, ".natalia", "attachments"), path).startsWith(".."))
+  // realpath the store too, so a symlinked workspace does not make an in-store
+  // path look like an escape (the store write and this read must agree).
+  const store = await realpath(join(root, ".natalia", "attachments"));
+  if (escapesDir(store, path))
     throw new Error(`attachment store path escapes root: ${attachment.id}`);
   return new TextDecoder("utf-8", { fatal: true })
     .decode(await Bun.file(path).arrayBuffer())

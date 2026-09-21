@@ -75,6 +75,10 @@ test("attachment store accepts a workspace reached through a symlink", async () 
     });
     expect(stored).toHaveLength(1);
     expect(stored[0].filename).toBe("image.png");
+    // The reader must agree with the store: reading the stored attachment back
+    // through the same symlinked root must not look like an escape either.
+    const dataURL = await attachmentDataURL(link, stored[0]);
+    expect(dataURL.startsWith("data:image/png;base64,")).toBe(true);
   } finally {
     await rm(link, { recursive: true, force: true });
   }
