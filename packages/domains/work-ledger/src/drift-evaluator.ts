@@ -250,7 +250,12 @@ function tokens(text: string): Set<string> {
   return set;
 }
 
-/** Token-set overlap between two strings, 0..1 (Jaccard, CJK-aware). */
+/**
+ * Token-set containment, 0..1 (CJK-aware): the fraction of `right`'s tokens
+ * that appear in `left`. Asymmetric on purpose — NOT Jaccard, so a long
+ * objective does not dilute a short on-topic activity. Test-pinned by
+ * proseRelevanceQuestion.
+ */
 function overlap(left: string, right: string): number {
   const leftTokens = tokens(left);
   const rightTokens = tokens(right);
