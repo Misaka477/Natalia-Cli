@@ -4,6 +4,7 @@ import {
   admitInput,
   appendSessionEvent,
   createSessionRecord,
+  deserializeProjectionState,
   latestSessionSnapshot,
   modelVisibleEvents,
   projectedCanonicalTools,
@@ -1775,4 +1776,44 @@ test("foldable projection unit folds a goal incrementally to the same view", () 
 
   expect(foldProjection(session.events)).toEqual(projectSession(session));
   expect(foldProjection(session.events).goal?.roundsStarted).toBe(1);
+});
+
+test("deserializeProjectionState round-trips a serialized state", () => {
+  const state = {
+    version: 1,
+    events: [],
+    activeTurnIDs: new Set(["turn_1"]),
+    completedTurnIDs: new Set<string>(),
+  };
+  const restored = deserializeProjectionState(
+    JSON.stringify({
+      version: 1,
+      events: [],
+      activeTurnIDs: ["turn_1"],
+      completedTurnIDs: [],
+    }),
+  );
+  expect(restored?.activeTurnIDs).toEqual(new Set(["turn_1"]));
+  expect(restored?.completedTurnIDs).toEqual(new Set());
+  // absent set fields are tolerated (default empty)
+  const partial = deserializeProjectionState(
+    JSON.stringify({ version: 1, events: [] }),
+  );
+  expect(partial?.activeTurnIDs).toEqual(new Set());
+});
+
+test("deserializeProjectionState fails soft on a non-array set field instead of throwing", () => {
+  // A same-version, valid-JSON payload whose activeTurnIDs is not an array must
+  // be discarded (recovery falls back to a full projection), never crash on
+  // `new Set(nonIterable)`.
+  for (const bad of [5, { a: 1 }, true]) {
+    const json = JSON.stringify({ version: 1, events: [], activeTurnIDs: bad });
+    expect(deserializeProjectionState(json)).toBeUndefined();
+  }
+  const badCompleted = JSON.stringify({
+    version: 1,
+    events: [],
+    completedTurnIDs: "nope",
+  });
+  expect(deserializeProjectionState(badCompleted)).toBeUndefined();
 });

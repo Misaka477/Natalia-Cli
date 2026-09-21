@@ -228,6 +228,18 @@ export function deserializeProjectionState(
   }
   if (payload.version !== PROJECTION_STATE_VERSION) return undefined;
   if (!Array.isArray(payload.events)) return undefined;
+  // The set fields feed `new Set(...)`; a same-version payload carrying a
+  // non-array there would throw instead of failing soft, so guard them too.
+  if (
+    payload.activeTurnIDs !== undefined &&
+    !Array.isArray(payload.activeTurnIDs)
+  )
+    return undefined;
+  if (
+    payload.completedTurnIDs !== undefined &&
+    !Array.isArray(payload.completedTurnIDs)
+  )
+    return undefined;
   return {
     version: payload.version,
     events: payload.events,
