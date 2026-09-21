@@ -25,7 +25,6 @@ import {
   readOnlyToolMessage,
   ATTACHMENT_SERVICE,
   CHECKPOINT_FACTORY_SERVICE,
-  COLLABORATION_WAITER_SERVICE,
   COMPACTION_SERVICE,
   CONTEXT_LEDGER_FACTORY_SERVICE,
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
@@ -87,6 +86,7 @@ export function wireInitialize(
     providerModelPluginInput: features.pluginAssembly.providerModelPluginInput,
     wireFrameworkServices,
     capabilityRegistry: state.capabilityRegistry,
+    serviceDirectory: state.serviceDirectory,
     workspaceCapabilityView: state.workspaceCapabilityView,
     waiterDeps: state.waiterDeps,
     handleCommand: features.commands.handleCommand,
@@ -150,7 +150,6 @@ export function wireInitialize(
       subagents: SUBAGENTS_SERVICE,
       sessionStoreController: SESSION_STORE_CONTROLLER_SERVICE,
       toolPolicy: TOOL_POLICY_SERVICE,
-      collaborationWaiter: COLLABORATION_WAITER_SERVICE,
       providerModelController: PROVIDER_MODEL_CONTROLLER_SERVICE,
     },
   };

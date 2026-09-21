@@ -24,6 +24,7 @@ import { createToolPolicyService } from "@natalia/tool-policy";
 import {
   COLLABORATION_SERVICE,
   collaborationTools,
+  collaborationWaiter,
   createCollaborationService,
   createInteractiveWaiter,
 } from "@natalia/collaboration";
@@ -60,7 +61,6 @@ import {
   ATTACHMENT_SERVICE,
   CHECKPOINT_FACTORY_SERVICE,
   COMPACTION_SERVICE,
-  COLLABORATION_WAITER_SERVICE,
   CONTEXT_LEDGER_FACTORY_SERVICE,
   LOCAL_TOOLS_INPUT_SERVICE,
   MCP_INPUT_SERVICE,
@@ -166,9 +166,11 @@ export async function wireFrameworkServices(
     scope: "workspace",
     grants: ["services", "tools"],
   });
-  collaborationOwner.contribute(
-    "services",
-    COLLABORATION_WAITER_SERVICE,
+  // The waiter binds through the service directory: the token's id is the
+  // wire name this contribution always used, and the channel gives it the same
+  // per-owner disposal and update semantics the registry provides directly.
+  ctx.state.serviceDirectory.provide(
+    collaborationWaiter,
     createInteractiveWaiter(ctx.state.waiterDeps),
   );
   // Collaboration tools/services must see the whole collab+mailbox slice even

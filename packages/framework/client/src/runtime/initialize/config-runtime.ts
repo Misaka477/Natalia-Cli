@@ -1,11 +1,11 @@
 import type {
   InitializeCatalogResult,
   InitializeOptions,
-  InteractiveWaiter,
   RuntimeContext,
   SessionStoreController,
   ToolPolicyService,
 } from "../context";
+import { collaborationWaiter } from "@natalia/collaboration";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";
 
@@ -37,11 +37,9 @@ export async function configureRuntime(
   );
   if (!toolPolicy)
     throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
-  const resolvedWaiter = scope.capabilityRegistry.service<InteractiveWaiter>(
-    scope.COLLABORATION_WAITER_SERVICE,
-  );
-  if (!resolvedWaiter)
-    throw new Error("collaboration waiter unavailable (natalia-collaboration)");
+  // Resolution is fail-fast by construction: a missing binding throws with the
+  // service id instead of being re-worded at every call site.
+  scope.serviceDirectory.get(collaborationWaiter);
   scope.retryPolicy = {
     maxAttemptsPerStep:
       tsConfig.config.runtime.maxAttemptsPerStep ??

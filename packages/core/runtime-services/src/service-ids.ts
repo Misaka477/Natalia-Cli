@@ -1,6 +1,5 @@
 export const ATTACHMENT_SERVICE = "attachment.service";
 export const CHECKPOINT_FACTORY_SERVICE = "checkpoint.factory";
-export const COLLABORATION_WAITER_SERVICE = "collaboration.waiter";
 export const COMPACTION_SERVICE = "compaction.service";
 export const CONTEXT_LEDGER_FACTORY_SERVICE = "context-ledger.factory";
 export const GOVERNANCE_LEDGER_CONTROLLER_SERVICE =

@@ -44,6 +44,7 @@ import type { SessionRecord } from "@natalia/session";
 import type {
   InteractiveWaiterDeps,
   ProviderUsage,
+  ServiceDirectory,
   SkillMetadata,
 } from "@natalia/runtime-services";
 export type {
@@ -113,6 +114,8 @@ export type RuntimeState = {
   readonly chatDefaultProvider?: StreamingProvider;
   providerSource: "explicit" | "environment" | "ts_config" | "unconfigured";
   capabilityRegistry: CapabilityRegistryHost;
+  /** Typed service resolution over the registry's service channel. */
+  serviceDirectory: ServiceDirectory;
   capabilityHost?: CapabilityHost;
   workspaceCapabilityView?:
     | import("@natalia/capability").CapabilityRegistryView

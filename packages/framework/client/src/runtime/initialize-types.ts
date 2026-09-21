@@ -9,6 +9,7 @@ import type {
 import type {
   InteractiveWaiterDeps,
   RuntimeContextLedger,
+  ServiceDirectory,
 } from "@natalia/runtime-services";
 import type {
   PermissionProfileCommandRules,
@@ -54,6 +55,8 @@ export type InitializeDependencies = {
     options: InitializeOptions,
   ) => Promise<import("./context").FrameworkServices>;
   capabilityRegistry: CapabilityRegistryHost;
+  /** Typed service resolution shared with `ctx.state.serviceDirectory`. */
+  serviceDirectory: ServiceDirectory;
   workspaceCapabilityView?: import("@natalia/capability").CapabilityRegistryView;
   waiterDeps: InteractiveWaiterDeps;
   deliverQueuedMailboxAtBoundary: (exec?: SessionExecutionState) => void;
@@ -130,7 +133,6 @@ export type InitializeDependencies = {
     subagents: string;
     sessionStoreController: string;
     toolPolicy: string;
-    collaborationWaiter: string;
     providerModelController: string;
   };
 };

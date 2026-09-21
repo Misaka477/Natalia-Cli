@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { CapabilityRegistry } from "@natalia/capability";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import { ServiceDirectory } from "@natalia/runtime-services";
 import {
   ContextWindowResolver,
   ProviderConcurrencyLimiter,
 } from "@natalia/runtime";
 import { createToolRegistry } from "@natalia/tools";
 import { RuntimePerformanceTrace } from "../../performance-trace";
+import { createCapabilityServiceChannel } from "./service-channel";
 import { defaultContextStatusConfig } from "../provider-selection";
 import type { RuntimeContext, RuntimeState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
@@ -27,6 +29,8 @@ export function createCompositionContext(
   const turnSession = new Map<string, SessionID>();
   const runtimeDiagnostics: RuntimeDiagnostic[] = [];
   const runtimeDiagnosticsBySession = new Map<SessionID, RuntimeDiagnostic[]>();
+  const capabilityRegistry =
+    options.capabilityRegistry ?? new CapabilityRegistry();
   const state = {
     runtimeDisposed: false,
     workspaceRoot: resolve(options.workspaceRoot ?? process.cwd()),
@@ -36,7 +40,10 @@ export function createCompositionContext(
     provider: options.provider,
     chatDefaultProvider: options.provider,
     providerSource: options.provider ? "explicit" : "unconfigured",
-    capabilityRegistry: options.capabilityRegistry ?? new CapabilityRegistry(),
+    capabilityRegistry,
+    serviceDirectory: new ServiceDirectory(
+      createCapabilityServiceChannel(capabilityRegistry),
+    ),
     capabilityHost: options.capabilityHost,
     workspaceCapabilityView: options.capabilityHost?.view,
     tools: options.tools ?? createToolRegistry([]),

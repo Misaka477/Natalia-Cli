@@ -21,7 +21,6 @@ export function initializeConstants(ctx: RuntimeContext) {
     SUBAGENTS_SERVICE: names.subagents,
     SESSION_STORE_CONTROLLER_SERVICE: names.sessionStoreController,
     TOOL_POLICY_SERVICE: names.toolPolicy,
-    COLLABORATION_WAITER_SERVICE: names.collaborationWaiter,
     PROVIDER_MODEL_CONTROLLER_SERVICE: names.providerModelController,
   };
 }

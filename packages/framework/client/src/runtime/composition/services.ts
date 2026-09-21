@@ -11,11 +11,8 @@ import {
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
 import { isManagedResourceTool, waitForToolExecution } from "./helpers";
-import {
-  COLLABORATION_WAITER_SERVICE,
-  type InteractiveWaiter,
-  type RuntimeContextLedger,
-} from "@natalia/runtime-services";
+import type { RuntimeContextLedger } from "@natalia/runtime-services";
+import { collaborationWaiter } from "@natalia/collaboration";
 
 export function wireServices(
   ctx: RuntimeContext,
@@ -94,16 +91,8 @@ export function wireServices(
   ports.authorizeWorkspaceRead = policy.authorizeWorkspaceRead;
   ports.authorizeSandboxMerge = policy.authorizeSandboxMerge;
   ports.authorizeSandboxManagement = policy.authorizeSandboxManagement;
-  ports.getInteractive = () => {
-    const waiter = ports.resolveService<InteractiveWaiter>(
-      COLLABORATION_WAITER_SERVICE,
-    );
-    if (!waiter)
-      throw new Error(
-        "collaboration waiter unavailable (natalia-collaboration)",
-      );
-    return waiter;
-  };
+  ports.getInteractive = () =>
+    ctx.state.serviceDirectory.get(collaborationWaiter);
   ports.getTerminalCommandBuffer = () => state.terminalCommandBuffer;
   ports.getSandboxResourcesByID = () => state.sandboxResourcesByID;
   ports.getEndTurnWaitingHuman = () => state.endTurnWaitingHuman;

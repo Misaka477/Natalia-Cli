@@ -42,9 +42,21 @@ import type {
   InteractiveWaiterDeps,
 } from "@natalia/runtime-services";
 import {
+  defineService,
   readOnlyToolMessage,
   terminalApprovalScope,
 } from "@natalia/runtime-services";
+
+/**
+ * The waiter's service token. The id is the wire name the runtime has always
+ * used for this binding; the token adds the typed face so consumers resolve it
+ * without a `<T>` cast and the id lives in the package that owns the service
+ * rather than a central table.
+ */
+export const collaborationWaiter = defineService<InteractiveWaiter>(
+  "collaboration.waiter",
+  { scope: "workspace", capability: "services" },
+);
 
 export function createInteractiveWaiter(
   deps: InteractiveWaiterDeps,

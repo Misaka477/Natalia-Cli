@@ -10,7 +10,10 @@ export {
   type CollaborationWake,
   type SendCollaborationInput,
 } from "./collaboration-service";
-export { createInteractiveWaiter } from "./interactive-waiter";
+export {
+  collaborationWaiter,
+  createInteractiveWaiter,
+} from "./interactive-waiter";
 export {
   buildMailboxQueued,
   buildMailboxStatus,
