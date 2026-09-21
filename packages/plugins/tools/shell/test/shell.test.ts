@@ -46,12 +46,19 @@ test("run_shell exposes a bounded per-call timeout", () => {
   expect(timeoutSecOr(-1, 120, 1800)).toBe(120);
 });
 
+// runShell executes through a profile-sourcing shell so tool commands see the
+// user's environment. On a machine whose profile sources conda/nvm, that
+// startup costs seconds by itself and exceeds a 10s budget under the suite's
+// concurrency — while the command under test is a printf. These tests assert
+// output, not latency, so the timeout only needs to cover profile startup.
+const runShellTimeoutSec = 60;
+
 test("run_shell runs a command inside the workspace and reports exit", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tool-shell-"));
   const result = await runShell(
     "printf 'out'; printf 'err' >&2; exit 0",
     { workspaceRoot: root, settings: {} } as never,
-    10,
+    runShellTimeoutSec,
   );
   expect(result).toContain("exit=0");
   expect(result).toContain("stdout:\nout");
@@ -61,7 +68,11 @@ test("run_shell runs a command inside the workspace and reports exit", async () 
 test("run_shell rejects on a failing command with its output", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-tool-shell-"));
   await expect(
-    runShell("exit 3", { workspaceRoot: root, settings: {} } as never, 10),
+    runShell(
+      "exit 3",
+      { workspaceRoot: root, settings: {} } as never,
+      runShellTimeoutSec,
+    ),
   ).rejects.toThrow(/exit=3/u);
 });
 

@@ -8,7 +8,7 @@ import {
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { createRealRuntimeClient as createRuntimeClient } from "../src";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
@@ -42,10 +42,26 @@ import {
   restoreOfficialPluginConfig,
   installFixturePlugin,
   officialPluginWorkspace as mkdtemp,
+  useWorkspaceCleanup,
+  registerTestArtifact,
 } from "./plugin-test-helpers";
+
+useWorkspaceCleanup();
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger";
 import { normalizePendingItems } from "@natalia/ui-model";
+// The governance-root override below is process-global, so this file restores
+// the ambient value when it ends: without the restore, every later test file's
+// runtime in the same bun process reads and writes its constitution into the
+// last workspace's ledger — cross-file state leakage the hygiene guard caught
+// as a recreated governance directory.
+const ambientGovernanceRoot = process.env.NATALIA_TEST_GOVERNANCE_ROOT;
+afterAll(() => {
+  if (ambientGovernanceRoot === undefined)
+    delete process.env.NATALIA_TEST_GOVERNANCE_ROOT;
+  else process.env.NATALIA_TEST_GOVERNANCE_ROOT = ambientGovernanceRoot;
+});
+
 const MCP_PLUGIN_ID = "natalia-mcp";
 const SKILLS_PLUGIN_ID = "natalia-skills";
 const TEAM_PLUGIN_ID = "natalia-team";
@@ -89,11 +105,17 @@ function createRealRuntimeClient(
   // themselves.
   if (!options.pluginStoreRoot) {
     const suffix = workspaceRoot.split("/").pop() ?? "workspace";
-    process.env.NATALIA_TEST_GOVERNANCE_ROOT = join(
+    const governanceRoot = join(
       workspaceRoot,
       "..",
       `.natalia-test-governance-${suffix}`,
     );
+    process.env.NATALIA_TEST_GOVERNANCE_ROOT = governanceRoot;
+    // The governance ledger lives beside the workspace so it survives a
+    // workspace relocation; that also puts it outside the workspace removal,
+    // so register it for the helper's per-file sweep or it leaks one directory
+    // per test into the shared test-workspaces root.
+    registerTestArtifact(governanceRoot);
   }
   return createOfficialRuntimeClient({
     ...options,
