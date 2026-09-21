@@ -20,7 +20,11 @@ import { isAbsolute, relative, resolve } from "node:path";
 export function workspacePath(root: string, inputPath: string) {
   const path = resolve(root, inputPath);
   const rel = relative(resolve(root), path);
-  if (isAbsolute(rel) || rel.startsWith(".."))
+  // An escape is a leading ".." path SEGMENT — the path leaves the workspace.
+  // Match the whole segment (both separators) rather than a ".." prefix, so a
+  // legitimate in-workspace name that merely starts with ".." (e.g. "..config")
+  // is not misreported as an escape.
+  if (isAbsolute(rel) || rel.split(/[/\\]/u)[0] === "..")
     throw new Error(`path escapes workspace: ${inputPath}`);
   return path;
 }
