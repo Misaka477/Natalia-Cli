@@ -26,20 +26,32 @@ import type { RuntimeEvent } from "@natalia/contracts";
  * contract pre-check for the "契约 handoff 撞 constitution" open question
  * shares this one implementation): a rule's `appliesTo.paths` pattern matches
  * a path when the glob covers it. `*` matches within a segment, `**` matches
- * across segments; a bare directory pattern matches everything under it.
+ * across segments; a bare directory pattern matches everything under it. Every
+ * other character — including `?` — is literal, so a path or pattern carrying
+ * `?` matches exactly (it is not a regex quantifier or a wildcard).
  * Pure and deterministic.
  */
 export function constitutionPathMatch(pattern: string, path: string): boolean {
   const normalizedPattern = pattern.replace(/\\/gu, "/").replace(/^\.\//u, "");
   const normalizedPath = path.replace(/\\/gu, "/").replace(/^\.\//u, "");
-  // Escape regex metacharacters, then expand `**/`, `**` and `*`.
+  // Escape regex metacharacters (including `?`, which is literal here, not a
+  // quantifier), then expand `**/`, `**` and `*`. `**` and `**/` go through
+  // placeholders so their expansion (`.*`) is not re-matched by the `*` step —
+  // expanding `**` straight to `.*` let the following `*` rule turn it into
+  // `.[^/]*`, which silently broke a trailing/mid `**` (e.g. `src/**`).
   const GLOBSTAR = "\u0000";
+  const DOUBLESTAR = "\u0001";
   const source = normalizedPattern
-    .replace(/[.+^${}()|[\]\\]/gu, "\\$&")
+    .replace(/[.+^${}()|[\]\\?]/gu, "\\$&")
     .replace(/\*\*\//gu, GLOBSTAR)
-    .replace(/\*\*/gu, ".*")
+    .replace(/\*\*/gu, DOUBLESTAR)
     .replace(/\*/gu, "[^/]*");
-  const regex = new RegExp(`^${source.split(GLOBSTAR).join("(?:.*/)?")}$`, "u");
+  const body = source
+    .split(GLOBSTAR)
+    .join("(?:.*/)?")
+    .split(DOUBLESTAR)
+    .join(".*");
+  const regex = new RegExp(`^${body}$`, "u");
   if (regex.test(normalizedPath)) return true;
   // A directory pattern ("src/") also matches everything under it.
   return (

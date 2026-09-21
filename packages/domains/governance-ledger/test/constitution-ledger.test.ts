@@ -4,6 +4,7 @@ import {
   buildConstitutionRuleUpdate,
   buildConstitutionRuleRemoved,
   buildProposedConstitutionRule,
+  constitutionPathMatch,
   recordDecision,
   seedConstitutionRules,
   validateConstitutionRuleProposal,
@@ -221,4 +222,34 @@ test("a disable is reversible and a removal is a durable tombstone", () => {
     removedAt: "2026-09-16T00:00:00.000Z",
     removedBy: "user",
   });
+});
+
+test("constitutionPathMatch honours * within a segment and ** across segments", () => {
+  expect(constitutionPathMatch("src/*.ts", "src/a.ts")).toBe(true);
+  expect(constitutionPathMatch("src/*.ts", "src/a/b.ts")).toBe(false);
+  expect(constitutionPathMatch("src/**/x", "src/a/b/x")).toBe(true);
+  expect(constitutionPathMatch("**/x", "a/b/x")).toBe(true);
+  expect(constitutionPathMatch("src/**", "src/a/b.ts")).toBe(true);
+});
+
+test("constitutionPathMatch treats a trailing-slash pattern as a directory prefix", () => {
+  expect(constitutionPathMatch("src/", "src/a.ts")).toBe(true);
+  expect(constitutionPathMatch("src/", "src/a/b.ts")).toBe(true);
+  expect(constitutionPathMatch("src/", "other/a.ts")).toBe(false);
+  // No trailing slash is an exact match, not a directory.
+  expect(constitutionPathMatch("src", "src/a.ts")).toBe(false);
+});
+
+test("constitutionPathMatch treats ? and regex metacharacters as literal", () => {
+  // A literal "?" must match itself, never act as a regex quantifier.
+  expect(constitutionPathMatch("a?b", "a?b")).toBe(true);
+  expect(constitutionPathMatch("a?b", "ab")).toBe(false);
+  expect(constitutionPathMatch("file(1).ts", "file(1).ts")).toBe(true);
+  expect(constitutionPathMatch("a.b", "a.b")).toBe(true);
+  expect(constitutionPathMatch("a.b", "axb")).toBe(false);
+});
+
+test("constitutionPathMatch normalizes backslashes and a leading ./", () => {
+  expect(constitutionPathMatch("src\\a.ts", "src/a.ts")).toBe(true);
+  expect(constitutionPathMatch("./src/a.ts", "src/a.ts")).toBe(true);
 });
