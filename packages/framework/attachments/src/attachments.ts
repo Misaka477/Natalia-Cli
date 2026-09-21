@@ -7,7 +7,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { LocalAttachment } from "@natalia/contracts";
 import { modelVisibleEvents, type SessionRecord } from "@natalia/session";
 import { DEFAULT_MAX_IMAGE_LONG_EDGE, scaleImage } from "./image-scale";
@@ -108,6 +108,11 @@ export async function storeLocalAttachments(input: {
   const store = join(root, ".natalia", "attachments");
   const limits = resolveAttachmentLimits(input.limits);
   await mkdir(store, { recursive: true, mode: 0o700 });
+  // The containment check compares against the source's realpath, so the root
+  // must be realpath'd too — otherwise a workspace reached through a symlink
+  // (e.g. a macOS /tmp workspace) makes every in-workspace path look like an
+  // escape. Store/return paths stay relative to the lexical root for read-back.
+  const canonicalRoot = await realpath(root);
 
   const accepted: Array<{
     source: string;
@@ -121,7 +126,11 @@ export async function storeLocalAttachments(input: {
   let imageBytes = 0;
   for (const path of input.paths) {
     const source = await realpath(resolve(root, path));
-    if (relative(root, source).startsWith(".."))
+    // Reject a real escape — a leading ".." segment, or an absolute result
+    // (a different drive on Windows). Match the whole first segment, not a
+    // ".." prefix, so an in-workspace name like "..config" is not misreported.
+    const rel = relative(canonicalRoot, source);
+    if (isAbsolute(rel) || rel.split(/[/\\]/u)[0] === "..")
       throw new Error(`attachment path escapes workspace: ${path}`);
     const info = await stat(source);
     if (!info.isFile()) throw new Error(`attachment is not a file: ${path}`);

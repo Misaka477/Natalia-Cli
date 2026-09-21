@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LocalAttachment } from "@natalia/contracts";
@@ -46,6 +46,38 @@ test("local attachment store rejects workspace escapes and extension spoofing", 
       paths: [join(outside, "image.png")],
     }),
   ).rejects.toThrow("attachment path escapes workspace");
+});
+
+test("attachment store accepts an in-workspace name that starts with '..'", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-attachment-dotdot-"));
+  await writeFile(join(root, "..config.png"), pngBytes());
+  // A name that merely starts with ".." is in-workspace, not an escape — the
+  // check matches the whole leading path segment, not a ".." prefix.
+  const stored = await storeLocalAttachments({
+    workspaceRoot: root,
+    paths: ["..config.png"],
+  });
+  expect(stored).toHaveLength(1);
+  expect(stored[0].filename).toBe("..config.png");
+});
+
+test("attachment store accepts a workspace reached through a symlink", async () => {
+  const real = await mkdtemp(join(tmpdir(), "natalia-attachment-real-"));
+  const link = `${real}-link`;
+  await symlink(real, link);
+  try {
+    await writeFile(join(real, "image.png"), pngBytes());
+    // The source is realpath'd, so the root must be too; comparing a lexical
+    // root to a canonical source made every in-workspace path look like an escape.
+    const stored = await storeLocalAttachments({
+      workspaceRoot: link,
+      paths: ["image.png"],
+    });
+    expect(stored).toHaveLength(1);
+    expect(stored[0].filename).toBe("image.png");
+  } finally {
+    await rm(link, { recursive: true, force: true });
+  }
 });
 
 test("attachment cleanup removes only unreferenced Natalia attachment files", async () => {
