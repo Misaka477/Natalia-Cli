@@ -1071,7 +1071,7 @@ export async function createWorkspaceFile(input: {
   directory?: boolean;
 }): Promise<{ created: boolean }> {
   const root = await realpath(input.workspaceRoot);
-  const path = resolveRawWorkspacePath(root, input.path);
+  const path = await resolveWorkspacePath(root, input.path);
   if (input.directory) {
     await mkdir(path, { recursive: true });
     invalidateWorkspaceFiles(root);
@@ -1094,7 +1094,7 @@ export async function renameWorkspaceFile(input: {
 }): Promise<{ renamed: boolean }> {
   const root = await realpath(input.workspaceRoot);
   const source = await resolveWorkspacePath(root, input.path);
-  const destination = resolveRawWorkspacePath(root, input.newPath);
+  const destination = await resolveWorkspacePath(root, input.newPath);
   if (source === destination)
     throw new RuntimeRefusal(
       "workspace rename source and destination are identical",
@@ -1114,15 +1114,6 @@ export async function deleteWorkspaceFile(input: {
   await moveToTrash(path);
   invalidateWorkspaceFiles(root);
   return { deleted: true, trash: true };
-}
-
-function resolveRawWorkspacePath(root: string, input: string) {
-  if (!input || input.startsWith("/") || input.split(/[\\/]/u).includes(".."))
-    throw new RuntimeRefusal("workspace path must remain inside workspace");
-  const path = resolve(root, input);
-  if (!contains(root, path))
-    throw new RuntimeRefusal("workspace path must remain inside workspace");
-  return path;
 }
 
 async function moveToTrash(path: string): Promise<void> {
@@ -1165,17 +1156,25 @@ async function resolveWorkspacePath(root: string, input: string) {
   const path = resolve(root, input);
   if (!contains(root, path))
     throw new RuntimeRefusal("workspace path must remain inside workspace");
-  let real = await realpath(path).catch(() => undefined);
-  if (!real) {
-    const parent = dirname(path);
-    const realParent = await realpath(parent).catch(() => undefined);
-    if (!realParent || !contains(root, realParent))
-      throw new RuntimeRefusal("workspace path must remain inside workspace");
-    real = join(realParent, basename(path));
+  // Resolve through the deepest EXISTING ancestor's realpath, then re-attach the
+  // not-yet-existing suffix. A create/rename target may not exist — possibly
+  // several levels deep — and a symlinked directory anywhere in the path must
+  // not smuggle the write outside the workspace (a lexical-only resolve let
+  // `newdir` that is really a symlink escape the containment check).
+  const segments = relative(root, path).split(sep);
+  let resolved = root;
+  let index = 0;
+  for (; index < segments.length; index += 1) {
+    const real = await realpath(join(resolved, segments[index]!)).catch(
+      () => undefined,
+    );
+    if (real === undefined) break;
+    resolved = real;
   }
-  if (!contains(root, real))
+  const finalPath = join(resolved, ...segments.slice(index));
+  if (!contains(root, finalPath))
     throw new RuntimeRefusal("workspace path must remain inside workspace");
-  return real;
+  return finalPath;
 }
 
 function normalizeWorkspacePathForPolicy(path: string) {
