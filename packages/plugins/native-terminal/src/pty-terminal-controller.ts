@@ -133,7 +133,23 @@ def handle_line(line):
         return False
     return True
 
+# A message can arrive in the same socket read as the startup spec — the host
+# writes its first input the instant start() returns, before this interpreter
+# has finished booting. read_line leaves such a line in pending, and the
+# select loop below only reacts to NEW bytes, so without this drain the first
+# input of a freshly started terminal is silently dropped. Process whatever
+# the spec read already consumed before blocking in select.
 alive = True
+while True:
+    index = pending.find(b"\\n")
+    if index < 0:
+        break
+    line = pending[:index].decode("utf-8")
+    pending = pending[index + 1:]
+    if not handle_line(line):
+        alive = False
+        break
+
 while alive:
     readable, _, _ = select.select([stdin, master], [], [])
     if stdin in readable:

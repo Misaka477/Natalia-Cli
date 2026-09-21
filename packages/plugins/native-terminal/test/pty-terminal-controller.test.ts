@@ -278,6 +278,43 @@ test("default python pty spawn runs an interactive shell", async () => {
   await controller.close();
 }, 15_000);
 
+test("input written the instant a pty starts is not dropped by the bridge", async () => {
+  // Regression: the python bridge reads the startup spec with its own line
+  // reader. An input message that landed in the same socket read as the spec
+  // was left in that reader's buffer while the select loop only watched for
+  // NEW bytes, so the first write of a freshly started terminal vanished.
+  // Hosts write the moment start() resolves, so the wait is deliberately zero.
+  const root = await mkdtemp(join(tmpdir(), "natalia-python-pty-race-"));
+  const controller = createPtyTerminalController({
+    workspaceRoot: root,
+    publish: () => undefined,
+    onPerformance: () => undefined,
+    runtimeID: () => "runtime-test",
+    userRuntimeHome: () => undefined,
+    windowMode: () => "windowless",
+  });
+  const started = await controller.start({
+    // The managed pane shell wraps commands in a profile-sourcing `sh -lc`;
+    // the bash
+    // inside is interactive but must not read the developer's rc files to
+    // keep the test deterministic.
+    command: "exec bash --norc --noprofile",
+    cwd: root,
+    sessionID: "ses_python_pty_race",
+  });
+  expect(started.host).toBe("pty");
+  await controller.write(started.id, "printf '__PTY_READY__\\n'\n");
+  let text = "";
+  const unsubscribe = controller.subscribeOutput!(started.id, (chunk) => {
+    text += chunk;
+  });
+  const deadline = Date.now() + 8_000;
+  while (!text.includes("__PTY_READY__") && Date.now() < deadline)
+    await Bun.sleep(50);
+  unsubscribe();
+  expect(text).toContain("__PTY_READY__");
+  await controller.close();
+}, 15_000);
 test("pty controller caps running terminals per natalia session", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-pty-cap-"));
   const { factory, processes } = fakePty();
