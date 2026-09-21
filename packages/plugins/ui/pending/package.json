@@ -15,7 +15,6 @@
     "@natalia/ui-host": "workspace:*",
     "@natalia/ui-kit": "workspace:*",
     "@natalia/ui-model": "workspace:*",
-    "@natalia/view-store": "workspace:*",
     "solid-js": "1.9.12"
   }
 }

@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@natalia/agent": "workspace:*",
-    "@natalia/capability": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session": "workspace:*",

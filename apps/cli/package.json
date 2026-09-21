@@ -15,18 +15,15 @@
     "test": "bun test ./test --timeout 60000"
   },
   "dependencies": {
-    "@natalia/agent": "workspace:*",
     "@natalia/client": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/installer": "workspace:*",
-    "@natalia/plugin-local-tools": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/session-store": "workspace:*",
-    "@natalia/transport": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/transport": "workspace:*"
   },
   "devDependencies": {
     "@natalia/capability": "workspace:*",
