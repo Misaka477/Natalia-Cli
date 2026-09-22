@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -15,6 +16,8 @@ import {
   defaultCheckpointStoreDir,
   ensureStoreDir,
   migrateLegacyWorkspaceStore,
+  resolveWorkspaceJsonSessionsDir,
+  resolveWorkspaceJournalDatabasePath,
   resolveWorkspaceCheckpointSessionsRoot,
   resolveWorkspaceChunksRoot,
   resolveWorkspaceObjectsRoot,
@@ -178,4 +181,102 @@ test("resolution reads legacy before migration and external after", async () => 
   expect(
     resolveWorkspaceCheckpointSessionsRoot(fresh.workspace, fresh.home),
   ).toBe(workspaceCheckpointSessionsRoot(fresh.workspace, fresh.home));
+});
+
+test("the journal db reads legacy before migration and external after", () => {
+  const { home, workspace } = sandbox();
+  // Pre-migration: the workspace-local sqlite is read in place (the startup
+  // migration has not run yet — never look at an empty external path).
+  mkdirSync(join(workspace, ".natalia"), { recursive: true });
+  writeFileSync(join(workspace, ".natalia", "sessions.db"), "journal");
+  expect(resolveWorkspaceJournalDatabasePath(workspace, home)).toBe(
+    join(workspace, ".natalia", "sessions.db"),
+  );
+  // Post-migration: the external db exists -> external wins.
+  mkdirSync(workspaceStoreRoot(workspace, home), { recursive: true });
+  writeFileSync(
+    join(workspaceStoreRoot(workspace, home), "sessions.db"),
+    "moved",
+  );
+  expect(resolveWorkspaceJournalDatabasePath(workspace, home)).toBe(
+    join(workspaceStoreRoot(workspace, home), "sessions.db"),
+  );
+  // A fresh workspace claims the external location.
+  const fresh = sandbox();
+  expect(resolveWorkspaceJournalDatabasePath(fresh.workspace, fresh.home)).toBe(
+    join(workspaceStoreRoot(fresh.workspace, fresh.home), "sessions.db"),
+  );
+});
+
+test("the json journal directory follows the same read rule", () => {
+  const { home, workspace } = sandbox();
+  mkdirSync(join(workspace, ".natalia", "sessions"), { recursive: true });
+  expect(resolveWorkspaceJsonSessionsDir(workspace, home)).toBe(
+    join(workspace, ".natalia", "sessions"),
+  );
+  const external = join(workspaceStoreRoot(workspace, home), "json-sessions");
+  mkdirSync(external, { recursive: true });
+  expect(resolveWorkspaceJsonSessionsDir(workspace, home)).toBe(external);
+});
+
+test("the journal migration moves the db and the json dir", async () => {
+  const { home, workspace } = sandbox();
+  mkdirSync(join(workspace, ".natalia"), { recursive: true });
+  writeFileSync(join(workspace, ".natalia", "sessions.db"), "journal");
+  mkdirSync(join(workspace, ".natalia", "sessions"), { recursive: true });
+  writeFileSync(join(workspace, ".natalia", "sessions", "a.json"), "{}");
+  const moved = await migrateLegacyWorkspaceStore(workspace, home);
+  expect(moved).toBe(2);
+  const root = workspaceStoreRoot(workspace, home);
+  expect(readFileSync(join(root, "sessions.db"), "utf8")).toBe("journal");
+  expect(readFileSync(join(root, "json-sessions", "a.json"), "utf8")).toBe(
+    "{}",
+  );
+  expect(existsSync(join(workspace, ".natalia", "sessions.db"))).toBe(false);
+  expect(existsSync(join(workspace, ".natalia", "sessions"))).toBe(false);
+});
+
+test("the json journal never splits across two roots", async () => {
+  const { home, workspace } = sandbox();
+  mkdirSync(join(workspace, ".natalia", "sessions"), { recursive: true });
+  writeFileSync(join(workspace, ".natalia", "sessions", "a.json"), "legacy");
+  const root = workspaceStoreRoot(workspace, home);
+  // The external dir already exists with a CONFLICTING session file: a
+  // merge would leave sessions readable in only one of the two roots, so
+  // the legacy journal stays whole where it is.
+  mkdirSync(join(root, "json-sessions"), { recursive: true });
+  writeFileSync(join(root, "json-sessions", "a.json"), "external");
+  await migrateLegacyWorkspaceStore(workspace, home);
+  expect(
+    readFileSync(join(workspace, ".natalia", "sessions", "a.json"), "utf8"),
+  ).toBe("legacy");
+  expect(readFileSync(join(root, "json-sessions", "a.json"), "utf8")).toBe(
+    "external",
+  );
+  // The all-or-nothing move means no split can come from migration; when
+  // BOTH roots exist the external one wins, because the resurrected legacy
+  // dir is by definition the STALE copy (a workspace restored from backup
+  // must not shadow the journal that kept being written).
+  expect(resolveWorkspaceJsonSessionsDir(workspace, home)).toBe(
+    join(root, "json-sessions"),
+  );
+});
+
+test("an unwritable home degrades the journal to workspace-local", () => {
+  const { home, workspace } = sandbox();
+  // A home that refuses writes (read-only mounts, restricted containers —
+  // and this harness's own /home): the journal must fall back, not vanish.
+  chmodSync(home, 0o555);
+  try {
+    const fresh = sandbox(); // creates dirs — use the chmod'd home directly
+    void fresh;
+    expect(resolveWorkspaceJournalDatabasePath(workspace, home)).toBe(
+      join(workspace, ".natalia", "sessions.db"),
+    );
+    expect(resolveWorkspaceJsonSessionsDir(workspace, home)).toBe(
+      join(workspace, ".natalia", "sessions"),
+    );
+  } finally {
+    chmodSync(home, 0o755);
+  }
 });

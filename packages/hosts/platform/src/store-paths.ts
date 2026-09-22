@@ -2,7 +2,15 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { existsSync, realpathSync } from "node:fs";
-import { cp, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import {
+  cp,
+  copyFile,
+  mkdir,
+  readdir,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 
 /**
@@ -185,6 +193,14 @@ async function isDirectory(path: string): Promise<boolean> {
   }
 }
 
+async function isFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Move one legacy directory into the store without ever destroying content.
  *
@@ -234,6 +250,48 @@ async function moveLegacyEntries(from: string, to: string): Promise<number> {
   }
 }
 
+/** Move a legacy FILE into the store; an existing target wins (never overwrite). */
+async function moveLegacyFile(from: string, to: string): Promise<boolean> {
+  if (!(await isFile(from)) || existsSync(to)) return false;
+  await ensureStoreDir(join(to, ".."));
+  try {
+    await rename(from, to);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    await copyFile(from, to);
+    await rm(from, { force: true });
+    return true;
+  }
+}
+
+/**
+ * Move a legacy directory as a whole or not at all.
+ *
+ * A journal directory is read from ONE place: merging it entry-by-entry
+ * would split sessions across two roots and make the other half invisible —
+ * a conflict therefore keeps the legacy directory exactly where it is for a
+ * human, rather than producing a half-moved journal.
+ */
+async function moveLegacyDirAtomic(from: string, to: string): Promise<number> {
+  if (!(await isDirectory(from)) || existsSync(to)) return 0;
+  await ensureStoreDir(join(to, ".."));
+  try {
+    await rename(from, to);
+    return 1;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    try {
+      await cp(from, to, { recursive: true });
+    } catch (error) {
+      await rm(to, { recursive: true, force: true });
+      throw error;
+    }
+    await rm(from, { recursive: true, force: true });
+    return 1;
+  }
+}
+
 /**
  * Move a workspace's legacy in-workspace store (checkpoints / objects /
  * chunks) to the external store root. Idempotent: with no legacy left it is
@@ -246,15 +304,63 @@ export async function migrateLegacyWorkspaceStore(
 ): Promise<number> {
   const legacyBase = join(resolve(workspaceRoot), ".natalia");
   const storeRoot = workspaceStoreRoot(workspaceRoot, home);
-  const mapping: Array<[string, string]> = [
+  const dirMapping: Array<[string, string]> = [
     ["checkpoints", workspaceCheckpointSessionsRoot(workspaceRoot, home)],
     ["objects", workspaceObjectsRoot(workspaceRoot, home)],
     ["chunks", workspaceChunksRoot(workspaceRoot, home)],
   ];
+  const atomicDirMapping: Array<[string, string]> = [
+    // The JSON session journal moves whole or stays (split journals read
+    // half their sessions).
+    ["sessions", join(storeRoot, "json-sessions")],
+  ];
+  const fileMapping: Array<[string, string]> = [
+    ["sessions.db", join(storeRoot, "sessions.db")],
+  ];
   let moved = 0;
   await ensureStoreDir(storeRoot);
-  for (const [name, target] of mapping) {
+  for (const [name, target] of dirMapping) {
     moved += await moveLegacyEntries(join(legacyBase, name), target);
   }
+  for (const [name, target] of atomicDirMapping) {
+    moved += await moveLegacyDirAtomic(join(legacyBase, name), target);
+  }
+  for (const [name, target] of fileMapping) {
+    if (await moveLegacyFile(join(legacyBase, name), target)) moved += 1;
+  }
   return moved;
+}
+
+/**
+ * The session journal database path (§1.6 item 4: SQLite external and
+ * exportable). Pure read: before the startup migration has run, a legacy
+ * workspace-local db is read in place; a fresh workspace claims the external
+ * location or degrades to workspace-local when the home refuses writes.
+ */
+export function resolveWorkspaceJournalDatabasePath(
+  workspaceRoot: string,
+  home: string = homedir(),
+): string {
+  const external = join(workspaceStoreRoot(workspaceRoot, home), "sessions.db");
+  const legacy = join(resolve(workspaceRoot), ".natalia", "sessions.db");
+  if (existsSync(external)) return external;
+  if (existsSync(legacy)) return legacy;
+  try {
+    mkdirSync(join(external, ".."), { recursive: true, mode: 0o700 });
+    return external;
+  } catch {
+    return legacy;
+  }
+}
+
+/** The JSON session store directory, same read rule as the object library. */
+export function resolveWorkspaceJsonSessionsDir(
+  workspaceRoot: string,
+  home: string = homedir(),
+): string {
+  return externalIfLegacyMoved(
+    workspaceRoot,
+    join(workspaceStoreRoot(workspaceRoot, home), "json-sessions"),
+    join(resolve(workspaceRoot), ".natalia", "sessions"),
+  );
 }

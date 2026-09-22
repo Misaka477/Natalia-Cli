@@ -33,6 +33,10 @@ import {
 } from "./session-load-worker-client";
 import { perfLog } from "@natalia/runtime-services";
 import type { AttachmentService } from "@natalia/runtime";
+import {
+  resolveWorkspaceJsonSessionsDir,
+  resolveWorkspaceJournalDatabasePath,
+} from "@natalia/platform";
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in
@@ -114,18 +118,23 @@ export function createSessionStoreController(input: {
   }
 
   async function init() {
+    // §1.6: the journal lives outside the workspace like the checkpoint
+    // store does; an explicit sessionDir is the portable opt-in. The
+    // resolvers read a legacy workspace-local journal until the startup
+    // migration has moved it, and degrade to workspace-local when the home
+    // is unwritable — same rules as every other store root.
     sessionStore = new JsonSessionStore(
-      input.sessionDir ?? join(input.workspaceRoot, ".natalia", "sessions"),
+      input.sessionDir ?? resolveWorkspaceJsonSessionsDir(input.workspaceRoot),
     );
     if (input.useSqliteStore) {
-      const databasePath = join(input.workspaceRoot, ".natalia", "sessions.db");
+      const databasePath = resolveWorkspaceJournalDatabasePath(
+        input.workspaceRoot,
+      );
       await mkdir(dirname(databasePath), { recursive: true });
       sqliteStore = sqliteStores.get(databasePath);
       if (!sqliteStore) sqliteStore = new SqliteSessionStore(databasePath);
       retainSqliteStore(databasePath, sqliteStore);
       sqliteStorePath = databasePath;
-      console.warn("[session-store] workspaceRoot:", input.workspaceRoot);
-      console.warn("[session-store] sqlite db:", databasePath);
       // Import leftover JSON sessions once, then delete the JSON files so a
       // later restart cannot resurrect sessions the user already deleted from
       // SQLite. Once SQLite already has sessions, a JSON id that is missing

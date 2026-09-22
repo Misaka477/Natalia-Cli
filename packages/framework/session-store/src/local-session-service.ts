@@ -4,6 +4,10 @@ import { join, resolve } from "node:path";
 import { createAttachmentService } from "@natalia/attachments";
 import type { SessionID } from "@natalia/contracts";
 import {
+  resolveWorkspaceJsonSessionsDir,
+  resolveWorkspaceJournalDatabasePath,
+} from "@natalia/platform";
+import {
   JsonSessionStore,
   SqliteSessionStore,
   createSessionRecord,
@@ -34,9 +38,10 @@ export type SessionMetadataBundle = {
 /** Offline session operations used when no runtime plugin host is running. */
 export function createLocalSessionService(workspaceRoot = process.cwd()) {
   const root = resolve(workspaceRoot);
-  const json = () => new JsonSessionStore(join(root, ".natalia", "sessions"));
+  const json = () =>
+    new JsonSessionStore(resolveWorkspaceJsonSessionsDir(root));
   const sqlite = () => {
-    const path = join(root, ".natalia", "sessions.db");
+    const path = resolveWorkspaceJournalDatabasePath(root);
     return existsSync(path) ? new SqliteSessionStore(path) : undefined;
   };
 

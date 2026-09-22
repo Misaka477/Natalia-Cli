@@ -349,6 +349,7 @@
       "dependencies": {
         "@natalia/attachments": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/platform": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
         "@natalia/session": "workspace:*",
       },

@@ -109,7 +109,7 @@ export async function wireFrameworkServices(
   // store (checkpoints/objects/chunks) outside the workspace. Idempotent
   // and gated on the opt-in: an explicit checkpointDir means the user chose
   // the portable layout, and their data stays put.
-  if (options.checkpointDir === undefined) {
+  if (options.checkpointDir === undefined && options.sessionDir === undefined) {
     try {
       const moved = await migrateLegacyWorkspaceStore(workspaceRoot);
       if (moved > 0)
