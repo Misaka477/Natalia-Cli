@@ -31,7 +31,7 @@ import {
   loadSessionEventsInWorker,
 } from "./session-load-worker-client";
 import { perfLog } from "@natalia/runtime-services";
-import type { AttachmentService } from "@natalia/runtime-services";
+import type { AttachmentService } from "@natalia/runtime";
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in

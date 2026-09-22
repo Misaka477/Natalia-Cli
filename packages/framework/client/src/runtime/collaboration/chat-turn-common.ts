@@ -21,7 +21,7 @@ import {
   type ModelCapabilities,
   type ProviderContentPart,
 } from "@natalia/contracts";
-import { type AttachmentService } from "@natalia/runtime-services";
+import type { AttachmentService } from "@natalia/runtime";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { compactionService } from "@natalia/compaction";
 import type { RuntimeContext, SessionExecutionState } from "../context";

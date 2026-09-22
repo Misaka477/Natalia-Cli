@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ProviderModelControllerInput } from "@natalia/runtime-services";
+import type { ProviderModelControllerInput } from "../src";
 import { createProviderModelController } from "../src";
 
 function controllerInput(

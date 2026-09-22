@@ -7,28 +7,31 @@
   "include": ["src", "test"],
   "references": [
     {
+      "path": "../../../packages/framework/diff-wasm"
+    },
+    {
       "path": "../../core/contracts"
-    },
-    {
-      "path": "../../hosts/config"
-    },
-    {
-      "path": "../../hosts/platform"
-    },
-    {
-      "path": "../session"
     },
     {
       "path": "../../core/tools"
     },
     {
-      "path": "../sandbox"
+      "path": "../../hosts/config"
     },
     {
       "path": "../../hosts/object-store"
     },
     {
-      "path": "../../../packages/framework/diff-wasm"
+      "path": "../../hosts/platform"
+    },
+    {
+      "path": "../agent"
+    },
+    {
+      "path": "../sandbox"
+    },
+    {
+      "path": "../session"
     }
   ]
 }

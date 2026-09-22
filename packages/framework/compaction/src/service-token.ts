@@ -1,4 +1,4 @@
-import type { CompactionService } from "@natalia/runtime-services";
+import type { CompactionService } from "@natalia/runtime";
 import { defineService } from "@natalia/runtime-services";
 
 /** The compaction service token; lives with the mechanism that implements it. */

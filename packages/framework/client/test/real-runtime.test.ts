@@ -23,7 +23,6 @@ import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
   sandboxService,
   terminalController,
-  type ProviderModelController,
   type SandboxService,
 } from "@natalia/runtime-services";
 import { checkpointFactory } from "@natalia/checkpoint";
@@ -53,6 +52,7 @@ useWorkspaceCleanup();
 import { projectedWorkGraphEdges } from "@natalia/session";
 import { toolCallNodeID } from "@natalia/work-ledger";
 import { normalizePendingItems } from "@natalia/ui-model";
+import type { ProviderModelController } from "@natalia/provider-model";
 // The governance-root override below is process-global, so this file restores
 // the ambient value when it ends: without the restore, every later test file's
 // runtime in the same bun process reads and writes its constitution into the

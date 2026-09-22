@@ -77,7 +77,7 @@ export function createPluginAssembly(
     };
   }
 
-  function providerModelPluginInput(): import("@natalia/runtime-services").ProviderModelControllerInput {
+  function providerModelPluginInput(): import("@natalia/provider-model").ProviderModelControllerInput {
     const {
       getProvider,
       setProvider,

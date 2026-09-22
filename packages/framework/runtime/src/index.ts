@@ -1,3 +1,4 @@
+export * from "./contracts";
 export * from "./chunk-store";
 export * from "./compaction";
 export * from "./context";

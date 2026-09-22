@@ -1,6 +1,6 @@
 import type { LocalAttachment } from "@natalia/contracts";
 import type { SessionRecord } from "@natalia/session";
-import type { AttachmentService } from "@natalia/runtime-services";
+import type { AttachmentService } from "@natalia/runtime";
 import {
   attachmentDataURL,
   attachmentText,

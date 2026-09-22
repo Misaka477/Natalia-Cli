@@ -1,4 +1,4 @@
-import type { AttachmentService } from "@natalia/runtime-services";
+import type { AttachmentService } from "@natalia/runtime";
 import { defineService } from "@natalia/runtime-services";
 
 /** The attachment service token; lives with the mechanism. */

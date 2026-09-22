@@ -38,9 +38,9 @@ import { agentSystemPrompt } from "@natalia/agent-prompts";
 import type {
   ConstitutionDocRule,
   ProviderRunnerInput,
-  ProviderUsage,
   SkillMetadata,
 } from "@natalia/runtime-services";
+import type { ProviderUsage } from "@natalia/runtime";
 
 type ProviderAttachment = NonNullable<ProviderMessage["images"]>[number];
 

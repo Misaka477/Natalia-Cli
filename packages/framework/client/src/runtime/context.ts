@@ -45,20 +45,15 @@ import type {
 import type { SessionRecord } from "@natalia/session";
 import type {
   InteractiveWaiterDeps,
-  ProviderUsage,
   ServiceDirectory,
   SkillMetadata,
 } from "@natalia/runtime-services";
 export type {
-  AttachmentService,
   CheckpointFactory,
-  CompactionService,
   ContextLedgerFactory,
   GovernanceLedgerController,
   InteractiveWaiter,
   McpService,
-  ProviderModelController,
-  RetryService,
   SandboxService,
   SessionStoreController,
   SubagentsService,
@@ -79,6 +74,13 @@ import type {
 } from "@natalia/tools";
 import type { RuntimePerformanceTrace } from "../performance-trace";
 import type { SessionExecutionState } from "./session-execution-state";
+import type {
+  AttachmentService,
+  CompactionService,
+  ProviderUsage,
+  RetryService,
+} from "@natalia/runtime";
+import type { ProviderModelController } from "@natalia/provider-model";
 import type {
   MutationRegistry,
   WorkspaceFilesController,

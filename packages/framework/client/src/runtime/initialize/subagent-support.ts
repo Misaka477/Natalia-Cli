@@ -1,10 +1,8 @@
 import type { ContextEntry, ProviderUsageView } from "@natalia/runtime";
 import type {
-  CompactionService,
   ContextLedgerFactory,
   InitializeOptions,
   ProviderToolCall,
-  RetryService,
   RuntimeContext,
   RuntimeContextLedger,
   RuntimeEvent,
@@ -26,6 +24,7 @@ import { retryService } from "@natalia/retry";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import { compactionService } from "@natalia/compaction";
 import { subagentsService } from "@natalia/runtime-services";
+import type { CompactionService, RetryService } from "@natalia/runtime";
 
 export async function createSubagentSupport(
   ctx: RuntimeContext,

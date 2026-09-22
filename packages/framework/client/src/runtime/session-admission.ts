@@ -14,15 +14,13 @@ import {
   buildSubmittedTurn,
   sessionRunCoordinator,
 } from "@natalia/session";
-import {
-  type AttachmentService,
-  type WorkLedgerController,
-} from "@natalia/runtime-services";
+import { type WorkLedgerController } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import type { SessionID, SubmitInput, SubmittedTurn } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
+import type { AttachmentService } from "@natalia/runtime";
 
 export function createSessionAdmission(
   ctx: RuntimeContext,

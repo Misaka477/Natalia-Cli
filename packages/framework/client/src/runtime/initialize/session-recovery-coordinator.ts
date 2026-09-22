@@ -20,13 +20,13 @@ import {
   mcpService,
   sandboxService,
   terminalController,
-  type AttachmentService,
 } from "@natalia/runtime-services";
 import { sessionStoreController } from "@natalia/session-store";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
 import { contextLedgerFactory } from "@natalia/context-ledger";
+import type { AttachmentService } from "@natalia/runtime";
 
 type LoadedSession = Awaited<ReturnType<SessionStoreController["load"]>>;
 type RecoveryView = NonNullable<LoadedSession["recovery"]>;

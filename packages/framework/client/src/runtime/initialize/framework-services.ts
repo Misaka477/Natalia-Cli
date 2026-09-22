@@ -72,10 +72,7 @@ import {
   skillsInput,
   subagentsService,
   terminalInput,
-  type AttachmentService,
-  type CompactionService,
   type ContextLedgerFactory,
-  type RetryService,
   type SandboxService,
   type TerminalInput,
 } from "@natalia/runtime-services";
@@ -90,6 +87,11 @@ import { wireRuntimeStatus } from "./framework-runtime-status";
 import { wireSessionStore } from "./framework-session-store";
 import { wireTurnOrchestration } from "./framework-turn-orchestration";
 import { wireWorkLedger } from "./framework-work-ledger";
+import type {
+  AttachmentService,
+  CompactionService,
+  RetryService,
+} from "@natalia/runtime";
 
 export type { FrameworkServices } from "../context";
 

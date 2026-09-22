@@ -4,7 +4,7 @@ import type {
   ProviderModelController,
   ProviderModelControllerInput,
   ProviderTurnInput,
-} from "@natalia/runtime-services";
+} from "./contracts";
 import { createProviderRunner } from "./provider-runner";
 
 export function createProviderModelController(

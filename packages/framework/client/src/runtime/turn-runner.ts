@@ -19,12 +19,13 @@ import { statusSnapshotController } from "@natalia/runtime-status";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { retryService } from "@natalia/retry";
 import { compactionService } from "@natalia/compaction";
-import { mcpService, type AttachmentService } from "@natalia/runtime-services";
+import { mcpService } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "./context";
 import { activePlanForExec } from "./collaboration/plan-doc-runtime";
 import { loadProjectDocumentsSync } from "./project-docs";
 import type { RealRuntimeClientOptions } from "./options";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
+import type { AttachmentService } from "@natalia/runtime";
 
 function collabMessagesForExec(
   exec: SessionExecutionState,

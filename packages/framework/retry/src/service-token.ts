@@ -1,4 +1,4 @@
-import type { RetryService } from "@natalia/runtime-services";
+import type { RetryService } from "@natalia/runtime";
 import { defineService } from "@natalia/runtime-services";
 
 /**

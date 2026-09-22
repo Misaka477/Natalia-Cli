@@ -8,9 +8,9 @@
  * service unchanged. The host owns `init` and close.
  */
 import { createSessionStoreController } from "@natalia/session-store";
-import { type AttachmentService } from "@natalia/runtime-services";
 import { sessionStoreController } from "@natalia/session-store";
 import type { InitializeOptions, RuntimeContext } from "../context";
+import type { AttachmentService } from "@natalia/runtime";
 
 export type SessionStoreHandle = { close(): void };
 

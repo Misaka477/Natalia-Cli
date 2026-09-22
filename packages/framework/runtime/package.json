@@ -9,11 +9,14 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*",
+    "@natalia/agent": "workspace:*",
     "@natalia/config": "workspace:*",
+    "@natalia/contracts": "workspace:*",
+    "@natalia/diff-wasm": "workspace:*",
     "@natalia/object-store": "workspace:*",
     "@natalia/platform": "workspace:*",
-    "@natalia/diff-wasm": "workspace:*"
+    "@natalia/session": "workspace:*",
+    "@natalia/tools": "workspace:*"
   },
   "devDependencies": {
     "@natalia/session": "workspace:*",

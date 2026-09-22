@@ -23,15 +23,19 @@ import type {
   WorkspaceOperation,
 } from "@natalia/contracts";
 import type {
+  AttachmentService,
   CheckpointStore,
+  CompactionService,
   ContextLedger,
   DurableContextCheckpoint,
   ProviderToolCall,
   ContextLedger as RuntimeContextLedgerInput,
   CreateCheckpointInput,
+  ProviderUsage,
   RetryAttemptContext,
   RetryContext,
   RetryRunnerOptions,
+  RetryService,
   StreamingProvider,
 } from "@natalia/runtime";
 import type {
@@ -301,30 +305,6 @@ export interface TurnController {
   dispose(): void;
 }
 
-export type ProviderTurnInput = {
-  id: string;
-  text: string;
-  attachments: LocalAttachment[];
-  resources: PromptResourceMention[];
-  agents: PromptAgentMention[];
-  internal?: boolean;
-};
-export type ProviderChatTurnInput = {
-  sessionID: SessionID;
-  text: string;
-  responseMessageID: string;
-  internal?: boolean;
-  /**
-   * A detour-review wake (EI §3.4): when set on an internal Nia turn, the turn
-   * prompts Nia to review the requested detour (via detour_review) instead of
-   * the default audit wake. Her verdict is a reference for the user.
-   */
-  detourReview?: { detourID: string; planID: string; reason: string };
-  model?: { modelID?: string; variant?: string };
-  provider?: import("@natalia/runtime").StreamingProvider;
-  reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
-  attachments?: import("@natalia/contracts").LocalAttachment[];
-};
 export type SkillMetadata = {
   name: string;
   description: string;
@@ -362,43 +342,6 @@ export interface TeamBehaviorService {
   directive(): string;
   sandboxedSubagentSystemPrompt(domain?: string[]): string;
 }
-
-export type ProviderUsage = {
-  inputTokens: number;
-  outputTokens: number;
-  /** Anthropic cache metrics (ADR E): prefix written / prefix reused. */
-  cacheCreationInputTokens?: number;
-  cacheReadInputTokens?: number;
-};
-export interface RetryService {
-  policy(): RetryRunnerOptions["policy"];
-  run<T>(
-    context: RetryContext,
-    fn: (attempt: RetryAttemptContext) => Promise<T>,
-    options?: Omit<RetryRunnerOptions, "policy">,
-  ): Promise<T>;
-}
-
-export interface CompactionService {
-  compactBeforeProviderStep(input: any): Promise<any>;
-  runWithContextLimitRecovery(input: any): Promise<any>;
-  /** Identity-free prune -> remeasure -> decide -> summarize preflight. */
-  prepareContextRequest(input: any): Promise<any>;
-}
-
-export type AttachmentService = {
-  store(paths: string[]): Promise<LocalAttachment[]>;
-  storeBytes(input: {
-    name: string;
-    mediaType: string;
-    data: Uint8Array;
-  }): Promise<LocalAttachment>;
-  dataURL(attachment: LocalAttachment): Promise<string>;
-  text(attachment: LocalAttachment): Promise<string>;
-  isText(attachment: LocalAttachment): boolean;
-  cleanup(attachments: LocalAttachment[]): Promise<string[]>;
-  referencedForSessions(sessions: SessionRecord[]): LocalAttachment[];
-};
 
 export type ProviderRunnerInput = {
   provider(): StreamingProvider | undefined;
@@ -538,42 +481,6 @@ export type ProviderRunnerInput = {
   waitIfPaused(): Promise<void>;
   waitingHuman(): { terminalID: string; reason: string } | undefined;
 };
-
-export type ProviderChatStreamInput = {
-  available(sessionID: SessionID): boolean;
-  publish(sessionID: SessionID, event: RuntimeEvent): void;
-  runBody(input: ProviderChatTurnInput, signal: AbortSignal): Promise<void>;
-  wake(sessionID: SessionID): Promise<void>;
-};
-
-export type ProviderModelControllerInput = {
-  initialize(): void;
-  runnerInput(sessionID: SessionID): ProviderRunnerInput;
-  commands: {
-    catalog(): Promise<
-      Array<{ id: string; name: string; provider: string; variants: string[] }>
-    >;
-    select(
-      sessionID: SessionID,
-      modelID: string,
-      variant?: string,
-    ): Promise<void>;
-  };
-  navi: ProviderChatStreamInput;
-  nia: ProviderChatStreamInput;
-};
-export interface ProviderModelController {
-  runTurn(sessionID: SessionID, turn: ProviderTurnInput): Promise<void>;
-  runNaviChatTurn(turn: ProviderChatTurnInput): Promise<void>;
-  runNiaChatTurn(turn: ProviderChatTurnInput): Promise<void>;
-  requestNaviWake(sessionID: SessionID): void;
-  requestNiaWake(sessionID: SessionID): void;
-  naviBusy(sessionID: SessionID): boolean;
-  niaBusy(sessionID: SessionID): boolean;
-  abortNavi(sessionID: SessionID): boolean;
-  abortNia(sessionID: SessionID): boolean;
-  dispose(): Promise<void>;
-}
 
 export interface SubagentsService extends SubagentToolService {
   /**

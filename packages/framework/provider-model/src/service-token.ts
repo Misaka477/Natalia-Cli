@@ -1,4 +1,4 @@
-import type { ProviderModelController } from "@natalia/runtime-services";
+import type { ProviderModelController } from "./contracts";
 import { defineService } from "@natalia/runtime-services";
 
 /** The provider/model controller token; lives with the mechanism. */

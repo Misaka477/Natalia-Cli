@@ -1,10 +1,7 @@
 import type {
-  AttachmentService,
-  CompactionService,
   ContextLedgerFactory,
   GovernanceLedgerController,
   InitializeOptions,
-  RetryService,
   RuntimeContext,
   SessionID,
   StatusSnapshotController,
@@ -22,6 +19,11 @@ import { contextLedgerFactory } from "@natalia/context-ledger";
 import { turnController } from "@natalia/turn-orchestration";
 import { workLedgerController } from "@natalia/work-ledger";
 import { sessionStoreController } from "@natalia/session-store";
+import type {
+  AttachmentService,
+  CompactionService,
+  RetryService,
+} from "@natalia/runtime";
 
 export async function resolveServices(
   ctx: RuntimeContext,

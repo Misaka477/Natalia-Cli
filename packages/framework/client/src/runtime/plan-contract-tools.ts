@@ -24,7 +24,6 @@ import { targetDriftAbsorbedByScope } from "@natalia/work-ledger";
 import { checkContractAgainstConstitution } from "./contract-constitution-check";
 import {
   type GovernanceLedgerController,
-  type ProviderModelController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
@@ -32,6 +31,7 @@ import { governanceLedgerController } from "@natalia/governance-ledger";
 import { providerModelController } from "@natalia/provider-model";
 import type { RuntimeTool } from "./context";
 import type { RuntimeContext, SessionExecutionState } from "./context";
+import type { ProviderModelController } from "@natalia/provider-model";
 
 function resolveExec(
   ctx: RuntimeContext,

@@ -11,7 +11,7 @@ import {
   buildInputAdmission,
   sessionRunCoordinator,
 } from "@natalia/session";
-import { type ProviderModelController } from "@natalia/runtime-services";
+import type { ProviderModelController } from "@natalia/provider-model";
 import { providerModelController } from "@natalia/provider-model";
 import type { SessionID, SubmitInput } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
