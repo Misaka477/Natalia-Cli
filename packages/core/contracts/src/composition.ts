@@ -1,3 +1,4 @@
+import type { ConstitutionRule } from "./schema-types";
 import type { ConfigV3 } from "./schema-types";
 
 /**
@@ -30,6 +31,13 @@ export type Generation = {
   config: ConfigV3;
   /** The desired plugin catalog, by identity and content fingerprint. */
   plugins: GenerationPluginRef[];
+  /**
+   * The constitution rules this generation carries (study §4.1). The
+   * verification gate compares them against the active ledger: a candidate
+   * may add policy but may never drop or weaken a critical/high rule the
+   * user's constitution still enforces.
+   */
+  policyRows: ConstitutionRule[];
 };
 
 /**

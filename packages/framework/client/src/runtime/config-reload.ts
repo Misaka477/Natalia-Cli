@@ -12,12 +12,13 @@ import { resolveConfig } from "@natalia/config";
 import { ensureBashCommandParser } from "@natalia/tools";
 import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
 import { nextContextInstructionsRevision } from "@natalia/session";
+import { projectedConstitutionRules } from "@natalia/session";
 import { checkpointFactory, type CheckpointFactory } from "@natalia/checkpoint";
 import { ObjectStore } from "@natalia/object-store";
 import { buildGeneration, storeGeneration } from "@natalia/composition";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
-import type { ConfigV3 } from "@natalia/contracts";
+import type { ConfigV3, ConstitutionRule } from "@natalia/contracts";
 import { resolve } from "node:path";
 import { resolveWorkspaceObjectsRoot } from "@natalia/platform";
 import {
@@ -36,6 +37,28 @@ import {
  * place is enough — no re-registration, and the tool's identity (name,
  * parameters) is untouched so the request prefix does not churn.
  */
+
+/**
+ * The constitution rows a generation carries (study §4.1): the active
+ * ledger projected from the session's journal, normalized from the
+ * `rule_added` event shape into contract rows. Empty only when no session
+ * exists yet — there is no active constitution to violate.
+ */
+function activeConstitutionRows(ctx: RuntimeContext): ConstitutionRule[] {
+  const exec = [...ctx.ports.getExecutionBySession().values()][0];
+  if (!exec?.session) return [];
+  return projectedConstitutionRules(exec.session.events).map((event) => ({
+    id: event.ruleID,
+    statement: event.statement,
+    scope: event.scope,
+    priority: event.priority,
+    source: event.source,
+    enforcement: event.enforcement,
+    overridePolicy: event.overridePolicy,
+    evidenceRefs: event.evidenceRefs ?? [],
+  }));
+}
+
 function refreshAgentSpawnDescription(
   ctx: RuntimeContext,
   registry: import("@natalia/agent").AgentRegistry,
@@ -164,7 +187,11 @@ export function createConfigReload(
       const catalog = ctx.ports.getPluginsController().catalog();
       const candidateID = await storeGeneration(
         store,
-        buildGeneration({ config, catalog }),
+        buildGeneration({
+          config,
+          catalog,
+          policyRows: activeConstitutionRows(ctx),
+        }),
       );
       ctx.ports.publish({ type: "composition.proposed", candidateID, reason });
       return candidateID;

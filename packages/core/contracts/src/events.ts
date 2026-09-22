@@ -2066,6 +2066,16 @@ type RuntimeEventData =
       reason: string;
       workspaceID?: string;
       sessionID?: SessionID;
+    }
+  | {
+      type: "composition.verified";
+      /** The candidate generation this verdict is about (a content id). */
+      candidateID: string;
+      verdict: "passed" | "failed";
+      /** Every gate face's outcome — the evidence the switch decision rests on. */
+      checks: Array<{ check: string; ok: boolean; detail?: string }>;
+      workspaceID?: string;
+      sessionID?: SessionID;
     };
 
 /**

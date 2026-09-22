@@ -1259,7 +1259,7 @@ Deployment notes:
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 123.
+- Runtime event types (`RuntimeEventData` union): 124.
 - view-store projections (`case` labels in `packages/hosts/view-store/src`): 124.
 
 ### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
@@ -1525,6 +1525,7 @@ Deployment notes:
 | `workspace.removed`             | `workspaceID`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                   |
 | `composition.proposed`          | `candidateID`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                                   | —                                                                                   |
 | `composition.switched`          | `from?`: string, `to`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                   |
+| `composition.verified`          | `candidateID`: string, `verdict`: "passed" | "failed", `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                     | —                                                                                   |
 <!-- /api-reference:generated -->
 
 <a id="chinese"></a>
@@ -2635,7 +2636,7 @@ createRuntimeHttpServer({
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 123.
+- Runtime event types (`RuntimeEventData` union): 124.
 - view-store projections (`case` labels in `packages/hosts/view-store/src`): 124.
 
 ### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
@@ -2901,4 +2902,5 @@ createRuntimeHttpServer({
 | `workspace.removed`             | `workspaceID`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                   |
 | `composition.proposed`          | `candidateID`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                                   | —                                                                                   |
 | `composition.switched`          | `from?`: string, `to`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                   |
+| `composition.verified`          | `candidateID`: string, `verdict`: "passed" | "failed", `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                     | —                                                                                   |
 <!-- /api-reference:generated -->

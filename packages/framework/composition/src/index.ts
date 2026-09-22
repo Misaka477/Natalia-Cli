@@ -1,5 +1,10 @@
+export * from "./verification";
 import { ObjectStore } from "@natalia/object-store";
-import type { ConfigV3, RuntimeEvent } from "@natalia/contracts";
+import type {
+  ConfigV3,
+  ConstitutionRule,
+  RuntimeEvent,
+} from "@natalia/contracts";
 import {
   GENERATION_SCHEMA,
   type CompositionPointer,
@@ -32,7 +37,10 @@ export function parseGeneration(text: string): Generation {
     );
   if (!Array.isArray(parsed.plugins))
     throw new Error("generation is missing its plugin catalog");
-  return parsed;
+  // Generations stored before the constitution face existed carry no rows;
+  // reading them as "carries no policy" is honest (the gate then fails
+  // closed against active rules rather than inventing rows).
+  return { ...parsed, policyRows: parsed.policyRows ?? [] };
 }
 
 /** Stores a generation, returning its content id. */
@@ -60,14 +68,24 @@ export function buildGeneration(input: {
     enabled: boolean;
     fingerprint: string;
   }>;
+  /**
+   * The constitution rows this generation carries. Required rather than
+   * defaulted: a generation that silently carries no policy would pass the
+   * gate's constitution face by emptiness while the user's rules are active.
+   */
+  policyRows: readonly ConstitutionRule[];
 }): Generation {
   const plugins: GenerationPluginRef[] = input.catalog
     .map(({ id, enabled, fingerprint }) => ({ id, enabled, fingerprint }))
     .sort((a, b) => a.id.localeCompare(b.id));
+  const policyRows = [...input.policyRows].sort((a, b) =>
+    a.id.localeCompare(b.id),
+  );
   return {
     schema: GENERATION_SCHEMA,
     config: input.config,
     plugins,
+    policyRows,
   };
 }
 

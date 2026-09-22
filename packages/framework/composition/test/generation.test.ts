@@ -36,17 +36,26 @@ const CATALOG = [
 ];
 
 test("serialize and parse round-trip a generation", () => {
-  const generation = buildGeneration({ config: CONFIG, catalog: CATALOG });
+  const generation = buildGeneration({
+    config: CONFIG,
+    catalog: CATALOG,
+    policyRows: [],
+  });
   const parsed = parseGeneration(serializeGeneration(generation));
   expect(parsed).toEqual(generation);
   expect(parsed.schema).toBe(GENERATION_SCHEMA);
 });
 
 test("the catalog is stored sorted, so entry order never changes the id", () => {
-  const a = buildGeneration({ config: CONFIG, catalog: CATALOG });
+  const a = buildGeneration({
+    config: CONFIG,
+    catalog: CATALOG,
+    policyRows: [],
+  });
   const b = buildGeneration({
     config: CONFIG,
     catalog: [...CATALOG].reverse(),
+    policyRows: [],
   });
   expect(serializeGeneration(a)).toBe(serializeGeneration(b));
 });
@@ -54,8 +63,16 @@ test("the catalog is stored sorted, so entry order never changes the id", () => 
 test("storing identical content yields the identical id", async () => {
   const { root, store } = testStore();
   try {
-    const a = buildGeneration({ config: CONFIG, catalog: CATALOG });
-    const b = buildGeneration({ config: CONFIG, catalog: CATALOG });
+    const a = buildGeneration({
+      config: CONFIG,
+      catalog: CATALOG,
+      policyRows: [],
+    });
+    const b = buildGeneration({
+      config: CONFIG,
+      catalog: CATALOG,
+      policyRows: [],
+    });
     const first = await storeGeneration(store, a);
     const second = await storeGeneration(store, b);
     expect(first).toBe(second);
@@ -74,7 +91,7 @@ test("a changed config is a different generation", async () => {
   try {
     const first = await storeGeneration(
       store,
-      buildGeneration({ config: CONFIG, catalog: CATALOG }),
+      buildGeneration({ config: CONFIG, catalog: CATALOG, policyRows: [] }),
     );
     const second = await storeGeneration(
       store,
@@ -84,6 +101,7 @@ test("a changed config is a different generation", async () => {
           runtime: { terminal: { backend: "wezterm", windowMode: "auto" } },
         } as Generation["config"],
         catalog: CATALOG,
+        policyRows: [],
       }),
     );
     expect(second).not.toBe(first);
