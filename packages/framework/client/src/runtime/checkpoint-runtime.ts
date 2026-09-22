@@ -12,7 +12,7 @@ import {
 } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { statusSnapshotController } from "@natalia/runtime-status";
-import { checkpointFactory } from "@natalia/checkpoint";
+import { checkpointFactory } from "@anthelia/checkpoint";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { SessionID } from "@natalia/contracts";
@@ -24,7 +24,7 @@ import { logOf } from "@natalia/operation-log";
 import type {
   CheckpointController,
   CheckpointFactory,
-} from "@natalia/checkpoint";
+} from "@anthelia/checkpoint";
 
 async function appendCheckpointMutation(
   ctx: RuntimeContext,

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createTestContext } from "@natalia/runtime-services";
-import { providerModelController } from "@natalia/provider-model";
+import { providerModelController } from "@anthelia/provider-model";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +16,7 @@ import {
 import {
   attachmentService as attachmentServiceToken,
   createAttachmentService,
-} from "@natalia/attachments";
+} from "@anthelia/attachments";
 import type {
   RuntimeContext,
   SessionExecutionState,

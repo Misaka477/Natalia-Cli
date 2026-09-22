@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginAPI } from "@natalia/plugin";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import { createLocalToolsPlugin, LOCAL_TOOLS_PLUGIN_ID } from "../src";
 import { localToolsReload } from "@natalia/runtime-services";
 

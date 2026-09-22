@@ -6,17 +6,17 @@
  * directly and contributes it as the `turn.controller` service. It depends on
  * the session-store subsystem, which is wired before it.
  */
-import { buildSubmittedTurn } from "@natalia/session";
+import { buildSubmittedTurn } from "@anthelia/session";
 import {
   createTurnController,
   turnController,
-} from "@natalia/turn-orchestration";
-import { providerModelController } from "@natalia/provider-model";
-import { sessionStoreController } from "@natalia/session-store";
+} from "@anthelia/turn-orchestration";
+import { providerModelController } from "@anthelia/provider-model";
+import { sessionStoreController } from "@anthelia/session-store";
 import type { SessionID } from "@natalia/contracts";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 import type { RuntimeContext, SessionExecutionState } from "../context";
-import type { ProviderModelController } from "@natalia/provider-model";
+import type { ProviderModelController } from "@anthelia/provider-model";
 import { logOf } from "@natalia/operation-log";
 
 export type TurnOrchestrationHandle = { close(): void };

@@ -7,7 +7,10 @@
  * events, and trigger session snapshots and safe-boundary settlement. Reads
  * everything it needs from `RuntimeContext` at call time.
  */
-import { appendSessionEvent, projectedNiaChatMessages } from "@natalia/session";
+import {
+  appendSessionEvent,
+  projectedNiaChatMessages,
+} from "@anthelia/session";
 import {
   markRuntimeEventSessionSeq,
   runtimeEventDurability,
@@ -18,8 +21,8 @@ import {
 } from "./collaboration/collab-snapshot";
 import { activePlanForExec } from "./collaboration/plan-doc-runtime";
 import { createGoalRuntime } from "./goal/goal-runtime";
-import type { SessionStoreController } from "@natalia/session-store";
-import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
+import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { feedSessionEventWindow } from "./session-event-window";
 import { feedSessionFactState } from "./session-facts";

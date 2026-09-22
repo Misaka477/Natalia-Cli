@@ -9,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type { LocalAttachment } from "@natalia/contracts";
-import { modelVisibleEvents, type SessionRecord } from "@natalia/session";
+import { modelVisibleEvents, type SessionRecord } from "@anthelia/session";
 import { DEFAULT_MAX_IMAGE_LONG_EDGE, scaleImage } from "./image-scale";
 
 export type AttachmentLimits = {

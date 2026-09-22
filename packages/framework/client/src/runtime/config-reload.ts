@@ -6,14 +6,17 @@
  * the default plugin catalog and provider re-selection. Reads and writes host
  * state through `RuntimeContext` ports.
  */
-import { agentsFromConfig } from "@natalia/agent";
-import { renderSubagentTypes } from "@natalia/subagents";
+import { agentsFromConfig } from "@anthelia/agent";
+import { renderSubagentTypes } from "@anthelia/subagents";
 import { resolveConfig } from "@natalia/config";
-import { ensureBashCommandParser } from "@natalia/tools";
+import { ensureBashCommandParser } from "@anthelia/tools";
 import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
-import { nextContextInstructionsRevision } from "@natalia/session";
-import { projectedConstitutionRules } from "@natalia/session";
-import { checkpointFactory, type CheckpointFactory } from "@natalia/checkpoint";
+import { nextContextInstructionsRevision } from "@anthelia/session";
+import { projectedConstitutionRules } from "@anthelia/session";
+import {
+  checkpointFactory,
+  type CheckpointFactory,
+} from "@anthelia/checkpoint";
 import { ObjectStore } from "@natalia/object-store";
 import { buildGeneration, storeGeneration } from "@natalia/composition";
 import type { RuntimeContext } from "./context";
@@ -63,7 +66,7 @@ export function activeConstitutionRows(
 
 function refreshAgentSpawnDescription(
   ctx: RuntimeContext,
-  registry: import("@natalia/agent").AgentRegistry,
+  registry: import("@anthelia/agent").AgentRegistry,
 ) {
   const spawn = ctx.state.tools.get("agent_spawn");
   if (!spawn) return;

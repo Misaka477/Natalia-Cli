@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
-import { appendSessionEvent, createSessionRecord } from "@natalia/session";
+import { appendSessionEvent, createSessionRecord } from "@anthelia/session";
 import {
   CheckpointStore,
   ChunkStore,

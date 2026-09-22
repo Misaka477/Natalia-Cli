@@ -7,9 +7,9 @@ import type {
 import { collaborationWaiter } from "@natalia/collaboration";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
+import { sessionStoreController } from "@anthelia/session-store";
 import { toolPolicy } from "@natalia/tool-policy";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 
 export async function configureRuntime(
   ctx: RuntimeContext,

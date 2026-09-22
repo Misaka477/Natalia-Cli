@@ -16,7 +16,7 @@ function builtinRegistry() {
  * The public built-in tool catalogue, pinned.
  *
  * It lives with the host because the host composes it: the families come from
- * `@natalia/tools`, separately packaged families and built-in plugins, and only
+ * `@anthelia/tools`, separately packaged families and built-in plugins, and only
  * the assembled result is the surface a model sees.
  *
  * This is a policy surface, not an inventory: a tool that quietly disappears

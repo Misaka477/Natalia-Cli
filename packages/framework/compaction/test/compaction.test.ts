@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createContextLedgerFactory } from "@natalia/context-ledger";
-import { createRetryService } from "@natalia/retry";
+import { createRetryService } from "@anthelia/retry";
 import type { CompactionService } from "@natalia/runtime";
 import { createCompactionService } from "../src";
 

@@ -245,7 +245,7 @@ export type SessionUsageView = SessionUsageStats & {
  * the journal. `current` is the user-approved R; `draft` is the latest
  * unapproved proposal; `stale` marks a draft whose plan document changed after
  * it was extracted. Mirrors the session projection, kept self-contained so
- * view-store stays independent of @natalia/session.
+ * view-store stays independent of @anthelia/session.
  */
 export type WorkContractView = {
   planID: string;

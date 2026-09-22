@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import type { RuntimeContext } from "../src/runtime/context";
 import { createChatTools } from "../src/runtime/collaboration/chat-tools";
 

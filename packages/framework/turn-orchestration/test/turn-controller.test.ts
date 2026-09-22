@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { SessionRecord } from "@natalia/session";
+import type { SessionRecord } from "@anthelia/session";
 import { createTurnController } from "../src";
 
 function sessionWithInbox(

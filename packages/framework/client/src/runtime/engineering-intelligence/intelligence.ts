@@ -1,12 +1,12 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
+import { sessionStoreController } from "@anthelia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
 import { type ConstitutionDocRule } from "@natalia/runtime-services";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { loadProjectDocuments } from "../project-docs";
 import { applyConstitutionDocEdit } from "../constitution-doc";
 import { writeWorkspaceFile } from "@natalia/platform";
-import type { SessionFactState } from "@natalia/session";
+import type { SessionFactState } from "@anthelia/session";
 import {
   projectedCanonicalTools,
   projectedWorkGraphNodes,
@@ -27,7 +27,7 @@ import {
   sessionFactHumanValidation,
   sessionFactDriftFindings,
   sessionFactEvidenceRecords,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
 import { isHardProtectedConstitutionRule } from "@natalia/contracts";
 import type { EpisodeID } from "@natalia/contracts";
@@ -55,7 +55,7 @@ import {
 import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
 import { captureRepositoryEvidenceFields } from "../repository-refs";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
 /**

@@ -1,7 +1,7 @@
 import {
   sessionStoreController,
   type SessionStoreController,
-} from "@natalia/session-store";
+} from "@anthelia/session-store";
 import { runtimeEventSessionSeq, type RuntimeEvent } from "@natalia/contracts";
 import { ensureSessionFullEvents } from "./session-full-events";
 import type { RuntimeContext } from "./context";

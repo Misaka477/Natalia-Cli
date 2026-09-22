@@ -14,7 +14,7 @@
  * a terminal finding — a warning/high reopen is re-injected so the main agent
  * re-reviews it, EI §3.5 "reopen 后 warning/high 自动复审").
  */
-import { admitInput, buildInputAdmission } from "@natalia/session";
+import { admitInput, buildInputAdmission } from "@anthelia/session";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
 

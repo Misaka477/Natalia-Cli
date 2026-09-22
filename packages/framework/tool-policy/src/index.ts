@@ -7,7 +7,7 @@ export {
   type BashCommandParseResult,
   type BashCommandRule,
   type ParsedBashCommand,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 export {
   commandTextForTool,
   createToolPolicyHookLayer,
@@ -20,5 +20,5 @@ export {
   type PermissionRules,
   type ResourceRule,
   type TerminalCommandBufferResult,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 export { createToolPolicyService } from "./tool-policy-service";

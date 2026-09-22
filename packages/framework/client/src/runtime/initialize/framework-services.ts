@@ -11,18 +11,18 @@
  * unchanged. The host owns close and reload (config refresh) through the
  * returned handle.
  */
-import { createAttachmentService } from "@natalia/attachments";
-import { createCheckpointFactory } from "@natalia/checkpoint";
-import { createCompactionService } from "@natalia/compaction";
+import { createAttachmentService } from "@anthelia/attachments";
+import { createCheckpointFactory } from "@anthelia/checkpoint";
+import { createCompactionService } from "@anthelia/compaction";
 import { createContextLedgerFactory } from "@natalia/context-ledger";
 import { RUNTIME_CONFIG_SERVICE } from "@natalia/runtime-config";
 import { runCheckpointCommand } from "@natalia/runtime";
-import { createRetryService, retryService } from "@natalia/retry";
-import { compactionService } from "@natalia/compaction";
-import { checkpointFactory } from "@natalia/checkpoint";
+import { createRetryService, retryService } from "@anthelia/retry";
+import { compactionService } from "@anthelia/compaction";
+import { checkpointFactory } from "@anthelia/checkpoint";
 import { contextLedgerFactory as contextLedgerFactoryToken } from "@natalia/context-ledger";
-import { createSandboxController, sandboxTools } from "@natalia/sandbox";
-import { agentTools, createSubagentsController } from "@natalia/subagents";
+import { createSandboxController, sandboxTools } from "@anthelia/sandbox";
+import { agentTools, createSubagentsController } from "@anthelia/subagents";
 import { createToolPolicyService, toolPolicy } from "@natalia/tool-policy";
 import {
   COLLABORATION_SERVICE,
@@ -37,7 +37,7 @@ import { join } from "node:path";
 import { createOperationLog, operationLog } from "@natalia/operation-log";
 import { createRuntimeDiagnostics } from "@natalia/runtime-diagnostics";
 import { runtimeDiagnostics } from "@natalia/runtime-services";
-import { sessionInvariants } from "@natalia/session";
+import { sessionInvariants } from "@anthelia/session";
 import { constitutionInvariants } from "@natalia/governance-ledger";
 import { workLedgerInvariants } from "@natalia/work-ledger";
 import {
@@ -65,7 +65,7 @@ import {
   createProposeGenerationTool,
   createRollbackGenerationTool,
 } from "../generation-tools";
-import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
+import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
 import {
   createDriftAcknowledgeTool,
   createRecordCompletionTool,
@@ -80,7 +80,7 @@ import {
   workspaceMutations,
   workspaceWriteLock,
   type WorkspaceMutationIdentity,
-} from "@natalia/workspace";
+} from "@anthelia/workspace";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import {

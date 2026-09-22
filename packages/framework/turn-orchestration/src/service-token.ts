@@ -1,5 +1,5 @@
 import { defineService } from "@natalia/runtime-services";
-import type { TurnController } from "@natalia/turn-orchestration";
+import type { TurnController } from "@anthelia/turn-orchestration";
 
 /** The turn orchestration controller token; lives with the mechanism. */
 export const turnController = defineService<TurnController>("turn.controller", {

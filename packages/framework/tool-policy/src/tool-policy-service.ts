@@ -18,7 +18,7 @@ import {
   ToolExecutionPipeline,
   workspaceWritePathForTool,
   workspaceWritePathsForTool,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type { ToolPolicyService } from "@natalia/runtime-services";
 
 export function createToolPolicyService(): ToolPolicyService {

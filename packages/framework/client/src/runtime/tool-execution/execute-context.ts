@@ -10,7 +10,7 @@
 import type { ProviderToolCall } from "@natalia/runtime";
 import type { ConfinementMode } from "@natalia/confinement";
 import { rinaCache } from "@natalia/rina";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
   sandboxService,
@@ -21,7 +21,7 @@ import {
   type TerminalController,
 } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
-import { workspaceMutations } from "@natalia/workspace";
+import { workspaceMutations } from "@anthelia/workspace";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import type { WorkLedgerController } from "@natalia/work-ledger";

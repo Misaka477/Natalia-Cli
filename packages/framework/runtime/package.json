@@ -9,17 +9,17 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/agent": "workspace:*",
+    "@anthelia/agent": "workspace:*",
+    "@anthelia/session": "workspace:*",
+    "@anthelia/tools": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/diff-wasm": "workspace:*",
     "@natalia/object-store": "workspace:*",
-    "@natalia/platform": "workspace:*",
-    "@natalia/session": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/platform": "workspace:*"
   },
   "devDependencies": {
-    "@natalia/session": "workspace:*",
+    "@anthelia/session": "workspace:*",
     "@natalia/testing": "workspace:*"
   }
 }

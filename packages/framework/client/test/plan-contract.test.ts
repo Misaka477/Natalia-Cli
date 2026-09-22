@@ -16,7 +16,7 @@ useWorkspaceCleanup();
 import {
   projectedRuntimeNotices,
   projectedWorkContracts,
-} from "@natalia/session";
+} from "@anthelia/session";
 import { createScriptedProvider } from "./e2e-harness";
 
 /** A provider whose first step proposes the contract, then settles. */

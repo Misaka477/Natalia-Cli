@@ -8,9 +8,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@anthelia/tools": "workspace:*",
     "@natalia/plugin": "workspace:*",
-    "@natalia/runtime-services": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/runtime-services": "workspace:*"
   },
   "devDependencies": {
     "@natalia/config": "workspace:*"

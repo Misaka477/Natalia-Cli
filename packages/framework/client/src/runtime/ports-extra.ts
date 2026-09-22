@@ -4,7 +4,7 @@
  * Split out of `ports.ts` to stay within the source line limit; merged into the
  * `RuntimeContext.ports` type through an intersection in `context.ts`.
  */
-import type { AgentRegistry } from "@natalia/agent";
+import type { AgentRegistry } from "@anthelia/agent";
 import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   ContextWindowResolver,
@@ -29,7 +29,7 @@ export type RuntimePortsExtra = {
     sessionID: SessionID,
   ) => (signal: AbortSignal) => Promise<void>;
   setSessionID: (id: SessionID) => void;
-  setSession: (session: import("@natalia/session").SessionRecord) => void;
+  setSession: (session: import("@anthelia/session").SessionRecord) => void;
   setRuntimeContext: (
     context: import("@natalia/context-ledger").RuntimeContextLedger,
   ) => void;
@@ -116,7 +116,7 @@ export type RuntimePortsExtra = {
     selectedRef?: string,
   ) => Promise<RuntimeContextStatusConfig>;
   modelRefKeyForSelection: (
-    agent: import("@natalia/agent").AgentDefinition | undefined,
+    agent: import("@anthelia/agent").AgentDefinition | undefined,
     model: { modelID?: string; variant?: string } | undefined,
   ) => string | undefined;
   configReloadBlockedReason: () => string | undefined;
@@ -150,7 +150,7 @@ export type RuntimePortsExtra = {
     exec: SessionExecutionState,
   ) => Promise<void>;
   getInteractive: () => import("@natalia/collaboration").InteractiveWaiter;
-  getTerminalCommandBuffer: () => import("@natalia/tools").TerminalCommandBuffer;
+  getTerminalCommandBuffer: () => import("@anthelia/tools").TerminalCommandBuffer;
   getSandboxResourcesByID: () => Map<string, number>;
   getEndTurnWaitingHuman: () =>
     | { terminalID: string; reason: string }
@@ -167,12 +167,12 @@ export type RuntimePortsExtra = {
   boundToolOutput: (
     workspaceRoot: string,
     text: string,
-  ) => Promise<import("@natalia/tools").BoundedToolOutput>;
+  ) => Promise<import("@anthelia/tools").BoundedToolOutput>;
   isManagedResourceTool: (toolName: string) => boolean;
   tryParseToolArguments: (arguments_: string) => Record<string, unknown>;
   parseToolArguments: (arguments_: string) => unknown;
   validateToolParameters: (
-    schema: import("@natalia/tools").ToolSchema,
+    schema: import("@anthelia/tools").ToolSchema,
     input: unknown,
   ) => Array<{ path: string; message: string }>;
 };

@@ -9,7 +9,7 @@
  */
 import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
-import { projectedDriftFindings } from "@natalia/session";
+import { projectedDriftFindings } from "@anthelia/session";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { requestAuditAfterCompletion } from "./audit-request";
@@ -52,7 +52,7 @@ function requireGovernanceLedger(
  */
 export function createRecordValidationTool(
   ctx: RuntimeContext,
-): import("@natalia/tools").RuntimeTool {
+): import("@anthelia/tools").RuntimeTool {
   return {
     name: "record_validation",
     description:
@@ -176,7 +176,7 @@ export function createRecordValidationTool(
  */
 export function createRecordCompletionTool(
   ctx: RuntimeContext,
-): import("@natalia/tools").RuntimeTool {
+): import("@anthelia/tools").RuntimeTool {
   return {
     name: "record_completion",
     description:
@@ -335,7 +335,7 @@ export function createRecordCompletionTool(
  */
 export function createRecordDecisionTool(
   ctx: RuntimeContext,
-): import("@natalia/tools").RuntimeTool {
+): import("@anthelia/tools").RuntimeTool {
   return {
     name: "record_decision",
     description:
@@ -430,7 +430,7 @@ export function createRecordDecisionTool(
  */
 export function createDriftAcknowledgeTool(
   ctx: RuntimeContext,
-): import("@natalia/tools").RuntimeTool {
+): import("@anthelia/tools").RuntimeTool {
   return {
     name: "drift_acknowledge",
     description:

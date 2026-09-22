@@ -44,9 +44,9 @@ export type ToolResultPresentation = {
 /**
  * The UI-facing card a tool projects for a call or a result.
  *
- * Tools declare this in their `output` definition (`@natalia/tools`); it reaches
+ * Tools declare this in their `output` definition (`@anthelia/tools`); it reaches
  * the client through the `tool.update` event's `metadata.call` (running) and
- * `metadata.render` (result). `ui-model` cannot depend on `@natalia/tools` (a
+ * `metadata.render` (result). `ui-model` cannot depend on `@anthelia/tools` (a
  * kernel package), so this is a structural mirror the TUI decodes from the
  * event metadata.
  */

@@ -1,4 +1,4 @@
-import { parseToolArguments, validateToolParameters } from "@natalia/tools";
+import { parseToolArguments, validateToolParameters } from "@anthelia/tools";
 import {
   MAX_STEPS_PROMPT,
   MISSING_FINAL_RESPONSE_FALLBACK,

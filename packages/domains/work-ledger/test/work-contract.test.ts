@@ -3,7 +3,7 @@ import {
   applySessionWorkContractFact,
   emptySessionWorkContractFactState,
   sessionWorkContractsFrom,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
   buildDetourRequested,

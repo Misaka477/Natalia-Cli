@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/provider-model",
+  "name": "@anthelia/provider-model",
   "version": "0.0.0-m13",
   "private": true,
   "type": "module",
@@ -9,17 +9,17 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/runtime-services": "workspace:*",
+    "@anthelia/session": "workspace:*",
+    "@anthelia/tools": "workspace:*",
+    "@natalia/agent-prompts": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/runtime": "workspace:*",
-    "@natalia/session": "workspace:*",
-    "@natalia/tools": "workspace:*",
-    "@natalia/agent-prompts": "workspace:*"
+    "@natalia/runtime-services": "workspace:*"
   },
   "devDependencies": {
-    "@natalia/attachments": "workspace:*",
-    "@natalia/compaction": "workspace:*",
-    "@natalia/retry": "workspace:*"
+    "@anthelia/attachments": "workspace:*",
+    "@anthelia/compaction": "workspace:*",
+    "@anthelia/retry": "workspace:*"
   }
 }

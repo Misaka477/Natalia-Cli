@@ -13,15 +13,15 @@ import {
   type GoalRoundStop,
   type GoalView,
 } from "@natalia/goal";
-import { admittedInputs } from "@natalia/session";
-import type { SessionStoreController } from "@natalia/session-store";
-import { sessionStoreController } from "@natalia/session-store";
+import { admittedInputs } from "@anthelia/session";
+import type { SessionStoreController } from "@anthelia/session-store";
+import { sessionStoreController } from "@anthelia/session-store";
 import type {
   GoalEditInput,
   RuntimeEvent,
   SessionID,
 } from "@natalia/contracts";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { goalTools } from "./goal-tools";
 import { runCompletionCheck } from "./goal-completion-check";

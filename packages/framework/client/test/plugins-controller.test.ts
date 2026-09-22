@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createPluginsController } from "../src/plugins-controller";
 import {

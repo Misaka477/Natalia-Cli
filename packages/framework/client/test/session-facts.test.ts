@@ -6,7 +6,7 @@ import {
   reseedSessionFactState,
 } from "../src/runtime/session-facts";
 import type { SessionExecutionState } from "../src/runtime/session-execution-state";
-import { sessionFactConstitutionRules } from "@natalia/session";
+import { sessionFactConstitutionRules } from "@anthelia/session";
 
 function ruleEvent(id: string, ruleID: string): RuntimeEvent {
   return {

@@ -54,7 +54,7 @@ An external integration may depend on, and only on:
 | `@natalia/client` **public exports only** | hosting a runtime in-process, and the task/flow helpers                               |
 
 Do **not** import any package internal (`@natalia/x/...`), `@natalia/runtime`,
-`@natalia/session`, `@natalia/tools`, or anything under `apps/`.
+`@anthelia/session`, `@anthelia/tools`, or anything under `apps/`.
 `npm run guard:imports` enforces these boundaries mechanically, including that
 a consumer-contract package never reaches into the kernel. `@natalia/transport/host`
 (serving a runtime, daemon lifecycle) is host-side only: speaking the protocol
@@ -1572,7 +1572,7 @@ Deployment notes:
 | `@natalia/client` **仅公共导出** | 进程内托管 runtime，以及 task/flow 辅助函数                         |
 
 **禁止**导入任何包内部（`@natalia/x/...`）、`@natalia/runtime`、
-`@natalia/session`、`@natalia/tools` 或 `apps/` 下任何内容。
+`@anthelia/session`、`@anthelia/tools` 或 `apps/` 下任何内容。
 `npm run guard:imports` 机械强制这些边界，包括消费契约包永不触及内核。
 `@natalia/transport/host`（serving runtime、daemon 生命周期）仅限 host 侧：会说协议
 绝不能等于能托管 runtime。

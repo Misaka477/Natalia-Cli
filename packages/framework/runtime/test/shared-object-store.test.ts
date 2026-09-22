@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { ObjectStore } from "@natalia/object-store";
 import { CheckpointStore } from "../src/checkpoint";
 import { ContextLedger } from "../src/context";
-import { SnapshotSandboxManager } from "@natalia/sandbox";
+import { SnapshotSandboxManager } from "@anthelia/sandbox";
 
 const sha = (content: string) =>
   createHash("sha256").update(content).digest("hex");

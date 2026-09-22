@@ -13,10 +13,10 @@ import {
   buildInputAdmission,
   buildSubmittedTurn,
   sessionRunCoordinator,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 import { workLedgerController } from "@natalia/work-ledger";
-import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
+import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
 import type { SessionID, SubmitInput, SubmittedTurn } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";

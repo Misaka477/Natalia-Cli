@@ -19,7 +19,7 @@ import {
   JsonSessionStore,
   SqliteSessionStore,
   createSessionRecord,
-} from "@natalia/session";
+} from "@anthelia/session";
 import {
   deleteLocalSession,
   duplicateLocalSession,

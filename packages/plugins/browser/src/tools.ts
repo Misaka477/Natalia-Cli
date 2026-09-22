@@ -13,8 +13,8 @@ import {
   requireObject,
   requireString,
   workspacePath,
-} from "@natalia/tools";
-import type { RuntimeTool, ToolFamily } from "@natalia/tools";
+} from "@anthelia/tools";
+import type { RuntimeTool, ToolFamily } from "@anthelia/tools";
 import { getBrowserBridgeLifecycle } from "./browser-bridge-lifecycle";
 
 export const BROWSER_BRIDGE_EXTENSION_MISSING_ERROR =

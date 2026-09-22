@@ -8,13 +8,13 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@anthelia/tools": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/plugin": "workspace:*",
-    "@natalia/runtime-services": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/runtime-services": "workspace:*"
   },
   "devDependencies": {
-    "@natalia/subagents": "workspace:*",
+    "@anthelia/subagents": "workspace:*",
     "@natalia/testing": "workspace:*"
   }
 }

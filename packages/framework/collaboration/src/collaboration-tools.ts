@@ -2,12 +2,12 @@ import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   projectedCollabMessages,
   projectedMailboxMessages,
-} from "@natalia/session";
+} from "@anthelia/session";
 import {
   buildMailboxStatus,
   createMailboxAcknowledgeTool,
 } from "@natalia/runtime-services";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import type { CollaborationService } from "./collaboration-service";
 
 export const COLLAB_RESPONSE_DECISIONS = [

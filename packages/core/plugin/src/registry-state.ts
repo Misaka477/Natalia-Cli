@@ -1,4 +1,4 @@
-import type { ToolRegistry } from "@natalia/tools";
+import type { ToolRegistry } from "@anthelia/tools";
 import type { PluginIntegrationPoint, PluginManifest } from "./manifest";
 import type {
   Plugin,

@@ -9,10 +9,10 @@
     "./ui": "./src/ui/plugin.tsx"
   },
   "dependencies": {
+    "@anthelia/tools": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime-services": "workspace:*",
-    "@natalia/tools": "workspace:*",
     "@natalia/ui-host": "workspace:*",
     "solid-js": "1.9.12"
   }

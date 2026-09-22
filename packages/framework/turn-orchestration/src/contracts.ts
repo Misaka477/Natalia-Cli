@@ -4,7 +4,7 @@ import type {
   PromptResourceMention,
   SessionID,
 } from "@natalia/contracts";
-import type { AdmittedSessionInput, SessionRecord } from "@natalia/session";
+import type { AdmittedSessionInput, SessionRecord } from "@anthelia/session";
 
 /** Turn orchestration contracts, moved from runtime-services with the token. */
 

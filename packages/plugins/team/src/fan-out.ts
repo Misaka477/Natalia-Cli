@@ -17,7 +17,7 @@ import type {
   SandboxChangeView,
   SandboxToolService,
   SubagentToolService,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 
 export type FanOutTask = {
   id: string;

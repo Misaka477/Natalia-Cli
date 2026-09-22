@@ -2,14 +2,14 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAttachmentService } from "@natalia/attachments";
+import { createAttachmentService } from "@anthelia/attachments";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
 } from "@natalia/runtime";
-import { createSessionStoreController } from "@natalia/session-store";
-import { projectSessionMessages } from "@natalia/session";
+import { createSessionStoreController } from "@anthelia/session-store";
+import { projectSessionMessages } from "@anthelia/session";
 import { createRealRuntimeClient } from "../src/runtime/main";
 
 const provider: StreamingProvider = {

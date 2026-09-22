@@ -11,13 +11,13 @@
  * "isolation was unavailable" must never be indistinguishable from "isolation
  * happened".
  */
-import { optionalString, requireObject, requireString } from "@natalia/tools";
+import { optionalString, requireObject, requireString } from "@anthelia/tools";
 import type {
   RuntimeTool,
   SandboxToolService,
   ToolExecutionContext,
   ToolFamily,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 
 function requireSandboxes(context: ToolExecutionContext) {
   if (!context.sandboxes) throw new Error("sandbox runtime unavailable");

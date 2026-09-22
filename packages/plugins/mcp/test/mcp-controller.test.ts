@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
 import { mcpService, type McpService } from "@natalia/runtime-services";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import { createMcpPlugin, MCP_PLUGIN_ID } from "../src";
 import { createMcpController } from "../src/mcp-controller";
 

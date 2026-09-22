@@ -1,6 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { modelRefKey, parseModelRef } from "@natalia/contracts";
-import { nextContextInstructionsRevision } from "@natalia/session";
+import { nextContextInstructionsRevision } from "@anthelia/session";
 import { discoverProviderModels, updateConfigAtScope } from "@natalia/config";
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";

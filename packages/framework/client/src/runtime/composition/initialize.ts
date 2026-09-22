@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { agentsFromConfig } from "@natalia/agent";
+import { agentsFromConfig } from "@anthelia/agent";
 import { resolveConfig } from "@natalia/config";
 import {
   contextEntriesToProviderMessages,
@@ -20,14 +20,14 @@ import {
   sessionRunCoordinator,
   settleInterruptedTurnIDs,
   settleInterruptedTurns,
-} from "@natalia/session";
+} from "@anthelia/session";
 import { readOnlyToolMessage } from "@natalia/runtime-services";
-import { turnController } from "@natalia/turn-orchestration";
+import { turnController } from "@anthelia/turn-orchestration";
 import {
   cleanupToolOutput,
   ensureBashCommandParser,
   evaluatePermissionProfileCommandRules,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import { mountPlugins } from "../../plugin-mount";
 import { wireFrameworkServices } from "../initialize/framework-services";
 import { createInitialize } from "../initialize";

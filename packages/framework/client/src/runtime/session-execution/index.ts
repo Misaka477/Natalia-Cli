@@ -12,12 +12,12 @@ import {
   memoryTrace,
   providerForModel,
 } from "@natalia/runtime";
-import { projectSession } from "@natalia/session";
+import { projectSession } from "@anthelia/session";
 import {} from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
-import { turnController } from "@natalia/turn-orchestration";
+import { sessionStoreController } from "@anthelia/session-store";
+import { turnController } from "@anthelia/turn-orchestration";
 import { contextLedgerFactory as contextLedgerFactoryToken } from "@natalia/context-ledger";
-import type { SessionRecord } from "@natalia/session";
+import type { SessionRecord } from "@anthelia/session";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
@@ -25,8 +25,8 @@ import type { RealRuntimeClientOptions } from "../options";
 import { filterRuntimeRetainedEvents } from "../session-event-retention";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
-import type { SessionStoreController } from "@natalia/session-store";
-import type { TurnController } from "@natalia/turn-orchestration";
+import type { SessionStoreController } from "@anthelia/session-store";
+import type { TurnController } from "@anthelia/turn-orchestration";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";
 import { logOf } from "@natalia/operation-log";
 

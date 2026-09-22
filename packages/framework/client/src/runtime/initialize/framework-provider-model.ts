@@ -10,10 +10,10 @@
 import {
   createProviderModelController,
   providerModelController,
-} from "@natalia/provider-model";
+} from "@anthelia/provider-model";
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import type { SessionID } from "@natalia/contracts";
-import type { ProviderModelController } from "@natalia/provider-model";
+import type { ProviderModelController } from "@anthelia/provider-model";
 import type { RuntimeContext } from "../context";
 
 export type ProviderModelHandle = { close(): void };

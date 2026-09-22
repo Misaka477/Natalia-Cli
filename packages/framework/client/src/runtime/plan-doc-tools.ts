@@ -8,7 +8,7 @@
  * planID or path. A low-churn pointer (planID + path + version) can travel in
  * the runtime context; the正文 never does.
  */
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import { applyPlanDocTick } from "@natalia/work-ledger";
 import type { RuntimeContext } from "./context";
 

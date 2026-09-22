@@ -1,5 +1,5 @@
 import type { TokenMeter } from "@natalia/runtime";
-import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
+import type { AgentDefinition, AgentRegistry } from "@anthelia/agent";
 import type {
   ApprovalResponse,
   ChatModelProfile,
@@ -43,7 +43,7 @@ import type {
   SessionRecord,
   StoredContextEpoch,
   AdmittedSessionInput,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { ProjectDocumentSnapshot } from "./project-documents";
 import type {
   RuntimeTool,
@@ -59,7 +59,7 @@ import type {
   ToolPolicyHookLayer as RuntimeToolPolicyHookLayer,
   ToolMaterialization,
   ToolRegistry,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 export type LocalToolsInput = {
   roots: string[];
   trust?: {
@@ -87,7 +87,7 @@ export type SkillsInput = {
   onLoad?(
     skill: SkillMetadata,
     output: string,
-    context: import("@natalia/tools").ToolExecutionContext,
+    context: import("@anthelia/tools").ToolExecutionContext,
   ): void;
   commandSession?: {
     active(sessionID: SessionID): SkillMetadata | undefined;
@@ -240,7 +240,7 @@ export type ProviderRunnerInput = {
   createTurnCheckpoint(input: CreateCheckpointInput): Promise<void>;
   isToolAllowed(toolName: string): boolean;
   setInFlightOperation(
-    operation: import("@natalia/session").DurableInFlightOperation | undefined,
+    operation: import("@anthelia/session").DurableInFlightOperation | undefined,
   ): Promise<void>;
   executeToolCalls(
     turnID: string,

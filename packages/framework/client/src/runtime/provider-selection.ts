@@ -23,7 +23,7 @@ import {
 } from "@natalia/runtime";
 import { deriveModelRefKey } from "../model-ref-key";
 import { modelCatalogInWorker } from "./session-project-client";
-import type { AgentDefinition } from "@natalia/agent";
+import type { AgentDefinition } from "@anthelia/agent";
 import type { ConfigV3, ModelCapabilities } from "@natalia/contracts";
 import type { ContextWindowResolver } from "@natalia/runtime";
 import type { SessionExecutionState } from "./context";

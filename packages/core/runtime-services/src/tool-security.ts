@@ -1,4 +1,4 @@
-import { tryParseToolArguments } from "@natalia/tools";
+import { tryParseToolArguments } from "@anthelia/tools";
 
 export function terminalApprovalScope(toolName: string, rawArguments: string) {
   const args = tryParseToolArguments(rawArguments);

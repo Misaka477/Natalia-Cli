@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { createLocalSessionService } from "@natalia/session-store";
+import { createLocalSessionService } from "@anthelia/session-store";
 import {
   RuntimeRefusal,
   type RuntimeSessionSummary,

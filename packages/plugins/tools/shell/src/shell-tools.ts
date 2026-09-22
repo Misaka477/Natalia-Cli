@@ -2,7 +2,7 @@
  * The shell tool family, as a separately packaged family.
  *
  * Depends on the framework for the tool-authoring surface and process helpers.
- * The `runShell` execution primitive it wraps lives in `@natalia/tools` so other
+ * The `runShell` execution primitive it wraps lives in `@anthelia/tools` so other
  * tool plugins (notably `@natalia/plugin-tool-web`) can run commands without depending
  * on this package. It knows nothing about the runtime or the capability kernel.
  */
@@ -12,8 +12,8 @@ import {
   requireString,
   runShell,
   timeoutSecOr,
-} from "@natalia/tools";
-import type { RuntimeTool, ToolFamily } from "@natalia/tools";
+} from "@anthelia/tools";
+import type { RuntimeTool, ToolFamily } from "@anthelia/tools";
 import type { ConfinementMode } from "@natalia/confinement";
 import {
   ESCALATION_TARGETS,

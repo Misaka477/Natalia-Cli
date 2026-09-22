@@ -14,7 +14,7 @@ export {
 } from "./skills";
 import type { SessionID } from "@natalia/contracts";
 import type { Plugin, PluginAPI } from "@natalia/plugin";
-import type { ToolExecutionContext } from "@natalia/tools";
+import type { ToolExecutionContext } from "@anthelia/tools";
 import { createSkillsPlugin, SKILLS_PLUGIN_MANIFEST } from "./skills-plugin";
 import { skillsInput } from "@natalia/runtime-services";
 import type { Skill } from "./skills";

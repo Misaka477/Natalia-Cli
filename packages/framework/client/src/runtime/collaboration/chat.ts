@@ -1,5 +1,5 @@
-import { attachmentService } from "@natalia/attachments";
-import { providerModelController } from "@natalia/provider-model";
+import { attachmentService } from "@anthelia/attachments";
+import { providerModelController } from "@anthelia/provider-model";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type {
   ChatMessageRow,
@@ -12,7 +12,7 @@ import type {
 import {
   projectedNaviChatMessages,
   projectedNiaChatMessages,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
 import { scanSessionWindowNewestFirst } from "../session-event-window";
@@ -47,7 +47,7 @@ async function removedAfterMessage(
 }
 import { streamEvent } from "./chat-turn-common";
 import type { AttachmentService } from "@natalia/runtime";
-import type { ProviderModelController } from "@natalia/provider-model";
+import type { ProviderModelController } from "@anthelia/provider-model";
 
 type Surface = Pick<RuntimeServiceClient, "naviChat" | "niaChat">;
 type SubmitInput = {

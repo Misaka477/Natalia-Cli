@@ -28,7 +28,7 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import {
   sessionIntelligenceFactsFromEvents,
   type SessionIntelligenceFacts,
-} from "@natalia/session";
+} from "@anthelia/session";
 
 export type SessionIntelligenceLive = {
   agentStatus: string;

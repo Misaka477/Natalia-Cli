@@ -14,18 +14,18 @@ import {
   projectedMailboxMessages,
   projectedCollabMessages,
   projectedRuntimeNotices,
-} from "@natalia/session";
+} from "@anthelia/session";
 
 export type SessionProjectWorkerRequest =
   | {
       id: number;
       op: "project";
-      session: import("@natalia/session").SessionRecord;
+      session: import("@anthelia/session").SessionRecord;
     }
   | {
       id: number;
       op: "messages";
-      session: import("@natalia/session").SessionRecord;
+      session: import("@anthelia/session").SessionRecord;
       options: { limit?: number; order?: "asc" | "desc"; cursor?: string };
     }
   | {

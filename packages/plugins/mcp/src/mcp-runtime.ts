@@ -1,4 +1,4 @@
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 
 export type MCPTool = {
   name: string;

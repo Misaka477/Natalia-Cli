@@ -3,8 +3,8 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import { defaultConfigV3 } from "@natalia/config";
 import { ContextLedger, TokenMeter } from "@natalia/runtime";
 import type { ProviderMessage } from "@natalia/runtime";
-import { compactionService } from "@natalia/compaction";
-import { providerModelController } from "@natalia/provider-model";
+import { compactionService } from "@anthelia/compaction";
+import { providerModelController } from "@anthelia/provider-model";
 import { createTestContext } from "@natalia/runtime-services";
 import type {
   RuntimeContext,
@@ -13,7 +13,7 @@ import type {
 import { createNaviChatTurn } from "../src/runtime/collaboration/chat-turn-navi";
 import { createNiaChatTurn } from "../src/runtime/collaboration/chat-turn-nia";
 import { createCollaborationWake } from "../src/runtime/collaboration/wake";
-import type { ProviderChatTurnInput } from "@natalia/provider-model";
+import type { ProviderChatTurnInput } from "@anthelia/provider-model";
 
 test("Nia normal and Navi expert resolve independent adapters, models and thinking on submit and wake", async () => {
   const config = defaultConfigV3();

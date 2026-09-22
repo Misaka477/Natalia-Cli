@@ -25,7 +25,7 @@ import {
   type DesiredPluginEntry,
   type PluginAdapterInstance,
 } from "@natalia/plugin";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import { discoverDesiredPluginEntries } from "./plugin-discovery";
 import { registerPluginOwner } from "./plugin-owner";
 

@@ -7,8 +7,8 @@ import {
 import { scanSessionWindowNewestFirst } from "../src/runtime/session-event-window";
 import type { RuntimeContext } from "../src/runtime/context";
 import type { SessionExecutionState } from "../src/runtime/session-execution-state";
-import { sessionStoreController } from "@natalia/session-store";
-import type { SessionStoreController } from "@natalia/session-store";
+import { sessionStoreController } from "@anthelia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 import { createTestContext } from "@natalia/runtime-services";
 
 function entry(seq: number): SessionWindowEntry<RuntimeEvent> {

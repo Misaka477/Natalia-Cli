@@ -13,7 +13,7 @@ import {
   workspacePath,
   type RuntimeTool,
   type ToolFamily,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";

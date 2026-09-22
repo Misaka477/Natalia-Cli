@@ -9,7 +9,7 @@ import {
   projectedWorkContracts,
   projectedWorkGraphEdges,
   projectedWorkGraphNodes,
-} from "@natalia/session";
+} from "@anthelia/session";
 import { createRealRuntimeClient } from "../src";
 import {
   officialPluginWorkspace,

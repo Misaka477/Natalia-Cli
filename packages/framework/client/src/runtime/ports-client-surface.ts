@@ -1,6 +1,6 @@
-import type { AgentDefinition } from "@natalia/agent";
+import type { AgentDefinition } from "@anthelia/agent";
 import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
-import type { SessionRecord } from "@natalia/session";
+import type { SessionRecord } from "@anthelia/session";
 import type { SessionExecutionState } from "./session-execution-state";
 
 export type RuntimeClientSurfacePorts = {

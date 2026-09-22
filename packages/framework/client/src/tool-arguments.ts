@@ -1,1 +1,1 @@
-export { parseToolArguments, tryParseToolArguments } from "@natalia/tools";
+export { parseToolArguments, tryParseToolArguments } from "@anthelia/tools";

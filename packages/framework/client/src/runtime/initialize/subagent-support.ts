@@ -18,9 +18,9 @@ import {
   type ContextBudget,
 } from "@natalia/runtime";
 import { createInitializeRuntime } from "./runtime";
-import { retryService } from "@natalia/retry";
+import { retryService } from "@anthelia/retry";
 import { contextLedgerFactory } from "@natalia/context-ledger";
-import { compactionService } from "@natalia/compaction";
+import { compactionService } from "@anthelia/compaction";
 import { subagentsService } from "@natalia/runtime-services";
 import type { CompactionService, RetryService } from "@natalia/runtime";
 import type {

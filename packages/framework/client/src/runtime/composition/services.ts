@@ -3,7 +3,7 @@ import { createEnsureReady } from "../ensure-ready";
 import { createSessionExecution } from "../session-execution";
 import { createSessionAttach } from "../session-attach";
 import { createToolPolicySurface } from "../tool-execution/policy";
-import { boundToolOutput, validateToolParameters } from "@natalia/tools";
+import { boundToolOutput, validateToolParameters } from "@anthelia/tools";
 import {
   parseToolArguments,
   tryParseToolArguments,

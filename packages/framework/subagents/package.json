@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/subagents",
+  "name": "@anthelia/subagents",
   "version": "0.0.0-m13",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/runtime-services": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@anthelia/tools": "workspace:*",
+    "@natalia/runtime-services": "workspace:*"
   }
 }

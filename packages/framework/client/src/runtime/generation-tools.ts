@@ -34,7 +34,7 @@ import { createNiaChatSurface } from "./collaboration/chat";
 import { activeConstitutionRows } from "./config-reload";
 import type { RuntimeContext, SessionExecutionState } from "./context";
 import { niaFace, smokeFace } from "./verification-faces";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 
 function activeExec(ctx: RuntimeContext): SessionExecutionState | undefined {
   return ctx.ports.getActiveExec();

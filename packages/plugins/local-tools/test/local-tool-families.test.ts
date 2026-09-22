@@ -19,7 +19,7 @@ async function fixtureFamily(root: string, id: string) {
   );
   await writeFile(
     join(dir, "index.ts"),
-    `import type { ToolFamily } from "@natalia/tools";
+    `import type { ToolFamily } from "@anthelia/tools";
 const tools = [{
   name: "${id}_run",
   description: "Run",
@@ -119,7 +119,7 @@ test("reloadLocalToolFamily re-reads the entry after a change (cache-bust)", asy
   const dir = await fixtureFamily(root, "fixture.a");
   const entry = join(dir, "index.ts");
   const source = (tool: string) =>
-    `import type { ToolFamily } from "@natalia/tools";
+    `import type { ToolFamily } from "@anthelia/tools";
 export default (): ToolFamily => ({
   id: "fixture.a", name: "fixture.a", version: "1.0.0",
   description: "Fixture family", scope: "session",

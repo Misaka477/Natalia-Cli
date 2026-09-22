@@ -1,4 +1,4 @@
-import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
+import type { AgentDefinition, AgentRegistry } from "@anthelia/agent";
 import type { CapabilityRegistryHost } from "@natalia/capability";
 import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
@@ -12,7 +12,7 @@ import type {
   RuntimeTool,
   SubagentRunnerContext,
   TerminalCommandBuffer,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type { SessionExecutionState } from "./session-execution-state";
 import type { InteractiveWaiterDeps } from "@natalia/collaboration";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
@@ -27,10 +27,10 @@ export type InitializeOptions = {
   useSqliteStore?: boolean;
   nativeTerminal?: import("@natalia/runtime-services").TerminalControllerInput["external"];
   provider?: StreamingProvider;
-  tools?: import("@natalia/tools").ToolRegistry;
+  tools?: import("@anthelia/tools").ToolRegistry;
   permissionProfile?: string;
-  toolPolicy?: import("@natalia/tools").ToolPolicy;
-  hooks?: import("@natalia/tools").ToolHooks;
+  toolPolicy?: import("@anthelia/tools").ToolPolicy;
+  hooks?: import("@anthelia/tools").ToolHooks;
 };
 
 type ResolvedConfig = Awaited<
@@ -48,7 +48,7 @@ export type InitializeDependencies = {
   mcpPluginInput: (
     config: ConfigV3,
   ) => import("@natalia/runtime-services").McpInput | undefined;
-  providerModelPluginInput: () => import("@natalia/provider-model").ProviderModelControllerInput;
+  providerModelPluginInput: () => import("@anthelia/provider-model").ProviderModelControllerInput;
   wireFrameworkServices: (
     ctx: import("./context").RuntimeContext,
     options: InitializeOptions,
@@ -97,16 +97,16 @@ export type InitializeDependencies = {
   MAX_PROTOCOL_CORRECTIONS: number;
   WAITING_TOOLS: ReadonlySet<string>;
   readOnlyToolMessage: (toolName: string) => string;
-  cleanupToolOutput: typeof import("@natalia/tools").cleanupToolOutput;
-  settleInterruptedTurnIDs: typeof import("@natalia/session").settleInterruptedTurnIDs;
-  settleInterruptedTurns: typeof import("@natalia/session").settleInterruptedTurns;
-  projectSession: typeof import("@natalia/session").projectSession;
-  modelVisibleEvents: typeof import("@natalia/session").modelVisibleEvents;
+  cleanupToolOutput: typeof import("@anthelia/tools").cleanupToolOutput;
+  settleInterruptedTurnIDs: typeof import("@anthelia/session").settleInterruptedTurnIDs;
+  settleInterruptedTurns: typeof import("@anthelia/session").settleInterruptedTurns;
+  projectSession: typeof import("@anthelia/session").projectSession;
+  modelVisibleEvents: typeof import("@anthelia/session").modelVisibleEvents;
   turnCoordinator: () => ReturnType<
-    typeof import("@natalia/session").sessionRunCoordinator
+    typeof import("@anthelia/session").sessionRunCoordinator
   >;
   drainSession: (signal: AbortSignal) => Promise<void>;
-  projectInteractiveRequests: typeof import("@natalia/session").projectInteractiveRequests;
+  projectInteractiveRequests: typeof import("@anthelia/session").projectInteractiveRequests;
   contextStatusEvent: typeof import("@natalia/runtime").contextStatusEvent;
   publishRuntimeCapabilities: () => void;
   publishRegisteredTools: () => void;

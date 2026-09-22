@@ -50,7 +50,7 @@ function poolWorker(): Worker {
 }
 
 export function projectSessionMessagesInWorker(
-  session: import("@natalia/session").SessionRecord,
+  session: import("@anthelia/session").SessionRecord,
   options: { limit?: number; order?: "asc" | "desc"; cursor?: string },
 ): Promise<RuntimeMessagePage> {
   const id = nextID++;

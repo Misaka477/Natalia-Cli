@@ -5,9 +5,9 @@
  * cancel, apply, and generate a session title. Reads everything it needs from
  * `RuntimeContext` at call time.
  */
-import { sessionRunCoordinator } from "@natalia/session";
+import { sessionRunCoordinator } from "@anthelia/session";
 import { withProviderConcurrency } from "@natalia/runtime";
-import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
+import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";
 import type { SessionID } from "@natalia/contracts";
 import {
   fallbackSessionTitle,
@@ -16,7 +16,7 @@ import {
   sanitizeSessionTitleInput,
 } from "../session-title";
 import type { RuntimeContext } from "./context";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 
 export function createTitleGeneration(ctx: RuntimeContext) {
   return {

@@ -15,7 +15,7 @@ import {
   type ToolPolicyService,
 } from "@natalia/runtime-services";
 import type { ProviderToolCall } from "@natalia/runtime";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { runExecuteStage } from "./execute-run";
 import {

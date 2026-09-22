@@ -18,7 +18,7 @@ import type {
   RuntimeTool,
   SandboxToolService,
   SubagentToolService,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 
 export const TEAM_REVIEW_DECISIONS = ["approve", "request-changes"] as const;
 

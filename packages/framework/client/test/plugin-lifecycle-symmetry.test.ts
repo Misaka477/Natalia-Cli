@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CapabilityRegistry, type CapabilityGrant } from "@natalia/capability";
 import { createPluginAdapterMaterializer } from "@natalia/plugin";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import { discoverDesiredPluginEntries } from "../src/plugin-discovery";
 import { createPluginsController } from "../src/plugins-controller";
 import {

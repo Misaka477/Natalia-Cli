@@ -32,8 +32,8 @@ import { resolveEffectiveModel } from "@natalia/config";
 import type { resolveConfig } from "@natalia/config";
 import { modelRefKey } from "@natalia/contracts";
 import { cacheHitRate, totalInputTokens } from "@natalia/contracts";
-import { buildSubmittedTurn } from "@natalia/session";
-import { materializeTools } from "@natalia/tools";
+import { buildSubmittedTurn } from "@anthelia/session";
+import { materializeTools } from "@anthelia/tools";
 import { agentSystemPrompt } from "@natalia/agent-prompts";
 import type {
   ConstitutionDocRule,

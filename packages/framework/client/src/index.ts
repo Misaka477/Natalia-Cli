@@ -5,7 +5,7 @@ export {
   parseBashSimpleCommand,
   type BashCommandParseResult,
   type BashCommandRule,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 export { compactionDisplayLine } from "./compaction-display";
 export {
   createUiAdapterHost,
@@ -61,7 +61,7 @@ export {
   type ToolHooks,
   type ToolHookEvent,
   type ToolHookResult,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 export type {
   RuntimeClient,
   RuntimeEvent,

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
-import { sessionFactStateFromEvents } from "@natalia/session";
+import { sessionFactStateFromEvents } from "@anthelia/session";
 import { mailboxMessagesForStatus } from "../src/runtime/collaboration/chat-tools";
 import type { RuntimeContext } from "../src/runtime/context";
 import type { SessionExecutionState } from "../src/runtime/session-execution-state";

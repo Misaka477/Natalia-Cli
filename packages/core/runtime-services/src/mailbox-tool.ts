@@ -12,7 +12,7 @@
  * `mailbox.acknowledged` events). No mailbox content, tool results or secrets
  * pass through here.
  */
-import type { RuntimeTool, ToolExecutionContext } from "@natalia/tools";
+import type { RuntimeTool, ToolExecutionContext } from "@anthelia/tools";
 
 export function createMailboxAcknowledgeTool(input: {
   /** The runtime callback: mark each delivered message id acknowledged. */

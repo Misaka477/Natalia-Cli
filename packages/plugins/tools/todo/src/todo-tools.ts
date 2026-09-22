@@ -1,7 +1,7 @@
 /**
  * The todo tool family, as a separately packaged family.
  *
- * This is the first built-in family to live outside `@natalia/tools`, and it is
+ * This is the first built-in family to live outside `@anthelia/tools`, and it is
  * the proof of the shape the rest follow: it depends on the framework only for
  * the tool-authoring surface (`RuntimeTool`, `ToolFamily`, the argument helpers)
  * and knows nothing about the runtime, the capability kernel or the host that
@@ -12,7 +12,7 @@ import {
   requireString,
   type RuntimeTool,
   type ToolFamily,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";

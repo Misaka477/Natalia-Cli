@@ -1,5 +1,5 @@
 import type { UiAdapterMountInput } from "@natalia/contracts";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import type { PluginManifest } from "./manifest";
 
 export type PluginConfigIssue = {

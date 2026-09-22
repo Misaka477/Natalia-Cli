@@ -9,12 +9,12 @@
 import {
   sessionRunCoordinator,
   projectedWorkContracts,
-} from "@natalia/session";
+} from "@anthelia/session";
 import {
   buildMailboxQueued,
   buildMailboxStatus,
 } from "@natalia/runtime-services";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import type { CollaborationParticipant, SessionID } from "@natalia/contracts";
 import {
   COLLABORATION_SERVICE,

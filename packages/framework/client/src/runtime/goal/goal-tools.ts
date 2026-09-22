@@ -7,7 +7,7 @@
  * complete/blocked additionally accept the exact current goal round.
  */
 import type { GoalBlockReason, SessionID } from "@natalia/contracts";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import type { GoalRuntime } from "./goal-runtime";
 

@@ -1,10 +1,10 @@
 import { parentPort } from "node:worker_threads";
-import { projectSessionMessages } from "@natalia/session";
+import { projectSessionMessages } from "@anthelia/session";
 import type { RuntimeMessagePage } from "@natalia/contracts";
 
 export type SessionMessagesWorkerRequest = {
   id: number;
-  session: import("@natalia/session").SessionRecord;
+  session: import("@anthelia/session").SessionRecord;
   options: { limit?: number; order?: "asc" | "desc"; cursor?: string };
 };
 

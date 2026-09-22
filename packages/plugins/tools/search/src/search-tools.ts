@@ -14,7 +14,7 @@ import {
   requireString,
   type RuntimeTool,
   type ToolFamily,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 
 export const SEARCH_PLUGIN_ID = "natalia-tool-search";

@@ -3,7 +3,7 @@ export {
   browserToolFamily,
   BROWSER_BRIDGE_EXTENSION_MISSING_ERROR,
 } from "./tools";
-export { assertNetworkURL } from "@natalia/tools";
+export { assertNetworkURL } from "@anthelia/tools";
 export {
   createBrowserPlugin,
   createBrowserPlugin as default,

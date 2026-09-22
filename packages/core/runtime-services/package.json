@@ -9,11 +9,11 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/agent": "workspace:*",
+    "@anthelia/agent": "workspace:*",
+    "@anthelia/session": "workspace:*",
+    "@anthelia/tools": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/runtime": "workspace:*",
-    "@natalia/runtime-diagnostics": "workspace:*",
-    "@natalia/session": "workspace:*",
-    "@natalia/tools": "workspace:*"
+    "@natalia/runtime-diagnostics": "workspace:*"
   }
 }

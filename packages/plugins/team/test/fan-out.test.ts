@@ -4,9 +4,9 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { SandboxToolService, SubagentToolService } from "@natalia/tools";
+import type { SandboxToolService, SubagentToolService } from "@anthelia/tools";
 import { SnapshotSandboxTestManager as SnapshotSandboxManager } from "@natalia/testing";
-import { SubagentRegistry } from "@natalia/subagents";
+import { SubagentRegistry } from "@anthelia/subagents";
 import {
   reviewPRs,
   runFanOut,

@@ -1,5 +1,5 @@
 /**
- * `@natalia/sandbox` — the sandbox backends and their governance.
+ * `@anthelia/sandbox` — the sandbox backends and their governance.
  *
  * `WorkspaceSandboxManager` is the directory-copy backend; `WorktreeSandboxManager`
  * extends it with git worktree/candidate/promotion/rollback semantics and is the

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import {
   HttpMCPClient,
   inspectMCPCatalog,

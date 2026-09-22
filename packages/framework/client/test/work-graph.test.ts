@@ -14,7 +14,7 @@ import type { ProviderStreamRequest } from "@natalia/runtime";
 import {
   projectedWorkGraphEdges,
   projectedWorkGraphNodes,
-} from "@natalia/session";
+} from "@anthelia/session";
 import { workGraphEdgeSchema, workGraphNodeSchema } from "@natalia/contracts";
 import {
   agentActionNodeID,

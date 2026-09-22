@@ -11,11 +11,11 @@ import {
   promoteNextTurn,
   removeAdmittedInput,
   replaceAdmittedInput,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type {
   TurnController,
   TurnControllerInput,
-} from "@natalia/turn-orchestration";
+} from "@anthelia/turn-orchestration";
 import type {} from "@natalia/runtime-services";
 
 export function createTurnController(

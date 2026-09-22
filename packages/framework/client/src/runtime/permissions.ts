@@ -11,9 +11,9 @@ import {
   deriveProfileToolPolicy,
 } from "../tool-policy-derivation";
 import { derivePermissionSettings } from "../permission-settings";
-import type { AgentDefinition } from "@natalia/agent";
+import type { AgentDefinition } from "@anthelia/agent";
 import type { ConfigV3 } from "@natalia/contracts";
-import type { PermissionProfileCommandRules } from "@natalia/tools";
+import type { PermissionProfileCommandRules } from "@anthelia/tools";
 import type { ToolPolicyHookLayer } from "@natalia/runtime-services";
 import { toolPolicy } from "@natalia/tool-policy";
 import { type ToolPolicyService } from "@natalia/runtime-services";

@@ -1,8 +1,8 @@
-import type { RuntimeTool } from "@natalia/tools";
-import { sessionStoreController } from "@natalia/session-store";
+import type { RuntimeTool } from "@anthelia/tools";
+import { sessionStoreController } from "@anthelia/session-store";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 
 const DEFAULT_LIMIT = 40;
 const MAX_LIMIT = 200;

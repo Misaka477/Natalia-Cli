@@ -1,11 +1,11 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
-import { projectInteractiveRequests } from "@natalia/session";
+import { sessionStoreController } from "@anthelia/session-store";
+import { projectInteractiveRequests } from "@anthelia/session";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
 import { perfLog } from "@natalia/runtime-services";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 type Surface = Pick<
   RuntimeServiceClient,
   "history" | "messages" | "pendingInteractive" | "submitInput"

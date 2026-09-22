@@ -24,7 +24,7 @@ import {
   type SessionRecord,
   type SessionRow,
   type StoredContextEpoch,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type {} from "@natalia/runtime-services";
 import {
   ensureMessageIndexInWorker,

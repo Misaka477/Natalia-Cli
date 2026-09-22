@@ -7,7 +7,7 @@ import {
   type RuntimeTool,
   type ToolFamily,
   type ToolRegistry,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 
 export function toolFamilyCapabilityID(familyID: string) {
   return `natalia-tool-${familyID}`;

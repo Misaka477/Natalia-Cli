@@ -4,7 +4,7 @@ import {
   globalConfigHome,
   userRuntimeHome,
 } from "@natalia/platform";
-import { TerminalCommandBuffer } from "@natalia/tools";
+import { TerminalCommandBuffer } from "@anthelia/tools";
 import {
   skillService,
   teamBehavior,

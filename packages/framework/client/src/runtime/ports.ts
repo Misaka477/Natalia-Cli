@@ -5,7 +5,7 @@
  * read them at call time so construction order never matters. Defined in its
  * own file so `context.ts` stays within the source line limit.
  */
-import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
+import type { AgentDefinition, AgentRegistry } from "@anthelia/agent";
 import type { CapabilityRegistryHost } from "@natalia/capability";
 import type {
   CollaborationParticipant,
@@ -27,8 +27,8 @@ import type {
 } from "@natalia/runtime";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { SessionExecutionState } from "./context";
-import type { WorkspaceWriteLock } from "@natalia/workspace";
-import type { CheckpointController } from "@natalia/checkpoint";
+import type { WorkspaceWriteLock } from "@anthelia/workspace";
+import type { CheckpointController } from "@anthelia/checkpoint";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 export type RuntimePorts = {
@@ -49,11 +49,11 @@ export type RuntimePorts = {
   teamBehavior: () => TeamBehaviorService | undefined;
   providerRunnerInput: (sessionID: SessionID) => ProviderRunnerInput;
   setInFlightOperation: (
-    operation: import("@natalia/session").DurableInFlightOperation | undefined,
+    operation: import("@anthelia/session").DurableInFlightOperation | undefined,
   ) => Promise<void>;
   setInFlightOperationFor: (
     exec: SessionExecutionState,
-    operation: import("@natalia/session").DurableInFlightOperation | undefined,
+    operation: import("@anthelia/session").DurableInFlightOperation | undefined,
   ) => Promise<void>;
   isDisposed: () => boolean;
   getSessionPersistence: () => Promise<void>;
@@ -101,7 +101,7 @@ export type RuntimePorts = {
   createCollabChatTool: (
     from: CollaborationParticipant,
     exec: SessionExecutionState | undefined,
-  ) => import("@natalia/tools").RuntimeTool;
+  ) => import("@anthelia/tools").RuntimeTool;
   enqueueMailboxMessage: (
     input: {
       source?: "user_via_live_chat" | "system";
@@ -143,14 +143,14 @@ export type RuntimePorts = {
   executeOneTool: (
     turnID: string,
     call: import("@natalia/runtime").ProviderToolCall,
-    tool: import("@natalia/tools").RuntimeTool,
+    tool: import("@anthelia/tools").RuntimeTool,
     attachImage?: (path: string) => Promise<void>,
   ) => Promise<string>;
   executeToolCalls: (
     turnID: string,
     calls: import("@natalia/runtime").ProviderToolCall[],
     assistant: string,
-    materialized: import("@natalia/tools").ToolMaterialization,
+    materialized: import("@anthelia/tools").ToolMaterialization,
   ) => Promise<import("@natalia/runtime").ProviderMessage[]>;
   toolResultContent: (
     content: string,
@@ -179,7 +179,7 @@ export type RuntimePorts = {
   getWorkspaceCapabilityView: () =>
     | import("@natalia/capability").CapabilityRegistryView
     | undefined;
-  getTools: () => import("@natalia/tools").ToolRegistry;
+  getTools: () => import("@anthelia/tools").ToolRegistry;
   getAgentRegistry: () => AgentRegistry | undefined;
   setPaused: (paused: boolean) => void;
   getPaused: () => boolean;
@@ -251,10 +251,10 @@ export type RuntimePorts = {
   niaChatLiveContext: (exec?: SessionExecutionState) => string;
   naviChatTools: (
     exec?: SessionExecutionState,
-  ) => import("@natalia/tools").RuntimeTool[];
+  ) => import("@anthelia/tools").RuntimeTool[];
   niaChatTools: (
     exec?: SessionExecutionState,
-  ) => import("@natalia/tools").RuntimeTool[];
+  ) => import("@anthelia/tools").RuntimeTool[];
   effectiveMaxSteps: (exec: SessionExecutionState | undefined) => number;
   waitIfPaused: (exec?: SessionExecutionState) => Promise<void>;
   chatToolSummary: (

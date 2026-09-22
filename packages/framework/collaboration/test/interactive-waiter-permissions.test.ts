@@ -5,7 +5,7 @@ import type {
   SessionID,
 } from "@natalia/contracts";
 import type { ProviderToolCall } from "@natalia/runtime";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 import { createInteractiveWaiter } from "../src/interactive-waiter";
 import { createWorkLedgerController } from "@natalia/work-ledger";
 

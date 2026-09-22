@@ -16,7 +16,7 @@ import {
   projectedConstitutionRules,
   sessionFactConstitutionOverrides,
   sessionFactConstitutionRules,
-} from "@natalia/session";
+} from "@anthelia/session";
 import { readOnlyToolMessage } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
@@ -31,7 +31,7 @@ import type {
   ProviderReasoningBlock,
   RuntimeEvent,
 } from "@natalia/contracts";
-import type { ToolMaterialization } from "@natalia/tools";
+import type { ToolMaterialization } from "@anthelia/tools";
 import type { RuntimeContext } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import type { RealRuntimeClientOptions } from "../options";
@@ -204,7 +204,7 @@ export function createExecuteCalls(
 
   function matchingOverride(
     overrides: ReturnType<
-      typeof import("@natalia/session").projectedConstitutionOverrides
+      typeof import("@anthelia/session").projectedConstitutionOverrides
     >,
     ruleID: string,
     toolResource: string,

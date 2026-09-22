@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { JsonSessionStore, createSessionRecord } from "@natalia/session";
+import { JsonSessionStore, createSessionRecord } from "@anthelia/session";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type {
   ProviderStreamRequest,

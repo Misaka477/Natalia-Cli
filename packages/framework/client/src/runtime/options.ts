@@ -6,7 +6,7 @@ import type {
   ToolPolicy,
 } from "@natalia/runtime-services";
 import type { StreamingProvider } from "@natalia/runtime";
-import type { ToolRegistry } from "@natalia/tools";
+import type { ToolRegistry } from "@anthelia/tools";
 
 export type RealRuntimeClientOptions = {
   sessionID?: SessionID;

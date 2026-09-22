@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
-import { createToolRegistry, timeoutSecOr } from "@natalia/tools";
+import { createToolRegistry, timeoutSecOr } from "@anthelia/tools";
 import {
   createShellPlugin,
   SHELL_PLUGIN_ID,

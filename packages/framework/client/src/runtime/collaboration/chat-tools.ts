@@ -10,14 +10,14 @@ import {
   projectedMailboxMessages,
   sessionFactMailboxMessages,
   type ProjectedMailboxMessage,
-} from "@natalia/session";
+} from "@anthelia/session";
 import {
   globWorkspaceFilesBounded,
   grepWorkspaceFilesBounded,
   requireObject,
   requireString,
   type RuntimeTool,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import { niaShellPolicyDenial } from "./nia-shell-policy";
 import type { SessionID } from "@natalia/contracts";
 import { governanceLedgerController } from "@natalia/governance-ledger";

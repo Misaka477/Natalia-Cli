@@ -7,13 +7,13 @@
  * running. Reads and writes host state through `RuntimeContext` ports.
  */
 import { contextStatusEvent, type TokenMeterMessage } from "@natalia/runtime";
-import { restoreProjection } from "@natalia/session";
+import { restoreProjection } from "@anthelia/session";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
   terminalController,
   type TerminalController,
 } from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
+import { sessionStoreController } from "@anthelia/session-store";
 import { statusSnapshotController } from "@natalia/runtime-status";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
@@ -23,7 +23,7 @@ import {
 } from "./collaboration/chat-turn-common";
 import { perfLog } from "@natalia/runtime-services";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 
 export function createSessionAttach(ctx: RuntimeContext) {
   return {

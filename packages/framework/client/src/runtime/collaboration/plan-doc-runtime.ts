@@ -15,10 +15,10 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { RuntimeInvalidParams } from "@natalia/contracts";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
+import { sessionStoreController } from "@anthelia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
 import type { RuntimeContext, SessionExecutionState } from "../context";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 import { logOf } from "@natalia/operation-log";
 

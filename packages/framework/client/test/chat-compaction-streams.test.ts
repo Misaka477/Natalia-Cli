@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createTestContext } from "@natalia/runtime-services";
-import { compactionService } from "@natalia/compaction";
+import { compactionService } from "@anthelia/compaction";
 import { ContextLedger, TokenMeter } from "@natalia/runtime";
 import type { ContextEntry, ProviderMessage } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
@@ -8,7 +8,7 @@ import { compactChatBeforeProviderStep } from "../src/runtime/collaboration/chat
 import {
   projectedNaviChatMessages,
   projectedNiaChatMessages,
-} from "@natalia/session";
+} from "@anthelia/session";
 
 test("Navi and Nia compaction retain independent ledgers, providers, and durable boundaries", async () => {
   const calls: Array<{ ledger: ContextLedger; provider: unknown }> = [];

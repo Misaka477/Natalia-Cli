@@ -6,7 +6,7 @@
  * `commandCatalogEntries` is the plugin-command catalog read surface. Reads
  * everything it needs from `RuntimeContext` at call time.
  */
-import { projectInteractiveRequests } from "@natalia/session";
+import { projectInteractiveRequests } from "@anthelia/session";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { PluginCommand } from "@natalia/plugin";
 import type { RuntimeContext } from "../context";

@@ -29,8 +29,8 @@ import { createNataliaSDK } from "../src";
  *   @natalia/view-store  turning events into displayable state
  *   @natalia/client      public exports only (to host the runtime under test)
  *
- * It deliberately imports nothing from `@natalia/runtime`, `@natalia/session`,
- * `@natalia/tools`, any package internal, or any UI framework. `guard:imports`
+ * It deliberately imports nothing from `@natalia/runtime`, `@anthelia/session`,
+ * `@anthelia/tools`, any package internal, or any UI framework. `guard:imports`
  * enforces most of that statically; this proves the surface is actually
  * *sufficient*, which no static rule can show.
  *

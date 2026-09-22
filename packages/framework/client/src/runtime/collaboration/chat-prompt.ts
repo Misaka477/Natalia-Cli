@@ -19,7 +19,7 @@ import {
   sessionFactDecisionRecords,
   sessionFactDriftFindings,
   sessionFactMailboxMessages,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import { agentSystemPrompt } from "@natalia/agent-prompts";

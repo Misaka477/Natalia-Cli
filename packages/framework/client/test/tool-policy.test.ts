@@ -20,8 +20,8 @@ import {
   evaluatePermissionRules,
   evaluatePermissionProfileCommandRules,
   TerminalCommandBuffer,
-} from "@natalia/tools";
-import { parseBashSimpleCommand } from "@natalia/tools";
+} from "@anthelia/tools";
+import { parseBashSimpleCommand } from "@anthelia/tools";
 import {
   terminalApprovalScope,
   terminalInputRisk,

@@ -11,10 +11,10 @@
 import {
   projectedMailboxMessages,
   sessionFactMailboxMessages,
-} from "@natalia/session";
+} from "@anthelia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
-import { workspaceFiles } from "@natalia/workspace";
+import { workspaceFiles } from "@anthelia/workspace";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { activePlanForExec } from "./plan-doc-runtime";
@@ -23,7 +23,7 @@ import {
   projectedEvidenceRecords,
   projectedWorkContracts,
   sessionFactEvidenceRecords,
-} from "@natalia/session";
+} from "@anthelia/session";
 import {
   injectFindingIntoMainAgent,
   injectProseQuestion,
@@ -67,7 +67,7 @@ const GOAL_QUESTION_STREAK = 3;
  * Pure so the selection is unit-testable without a boundary.
  */
 export function deliveredMailboxConstraints(
-  messages: readonly import("@natalia/session").ProjectedMailboxMessage[],
+  messages: readonly import("@anthelia/session").ProjectedMailboxMessage[],
 ): string[] {
   return messages
     .filter(

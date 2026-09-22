@@ -10,9 +10,9 @@ import {
   admitInput,
   buildInputAdmission,
   sessionRunCoordinator,
-} from "@natalia/session";
-import type { ProviderModelController } from "@natalia/provider-model";
-import { providerModelController } from "@natalia/provider-model";
+} from "@anthelia/session";
+import type { ProviderModelController } from "@anthelia/provider-model";
+import { providerModelController } from "@anthelia/provider-model";
 import type { SessionID, SubmitInput } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";

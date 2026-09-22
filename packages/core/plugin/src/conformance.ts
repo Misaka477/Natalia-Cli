@@ -1,4 +1,4 @@
-import type { RuntimeTool, ToolRegistry } from "@natalia/tools";
+import type { RuntimeTool, ToolRegistry } from "@anthelia/tools";
 import { createPluginRegistry } from "./registry";
 import type { Plugin } from "./types";
 

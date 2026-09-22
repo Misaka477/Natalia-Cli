@@ -30,12 +30,12 @@ export type {
   RuntimeTool,
   SubagentRunnerContext,
   ToolHookEvent,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type {
   CapabilityHost,
   CapabilityRegistryHost,
 } from "@natalia/capability";
-import type { AgentDefinition, AgentRegistry } from "@natalia/agent";
+import type { AgentDefinition, AgentRegistry } from "@anthelia/agent";
 import type {
   RuntimeEvent,
   SessionID,
@@ -43,7 +43,7 @@ import type {
   ConfigV3,
   LocalAttachment,
 } from "@natalia/contracts";
-import type { SessionRecord } from "@natalia/session";
+import type { SessionRecord } from "@anthelia/session";
 import type {
   ServiceDirectory,
   SkillMetadata,
@@ -55,7 +55,7 @@ export type {
   TerminalController,
   ToolPolicyService,
 } from "@natalia/runtime-services";
-export type { PermissionProfileCommandRules } from "@natalia/tools";
+export type { PermissionProfileCommandRules } from "@anthelia/tools";
 import type {
   ContextWindowResolver,
   ProviderConcurrencyLimiter,
@@ -64,7 +64,7 @@ import type {
 import type {
   TerminalCommandBuffer,
   ToolRegistry as ToolRegistryType,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type { RuntimePerformanceTrace } from "../performance-trace";
 import type { SessionExecutionState } from "./session-execution-state";
 import type {
@@ -73,19 +73,19 @@ import type {
   ProviderUsage,
   RetryService,
 } from "@natalia/runtime";
-import type { ProviderModelController } from "@natalia/provider-model";
-import type { CheckpointFactory } from "@natalia/checkpoint";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { ProviderModelController } from "@anthelia/provider-model";
+import type { CheckpointFactory } from "@anthelia/checkpoint";
+import type { SessionStoreController } from "@anthelia/session-store";
 import type {
   MutationRegistry,
   WorkspaceFilesController,
   WorkspaceWriteLock,
-} from "@natalia/workspace";
+} from "@anthelia/workspace";
 export type {
   MutationRegistry,
   WorkspaceFilesController,
   WorkspaceWriteLock,
-} from "@natalia/workspace";
+} from "@anthelia/workspace";
 export type { SessionExecutionState } from "./session-execution-state";
 import type {
   InteractiveWaiter,
@@ -93,7 +93,7 @@ import type {
 } from "@natalia/collaboration";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";
 import type { GovernanceLedgerController } from "@natalia/governance-ledger";
-import type { TurnController } from "@natalia/turn-orchestration";
+import type { TurnController } from "@anthelia/turn-orchestration";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
 type PermissionProfile = import("@natalia/contracts").PermissionProfile;
@@ -221,7 +221,7 @@ export type RuntimeContext = {
 /** The resolved context window status carried by the runtime and each exec. */
 export type { ContextLedgerFactory } from "@natalia/context-ledger";
 export type { GovernanceLedgerController } from "@natalia/governance-ledger";
-export type { TurnController } from "@natalia/turn-orchestration";
+export type { TurnController } from "@anthelia/turn-orchestration";
 export type { WorkLedgerController } from "@natalia/work-ledger";
 export type {
   InteractiveWaiter,

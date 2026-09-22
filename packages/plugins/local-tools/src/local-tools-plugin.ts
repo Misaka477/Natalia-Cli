@@ -1,5 +1,5 @@
 import type { Plugin, PluginManifest } from "@natalia/plugin";
-import type { ToolFamily } from "@natalia/tools";
+import type { ToolFamily } from "@anthelia/tools";
 import { localToolsReload } from "@natalia/runtime-services";
 import {
   loadLocalToolFamilies,

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { agentToolFamily, agentTools } from "../src";
-import type { SubagentSpawnOptions } from "@natalia/tools";
+import type { SubagentSpawnOptions } from "@anthelia/tools";
 
 const EXPECTED_TOOL_NAMES = [
   "agent_spawn",

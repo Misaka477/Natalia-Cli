@@ -1,6 +1,6 @@
 import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextLedger, TokenMeter, memoryTrace } from "@natalia/runtime";
-import type { SessionProjection } from "@natalia/session";
+import type { SessionProjection } from "@anthelia/session";
 import { announcedTurnIDsFrom } from "../session-execution-state";
 import { reseedSessionFactState } from "../session-facts";
 import type {
@@ -19,13 +19,13 @@ import {
   sandboxService,
   terminalController,
 } from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
-import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
+import { sessionStoreController } from "@anthelia/session-store";
+import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import type { AttachmentService } from "@natalia/runtime";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";
 import { logOf } from "@natalia/operation-log";
 
@@ -53,7 +53,7 @@ export class SessionRecoveryCoordinator {
   private readonly sessionStore: SessionStoreController;
   private readonly attachmentService: AttachmentService;
   private readonly contextLedgerFactory: ContextLedgerFactory;
-  private session!: import("@natalia/session").SessionRecord;
+  private session!: import("@anthelia/session").SessionRecord;
 
   private sqliteRecovery?: RecoveryView;
   private sqliteEpoch?: ContextEpoch;

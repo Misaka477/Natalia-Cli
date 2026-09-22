@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createAttachmentService } from "@natalia/attachments";
+import { createAttachmentService } from "@anthelia/attachments";
 import type { SessionID } from "@natalia/contracts";
 import {
   resolveWorkspaceJsonSessionsDir,
@@ -13,7 +13,7 @@ import {
   createSessionRecord,
   projectedWorkGraphEdges,
   projectedWorkGraphNodes,
-} from "@natalia/session";
+} from "@anthelia/session";
 
 export type LocalSessionRow = {
   id: SessionID;

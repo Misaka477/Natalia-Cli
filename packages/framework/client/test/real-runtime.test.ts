@@ -17,7 +17,7 @@ import type {
 } from "@natalia/runtime";
 import { providerError } from "@natalia/runtime";
 import { CapabilityRegistry } from "@natalia/capability";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
@@ -25,16 +25,16 @@ import {
   terminalController,
   type SandboxService,
 } from "@natalia/runtime-services";
-import { checkpointFactory } from "@natalia/checkpoint";
-import { retryService } from "@natalia/retry";
-import { turnController } from "@natalia/turn-orchestration";
-import { providerModelController } from "@natalia/provider-model";
-import { compactionService } from "@natalia/compaction";
+import { checkpointFactory } from "@anthelia/checkpoint";
+import { retryService } from "@anthelia/retry";
+import { turnController } from "@anthelia/turn-orchestration";
+import { providerModelController } from "@anthelia/provider-model";
+import { compactionService } from "@anthelia/compaction";
 import {
   workspaceFiles,
   workspaceMutations,
   workspaceWriteLock,
-} from "@natalia/workspace";
+} from "@anthelia/workspace";
 import {
   TerminalTestRegistry as NativeTerminalRegistry,
   WorkspaceSandboxTestManager as WorkspaceSandboxManager,
@@ -49,10 +49,10 @@ import {
 } from "./plugin-test-helpers";
 
 useWorkspaceCleanup();
-import { projectedWorkGraphEdges } from "@natalia/session";
+import { projectedWorkGraphEdges } from "@anthelia/session";
 import { toolCallNodeID } from "@natalia/work-ledger";
 import { normalizePendingItems } from "@natalia/ui-model";
-import type { ProviderModelController } from "@natalia/provider-model";
+import type { ProviderModelController } from "@anthelia/provider-model";
 // The governance-root override below is process-global, so this file restores
 // the ambient value when it ends: without the restore, every later test file's
 // runtime in the same bun process reads and writes its constitution into the
@@ -463,7 +463,7 @@ test("tools.paths loads out-of-tree families through the kernel", async () => {
   );
   await writeFile(
     join(root, "extra-tools", "extra.family", "index.ts"),
-    `import type { ToolFamily } from "@natalia/tools";
+    `import type { ToolFamily } from "@anthelia/tools";
 export default (): ToolFamily => ({
   id: "extra.family",
   name: "Extra",
@@ -517,7 +517,7 @@ test("the family watcher hot-reloads a promoted change automatically", async () 
   );
   const entryPath = join(root, "extra-tools", "extra.family", "index.ts");
   const familySource = (tool: string) =>
-    `import type { ToolFamily } from "@natalia/tools";
+    `import type { ToolFamily } from "@anthelia/tools";
 export default (): ToolFamily => ({
   id: "extra.family", name: "Extra", version: "1.0.0",
   description: "Out-of-tree fixture family", scope: "session",
@@ -571,7 +571,7 @@ test("toolFamilyReload hot-swaps an out-of-tree family after promotion", async (
   );
   const entryPath = join(root, "extra-tools", "extra.family", "index.ts");
   const familySource = (tool: string) =>
-    `import type { ToolFamily } from "@natalia/tools";
+    `import type { ToolFamily } from "@anthelia/tools";
 export default (): ToolFamily => ({
   id: "extra.family", name: "Extra", version: "1.0.0",
   description: "Out-of-tree fixture family", scope: "session",

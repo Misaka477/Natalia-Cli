@@ -16,7 +16,7 @@ import type {
   SessionMetadata,
   SessionRecord,
   StoredContextEpoch,
-} from "@natalia/session";
+} from "@anthelia/session";
 
 /**
  * Session store contracts, moved from runtime-services as the token

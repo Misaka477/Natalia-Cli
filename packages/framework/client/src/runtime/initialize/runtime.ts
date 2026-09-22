@@ -39,7 +39,7 @@ export function createInitializeRuntime(ctx: RuntimeContext) {
       return ctx.ports.getAgentRegistry();
     },
     set agentRegistry(
-      value: import("@natalia/agent").AgentRegistry | undefined,
+      value: import("@anthelia/agent").AgentRegistry | undefined,
     ) {
       if (value) ctx.ports.setAgentRegistry(value);
     },

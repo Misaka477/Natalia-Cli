@@ -1,6 +1,6 @@
 import { parentPort } from "node:worker_threads";
 import { Database } from "bun:sqlite";
-import { SqliteSessionStore } from "@natalia/session";
+import { SqliteSessionStore } from "@anthelia/session";
 
 export type SessionLoadWorkerRequest =
   | {

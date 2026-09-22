@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { SessionExecutionState } from "../src/runtime/context";
 import { ensureSessionFullEvents } from "../src/runtime/session-full-events";
-import { sessionStoreController } from "@natalia/session-store";
+import { sessionStoreController } from "@anthelia/session-store";
 import { createTestContext } from "@natalia/runtime-services";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 
 test("ensureSessionFullEvents loads the full log when the fast path seeded only a tail", async () => {
   const partial: RuntimeEvent[] = [

@@ -6,7 +6,7 @@ import {
   JsonSessionStore,
   SqliteSessionStore,
   createSessionRecord,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
   createWorkspaceManager,

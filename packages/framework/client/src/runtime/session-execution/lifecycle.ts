@@ -1,6 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
-import { checkpointFactory } from "@natalia/checkpoint";
+import { sessionStoreController } from "@anthelia/session-store";
+import { checkpointFactory } from "@anthelia/checkpoint";
 import {
   sandboxService,
   terminalController,
@@ -9,11 +9,11 @@ import {
 } from "@natalia/runtime-services";
 import { updateConfigAtScope } from "@natalia/config";
 import { cloneConfigInWorker } from "../secondary-worker-client";
-import { sessionRunCoordinator } from "@natalia/session";
+import { sessionRunCoordinator } from "@anthelia/session";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
-import type { CheckpointFactory } from "@natalia/checkpoint";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { CheckpointFactory } from "@anthelia/checkpoint";
+import type { SessionStoreController } from "@anthelia/session-store";
 import { logOf, type OperationLog } from "@natalia/operation-log";
 type Surface = Pick<
   RuntimeServiceClient,

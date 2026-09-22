@@ -10,7 +10,7 @@
 import {
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { WorkGraphEdge, WorkGraphNode } from "@natalia/contracts";
 import { activePlanForExec } from "./collaboration/plan-doc-runtime";
 import type { RuntimeContext } from "./context";
@@ -31,7 +31,7 @@ function resolveExec(
 
 export function createWorkGraphQueryTool(
   ctx: RuntimeContext,
-): import("@natalia/tools").RuntimeTool {
+): import("@anthelia/tools").RuntimeTool {
   return {
     name: "work_graph_query",
     description:

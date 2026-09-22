@@ -1,4 +1,4 @@
-import type { AgentDefinition } from "@natalia/agent";
+import type { AgentDefinition } from "@anthelia/agent";
 import type {
   LocalAttachment,
   ModelCapabilities,
@@ -10,15 +10,15 @@ import {
   TokenMeter,
   type StreamingProvider,
 } from "@natalia/runtime";
-import type { SessionFactState, SessionRecord } from "@natalia/session";
+import type { SessionFactState, SessionRecord } from "@anthelia/session";
 import type { SkillMetadata } from "@natalia/runtime-services";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 export type CollabSnapshot = {
-  collabMessages: import("@natalia/session").ProjectedCollabMessage[];
-  planDocs: import("@natalia/session").ProjectedPlanDoc[];
-  mailboxMessages: import("@natalia/session").ProjectedMailboxMessage[];
+  collabMessages: import("@anthelia/session").ProjectedCollabMessage[];
+  planDocs: import("@anthelia/session").ProjectedPlanDoc[];
+  mailboxMessages: import("@anthelia/session").ProjectedMailboxMessage[];
   revision: number;
   eventCount: number;
 };
@@ -96,7 +96,7 @@ export type SessionExecutionState = {
   /** Memoized session projection for snapshot/intelligence reads at one event revision. */
   snapshotProjection?: {
     eventCount: number;
-    value: import("@natalia/session").SessionProjection;
+    value: import("@anthelia/session").SessionProjection;
   };
   /** Memoized promise that loads the complete durable event log into session.events. */
   fullEventsPromise?: Promise<void>;

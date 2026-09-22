@@ -6,7 +6,7 @@ import type {
   SessionExecutionState,
 } from "../src/runtime/context";
 import type { RuntimeEvent } from "@natalia/contracts";
-import type { RuntimeTool } from "@natalia/tools";
+import type { RuntimeTool } from "@anthelia/tools";
 
 /**
  * The smallest runtime the goal tools touch: a session in the execution map, a

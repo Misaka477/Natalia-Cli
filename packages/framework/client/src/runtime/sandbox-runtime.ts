@@ -9,7 +9,7 @@ import {
 } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
-import { workspaceMutations } from "@natalia/workspace";
+import { workspaceMutations } from "@anthelia/workspace";
 import type { RuntimeContext } from "./context";
 import {
   ensureSessionEventWindow,
@@ -19,7 +19,7 @@ import {
   riskTierForChanges,
   riskTierForPath,
   SandboxPromotionConflict,
-} from "@natalia/sandbox";
+} from "@anthelia/sandbox";
 import { captureRepositoryEvidenceFields } from "./repository-refs";
 import type { GovernanceLedgerController } from "@natalia/governance-ledger";
 import type { WorkLedgerController } from "@natalia/work-ledger";

@@ -175,7 +175,7 @@ Use versions compatible with the Natalia distribution you target. The package
 manager installs the complete package closure once in the Natalia instance's
 `plugin-store`; every workspace uses that same installation. Do not ask users
 to create SDK symlinks or copy an entry file separately.
-Add `@natalia/contracts`, `@natalia/tools`, or another Natalia package only when
+Add `@natalia/contracts`, `@anthelia/tools`, or another Natalia package only when
 the implementation imports it. `@natalia/sdk` is the RPC client SDK and is not
 the plugin authoring API.
 
@@ -1023,7 +1023,7 @@ natalia-ts plugin create ./my-ts --id yourco.ts --language ts
 版本应与目标 Natalia 发行版兼容。包管理器只会把完整 package closure 安装一次，位置是
 Natalia 实例唯一的 `plugin-store`；所有 workspace 共用这份安装。不要要求用户另建 SDK
 软链接或单独复制入口文件。
-只有实现确实导入时才添加 `@natalia/contracts`、`@natalia/tools` 或其他 Natalia 包。
+只有实现确实导入时才添加 `@natalia/contracts`、`@anthelia/tools` 或其他 Natalia 包。
 `@natalia/sdk` 是 RPC client SDK，不是插件 authoring API。
 
 ## 4. Manifest v2

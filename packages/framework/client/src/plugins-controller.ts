@@ -7,7 +7,7 @@ import {
   type DesiredPluginEntry,
   type PluginManifest,
 } from "@natalia/plugin";
-import type { ToolRegistry } from "@natalia/tools";
+import type { ToolRegistry } from "@anthelia/tools";
 import {
   localToolsInput,
   mcpInput,

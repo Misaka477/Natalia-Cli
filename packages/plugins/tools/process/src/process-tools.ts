@@ -31,7 +31,7 @@ import {
   safeToolEnv,
   stopProcessTree,
   truncateProcessOutput,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import {
   numberOr,
   optionalString,
@@ -39,14 +39,14 @@ import {
   positiveNumberOrUndefined,
   requireObject,
   requireString,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
-import { PROCESS_OBSERVER_SERVICE } from "@natalia/tools";
+import { PROCESS_OBSERVER_SERVICE } from "@anthelia/tools";
 import type {
   RuntimeTool,
   ToolExecutionContext,
   ToolFamily,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 
 export type ManagedProcessStatus = "running" | "exited" | "failed" | "stopped";
 

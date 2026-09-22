@@ -13,12 +13,12 @@ import {
   claimNextSteps,
   projectedCollabMessages,
   sessionFactCollabMessages,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
 import { statusSnapshotController } from "@natalia/runtime-status";
-import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
-import { retryService } from "@natalia/retry";
-import { compactionService } from "@natalia/compaction";
+import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
+import { retryService } from "@anthelia/retry";
+import { compactionService } from "@anthelia/compaction";
 import { mcpService } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "./context";
 import { activePlanForExec } from "./collaboration/plan-doc-runtime";

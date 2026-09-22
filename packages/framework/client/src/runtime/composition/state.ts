@@ -7,7 +7,7 @@ import {
   ContextWindowResolver,
   ProviderConcurrencyLimiter,
 } from "@natalia/runtime";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import { RuntimePerformanceTrace } from "../../performance-trace";
 import { createCapabilityServiceBindings } from "./service-bindings";
 import { defaultContextStatusConfig } from "../provider-selection";

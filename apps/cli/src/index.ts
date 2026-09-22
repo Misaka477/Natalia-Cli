@@ -22,7 +22,7 @@ import {
   createLocalSessionService,
   type LocalSessionRow,
   type SessionMetadataBundle,
-} from "@natalia/session-store";
+} from "@anthelia/session-store";
 export type StartupDiagnostics = {
   configPath: string;
   migrationSummary: string;

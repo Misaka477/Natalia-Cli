@@ -5,7 +5,7 @@ import {
   installSkill,
   type Skill,
 } from "./skills";
-import type { ToolExecutionContext } from "@natalia/tools";
+import type { ToolExecutionContext } from "@anthelia/tools";
 import { skillService } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import { join } from "node:path";

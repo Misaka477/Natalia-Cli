@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/sandbox",
+  "name": "@anthelia/sandbox",
   "version": "0.0.0-m11",
   "private": true,
   "type": "module",
@@ -9,10 +9,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@anthelia/tools": "workspace:*",
     "@natalia/contracts": "workspace:*",
-    "@natalia/platform": "workspace:*",
+    "@natalia/diff-wasm": "workspace:*",
     "@natalia/object-store": "workspace:*",
-    "@natalia/tools": "workspace:*",
-    "@natalia/diff-wasm": "workspace:*"
+    "@natalia/platform": "workspace:*"
   }
 }

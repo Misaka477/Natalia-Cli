@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
-import { createToolRegistry, validateToolParameters } from "@natalia/tools";
+import { createToolRegistry, validateToolParameters } from "@anthelia/tools";
 import {
   createFsReadPlugin,
   FS_READ_PLUGIN_ID,

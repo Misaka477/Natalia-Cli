@@ -2,10 +2,10 @@ import { expect, test } from "bun:test";
 import type { RuntimeMessagePage, SessionID } from "@natalia/contracts";
 import { createSessionHistoryTool } from "../src/runtime/session-history-tool";
 import type { RuntimeContext } from "../src/runtime/context";
-import type { SessionRecord } from "@natalia/session";
-import { sessionStoreController } from "@natalia/session-store";
+import type { SessionRecord } from "@anthelia/session";
+import { sessionStoreController } from "@anthelia/session-store";
 import { createTestContext } from "@natalia/runtime-services";
-import type { SessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
 
 const PAGE: RuntimeMessagePage = {
   data: [],

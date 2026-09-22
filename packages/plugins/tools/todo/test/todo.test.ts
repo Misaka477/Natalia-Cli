@@ -6,7 +6,7 @@ import {
   createPluginRegistry,
   pluginWorkspaceResourcePath,
 } from "@natalia/plugin";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import { initialState, applyEvent } from "@natalia/view-store";
 import {
   createTodoPlugin,

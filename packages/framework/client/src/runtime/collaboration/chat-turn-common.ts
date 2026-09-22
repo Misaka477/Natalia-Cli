@@ -5,7 +5,7 @@ import {
   sessionFactNaviChatMessages,
   sessionFactNiaChatMessages,
   sessionFactCollabMessages,
-} from "@natalia/session";
+} from "@anthelia/session";
 import {
   ContextLedger,
   contextEntriesToProviderMessages,
@@ -22,8 +22,8 @@ import {
   type ProviderContentPart,
 } from "@natalia/contracts";
 import type { AttachmentService } from "@natalia/runtime";
-import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
-import { compactionService } from "@natalia/compaction";
+import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
+import { compactionService } from "@anthelia/compaction";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { logOf } from "@natalia/operation-log";
 

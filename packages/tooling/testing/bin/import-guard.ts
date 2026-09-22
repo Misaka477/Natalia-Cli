@@ -129,9 +129,13 @@ const forbiddenAccountFlowNames = [
   ),
 ];
 
-const forbiddenConsumerContractImports = kernelPackages.map(
-  (name) => new RegExp(`from\\s+["']@natalia/${name}["']`, "u"),
-);
+// Both prefixes: mechanism packages move to @anthelia in P3 (decision 24④)
+// while the guard keeps banning BOTH spellings — coverage never dips while
+// the rename lands, and P4⑤ hardens the list to prefixes that exist.
+const forbiddenConsumerContractImports = kernelPackages.flatMap((name) => [
+  new RegExp(`from\\s+["']@natalia/${name}["']`, "u"),
+  new RegExp(`from\\s+["']@anthelia/${name}["']`, "u"),
+]);
 /**
  * Subpath entry points a package deliberately declares in its `exports`. They
  * are not deep imports into private internals: the split is the contract. Keep

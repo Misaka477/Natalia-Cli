@@ -3,7 +3,7 @@ import {
   projectedMailboxMessages,
   sessionFactMailboxMessages,
   type ProjectedMailboxMessage,
-} from "@natalia/session";
+} from "@anthelia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";

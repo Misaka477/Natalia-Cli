@@ -9,15 +9,15 @@ import {
   projectSession,
   sessionFactActiveTurnIDs,
   sessionFactIntelligenceFacts,
-} from "@natalia/session";
+} from "@anthelia/session";
 import {
   buildSessionIntelligenceSnapshot,
   buildSessionIntelligenceSnapshotFromFacts,
 } from "../session-intelligence";
-import type { SessionStoreController } from "@natalia/session-store";
-import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
+import type { SessionStoreController } from "@anthelia/session-store";
+import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";
 import type { RuntimeEvent } from "@natalia/contracts";
-import type { DurableInFlightOperation } from "@natalia/session";
+import type { DurableInFlightOperation } from "@anthelia/session";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
 

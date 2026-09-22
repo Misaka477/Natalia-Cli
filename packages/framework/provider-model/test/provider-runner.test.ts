@@ -16,14 +16,14 @@ import type {
 } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { ProjectDocumentSnapshot } from "@natalia/runtime-services";
-import { ToolRegistry } from "@natalia/tools";
+import { ToolRegistry } from "@anthelia/tools";
 import {
   createProviderRunner,
   estimateProviderMessages,
 } from "../src/provider-runner";
-import { createRetryService } from "@natalia/retry";
-import { createAttachmentService } from "@natalia/attachments";
-import { createCompactionService } from "@natalia/compaction";
+import { createRetryService } from "@anthelia/retry";
+import { createAttachmentService } from "@anthelia/attachments";
+import { createCompactionService } from "@anthelia/compaction";
 
 function content(text: string): ProviderStreamChunk {
   return { type: "content", text };

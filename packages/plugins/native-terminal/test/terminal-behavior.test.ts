@@ -16,7 +16,7 @@ import {
   nativeTerminalReadPage,
   nativeTerminalSearchPage,
   ToolRegistry,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 
 function terminalRegistry() {
   const registry = new ToolRegistry();

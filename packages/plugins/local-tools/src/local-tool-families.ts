@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ToolFamily } from "@natalia/tools";
+import type { ToolFamily } from "@anthelia/tools";
 
 export const TOOL_FAMILY_MANIFEST = "natalia.tool.json";
 

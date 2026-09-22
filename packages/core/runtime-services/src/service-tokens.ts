@@ -14,7 +14,7 @@
  * When a contract type relocates to its owning package, its token moves with
  * it; until then this file is the single home for the boundary wires.
  */
-import type { ToolFamily } from "@natalia/tools";
+import type { ToolFamily } from "@anthelia/tools";
 import type {
   LocalToolsInput,
   McpInput,

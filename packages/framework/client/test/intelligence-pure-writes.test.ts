@@ -6,7 +6,7 @@ import { createTestContext } from "@natalia/runtime-services";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { workLedgerController } from "@natalia/work-ledger";
 import type { SessionExecutionState } from "../src/runtime/session-execution-state";
-import { sessionFactStateFromEvents } from "@natalia/session";
+import { sessionFactStateFromEvents } from "@anthelia/session";
 
 /**
  * Pure intelligence writes must not pull the full journal: they only need the

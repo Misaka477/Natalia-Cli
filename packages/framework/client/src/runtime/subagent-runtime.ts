@@ -11,7 +11,7 @@ import type {
   RuntimeSubagentView,
   SessionID,
 } from "@natalia/contracts";
-import type { SubagentRecordView } from "@natalia/tools";
+import type { SubagentRecordView } from "@anthelia/tools";
 import {
   subagentsService,
   type SubagentsService,

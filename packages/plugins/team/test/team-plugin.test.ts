@@ -6,7 +6,7 @@ import {
   teamBehavior,
   type TeamBehaviorService,
 } from "@natalia/runtime-services";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import { createTeamPlugin, TEAM_PLUGIN_ID } from "../src/index";
 
 function servicePlugin(input: {

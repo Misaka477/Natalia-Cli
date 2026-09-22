@@ -15,7 +15,7 @@ import {
   projectedCollabMessages,
   projectedMailboxMessages,
   projectedPlanDocs,
-} from "@natalia/session";
+} from "@anthelia/session";
 import { computeCollabSnapshotInWorker } from "../session-project-client";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";

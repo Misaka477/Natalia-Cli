@@ -2,7 +2,7 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
   projectedWorkGraphEdges,
   projectedWorkGraphNodes,
-} from "@natalia/session";
+} from "@anthelia/session";
 import type { RuntimeContext } from "./context";
 import {
   ensureSessionEventWindow,

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { createPluginRegistry } from "@natalia/plugin";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 import {
   createWebPlugin,
   WEB_PLUGIN_ID,

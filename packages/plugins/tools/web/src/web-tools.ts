@@ -9,9 +9,9 @@ import {
   numberOr,
   requireObject,
   requireString,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type { Plugin, PluginManifest } from "@natalia/plugin";
-import type { RuntimeTool, ToolFamily } from "@natalia/tools";
+import type { RuntimeTool, ToolFamily } from "@anthelia/tools";
 
 export const WEB_PLUGIN_ID = "natalia-tool-web";
 

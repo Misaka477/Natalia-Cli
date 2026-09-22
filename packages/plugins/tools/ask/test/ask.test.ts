@@ -6,7 +6,7 @@ import {
   createAskPlugin,
 } from "../src";
 import { createPluginRegistry } from "@natalia/plugin";
-import { createToolRegistry } from "@natalia/tools";
+import { createToolRegistry } from "@anthelia/tools";
 
 test("the ask family describes the tool it ships", () => {
   const family = askToolFamily();

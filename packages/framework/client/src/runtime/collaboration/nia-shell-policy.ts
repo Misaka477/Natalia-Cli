@@ -1,4 +1,4 @@
-import { parseBashSimpleCommand } from "@natalia/tools";
+import { parseBashSimpleCommand } from "@anthelia/tools";
 
 /**
  * Nia may run inspection and verification commands, but must not mutate the

@@ -35,8 +35,8 @@ import {
   PERMISSION_FAMILIES,
 } from "@natalia/contracts";
 import type { ProviderToolCall } from "@natalia/runtime";
-import { parseToolArguments, type RuntimeTool } from "@natalia/tools";
-import { projectInteractiveRequests } from "@natalia/session";
+import { parseToolArguments, type RuntimeTool } from "@anthelia/tools";
+import { projectInteractiveRequests } from "@anthelia/session";
 import type {} from "@natalia/runtime-services";
 import type {
   InteractiveWaiter,

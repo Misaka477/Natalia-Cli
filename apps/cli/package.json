@@ -15,6 +15,7 @@
     "test": "bun test ./test --timeout 60000"
   },
   "dependencies": {
+    "@anthelia/session-store": "workspace:*",
     "@natalia/client": "workspace:*",
     "@natalia/config": "workspace:*",
     "@natalia/contracts": "workspace:*",
@@ -23,11 +24,10 @@
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/runtime": "workspace:*",
-    "@natalia/session-store": "workspace:*",
     "@natalia/transport": "workspace:*"
   },
   "devDependencies": {
-    "@natalia/capability": "workspace:*",
-    "@natalia/session": "workspace:*"
+    "@anthelia/session": "workspace:*",
+    "@natalia/capability": "workspace:*"
   }
 }

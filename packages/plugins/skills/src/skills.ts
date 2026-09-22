@@ -17,7 +17,7 @@ import {
   resolve,
 } from "node:path";
 import { profileShellCommand } from "@natalia/platform";
-import type { RuntimeTool, ToolExecutionContext } from "@natalia/tools";
+import type { RuntimeTool, ToolExecutionContext } from "@anthelia/tools";
 import type {
   SkillMetadata,
   SkillPolicy,

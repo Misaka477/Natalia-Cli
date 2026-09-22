@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
-import type { ToolFamily } from "@natalia/tools";
+import type { ToolFamily } from "@anthelia/tools";
 import {
   runtimeToolNames,
   createToolRegistryFromCapabilities,

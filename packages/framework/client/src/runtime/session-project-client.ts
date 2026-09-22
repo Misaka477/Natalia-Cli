@@ -1,4 +1,4 @@
-import type { SessionProjection } from "@natalia/session";
+import type { SessionProjection } from "@anthelia/session";
 import type { RuntimeEvent, RuntimeMessagePage } from "@natalia/contracts";
 import type {
   SessionProjectWorkerRequest,
@@ -12,11 +12,11 @@ import {
 type SessionProjectTask =
   | {
       op: "project";
-      session: import("@natalia/session").SessionRecord;
+      session: import("@anthelia/session").SessionRecord;
     }
   | {
       op: "messages";
-      session: import("@natalia/session").SessionRecord;
+      session: import("@anthelia/session").SessionRecord;
       options: { limit?: number; order?: "asc" | "desc"; cursor?: string };
     }
   | {
@@ -110,13 +110,13 @@ async function run<T>(request: SessionProjectTask): Promise<T> {
 }
 
 export function projectSessionInWorker(
-  session: import("@natalia/session").SessionRecord,
+  session: import("@anthelia/session").SessionRecord,
 ): Promise<SessionProjection> {
   return run<SessionProjection>({ op: "project", session });
 }
 
 export function projectSessionMessagesInWorker(
-  session: import("@natalia/session").SessionRecord,
+  session: import("@anthelia/session").SessionRecord,
   options: { limit?: number; order?: "asc" | "desc"; cursor?: string },
 ): Promise<RuntimeMessagePage> {
   return run<RuntimeMessagePage>({ op: "messages", session, options });

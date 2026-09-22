@@ -14,14 +14,14 @@ import {
   optionalString,
   requireObject,
   requireString,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type {
   RuntimeTool,
   SubagentToolService,
   ToolExecutionContext,
   ToolFamily,
   ToolOutputDefinition,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 
 import {
   renderSubagentTypes,

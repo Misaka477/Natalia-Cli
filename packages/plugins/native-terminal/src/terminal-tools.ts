@@ -16,20 +16,20 @@ import {
   optionalString,
   requireObject,
   requireString,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import {
   encodeTerminalKey,
   interactiveTerminalToolAliases,
   nativeTerminalReadPage,
   nativeTerminalSearchPage,
-} from "@natalia/tools";
-import { truncateProcessOutput } from "@natalia/tools";
+} from "@anthelia/tools";
+import { truncateProcessOutput } from "@anthelia/tools";
 import type {
   RuntimeTool,
   TerminalSessionView,
   ToolExecutionContext,
   ToolFamily,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 
 export const TERMINAL_OBSERVE_MODES = [
   "full",

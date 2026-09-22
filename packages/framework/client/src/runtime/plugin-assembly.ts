@@ -77,7 +77,7 @@ export function createPluginAssembly(
     };
   }
 
-  function providerModelPluginInput(): import("@natalia/provider-model").ProviderModelControllerInput {
+  function providerModelPluginInput(): import("@anthelia/provider-model").ProviderModelControllerInput {
     const {
       getProvider,
       setProvider,

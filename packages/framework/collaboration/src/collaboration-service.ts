@@ -7,7 +7,7 @@ import type {
 import {
   projectedCollabMessages,
   type ProjectedCollabMessage,
-} from "@natalia/session";
+} from "@anthelia/session";
 
 export const COLLABORATION_SERVICE = "natalia.collaboration.service";
 

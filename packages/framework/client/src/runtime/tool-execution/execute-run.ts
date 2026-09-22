@@ -14,12 +14,12 @@ import {
   timeoutSecOr,
   validateToolOutput,
   type RuntimeTool,
-} from "@natalia/tools";
+} from "@anthelia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { type ToolPolicyService } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
-import { workspaceMutations, workspaceWriteLock } from "@natalia/workspace";
+import { workspaceMutations, workspaceWriteLock } from "@anthelia/workspace";
 import { buildToolExecutionContext } from "./execute-context";
 import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";

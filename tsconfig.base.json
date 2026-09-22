@@ -11,19 +11,19 @@
     "moduleResolution": "Bundler",
     "baseUrl": ".",
     "paths": {
-      "@natalia/agent": ["packages/framework/agent/src/index.ts"],
+      "@anthelia/agent": ["packages/framework/agent/src/index.ts"],
       "@natalia/framework-diff": ["packages/framework/diff/src/index.ts"],
       "@natalia/framework-diff/runtime/diff-parse-client": [
         "packages/framework/diff/src/runtime/diff-parse-client.ts"
       ],
-      "@natalia/attachments": ["packages/framework/attachments/src/index.ts"],
+      "@anthelia/attachments": ["packages/framework/attachments/src/index.ts"],
       "@natalia/capability": ["packages/core/capability/src/index.ts"],
-      "@natalia/checkpoint": ["packages/framework/checkpoint/src/index.ts"],
+      "@anthelia/checkpoint": ["packages/framework/checkpoint/src/index.ts"],
       "@natalia/composition": ["packages/core/composition/src/index.ts"],
       "@natalia/collaboration": [
         "packages/framework/collaboration/src/index.ts"
       ],
-      "@natalia/compaction": ["packages/framework/compaction/src/index.ts"],
+      "@anthelia/compaction": ["packages/framework/compaction/src/index.ts"],
       "@natalia/config": ["packages/hosts/config/src/index.ts"],
       "@natalia/confinement": ["packages/hosts/confinement/src/index.ts"],
       "@natalia/context-ledger": [
@@ -65,14 +65,14 @@
         "packages/plugins/native-terminal/src/index.ts"
       ],
       "@natalia/platform": ["packages/hosts/platform/src/index.ts"],
-      "@natalia/provider-model": [
+      "@anthelia/provider-model": [
         "packages/framework/provider-model/src/index.ts"
       ],
       "@natalia/runtime": ["packages/framework/runtime/src/index.ts"],
       "@natalia/runtime-services": [
         "packages/core/runtime-services/src/index.ts"
       ],
-      "@natalia/retry": ["packages/framework/retry/src/index.ts"],
+      "@anthelia/retry": ["packages/framework/retry/src/index.ts"],
       "@natalia/runtime-config": [
         "packages/framework/runtime-config/src/index.ts"
       ],
@@ -80,8 +80,8 @@
         "packages/framework/runtime-status/src/index.ts"
       ],
       "@natalia/plugin": ["packages/core/plugin/src/index.ts"],
-      "@natalia/session": ["packages/framework/session/src/index.ts"],
-      "@natalia/session-store": [
+      "@anthelia/session": ["packages/framework/session/src/index.ts"],
+      "@anthelia/session-store": [
         "packages/framework/session-store/src/index.ts"
       ],
       "@natalia/plugin-tool-ask": ["packages/plugins/tools/ask/src/index.ts"],
@@ -105,20 +105,20 @@
       "@natalia/plugin-tool-todo/ui": [
         "packages/plugins/tools/todo/src/ui/plugin.tsx"
       ],
-      "@natalia/sandbox": ["packages/framework/sandbox/src/index.ts"],
+      "@anthelia/sandbox": ["packages/framework/sandbox/src/index.ts"],
       "@natalia/plugin-skills": ["packages/plugins/skills/src/index.ts"],
       "@natalia/plugin-skills/ui": [
         "packages/plugins/skills/src/ui/plugin.tsx"
       ],
-      "@natalia/subagents": ["packages/framework/subagents/src/index.ts"],
+      "@anthelia/subagents": ["packages/framework/subagents/src/index.ts"],
       "@natalia/plugin-team": ["packages/plugins/team/src/index.ts"],
       "@natalia/tool-policy": ["packages/framework/tool-policy/src/index.ts"],
-      "@natalia/tools": ["packages/core/tools/src/index.ts"],
-      "@natalia/turn-orchestration": [
+      "@anthelia/tools": ["packages/core/tools/src/index.ts"],
+      "@anthelia/turn-orchestration": [
         "packages/framework/turn-orchestration/src/index.ts"
       ],
       "@natalia/work-ledger": ["packages/domains/work-ledger/src/index.ts"],
-      "@natalia/workspace": ["packages/framework/workspace/src/index.ts"]
+      "@anthelia/workspace": ["packages/framework/workspace/src/index.ts"]
     },
     "noUncheckedIndexedAccess": false,
     "noEmit": false,

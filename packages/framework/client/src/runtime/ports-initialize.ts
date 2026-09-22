@@ -1,6 +1,6 @@
-import type { AgentRegistry } from "@natalia/agent";
+import type { AgentRegistry } from "@anthelia/agent";
 import type { ProviderConcurrencyLimiter } from "@natalia/runtime";
-import type { SessionRecord } from "@natalia/session";
+import type { SessionRecord } from "@anthelia/session";
 import type { InteractiveWaiter } from "@natalia/collaboration";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
 

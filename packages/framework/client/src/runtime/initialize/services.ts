@@ -11,14 +11,14 @@ import type {
 import { createInitializeRuntime } from "./runtime";
 
 import { statusSnapshotController } from "@natalia/runtime-status";
-import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
-import { retryService } from "@natalia/retry";
+import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
+import { retryService } from "@anthelia/retry";
 import { governanceLedgerController } from "@natalia/governance-ledger";
-import { compactionService } from "@natalia/compaction";
+import { compactionService } from "@anthelia/compaction";
 import { contextLedgerFactory } from "@natalia/context-ledger";
-import { turnController } from "@natalia/turn-orchestration";
+import { turnController } from "@anthelia/turn-orchestration";
 import { workLedgerController } from "@natalia/work-ledger";
-import { sessionStoreController } from "@natalia/session-store";
+import { sessionStoreController } from "@anthelia/session-store";
 import type {
   AttachmentService,
   CompactionService,

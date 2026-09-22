@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSessionStoreController } from "@natalia/session-store";
-import { createAttachmentService } from "@natalia/attachments";
+import { createSessionStoreController } from "@anthelia/session-store";
+import { createAttachmentService } from "@anthelia/attachments";
 import type { SessionID } from "@natalia/contracts";
 
 test("session store: create is idempotent, archive marks, export dumps", async () => {

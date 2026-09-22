@@ -9,8 +9,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/plugin-native-terminal": "workspace:*",
-    "@natalia/sandbox": "workspace:*",
-    "@natalia/session": "workspace:*"
+    "@anthelia/sandbox": "workspace:*",
+    "@anthelia/session": "workspace:*",
+    "@natalia/plugin-native-terminal": "workspace:*"
   }
 }
