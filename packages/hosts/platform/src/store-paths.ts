@@ -364,3 +364,12 @@ export function resolveWorkspaceJsonSessionsDir(
     join(resolve(workspaceRoot), ".natalia", "sessions"),
   );
 }
+
+/**
+ * The runtime operation log's directory (install study layout: the global
+ * `~/.natalia/logs/`, next to stores/ — telemetry is home-level, not
+ * workspace-level; purge treats it as data, uninstall leaves it).
+ */
+export function operationLogsDir(osHome: string = homedir()): string {
+  return join(osHome, ".natalia", "logs");
+}

@@ -20,6 +20,7 @@ import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
 import type { WorkLedgerController } from "@natalia/work-ledger";
+import { logOf } from "@natalia/operation-log";
 import type {
   CheckpointController,
   CheckpointFactory,
@@ -297,9 +298,10 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
       // ready path down: transcript, model selection, session attach and the
       // UI do not depend on checkpointing. Keep the session usable and surface
       // the checkpoint failure instead of failing every RPC.
-      console.warn(
-        "[checkpoint] controller init failed; continuing without checkpoints",
-        error instanceof Error ? error.message : String(error),
+      logOf(ctx.state.serviceDirectory).warn(
+        "checkpoint",
+        "controller init failed; continuing without checkpoints",
+        { detail: error instanceof Error ? error.message : String(error) },
       );
       return undefined;
     }

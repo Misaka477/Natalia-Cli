@@ -54,6 +54,9 @@
       "@natalia/plugin-mcp": ["packages/plugins/mcp/src/index.ts"],
       "@natalia/plugin-mcp/ui": ["packages/plugins/mcp/src/ui/plugin.tsx"],
       "@natalia/object-store": ["packages/hosts/object-store/src/index.ts"],
+      "@natalia/operation-log": [
+        "packages/framework/operation-log/src/index.ts"
+      ],
       "@natalia/rina": ["packages/framework/rina/src/index.ts"],
       "@natalia/plugin-native-terminal": [
         "packages/plugins/native-terminal/src/index.ts"

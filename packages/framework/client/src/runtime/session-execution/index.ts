@@ -28,6 +28,7 @@ import { today } from "@natalia/runtime";
 import type { SessionStoreController } from "@natalia/session-store";
 import type { TurnController } from "@natalia/turn-orchestration";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";
+import { logOf } from "@natalia/operation-log";
 
 const MAX_IDLE_SESSION_EXECUTIONS = Math.max(
   64,
@@ -284,15 +285,19 @@ export function createSessionExecution(
       }
       loaded.events = runtimeRestoreEvents;
     }
-    console.warn("[context-restore] ensureExecution", {
-      sessionID,
-      replayableEvents: projection.replayableEvents.length,
-      restoreEvents: runtimeRestoreEvents.length,
-      contextEntries: execContext.snapshot().entries.length,
-      hasEpoch: epoch !== undefined,
-      checkpointHasSummary,
-      fastPath,
-    });
+    logOf(ctx.state.serviceDirectory).warn(
+      "context-restore",
+      "ensureExecution",
+      {
+        sessionID,
+        replayableEvents: projection.replayableEvents.length,
+        restoreEvents: runtimeRestoreEvents.length,
+        contextEntries: execContext.snapshot().entries.length,
+        hasEpoch: epoch !== undefined,
+        checkpointHasSummary,
+        fastPath,
+      },
+    );
     // Snapshotted before the state is built so the restore path below can reuse
     // it for the resumed session rather than re-reading the clock.
     const sessionDate = today();
@@ -368,8 +373,9 @@ export function createSessionExecution(
     // This overlaps with full-event background loading and makes the first
     // session.messages RPC a cache hit when the prewarm finishes first.
     void sessionStore.prewarmMessagePage(sessionID).catch((error) => {
-      console.warn(
-        `[perf] ensureExecution message-page prewarm failed session=${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+      logOf(ctx.state.serviceDirectory).warn(
+        "perf",
+        `ensureExecution message-page prewarm failed session=${sessionID}: ${error instanceof Error ? error.message : String(error)}`,
       );
     });
     // Never eagerly replace the window with the full durable log. A consumer

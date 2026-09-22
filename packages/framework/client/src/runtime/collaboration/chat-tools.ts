@@ -31,6 +31,7 @@ import type { SessionExecutionState } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import { captureRepositoryEvidenceFields } from "../repository-refs";
 import { createDetourReviewTool } from "../plan-contract-tools";
+import { logOf } from "@natalia/operation-log";
 
 const CHAT_READ_ONLY_TOOLS = new Set([
   "read_file",
@@ -866,13 +867,17 @@ export function createChatTools(ctx: RuntimeContext) {
           )
             return "audit_report requires planID and verdict passed|gaps";
           const status = args.verdict === "passed" ? "completed" : "audit_gaps";
-          console.log("[nia-audit-report] submitting", {
-            planID: args.planID,
-            verdict: args.verdict,
-            status,
-            sessionID: (context as { sessionID?: string } | undefined)
-              ?.sessionID,
-          });
+          logOf(ctx.state.serviceDirectory).info(
+            "nia-audit-report",
+            "submitting",
+            {
+              planID: args.planID,
+              verdict: args.verdict,
+              status,
+              sessionID: (context as { sessionID?: string } | undefined)
+                ?.sessionID,
+            },
+          );
           let result;
           try {
             result = await ctx.ports.planDocRuntime.planDocUpdateStatus({
@@ -966,10 +971,14 @@ export function createChatTools(ctx: RuntimeContext) {
               }
             }
           } catch (error) {
-            console.warn("[nia-audit-report] round checkpoint failed", {
-              planID: args.planID,
-              error: error instanceof Error ? error.message : String(error),
-            });
+            logOf(ctx.state.serviceDirectory).warn(
+              "nia-audit-report",
+              "round checkpoint failed",
+              {
+                planID: args.planID,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            );
           }
 
           return JSON.stringify({

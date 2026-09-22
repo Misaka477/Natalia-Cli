@@ -16,6 +16,7 @@ import type {
 } from "@natalia/runtime";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";
+import { logOf } from "@natalia/operation-log";
 import {
   type ConcreteRuntimeEvent,
   naviChatHistory,
@@ -83,7 +84,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         message,
       });
     if (process.env.NATALIA_DEBUG_PROVIDER === "1")
-      console.log("[navi-chat-turn] provider", {
+      logOf(ctx.state.serviceDirectory).info("navi-chat-turn", "provider", {
         sessionID: input.exec.session.id,
         adapter: activeProvider.constructor.name,
         provider: activeProvider.provider,
@@ -378,11 +379,12 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           ? raw
           : requireNativeToolCallProtocol(normalizeRawToolCallProtocol(raw))) {
           if (process.env.NATALIA_DEBUG_PROVIDER === "1")
-            console.log(
-              "[navi-chat-turn] chunk",
-              chunk.type,
-              "text" in chunk ? String(chunk.text?.length ?? "") : "",
-            );
+            logOf(ctx.state.serviceDirectory).info("navi-chat-turn", "chunk", {
+              args: [
+                chunk.type,
+                "text" in chunk ? String(chunk.text?.length ?? "") : "",
+              ],
+            });
           if (chunk.type === "thinking") {
             setPhase("thinking");
             if (chunk.text) {

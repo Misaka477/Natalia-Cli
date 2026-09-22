@@ -10,6 +10,7 @@ import {
   maxLiveSessionEvents,
   windowRuntimeEvents,
 } from "./session-event-retention";
+import { logOf } from "@natalia/operation-log";
 import {
   completeSessionFactState,
   reseedSessionFactState,
@@ -57,7 +58,10 @@ export function ensureSessionFullEvents(
       ?.split("\n")
       .slice(1, 8)
       .join("\n");
-    console.warn(`[full-events] caller session=${exec.session.id}\n${stack}`);
+    logOf(ctx.state.serviceDirectory).warn(
+      "full-events",
+      `caller session=${exec.session.id}\n${stack}`,
+    );
   }
   const promise = (async () => {
     const sessionStore = ctx.state.serviceDirectory.getOptional(

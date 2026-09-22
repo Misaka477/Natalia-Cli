@@ -28,6 +28,7 @@ export type WorkspaceManagerOptions = Pick<
   | "useSqliteStore"
   | "sessionDir"
   | "checkpointDir"
+  | "operationLogsDir"
   | "contextWindowCachePath"
 >;
 
@@ -256,6 +257,10 @@ async function migrateLegacyWorkspaceSessions(
     await rm(legacyDir, { recursive: true, force: true }).catch(
       () => undefined,
     );
+    // Host-facade boundary (decisions §6): this manager runs BEFORE any
+    // runtime exists, so there is no service directory to log through —
+    // console stays until the host-face data plane (T4) lands, and the
+    // console guard allowlists this file with that reason.
     console.warn(
       "[workspace-session] migrated",
       migrated,

@@ -14,6 +14,7 @@ import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
 import type { CheckpointFactory } from "@natalia/checkpoint";
 import type { SessionStoreController } from "@natalia/session-store";
+import { logOf, type OperationLog } from "@natalia/operation-log";
 type Surface = Pick<
   RuntimeServiceClient,
   "dispose" | "canReloadConfig" | "reloadConfig" | "updateConfig" | "configGet"
@@ -32,6 +33,7 @@ const DISPOSE_STEP_TIMEOUT_MS = Math.max(
 async function shutdownStep(
   label: string,
   work: () => Promise<unknown> | unknown,
+  log: OperationLog,
 ): Promise<void> {
   const started = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -40,8 +42,9 @@ async function shutdownStep(
       Promise.resolve().then(work),
       new Promise<void>((resolve) => {
         timer = setTimeout(() => {
-          console.error(
-            `[shutdown] dispose.${label} stuck >${DISPOSE_STEP_TIMEOUT_MS}ms; continuing`,
+          log.debug(
+            "shutdown",
+            `dispose.${label} stuck >${DISPOSE_STEP_TIMEOUT_MS}ms; continuing`,
           );
           resolve();
         }, DISPOSE_STEP_TIMEOUT_MS);
@@ -49,12 +52,13 @@ async function shutdownStep(
       }),
     ]);
   } catch (error) {
-    console.error(
-      `[shutdown] dispose.${label} failed: ${error instanceof Error ? error.message : String(error)}`,
+    log.debug(
+      "shutdown",
+      `dispose.${label} failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   } finally {
     if (timer) clearTimeout(timer);
-    console.warn(`[shutdown] dispose.${label} +${Date.now() - started}ms`);
+    log.debug("shutdown", `dispose.${label} +${Date.now() - started}ms`);
   }
 }
 
@@ -62,6 +66,7 @@ export function createLifecycleSurface(
   ctx: RuntimeContext,
   options: ClientSurfaceOptions,
 ): Surface {
+  const log = logOf(ctx.state.serviceDirectory);
   return {
     async configGet() {
       await ctx.ports.getReady();
@@ -76,12 +81,15 @@ export function createLifecycleSurface(
     async dispose() {
       const flushStart = Date.now();
       ctx.ports.setDisposed(true);
-      await shutdownStep("titleGeneration", () =>
-        Promise.all(
-          [...ctx.state.titleGenerationTasks.keys()].map(
-            ctx.ports.cancelTitleGeneration,
+      await shutdownStep(
+        "titleGeneration",
+        () =>
+          Promise.all(
+            [...ctx.state.titleGenerationTasks.keys()].map(
+              ctx.ports.cancelTitleGeneration,
+            ),
           ),
-        ),
+        log,
       );
       ctx.ports.getTerminalCommandBuffer().clearAll();
       for (const exec of ctx.ports.getExecutionBySession().values()) {
@@ -92,52 +100,74 @@ export function createLifecycleSurface(
       }
       // Persist the last <1s of streamed text before the store flushes/closes.
       ctx.ports.flushPendingPartialOutput?.();
-      await shutdownStep("runCoordinator", () =>
-        Promise.all(
-          [...ctx.ports.getExecutionBySession().keys()].map((id) =>
-            sessionRunCoordinator(id).interrupt(),
+      await shutdownStep(
+        "runCoordinator",
+        () =>
+          Promise.all(
+            [...ctx.ports.getExecutionBySession().keys()].map((id) =>
+              sessionRunCoordinator(id).interrupt(),
+            ),
           ),
-        ),
+        log,
       );
-      await shutdownStep("internalWakeTasks", () =>
-        Promise.allSettled([...ctx.ports.getInternalWakeTasks()]),
+      await shutdownStep(
+        "internalWakeTasks",
+        () => Promise.allSettled([...ctx.ports.getInternalWakeTasks()]),
+        log,
       );
       // A committed selection and other durable controls must reach disk before
       // a caller opens the same session in a replacement runtime. These three
       // run even if an earlier step timed out, so durable state is not lost.
-      await shutdownStep("sessionPersistence", () =>
-        ctx.ports.getSessionPersistence(),
+      await shutdownStep(
+        "sessionPersistence",
+        () => ctx.ports.getSessionPersistence(),
+        log,
       );
       const sessionStore = ctx.state.serviceDirectory.getOptional(
         sessionStoreController,
       );
-      await shutdownStep("sessionStoreFlush", () =>
-        sessionStore
-          ? Promise.all(
-              [...ctx.ports.getExecutionBySession().keys()].map((id) =>
-                sessionStore.flush(id),
-              ),
-            )
-          : undefined,
+      await shutdownStep(
+        "sessionStoreFlush",
+        () =>
+          sessionStore
+            ? Promise.all(
+                [...ctx.ports.getExecutionBySession().keys()].map((id) =>
+                  sessionStore.flush(id),
+                ),
+              )
+            : undefined,
+        log,
       );
-      await shutdownStep("sandboxClose", () =>
-        ctx.state.serviceDirectory.getOptional(sandboxService)?.close(),
+      await shutdownStep(
+        "sandboxClose",
+        () => ctx.state.serviceDirectory.getOptional(sandboxService)?.close(),
+        log,
       );
-      await shutdownStep("terminalClose", () =>
-        ctx.state.serviceDirectory.getOptional(terminalController)?.close(),
+      await shutdownStep(
+        "terminalClose",
+        () =>
+          ctx.state.serviceDirectory.getOptional(terminalController)?.close(),
+        log,
       );
       const checkpointClose = ctx.state.serviceDirectory.getOptional(
         checkpointFactory,
       ) as (CheckpointFactory & { close?(): void }) | undefined;
       checkpointClose?.close?.();
-      await shutdownStep("pluginsClose", () =>
-        ctx.ports.getPluginsController().close(),
+      await shutdownStep(
+        "pluginsClose",
+        () => ctx.ports.getPluginsController().close(),
+        log,
       );
       ctx.state.frameworkServices?.close();
-      await shutdownStep("performanceTrace", () =>
-        ctx.ports.getPerformanceTrace().stop(),
+      await shutdownStep(
+        "performanceTrace",
+        () => ctx.ports.getPerformanceTrace().stop(),
+        log,
       );
-      console.warn(`[shutdown] dispose total +${Date.now() - flushStart}ms`);
+      logOf(ctx.state.serviceDirectory).debug(
+        "shutdown",
+        `dispose total +${Date.now() - flushStart}ms`,
+      );
     },
     async canReloadConfig() {
       await ctx.ports.getReady();
@@ -156,14 +186,16 @@ export function createLifecycleSurface(
       const patch = normalizeProviderRenamePatch(
         input.patch as never,
         ctx.ports.getTsRuntimeConfig(),
+        log,
       ) as never;
-      console.log(
-        "[updateConfig] begin",
-        input.scope,
-        "globalPath",
-        options.globalConfigPath,
-        JSON.stringify(patch, null, 2).slice(0, 4000),
-      );
+      logOf(ctx.state.serviceDirectory).info("updateConfig", "begin", {
+        args: [
+          input.scope,
+          "globalPath",
+          options.globalConfigPath,
+          JSON.stringify(patch, null, 2).slice(0, 4000),
+        ],
+      });
       // The TUI settings menu path, now a public surface: merge the patch onto
       // disk, then apply. The file is written either way; whether it takes
       // effect under a running turn is an ordinary answer, not an exception.
@@ -176,15 +208,21 @@ export function createLifecycleSurface(
           input.scope ?? "project",
           { globalPath: options.globalConfigPath },
         );
-        console.log("[updateConfig] file written");
+        logOf(ctx.state.serviceDirectory).info("updateConfig", "file written");
       } catch (error) {
-        console.error("[updateConfig] write failed", error);
+        logOf(ctx.state.serviceDirectory).error(
+          "updateConfig",
+          "write failed",
+          { error },
+        );
         throw error;
       }
       // Applying is the same operation as a reload, with the same value-type
       // refusal; share it so the two paths cannot drift.
       const outcome = await ctx.ports.applyConfigFromDisk();
-      console.log("[updateConfig] applied", outcome.applied, outcome.reason);
+      logOf(ctx.state.serviceDirectory).info("updateConfig", "applied", {
+        args: [outcome.applied, outcome.reason],
+      });
       return outcome;
     },
   };
@@ -192,7 +230,8 @@ export function createLifecycleSurface(
 
 function normalizeProviderRenamePatch(
   patch: Record<string, unknown>,
-  currentConfig?: import("@natalia/contracts").ConfigV3,
+  currentConfig: import("@natalia/contracts").ConfigV3 | undefined,
+  log: OperationLog,
 ): Record<string, unknown> {
   const providersPatch = patch.providers as Record<string, unknown> | undefined;
   if (!providersPatch) return patch;
@@ -230,7 +269,9 @@ function normalizeProviderRenamePatch(
           nextCatalog.providers[match] = undefined;
         result.catalog = nextCatalog;
       }
-      console.log("[updateConfig] provider rename inferred", match, "->", key);
+      log.info("updateConfig", "provider rename inferred", {
+        args: [match, "->", key],
+      });
     }
   }
   return result;

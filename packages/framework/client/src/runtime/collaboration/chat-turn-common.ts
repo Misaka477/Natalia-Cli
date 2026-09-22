@@ -25,6 +25,7 @@ import type { AttachmentService } from "@natalia/runtime";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { compactionService } from "@natalia/compaction";
 import type { RuntimeContext, SessionExecutionState } from "../context";
+import { logOf } from "@natalia/operation-log";
 
 const ledgerHistories = new WeakMap<ContextLedger, ProviderMessage[]>();
 
@@ -461,11 +462,15 @@ export async function compactChatBeforeProviderStep(
       }
       const summaryEntry = entries.find((entry) => entry.role === "summary");
       const summary = summaryEntry?.content ?? "";
-      console.log("[stream-chat-compact] compacted", {
-        sessionID: exec.session.id,
-        compactedThroughMessageID,
-        summaryLength: summary.length,
-      });
+      logOf(ctx.state.serviceDirectory).info(
+        "stream-chat-compact",
+        "compacted",
+        {
+          sessionID: exec.session.id,
+          compactedThroughMessageID,
+          summaryLength: summary.length,
+        },
+      );
       if (compactedThroughMessageID)
         stream.publishCompacted(summary, compactedThroughMessageID);
     }

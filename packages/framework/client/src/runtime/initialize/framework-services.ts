@@ -33,9 +33,12 @@ import {
 } from "@natalia/collaboration";
 import type { ServiceToken } from "@natalia/runtime-services";
 import { createCacheFabric, L1_CACHE_KINDS, rinaCache } from "@natalia/rina";
+import { join } from "node:path";
+import { createOperationLog, operationLog } from "@natalia/operation-log";
 import {
   findWorkspaceFiles,
   migrateLegacyWorkspaceStore,
+  operationLogsDir,
   searchWorkspaceFiles,
 } from "@natalia/platform";
 import { createSessionHistoryTool } from "../session-history-tool";
@@ -523,6 +526,19 @@ export async function wireFrameworkServices(
   const cacheFabric = createCacheFabric();
   for (const kind of L1_CACHE_KINDS) cacheFabric.registerKind(kind);
   ctx.state.serviceDirectory.provide(rinaCache, cacheFabric);
+  // The telemetry zone (decisions §5): the runtime's own operation log,
+  // home-level like the install layout, overridable for isolated hosts
+  // and tests — and closed with the runtime, so records drain on
+  // shutdown instead of dying with the process.
+  const telemetry = createOperationLog({
+    dir:
+      options.operationLogsDir ??
+      (process.env.NATALIA_HOME
+        ? join(process.env.NATALIA_HOME, "logs")
+        : operationLogsDir()),
+  });
+  ctx.state.serviceDirectory.provide(operationLog, telemetry);
+  closeHandles.push(() => telemetry.close());
   ctx.state.serviceDirectory.provide(workspaceFiles, files);
   workspaceOwner.contribute("commands", "files", {
     name: "files",

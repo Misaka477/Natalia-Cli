@@ -20,6 +20,7 @@ import { workLedgerController } from "@natalia/work-ledger";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import type { SessionStoreController } from "@natalia/session-store";
 import type { WorkLedgerController } from "@natalia/work-ledger";
+import { logOf } from "@natalia/operation-log";
 
 export type PlanDocRuntime = {
   planDocList(sessionID?: string): Promise<
@@ -381,7 +382,11 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
         } catch (error) {
           // The registry entry is gone; a missing/unlinked Markdown file
           // should not make delete look like a failure.
-          console.warn("[plan-doc] delete Markdown file failed", error);
+          logOf(ctx.state.serviceDirectory).warn(
+            "plan-doc",
+            "delete Markdown file failed",
+            { error },
+          );
         }
       }
       try {
@@ -397,7 +402,11 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       } catch (error) {
         // Deletion from the registry already succeeded; a projection event
         // failure should not make the RPC call look like it failed.
-        console.warn("[plan-doc] delete event publish failed", error);
+        logOf(ctx.state.serviceDirectory).warn(
+          "plan-doc",
+          "delete event publish failed",
+          { error },
+        );
       }
       return { deleted: true };
     },
@@ -453,7 +462,7 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       record.updatedAt = now;
       entries[planID] = record;
       await writeIndex(ctx, entries);
-      console.log("[plan-status] updated", {
+      logOf(ctx.state.serviceDirectory).info("plan-status", "updated", {
         planID,
         status,
         sessionID,
@@ -471,12 +480,16 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       );
       if (status === "awaiting_audit" || status === "auditing") {
         const exec = sessionExec(sessionID);
-        console.log("[nia-wake-trigger] plan status requires Nia audit", {
-          planID,
-          status,
-          sessionID,
-          hasExec: Boolean(exec),
-        });
+        logOf(ctx.state.serviceDirectory).info(
+          "nia-wake-trigger",
+          "plan status requires Nia audit",
+          {
+            planID,
+            status,
+            sessionID,
+            hasExec: Boolean(exec),
+          },
+        );
         if (exec) {
           const round =
             exec.session.events.filter(

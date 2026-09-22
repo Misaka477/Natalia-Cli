@@ -24,6 +24,7 @@
     "@natalia/contracts": "workspace:*",
     "@natalia/goal": "workspace:*",
     "@natalia/governance-ledger": "workspace:*",
+    "@natalia/operation-log": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@natalia/plugin": "workspace:*",
     "@natalia/provider-model": "workspace:*",

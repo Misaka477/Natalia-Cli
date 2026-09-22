@@ -27,6 +27,7 @@ import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
 import { perfLog } from "@natalia/runtime-services";
+import { logOf } from "@natalia/operation-log";
 
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
   at: string;
@@ -513,10 +514,14 @@ export function createEventSink(
     ) {
       // Automatic Navi wake on main-turn errors is intentionally removed:
       // only a model-issued collaboration tool call may wake Navi.
-      console.log("[navi-wake-trigger] automatic wake removed", {
-        turnID: event.id,
-        reason: event.reason ?? "unknown",
-      });
+      logOf(ctx.state.serviceDirectory).info(
+        "navi-wake-trigger",
+        "automatic wake removed",
+        {
+          turnID: event.id,
+          reason: event.reason ?? "unknown",
+        },
+      );
     }
     if (
       !event.agentID &&
@@ -581,7 +586,7 @@ export function createEventSink(
       // the formal audit message is not duplicated.
       const shouldForwardAudit =
         (niaAuditWake || auditReported) && !auditPassed;
-      console.log("[nia-audit-tail]", {
+      logOf(ctx.state.serviceDirectory).info("nia-audit-tail", "", {
         messageID: event.messageID,
         niaAuditWake,
         auditReported,
@@ -594,8 +599,9 @@ export function createEventSink(
       });
       if (last && shouldForwardAudit && !niaCollabSent) {
         const wakeID = `turn_nia_${event.messageID.replace(/[^a-zA-Z0-9]/gu, "_")}`;
-        console.log(
-          "[nia-audit-forward] scheduling main wake from audit tail",
+        logOf(ctx.state.serviceDirectory).info(
+          "nia-audit-forward",
+          "scheduling main wake from audit tail",
           {
             sessionID: exec.session.id,
             wakeID,

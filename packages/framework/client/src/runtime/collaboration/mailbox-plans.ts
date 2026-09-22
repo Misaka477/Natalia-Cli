@@ -24,6 +24,7 @@ import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { ensureSessionFullEvents } from "../session-full-events";
 import { findMailboxMessage } from "./mailbox";
+import { logOf } from "@natalia/operation-log";
 
 export function createMailboxPlans(ctx: RuntimeContext) {
   return {
@@ -42,7 +43,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
     sender: CollaborationParticipant,
     boundExec?: SessionExecutionState,
   ): RuntimeTool {
-    console.log("[collab-chat-tool] create", {
+    logOf(ctx.state.serviceDirectory).info("collab-chat-tool", "create", {
       sender,
       hasExec: Boolean(boundExec),
     });
@@ -105,7 +106,7 @@ export function createMailboxPlans(ctx: RuntimeContext) {
             error instanceof Error ? error.message : String(error)
           }`;
         }
-        console.log("[collab-chat-tool] result", {
+        logOf(ctx.state.serviceDirectory).info("collab-chat-tool", "result", {
           sender,
           messageID: result.message.id,
           threadID: result.message.threadID,
@@ -115,17 +116,25 @@ export function createMailboxPlans(ctx: RuntimeContext) {
           text: args.text.slice(0, 120),
         });
         if (result.wake.recipient === "live_chat") {
-          console.log("[navi-wake-trigger] collab_chat to live_chat", {
-            sender,
-            messageID: result.message.id,
-            recipient: result.wake.recipient,
-          });
+          logOf(ctx.state.serviceDirectory).info(
+            "navi-wake-trigger",
+            "collab_chat to live_chat",
+            {
+              sender,
+              messageID: result.message.id,
+              recipient: result.wake.recipient,
+            },
+          );
           requestNaviWake(owner);
         } else if (result.wake.recipient === "nia") {
-          console.log("[nia-wake-trigger] collab_chat to nia", {
-            sender,
-            messageID: result.message.id,
-          });
+          logOf(ctx.state.serviceDirectory).info(
+            "nia-wake-trigger",
+            "collab_chat to nia",
+            {
+              sender,
+              messageID: result.message.id,
+            },
+          );
           ctx.ports.requestNiaWake(owner);
         } else
           wakeMainForCollaboration(

@@ -27,6 +27,7 @@ import { contextLedgerFactory } from "@natalia/context-ledger";
 import type { AttachmentService } from "@natalia/runtime";
 import type { SessionStoreController } from "@natalia/session-store";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";
+import { logOf } from "@natalia/operation-log";
 
 type LoadedSession = Awaited<ReturnType<SessionStoreController["load"]>>;
 type RecoveryView = NonNullable<LoadedSession["recovery"]>;
@@ -213,15 +214,17 @@ export class SessionRecoveryCoordinator {
       void this.sessionStore
         .ensureMessageIndexAsync(scope.sessionID)
         .catch((error) => {
-          console.warn(
-            `[perf] recovery message-index prewarm failed session=${scope.sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+          logOf(scope.serviceDirectory).warn(
+            "perf",
+            `recovery message-index prewarm failed session=${scope.sessionID}: ${error instanceof Error ? error.message : String(error)}`,
           );
         });
       void this.sessionStore
         .prewarmMessagePage(scope.sessionID)
         .catch((error) => {
-          console.warn(
-            `[perf] recovery message-page prewarm failed session=${scope.sessionID}: ${error instanceof Error ? error.message : String(error)}`,
+          logOf(scope.serviceDirectory).warn(
+            "perf",
+            `recovery message-page prewarm failed session=${scope.sessionID}: ${error instanceof Error ? error.message : String(error)}`,
           );
         });
       // Prewarm the latest message page for every session so the UI can
@@ -236,8 +239,9 @@ export class SessionRecoveryCoordinator {
                 session.id as import("@natalia/contracts").SessionID,
               )
               .catch((error) => {
-                console.warn(
-                  `[perf] recovery message-page prewarm failed session=${session.id}: ${error instanceof Error ? error.message : String(error)}`,
+                logOf(scope.serviceDirectory).warn(
+                  "perf",
+                  `recovery message-page prewarm failed session=${session.id}: ${error instanceof Error ? error.message : String(error)}`,
                 );
               });
           }
@@ -438,7 +442,7 @@ export class SessionRecoveryCoordinator {
       recoveryRestoreEvents,
     );
 
-    console.warn("[context-restore] session-recovery", {
+    logOf(scope.serviceDirectory).warn("context-restore", "session-recovery", {
       sessionID: scope.sessionID,
       replayableEvents: projection.replayableEvents.length,
       restoreEvents: recoveryRestoreEvents.length,

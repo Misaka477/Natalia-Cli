@@ -6,6 +6,7 @@ import { runtimeEventSessionSeq, type RuntimeEvent } from "@natalia/contracts";
 import { ensureSessionFullEvents } from "./session-full-events";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./session-execution-state";
+import { logOf } from "@natalia/operation-log";
 import {
   SessionWindow,
   type SessionWindowEntry,
@@ -120,7 +121,7 @@ export async function ensureSessionEventWindow(
       const liveSeqs = exec.session.events
         .map((event) => runtimeEventSessionSeq(event))
         .filter((seq): seq is number => seq !== undefined);
-      console.warn("[event-window] gap", {
+      logOf(ctx.state.serviceDirectory).warn("event-window", "gap", {
         sessionID: exec.session.id,
         windowCount: windowSeqs.length,
         windowFirst: windowSeqs[0],

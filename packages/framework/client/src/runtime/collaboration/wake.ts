@@ -17,6 +17,7 @@ import type { SessionID, SubmitInput } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { streamEvent } from "./chat-turn-common";
+import { logOf } from "@natalia/operation-log";
 
 export function createCollaborationWake(ctx: RuntimeContext) {
   return {
@@ -46,7 +47,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
       source === "Nia"
         ? `(internal collaboration wake: Nia sent a ${kind}; read her audit findings in <nia_collaborations>, perform the required remediation work now, then reply to Nia with what you changed. Do not acknowledge with chat alone. This is not a user message.)`
         : `(internal collaboration wake: ${source} sent a ${kind}; read the collaboration context. This is not a user message.)`;
-    console.log("[collab-wake-main]", {
+    logOf(ctx.state.serviceDirectory).info("collab-wake-main", "", {
       source,
       kind,
       sourceID,
@@ -72,7 +73,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
           admittedSeq: admitted.admittedSeq,
         }),
       );
-      console.log("[collab-wake-inject]", {
+      logOf(ctx.state.serviceDirectory).info("collab-wake-inject", "", {
         id,
         sessionID: exec.session.id,
         admittedSeq: admitted.admittedSeq,
@@ -89,7 +90,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     const { isDisposed, submitInput } = ctx.ports;
     const { internalWakeTasks } = ctx.state;
     if (isDisposed()) return;
-    console.log("[collab-wake-submit] scheduling", {
+    logOf(ctx.state.serviceDirectory).info("collab-wake-submit", "scheduling", {
       id: input.id,
       sessionID: exec.session.id,
       delivery: input.delivery,
@@ -100,26 +101,36 @@ export function createCollaborationWake(ctx: RuntimeContext) {
       exec.session.id as SessionID,
     )
       .then((submitted) => {
-        console.log("[collab-wake-submit] admitted", {
-          id: input.id,
-          sessionID: exec.session.id,
-          submittedID: submitted?.id,
-        });
+        logOf(ctx.state.serviceDirectory).info(
+          "collab-wake-submit",
+          "admitted",
+          {
+            id: input.id,
+            sessionID: exec.session.id,
+            submittedID: submitted?.id,
+          },
+        );
         return submitted;
       })
       .catch((error) => {
-        console.error("[collab-wake-submit] FAILED", {
-          id: input.id,
-          sessionID: exec.session.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        logOf(ctx.state.serviceDirectory).error(
+          "collab-wake-submit",
+          "FAILED",
+          {
+            id: input.id,
+            sessionID: exec.session.id,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       })
       .finally(() => internalWakeTasks.delete(task));
     internalWakeTasks.add(task);
   }
 
   function requestNaviWake(exec: SessionExecutionState) {
-    console.log("[navi-wake] requestNaviWake", { sessionID: exec.session.id });
+    logOf(ctx.state.serviceDirectory).info("navi-wake", "requestNaviWake", {
+      sessionID: exec.session.id,
+    });
     const controller = ctx.state.serviceDirectory.getOptional(
       providerModelController,
     );
@@ -143,7 +154,9 @@ export function createCollaborationWake(ctx: RuntimeContext) {
   }
 
   async function wakeNavi(exec: SessionExecutionState) {
-    console.log("[navi-wake] wakeNavi start", { sessionID: exec.session.id });
+    logOf(ctx.state.serviceDirectory).info("navi-wake", "wakeNavi start", {
+      sessionID: exec.session.id,
+    });
     const { publishForSession, nextChatSequence } = ctx.ports;
     const controller = ctx.state.serviceDirectory.getOptional(
       providerModelController,
@@ -201,7 +214,7 @@ export function createCollaborationWake(ctx: RuntimeContext) {
 
   function requestNiaWake(exec: SessionExecutionState) {
     if (ctx.ports.isDisposed()) return;
-    console.log("[nia-wake] requestNiaWake", {
+    logOf(ctx.state.serviceDirectory).info("nia-wake", "requestNiaWake", {
       sessionID: exec.session.id,
     });
     const controller = ctx.state.serviceDirectory.getOptional(
@@ -231,13 +244,17 @@ export function createCollaborationWake(ctx: RuntimeContext) {
       providerModelController,
     );
     if (!controller) {
-      console.warn("[nia-wake] wakeNia skipped: controller unavailable", {
-        sessionID: exec.session.id,
-      });
+      logOf(ctx.state.serviceDirectory).warn(
+        "nia-wake",
+        "wakeNia skipped: controller unavailable",
+        {
+          sessionID: exec.session.id,
+        },
+      );
       return;
     }
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
-    console.log("[nia-wake] wakeNia start", {
+    logOf(ctx.state.serviceDirectory).info("nia-wake", "wakeNia start", {
       sessionID: exec.session.id,
       responseMessageID,
       model: exec.niaChatModelProfile?.normal?.modelID,

@@ -10,6 +10,7 @@ import { workLedgerController as workLedgerControllerToken } from "@natalia/work
 import { governanceLedgerController as governanceLedgerControllerToken } from "@natalia/governance-ledger";
 import type { GovernanceLedgerController } from "@natalia/governance-ledger";
 import type { WorkLedgerController } from "@natalia/work-ledger";
+import { logOf } from "@natalia/operation-log";
 
 export async function finalizeInitialize(
   ctx: RuntimeContext,
@@ -203,9 +204,13 @@ export async function finalizeInitialize(
         unclosed.add(event.planID);
     }
     for (const planID of unclosed) {
-      console.log("[audit-recovery] re-waking Nia for an unclosed audit", {
-        planID,
-      });
+      logOf(ctx.state.serviceDirectory).info(
+        "audit-recovery",
+        "re-waking Nia for an unclosed audit",
+        {
+          planID,
+        },
+      );
       ctx.ports.requestNiaWake(scope.activeExec);
     }
   }

@@ -17,6 +17,7 @@ import type { SessionID } from "@natalia/contracts";
 import type { SessionStoreController } from "@natalia/session-store";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import type { ProviderModelController } from "@natalia/provider-model";
+import { logOf } from "@natalia/operation-log";
 
 export type TurnOrchestrationHandle = { close(): void };
 
@@ -85,57 +86,71 @@ export function wireTurnOrchestration(
     flush: async () => {
       await ctx.ports.getSessionPersistence();
     },
-    runCommand: async (id, text, signal, ownerID) => {
-      const owner = await ctx.ports.ensureExecution(ownerID as SessionID);
-      // Commands start a real turn too, so they announce it before it runs.
-      const submitted = buildAnnouncedTurn(owner, id, text);
-      if (submitted) {
-        ctx.ports.publishForSession(owner, submitted);
-        owner.announcedTurnIDs.add(id);
-      }
-      ctx.ports.publishForSession(owner, { type: "turn.started", id });
-      try {
-        return await deps.handleCommand(id, text, signal, owner);
-      } catch (error) {
-        ctx.ports.publishForSession(owner, {
-          type: "turn.cancelled",
-          id,
-          reason: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
-      } finally {
-        deps.scheduleTitleGeneration(ownerID as SessionID);
-      }
-    },
-    runTurn: async (input) => {
-      deps.deliverQueuedMailboxAtBoundary(
-        ctx.state.executionBySession.get(input.sessionID as SessionID),
-      );
-      try {
-        const controller = ctx.state.serviceDirectory.getOptional(
-          providerModelController,
-        );
-        if (controller)
-          await controller.runTurn(input.sessionID as SessionID, input);
-        else {
-          const exec = ctx.state.executionBySession.get(
-            input.sessionID as SessionID,
+    runCommand: async (id, text, signal, ownerID) =>
+      // §4.5: correlation injected on the record side — everything logged
+      // inside a command/turn carries session+turn without any call site
+      // passing them (the Hermes record factory, ported to ALS).
+      logOf(ctx.state.serviceDirectory).runWithCorrelation(
+        { sessionID: ownerID as string, turnID: id },
+        async () => {
+          const owner = await ctx.ports.ensureExecution(ownerID as SessionID);
+          // Commands start a real turn too, so they announce it before it runs.
+          const submitted = buildAnnouncedTurn(owner, id, text);
+          if (submitted) {
+            ctx.ports.publishForSession(owner, submitted);
+            owner.announcedTurnIDs.add(id);
+          }
+          ctx.ports.publishForSession(owner, { type: "turn.started", id });
+          try {
+            return await deps.handleCommand(id, text, signal, owner);
+          } catch (error) {
+            ctx.ports.publishForSession(owner, {
+              type: "turn.cancelled",
+              id,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          } finally {
+            deps.scheduleTitleGeneration(ownerID as SessionID);
+          }
+        },
+      ),
+    runTurn: async (input) =>
+      logOf(ctx.state.serviceDirectory).runWithCorrelation(
+        {
+          sessionID: input.sessionID as string,
+          turnID: input.id,
+        },
+        async () => {
+          deps.deliverQueuedMailboxAtBoundary(
+            ctx.state.executionBySession.get(input.sessionID as SessionID),
           );
-          ctx.ports.publishForSession(exec, {
-            type: "diagnostic",
-            level: "error",
-            message: "Provider/model subsystem is unavailable.",
-          });
-          ctx.ports.publishForSession(exec, {
-            type: "turn.finished",
-            id: input.id,
-            stopReason: "error",
-          });
-        }
-      } finally {
-        deps.scheduleTitleGeneration(input.sessionID as SessionID);
-      }
-    },
+          try {
+            const controller = ctx.state.serviceDirectory.getOptional(
+              providerModelController,
+            );
+            if (controller)
+              await controller.runTurn(input.sessionID as SessionID, input);
+            else {
+              const exec = ctx.state.executionBySession.get(
+                input.sessionID as SessionID,
+              );
+              ctx.ports.publishForSession(exec, {
+                type: "diagnostic",
+                level: "error",
+                message: "Provider/model subsystem is unavailable.",
+              });
+              ctx.ports.publishForSession(exec, {
+                type: "turn.finished",
+                id: input.id,
+                stopReason: "error",
+              });
+            }
+          } finally {
+            deps.scheduleTitleGeneration(input.sessionID as SessionID);
+          }
+        },
+      ),
   });
   ctx.state.serviceDirectory.provide(turnController, controller);
   return {

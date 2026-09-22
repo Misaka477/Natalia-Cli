@@ -19,6 +19,8 @@ export type RealRuntimeClientOptions = {
   globalConfigPath?: string;
   sessionDir?: string;
   checkpointDir?: string;
+  /** Override the operation-log directory, primarily for isolated hosts/tests. */
+  operationLogsDir?: string;
   useSqliteStore?: boolean;
   /** Persistent cache for provider context-window resolution. Avoids remote model-metadata probing on every cold start. */
   contextWindowCachePath?: string;

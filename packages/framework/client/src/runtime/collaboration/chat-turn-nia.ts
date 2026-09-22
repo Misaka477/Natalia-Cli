@@ -17,6 +17,7 @@ import type {
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import { activePlanForExec } from "./plan-doc-runtime";
+import { logOf } from "@natalia/operation-log";
 import {
   type ConcreteRuntimeEvent,
   niaChatHistory,
@@ -84,7 +85,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         level: "warning",
         message,
       });
-    console.log("[nia-chat-turn] start", {
+    logOf(ctx.state.serviceDirectory).info("nia-chat-turn", "start", {
       sessionID: input.exec.session.id,
       responseMessageID: input.responseMessageID,
       internal: input.internal === true,
@@ -402,11 +403,12 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
           ? raw
           : requireNativeToolCallProtocol(normalizeRawToolCallProtocol(raw))) {
           if (process.env.NATALIA_DEBUG_PROVIDER === "1")
-            console.log(
-              "[nia-chat-turn] chunk",
-              chunk.type,
-              "text" in chunk ? String(chunk.text?.length ?? "") : "",
-            );
+            logOf(ctx.state.serviceDirectory).info("nia-chat-turn", "chunk", {
+              args: [
+                chunk.type,
+                "text" in chunk ? String(chunk.text?.length ?? "") : "",
+              ],
+            });
           if (chunk.type === "thinking") {
             setPhase("thinking");
             if (chunk.text) {
@@ -691,7 +693,7 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
       }
       settleThinking();
       const finalText = redactToolOutput(output.trim() || "(no reply)", true);
-      console.log("[nia-chat-turn] final", {
+      logOf(ctx.state.serviceDirectory).info("nia-chat-turn", "final", {
         sessionID: input.exec.session.id,
         responseMessageID: input.responseMessageID,
         internal: input.internal === true,

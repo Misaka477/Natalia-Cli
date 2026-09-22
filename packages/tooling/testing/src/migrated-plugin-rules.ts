@@ -364,6 +364,7 @@ const clientClosureAllowlist = [
   "composition",
   "config",
   "confinement",
+  "operation-log",
   "rina",
   "context-ledger",
   "contracts",

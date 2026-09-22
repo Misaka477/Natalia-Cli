@@ -25,6 +25,7 @@ import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import { goalTools } from "./goal-tools";
 import { runCompletionCheck } from "./goal-completion-check";
+import { logOf } from "@natalia/operation-log";
 
 export type GoalRuntime = {
   service: GoalService;
@@ -147,7 +148,9 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
     nextEventId,
     log: (event, detail) => {
       if (process.env.NATALIA_GOAL_DEBUG === "0") return;
-      console.log("[goal-driver]", event, detail ?? {});
+      logOf(ctx.state.serviceDirectory).info("goal-driver", "", {
+        args: [event, detail ?? {}],
+      });
     },
   };
 

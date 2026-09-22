@@ -23,6 +23,7 @@ export type InitializeOptions = {
   globalConfigPath?: string;
   sessionDir?: string;
   checkpointDir?: string;
+  operationLogsDir?: string;
   useSqliteStore?: boolean;
   nativeTerminal?: import("@natalia/runtime-services").TerminalControllerInput["external"];
   provider?: StreamingProvider;
