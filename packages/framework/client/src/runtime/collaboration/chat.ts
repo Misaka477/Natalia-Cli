@@ -1,7 +1,5 @@
-import {
-  ATTACHMENT_SERVICE,
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
-} from "@natalia/runtime-services";
+import { ATTACHMENT_SERVICE } from "@natalia/runtime-services";
+import { providerModelController } from "@natalia/provider-model";
 import type {
   AttachmentService,
   ProviderModelController,
@@ -166,9 +164,7 @@ async function prepareSubmit(ctx: RuntimeContext, input: SubmitInput) {
     text: typeof input.text === "string" ? input.text.trim() : "",
     attachments,
     exec: await streamExec(ctx, input.sessionID),
-    controller: ctx.ports.resolveService<ProviderModelController>(
-      PROVIDER_MODEL_CONTROLLER_SERVICE,
-    ),
+    controller: ctx.state.serviceDirectory.getOptional(providerModelController),
   };
 }
 
@@ -221,8 +217,8 @@ export function createNaviChatSurface(ctx: RuntimeContext): StreamSurface {
     },
     async abort(sessionID) {
       const exec = await streamExec(ctx, sessionID);
-      const controller = ctx.ports.resolveService<ProviderModelController>(
-        PROVIDER_MODEL_CONTROLLER_SERVICE,
+      const controller = ctx.state.serviceDirectory.getOptional(
+        providerModelController,
       );
       if (!exec || !controller) return { aborted: false as const };
       const ownerSessionID = exec.session.id as SessionID;
@@ -348,8 +344,8 @@ export function createNiaChatSurface(ctx: RuntimeContext): StreamSurface {
     },
     async abort(sessionID) {
       const exec = await streamExec(ctx, sessionID);
-      const controller = ctx.ports.resolveService<ProviderModelController>(
-        PROVIDER_MODEL_CONTROLLER_SERVICE,
+      const controller = ctx.state.serviceDirectory.getOptional(
+        providerModelController,
       );
       if (!exec || !controller) return { aborted: false as const };
       const ownerSessionID = exec.session.id as SessionID;

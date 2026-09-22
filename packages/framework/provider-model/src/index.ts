@@ -1,3 +1,4 @@
+export { providerModelController } from "./service-token";
 export { createProviderModelController } from "./provider-model-controller";
 export type {
   ProviderModelControllerInput,

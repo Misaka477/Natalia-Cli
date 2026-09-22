@@ -15,11 +15,11 @@ import {
 import { projectSession } from "@natalia/session";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
-  TURN_CONTROLLER_SERVICE,
   type ContextLedgerFactory,
   type SessionStoreController,
   type TurnController,
 } from "@natalia/runtime-services";
+import { turnController } from "@natalia/turn-orchestration";
 import { contextLedgerFactory as contextLedgerFactoryToken } from "@natalia/context-ledger";
 import type { SessionRecord } from "@natalia/session";
 import type { SessionID } from "@natalia/contracts";
@@ -128,26 +128,14 @@ export function createSessionExecution(
   function drainSessionFor(sessionID: SessionID) {
     return async (signal: AbortSignal) => {
       await ensureExecution(sessionID);
-      const turnController = ctx.ports.resolveService<TurnController>(
-        TURN_CONTROLLER_SERVICE,
-      );
-      if (!turnController)
-        throw new Error(
-          "turn orchestration unavailable (natalia-turn-orchestration)",
-        );
-      await turnController.drain(signal, sessionID);
+      const controller = ctx.state.serviceDirectory.get(turnController);
+      await controller.drain(signal, sessionID);
     };
   }
 
   async function drainPendingQueue(signal?: AbortSignal) {
-    const turnController = ctx.ports.resolveService<TurnController>(
-      TURN_CONTROLLER_SERVICE,
-    );
-    if (!turnController)
-      throw new Error(
-        "turn orchestration unavailable (natalia-turn-orchestration)",
-      );
-    await turnController.drainQueue(signal, ctx.ports.getSessionID());
+    const controller = ctx.state.serviceDirectory.get(turnController);
+    await controller.drainQueue(signal, ctx.ports.getSessionID());
   }
 
   async function runAdmittedInput(
@@ -157,14 +145,8 @@ export function createSessionExecution(
     resources: import("@natalia/contracts").PromptResourceMention[] = [],
     agents: import("@natalia/contracts").PromptAgentMention[] = [],
   ) {
-    const turnController = ctx.ports.resolveService<TurnController>(
-      TURN_CONTROLLER_SERVICE,
-    );
-    if (!turnController)
-      throw new Error(
-        "turn orchestration unavailable (natalia-turn-orchestration)",
-      );
-    await turnController.admit(
+    const controller = ctx.state.serviceDirectory.get(turnController);
+    await controller.admit(
       ctx.ports.getSessionID(),
       id,
       text,
@@ -177,14 +159,8 @@ export function createSessionExecution(
   async function persistInboxPromotion(
     targetSessionID = ctx.ports.getSessionID(),
   ) {
-    const turnController = ctx.ports.resolveService<TurnController>(
-      TURN_CONTROLLER_SERVICE,
-    );
-    if (!turnController)
-      throw new Error(
-        "turn orchestration unavailable (natalia-turn-orchestration)",
-      );
-    await turnController.persistPromotion(targetSessionID);
+    const controller = ctx.state.serviceDirectory.get(turnController);
+    await controller.persistPromotion(targetSessionID);
   }
 
   async function loadSessionForAttach(id: SessionID): Promise<SessionRecord> {

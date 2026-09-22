@@ -5,6 +5,7 @@ import { ContextLedger, TokenMeter } from "@natalia/runtime";
 import type { ProviderMessage } from "@natalia/runtime";
 import type { ProviderChatTurnInput } from "@natalia/runtime-services";
 import { compactionService } from "@natalia/compaction";
+import { providerModelController } from "@natalia/provider-model";
 import { createTestContext } from "@natalia/runtime-services";
 import type {
   RuntimeContext,
@@ -89,23 +90,7 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
   } as unknown as SessionExecutionState;
   let sequence = 0;
   const ctx = {
-    state: {
-      serviceDirectory: createTestContext([
-        compactionService.mock({
-          compactBeforeProviderStep: async () => ({ compacted: false }),
-          runWithContextLimitRecovery: async () => ({ recovered: false }),
-          prepareContextRequest: async (input: {
-            outbound: ProviderMessage[];
-          }) => ({
-            outbound: input.outbound,
-            decision: "none",
-            compacted: false,
-            pruned: 0,
-            used: 0,
-          }),
-        }),
-      ]),
-    },
+    state: {},
     ports: {
       getTsRuntimeConfig: () => config,
       getContextWindowResolver: () => ({
@@ -137,24 +122,48 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
   const navi = createNaviChatTurn(ctx);
   const nia = createNiaChatTurn(ctx);
   const wakeInputs: ProviderChatTurnInput[] = [];
-  ctx.ports.resolveService = ((name: string) => {
-    return {
-      runNaviChatTurn: async (input: ProviderChatTurnInput) => {
-        wakeInputs.push(input);
-        await navi.runNaviChatTurn(
-          { ...input, exec },
-          new AbortController().signal,
-        );
-      },
-      runNiaChatTurn: async (input: ProviderChatTurnInput) => {
-        wakeInputs.push(input);
-        await nia.runNiaChatTurn(
-          { ...input, exec },
-          new AbortController().signal,
-        );
-      },
-    };
-  }) as typeof ctx.ports.resolveService;
+  const wakeController = {
+    runTurn: async () => undefined,
+    runNaviChatTurn: async (input: ProviderChatTurnInput) => {
+      wakeInputs.push(input);
+      await navi.runNaviChatTurn(
+        { ...input, exec },
+        new AbortController().signal,
+      );
+    },
+    runNiaChatTurn: async (input: ProviderChatTurnInput) => {
+      wakeInputs.push(input);
+      await nia.runNiaChatTurn(
+        { ...input, exec },
+        new AbortController().signal,
+      );
+    },
+    requestNaviWake: () => undefined,
+    requestNiaWake: () => undefined,
+    naviBusy: () => false,
+    niaBusy: () => false,
+    abortNavi: () => false,
+    abortNia: () => false,
+    dispose: async () => undefined,
+  };
+  ctx.ports.resolveService = (() =>
+    wakeController) as typeof ctx.ports.resolveService;
+  ctx.state.serviceDirectory = createTestContext([
+    compactionService.mock({
+      compactBeforeProviderStep: async () => ({ compacted: false }),
+      runWithContextLimitRecovery: async () => ({ recovered: false }),
+      prepareContextRequest: async (input: {
+        outbound: ProviderMessage[];
+      }) => ({
+        outbound: input.outbound,
+        decision: "none",
+        compacted: false,
+        pruned: 0,
+        used: 0,
+      }),
+    }),
+    providerModelController.mock(wakeController),
+  ]);
   const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(

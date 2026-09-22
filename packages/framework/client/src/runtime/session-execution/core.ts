@@ -1,8 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import {
-  TURN_CONTROLLER_SERVICE,
-  type TurnController,
-} from "@natalia/runtime-services";
+import { turnController } from "@natalia/turn-orchestration";
+import { type TurnController } from "@natalia/runtime-services";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { sessionRunCoordinator } from "@natalia/session";
 import type { RuntimeContext } from "../context";
@@ -122,14 +120,8 @@ export function createCoreSurface(
       }
       void (async () => {
         if (pendingInput) {
-          const turnController = ctx.ports.resolveService<TurnController>(
-            TURN_CONTROLLER_SERVICE,
-          );
-          if (!turnController)
-            throw new Error(
-              "turn orchestration unavailable (natalia-turn-orchestration)",
-            );
-          await turnController.persistPromotion(pendingSessionID!);
+          const controller = ctx.state.serviceDirectory.get(turnController);
+          await controller.persistPromotion(pendingSessionID!);
         }
         await coordinator.interrupt();
         // `interrupt` clears stale wakeups. Only restart the drain when a queued

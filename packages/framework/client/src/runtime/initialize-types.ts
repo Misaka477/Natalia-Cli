@@ -119,12 +119,10 @@ export type InitializeDependencies = {
     statusSnapshotController: string;
     workLedgerController: string;
     governanceLedgerController: string;
-    turnController: string;
     sandbox: string;
     subagents: string;
     sessionStoreController: string;
     toolPolicy: string;
-    providerModelController: string;
   };
 };
 

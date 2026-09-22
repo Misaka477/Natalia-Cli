@@ -25,15 +25,14 @@ import {
   readOnlyToolMessage,
   ATTACHMENT_SERVICE,
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   SUBAGENTS_SERVICE,
   TOOL_POLICY_SERVICE,
-  TURN_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
 } from "@natalia/runtime-services";
+import { turnController } from "@natalia/turn-orchestration";
 import {
   cleanupToolOutput,
   ensureBashCommandParser,
@@ -62,10 +61,7 @@ export function wireInitialize(
 ) {
   const { state, ports } = ctx;
   const drainSession = async (signal: AbortSignal) => {
-    const controller = ports.resolveService<
-      import("@natalia/runtime-services").TurnController
-    >(TURN_CONTROLLER_SERVICE);
-    if (!controller) throw new Error("turn orchestration unavailable");
+    const controller = state.serviceDirectory.get(turnController);
     await controller.drain(signal, state.sessionID);
   };
   state.initialize = {
@@ -127,12 +123,10 @@ export function wireInitialize(
       statusSnapshotController: STATUS_SNAPSHOT_CONTROLLER_SERVICE,
       workLedgerController: WORK_LEDGER_CONTROLLER_SERVICE,
       governanceLedgerController: GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
-      turnController: TURN_CONTROLLER_SERVICE,
       sandbox: SANDBOX_SERVICE,
       subagents: SUBAGENTS_SERVICE,
       sessionStoreController: SESSION_STORE_CONTROLLER_SERVICE,
       toolPolicy: TOOL_POLICY_SERVICE,
-      providerModelController: PROVIDER_MODEL_CONTROLLER_SERVICE,
     },
   };
   ports.initialize = createInitialize(ctx, options).initialize;

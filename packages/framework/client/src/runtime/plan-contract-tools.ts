@@ -24,12 +24,12 @@ import { targetDriftAbsorbedByScope } from "@natalia/work-ledger";
 import { checkContractAgainstConstitution } from "./contract-constitution-check";
 import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type GovernanceLedgerController,
   type ProviderModelController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { providerModelController } from "@natalia/provider-model";
 import type { RuntimeTool } from "./context";
 import type { RuntimeContext, SessionExecutionState } from "./context";
 
@@ -480,10 +480,9 @@ export function createDetourDeclareTool(ctx: RuntimeContext): RuntimeTool {
       // trigger (not the per-turn audit wake, which would ask her to audit the
       // plan). Her verdict is a reference for the user; the gate does not wait
       // for her, and a failed/unavailable review is recorded at resolution.
-      const providerController =
-        ctx.ports.resolveService<ProviderModelController>(
-          PROVIDER_MODEL_CONTROLLER_SERVICE,
-        );
+      const providerController = ctx.state.serviceDirectory.getOptional(
+        providerModelController,
+      );
       if (providerController)
         void providerController
           .runNiaChatTurn({

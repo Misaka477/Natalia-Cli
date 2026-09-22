@@ -16,6 +16,7 @@ import { createInitializeRuntime } from "./runtime";
 import { retryService } from "@natalia/retry";
 import { compactionService } from "@natalia/compaction";
 import { contextLedgerFactory } from "@natalia/context-ledger";
+import { turnController } from "@natalia/turn-orchestration";
 
 export async function resolveServices(
   ctx: RuntimeContext,
@@ -57,14 +58,8 @@ export async function resolveServices(
     throw new Error(
       "governance ledger unavailable (natalia-governance-ledger)",
     );
-  const resolvedTurnController =
-    scope.capabilityRegistry.service<TurnController>(
-      scope.TURN_CONTROLLER_SERVICE,
-    );
-  if (!resolvedTurnController)
-    throw new Error(
-      "turn orchestration unavailable (natalia-turn-orchestration)",
-    );
+  // Resolution is fail-fast by construction (see the retry check above).
+  scope.serviceDirectory.get(turnController);
   scope.sessionID =
     options.sessionID ??
     (`ses_${scope.sessionSeed(scope.workspaceRoot)}` as SessionID);

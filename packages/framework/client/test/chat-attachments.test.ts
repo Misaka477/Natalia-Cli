@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createTestContext } from "@natalia/runtime-services";
+import { providerModelController } from "@natalia/provider-model";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,10 +12,7 @@ import {
   type ProviderStreamRequest,
   type StreamingProvider,
 } from "@natalia/runtime";
-import {
-  ATTACHMENT_SERVICE,
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
-} from "@natalia/runtime-services";
+import { ATTACHMENT_SERVICE } from "@natalia/runtime-services";
 import { createAttachmentService } from "@natalia/attachments";
 import type {
   RuntimeContext,
@@ -356,19 +354,27 @@ test("Navi and Nia busy submits store the same attachments in their pending queu
     await writeFile(join(harness.root, "queued.txt"), "queued");
     const attachmentService = createAttachmentService(harness.root);
     const controller = {
-      naviBusy: () => true,
-      niaBusy: () => true,
+      runTurn: async () => undefined,
+      runNaviChatTurn: async () => undefined,
+      runNiaChatTurn: async () => undefined,
       requestNaviWake: () => undefined,
       requestNiaWake: () => undefined,
+      naviBusy: () => true,
+      niaBusy: () => true,
+      abortNavi: () => false,
+      abortNia: () => false,
+      dispose: async () => undefined,
     };
     harness.ctx.ports.getExecutionBySession = () =>
       new Map([[harness.exec.session.id, harness.exec]]);
     harness.ctx.ports.ensureExecution = async () => harness.exec;
     harness.ctx.ports.resolveService = ((name: string) => {
       if (name === ATTACHMENT_SERVICE) return attachmentService;
-      if (name === PROVIDER_MODEL_CONTROLLER_SERVICE) return controller;
       return undefined;
     }) as typeof harness.ctx.ports.resolveService;
+    harness.ctx.state.serviceDirectory = createTestContext([
+      providerModelController.mock(controller),
+    ]);
     const surface =
       channel === "navi"
         ? createNaviChatSurface(harness.ctx)

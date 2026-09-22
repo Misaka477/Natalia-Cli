@@ -7,10 +7,13 @@
  * the session-store subsystem, which is wired before it.
  */
 import { buildSubmittedTurn } from "@natalia/session";
-import { createTurnController } from "@natalia/turn-orchestration";
+import {
+  createTurnController,
+  turnController,
+} from "@natalia/turn-orchestration";
+import { providerModelController } from "@natalia/provider-model";
 import type { SessionID } from "@natalia/contracts";
 import {
-  TURN_CONTROLLER_SERVICE,
   type ProviderModelController,
   type SessionStoreController,
 } from "@natalia/runtime-services";
@@ -112,8 +115,8 @@ export function wireTurnOrchestration(
         ctx.state.executionBySession.get(input.sessionID as SessionID),
       );
       try {
-        const controller = ctx.ports.resolveService<ProviderModelController>(
-          deps.serviceNames.providerModelController,
+        const controller = ctx.state.serviceDirectory.getOptional(
+          providerModelController,
         );
         if (controller)
           await controller.runTurn(input.sessionID as SessionID, input);
@@ -137,7 +140,7 @@ export function wireTurnOrchestration(
       }
     },
   });
-  owner.contribute("services", TURN_CONTROLLER_SERVICE, controller);
+  ctx.state.serviceDirectory.provide(turnController, controller);
   return {
     close() {
       controller.dispose();

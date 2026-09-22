@@ -11,10 +11,8 @@ import {
   buildInputAdmission,
   sessionRunCoordinator,
 } from "@natalia/session";
-import {
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
-  type ProviderModelController,
-} from "@natalia/runtime-services";
+import { type ProviderModelController } from "@natalia/runtime-services";
+import { providerModelController } from "@natalia/provider-model";
 import type { SessionID, SubmitInput } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
@@ -122,8 +120,8 @@ export function createCollaborationWake(ctx: RuntimeContext) {
 
   function requestNaviWake(exec: SessionExecutionState) {
     console.log("[navi-wake] requestNaviWake", { sessionID: exec.session.id });
-    const controller = ctx.ports.resolveService<ProviderModelController>(
-      PROVIDER_MODEL_CONTROLLER_SERVICE,
+    const controller = ctx.state.serviceDirectory.getOptional(
+      providerModelController,
     );
     const sessionID = exec.session.id as SessionID;
     // Mirror the main-agent policy: while Navi is already in a chat turn,
@@ -147,8 +145,8 @@ export function createCollaborationWake(ctx: RuntimeContext) {
   async function wakeNavi(exec: SessionExecutionState) {
     console.log("[navi-wake] wakeNavi start", { sessionID: exec.session.id });
     const { publishForSession, nextChatSequence } = ctx.ports;
-    const controller = ctx.ports.resolveService<ProviderModelController>(
-      PROVIDER_MODEL_CONTROLLER_SERVICE,
+    const controller = ctx.state.serviceDirectory.getOptional(
+      providerModelController,
     );
     if (!controller) return;
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
@@ -206,8 +204,8 @@ export function createCollaborationWake(ctx: RuntimeContext) {
     console.log("[nia-wake] requestNiaWake", {
       sessionID: exec.session.id,
     });
-    const controller = ctx.ports.resolveService<ProviderModelController>(
-      PROVIDER_MODEL_CONTROLLER_SERVICE,
+    const controller = ctx.state.serviceDirectory.getOptional(
+      providerModelController,
     );
     const sessionID = exec.session.id as SessionID;
     // Same busy-turn policy as Navi: an active Nia turn claims the wake on its
@@ -229,8 +227,8 @@ export function createCollaborationWake(ctx: RuntimeContext) {
 
   async function wakeNia(exec: SessionExecutionState) {
     const { nextChatSequence, publishForSession } = ctx.ports;
-    const controller = ctx.ports.resolveService<ProviderModelController>(
-      PROVIDER_MODEL_CONTROLLER_SERVICE,
+    const controller = ctx.state.serviceDirectory.getOptional(
+      providerModelController,
     );
     if (!controller) {
       console.warn("[nia-wake] wakeNia skipped: controller unavailable", {

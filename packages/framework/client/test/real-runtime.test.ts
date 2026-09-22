@@ -21,15 +21,15 @@ import { createToolRegistry } from "@natalia/tools";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
   terminalController,
-  TURN_CONTROLLER_SERVICE,
   type ProviderModelController,
   type SandboxService,
 } from "@natalia/runtime-services";
 import { checkpointFactory } from "@natalia/checkpoint";
 import { retryService } from "@natalia/retry";
+import { turnController } from "@natalia/turn-orchestration";
+import { providerModelController } from "@natalia/provider-model";
 import { compactionService } from "@natalia/compaction";
 import {
   workspaceFiles,
@@ -218,7 +218,7 @@ test("provider-model subsystem ignores plugins.enabled and always provides the c
   await waitFor(() => streams === 1);
   // Framework subsystem: present even when plugins.enabled says otherwise.
   expect(kernel.has("natalia-provider-model")).toBe(true);
-  expect(kernel.service(PROVIDER_MODEL_CONTROLLER_SERVICE)).toBeDefined();
+  expect(kernel.service(providerModelController.id)).toBeDefined();
   await client.dispose?.();
 });
 
@@ -243,7 +243,7 @@ test("turn orchestration subsystem is present even when plugins.enabled disables
   client.start(() => undefined);
   await client.runtimeStatus?.();
   expect(kernel.has("natalia-turn-orchestration")).toBe(true);
-  expect(kernel.service(TURN_CONTROLLER_SERVICE)).toBeDefined();
+  expect(kernel.service(turnController.id)).toBeDefined();
   expect(existsSync(join(root, ".natalia", "sessions"))).toBe(true);
   await client.dispose?.();
 });
@@ -996,11 +996,11 @@ test("provider-model framework service is always present and stable across reloa
 
   // The provider-model subsystem is framework-internal: it is not gated by
   // plugins.enabled and is present on first boot.
-  expect(kernel.ownerOf("services", PROVIDER_MODEL_CONTROLLER_SERVICE)).toBe(
-    "natalia-provider-model",
+  expect(kernel.ownerOf("services", providerModelController.id)).toMatch(
+    /^service:/u,
   );
   const firstController = kernel.service<ProviderModelController>(
-    PROVIDER_MODEL_CONTROLLER_SERVICE,
+    providerModelController.id,
   );
   expect(firstController).toBeDefined();
 
@@ -1008,7 +1008,7 @@ test("provider-model framework service is always present and stable across reloa
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   // Framework services survive reload: same instance, no teardown/recreate.
   expect(
-    kernel.service<ProviderModelController>(PROVIDER_MODEL_CONTROLLER_SERVICE),
+    kernel.service<ProviderModelController>(providerModelController.id),
   ).toBe(firstController);
   await client.dispose?.();
 }, 60_000);
@@ -1039,13 +1039,13 @@ test("compaction framework service is always present and stable across reloads",
   expect(kernel.ownerOf("services", compactionService.id)).toMatch(
     /^service:/u,
   );
-  expect(kernel.ownerOf("services", PROVIDER_MODEL_CONTROLLER_SERVICE)).toBe(
-    "natalia-provider-model",
+  expect(kernel.ownerOf("services", providerModelController.id)).toMatch(
+    /^service:/u,
   );
   const firstService = kernel.service<object>(compactionService.id);
   expect(firstService).toBeDefined();
   const firstController = kernel.service<ProviderModelController>(
-    PROVIDER_MODEL_CONTROLLER_SERVICE,
+    providerModelController.id,
   );
   expect(firstController).toBeDefined();
 
@@ -1053,7 +1053,7 @@ test("compaction framework service is always present and stable across reloads",
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   expect(kernel.service<object>(compactionService.id)).toBe(firstService);
   expect(
-    kernel.service<ProviderModelController>(PROVIDER_MODEL_CONTROLLER_SERVICE),
+    kernel.service<ProviderModelController>(providerModelController.id),
   ).toBe(firstController);
   await client.dispose?.();
 }, 60_000);

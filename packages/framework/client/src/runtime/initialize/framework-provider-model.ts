@@ -7,13 +7,13 @@
  * `/models` and `/model` commands. The controller reads live host state through
  * the runtime ports, so it needs no recreation on config reload.
  */
-import { createProviderModelController } from "@natalia/provider-model";
+import {
+  createProviderModelController,
+  providerModelController,
+} from "@natalia/provider-model";
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import type { SessionID } from "@natalia/contracts";
-import {
-  PROVIDER_MODEL_CONTROLLER_SERVICE,
-  type ProviderModelController,
-} from "@natalia/runtime-services";
+import { type ProviderModelController } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 
 export type ProviderModelHandle = { close(): void };
@@ -31,7 +31,9 @@ export function wireProviderModel(ctx: RuntimeContext): ProviderModelHandle {
   });
   const controller: ProviderModelController =
     createProviderModelController(input);
-  owner.contribute("services", PROVIDER_MODEL_CONTROLLER_SERVICE, controller);
+  // The controller binds through the service directory; the owner stays for
+  // the commands contribution below.
+  ctx.state.serviceDirectory.provide(providerModelController, controller);
   owner.contribute("commands", "models", {
     name: "models",
     title: "List models",

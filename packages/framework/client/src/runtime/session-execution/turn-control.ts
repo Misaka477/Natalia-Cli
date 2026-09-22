@@ -5,10 +5,10 @@ import {
   type AdmittedSessionInput,
 } from "@natalia/session";
 import {
-  TURN_CONTROLLER_SERVICE,
   type RuntimeServiceClient,
   type TurnController,
 } from "@natalia/runtime-services";
+import { turnController } from "@natalia/turn-orchestration";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
 
@@ -22,14 +22,7 @@ function targetSessionID(ctx: RuntimeContext, sessionID?: string): SessionID {
 }
 
 function requireTurnController(ctx: RuntimeContext): TurnController {
-  const controller = ctx.ports.resolveService<TurnController>(
-    TURN_CONTROLLER_SERVICE,
-  );
-  if (!controller)
-    throw new Error(
-      "turn orchestration unavailable (natalia-turn-orchestration)",
-    );
-  return controller;
+  return ctx.state.serviceDirectory.get(turnController);
 }
 
 function pendingInput(
