@@ -11,10 +11,10 @@
  * it self-describing; the manifest adds tamper-evidence, the same
  * discipline build-standalone uses for release artifacts).
  */
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { cp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { hashTreeFiles } from "@natalia/platform";
 
 /** The install root: `NATALIA_HOME` overrides (D2 unattended + tests). */
 export function nataliaHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -203,12 +203,6 @@ export type ExportReport = {
   manifest: string;
 };
 
-async function sha256(path: string): Promise<string> {
-  return createHash("sha256")
-    .update(await import("node:fs/promises").then((fs) => fs.readFile(path)))
-    .digest("hex");
-}
-
 /**
  * `natalia store export <dest>` — the format the study left open (未决 #4),
  * decided as: a directory archive of stores/ plus a SHA256 manifest over
@@ -227,19 +221,11 @@ export async function exportStores(
   const archive = join(target, "stores");
   await mkdir(target, { recursive: true });
   await cp(storesDir, archive, { recursive: true });
-  const files = await treeFiles(archive);
-  let bytes = 0;
-  const manifestFiles: Array<{ file: string; sha256: string; bytes: number }> =
-    [];
-  for (const file of files) {
-    const size = (await statSize(file)) ?? 0;
-    bytes += size;
-    manifestFiles.push({
-      file: relative(target, file),
-      sha256: await sha256(file),
-      bytes: size,
-    });
-  }
+  // The shared checksum walk — the same inventory the release build and
+  // the debug bundle produce (one walk, three manifests, one meaning of
+  // "verified").
+  const { files: hashed, bytes } = await hashTreeFiles(archive, target);
+  const manifestFiles = hashed;
   const manifestPath = join(target, "manifest.json");
   await writeFile(
     manifestPath,

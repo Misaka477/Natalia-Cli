@@ -1,3 +1,4 @@
+export * from "./runtime/diagnostics-query";
 export { checkpointDisplayLine } from "./checkpoint-display";
 export {
   parseBashCommandRule,

@@ -2,13 +2,14 @@ export { operationLog } from "./service-token";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { operationLog } from "./service-token";
 import {
+  closeSync,
   mkdirSync,
   openSync,
-  closeSync,
-  writeSync,
-  statSync,
+  readFileSync,
   renameSync,
   rmSync,
+  statSync,
+  writeSync,
 } from "node:fs";
 import { join } from "node:path";
 
@@ -390,4 +391,74 @@ export function logOf(directory: {
   getOptional(token: unknown): OperationLog | undefined;
 }): OperationLog {
   return directory.getOptional(operationLog) ?? noopOperationLog;
+}
+
+// ---------------------------------------------------------------------------
+// The read side: diagnostics are read as often as written (interface spec
+// §4.5's query primitives), so the file's owner also reads it — active file
+// plus rotated generations, newest last, one filter shape the unified query
+// reuses.
+// ---------------------------------------------------------------------------
+
+export type OperationLogFilter = {
+  /** ISO timestamp; records at or after it (default: from the beginning). */
+  since?: string;
+  /** Minimum severity: "warn" returns warn+error, "error" only errors. */
+  level?: OperationLevel;
+  component?: string;
+  /** Case-insensitive substring over the whole serialized record. */
+  contains?: string;
+  /** Keep only the newest N records (after filtering). */
+  limit?: number;
+};
+
+/**
+ * Reads a log directory's records (active + rotated), filtered by the one
+ * query shape. Malformed lines are skipped — a half-written line at a crash
+ * must not hide the lines around it.
+ */
+export function readOperationRecords(
+  dir: string,
+  filter: OperationLogFilter = {},
+): OperationRecord[] {
+  const paths = [
+    join(dir, "operations.jsonl.5"),
+    join(dir, "operations.jsonl.4"),
+    join(dir, "operations.jsonl.3"),
+    join(dir, "operations.jsonl.2"),
+    join(dir, "operations.jsonl.1"),
+    join(dir, "operations.jsonl"),
+  ];
+  const records: OperationRecord[] = [];
+  for (const path of paths) {
+    let text: string;
+    try {
+      text = readFileSync(path, "utf8");
+    } catch {
+      continue; // absent generation
+    }
+    for (const line of text.split("\n")) {
+      if (!line) continue;
+      let record: OperationRecord;
+      try {
+        record = JSON.parse(line) as OperationRecord;
+      } catch {
+        continue;
+      }
+      if (filter.level && LEVEL_ORDER[record.level] > LEVEL_ORDER[filter.level])
+        continue;
+      if (filter.component && record.component !== filter.component) continue;
+      if (filter.since && (!record.at || record.at < filter.since)) continue;
+      if (
+        filter.contains &&
+        !JSON.stringify(record)
+          .toLowerCase()
+          .includes(filter.contains.toLowerCase())
+      )
+        continue;
+      records.push(record);
+    }
+  }
+  // keep = read oldest generation first ... newest last; limit keeps the tail.
+  return filter.limit ? records.slice(-filter.limit) : records;
 }

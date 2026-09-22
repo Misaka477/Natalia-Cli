@@ -20,6 +20,7 @@ import {
   workGraphLines,
 } from "./index";
 import { valueAfter } from "./command-helpers";
+import { captureDebugBundle } from "./debug-bundle";
 import { createInterface } from "node:readline/promises";
 import {
   exportStores,
@@ -47,6 +48,7 @@ export async function handleLocalCommands(argv: string[]) {
       "uninstall",
       "purge",
       "store",
+      "debug-bundle",
     ]).has(subcommand ?? "")
   )
     return false;
@@ -104,6 +106,32 @@ export async function handleLocalCommands(argv: string[]) {
       console.log(
         "the program is not this command's business — run natalia uninstall for bin/ and versions/",
       );
+      break;
+    }
+    case "debug-bundle": {
+      // One-key capture (decisions §5): journal slice + operational log +
+      // redacted configs + doctor + a queried recents summary, inventoried
+      // with SHA256SUMS. Usage: natalia debug-bundle <dest-dir> [--workspace]
+      const dest = argv.filter((arg) => !arg.startsWith("--"))[1];
+      if (!dest) {
+        console.error(
+          "usage: natalia debug-bundle <dest-dir> [--workspace <root>]",
+        );
+        process.exit(1);
+      }
+      try {
+        const report = await captureDebugBundle({
+          workspaceRoot: valueAfter(argv, "--workspace") ?? process.cwd(),
+          dest,
+        });
+        console.log(JSON.stringify(report, null, 2));
+        console.log(
+          `debug bundle at ${report.dest} — journal + logs + config (redacted)`,
+        );
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
       break;
     }
     case "store": {

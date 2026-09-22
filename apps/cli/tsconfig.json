@@ -10,25 +10,19 @@
       "path": "../../packages/core/capability"
     },
     {
-      "path": "../../packages/framework/client"
-    },
-    {
-      "path": "../../packages/hosts/config"
-    },
-    {
       "path": "../../packages/core/contracts"
     },
     {
-      "path": "../../packages/tooling/installer"
-    },
-    {
-      "path": "../../packages/plugins/local-tools"
-    },
-    {
-      "path": "../../packages/hosts/platform"
-    },
-    {
       "path": "../../packages/core/plugin"
+    },
+    {
+      "path": "../../packages/core/tools"
+    },
+    {
+      "path": "../../packages/framework/client"
+    },
+    {
+      "path": "../../packages/framework/operation-log"
     },
     {
       "path": "../../packages/framework/runtime"
@@ -37,10 +31,19 @@
       "path": "../../packages/framework/session"
     },
     {
+      "path": "../../packages/hosts/config"
+    },
+    {
+      "path": "../../packages/hosts/platform"
+    },
+    {
       "path": "../../packages/hosts/transport"
     },
     {
-      "path": "../../packages/core/tools"
+      "path": "../../packages/plugins/local-tools"
+    },
+    {
+      "path": "../../packages/tooling/installer"
     }
   ]
 }

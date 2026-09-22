@@ -34,6 +34,7 @@
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/installer": "workspace:*",
+        "@natalia/operation-log": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/runtime": "workspace:*",

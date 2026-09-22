@@ -18,7 +18,8 @@
  */
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { hashTreeFiles } from "../packages/hosts/platform/src/hash-tree";
 
 type TargetResult = {
   target: string;
@@ -61,23 +62,6 @@ async function run(command: string, args: string[], cwd: string) {
     proc.exited,
   ]);
   return { stdout, stderr, code };
-}
-
-async function sha256(path: string): Promise<string> {
-  return createHash("sha256")
-    .update(await readFile(path))
-    .digest("hex");
-}
-
-async function walk(dir: string): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  const files: string[] = [];
-  for (const entry of entries) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...(await walk(full)));
-    else if (entry.isFile()) files.push(full);
-  }
-  return files;
 }
 
 // Step A: the release bundle at this version (its define bakes --version).
@@ -123,18 +107,14 @@ for (const target of targets) {
         recursive: true,
       });
     }
-    const files = await walk(outDir);
+    // The shared checksum walk (platform) — same inventory the store
+    // export and the debug bundle produce.
+    const { files, bytes: totalBytes } = await hashTreeFiles(outDir);
     const manifest = {
       name: "natalia",
       version,
       target: triple,
-      files: await Promise.all(
-        files.map(async (file) => ({
-          file: relative(outDir, file),
-          sha256: await sha256(file),
-          bytes: (await stat(file)).size,
-        })),
-      ),
+      files,
     };
     await Bun.write(
       join(outDir, "manifest.json"),
@@ -152,7 +132,7 @@ for (const target of targets) {
     result.ok = true;
     result.binary = join(outDir, "natalia");
     result.files = manifest.files.length;
-    result.bytes = manifest.files.reduce((sum, file) => sum + file.bytes, 0);
+    result.bytes = totalBytes;
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error);
   }
