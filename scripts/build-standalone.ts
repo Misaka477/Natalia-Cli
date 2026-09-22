@@ -140,6 +140,15 @@ for (const target of targets) {
       join(outDir, "manifest.json"),
       `${JSON.stringify(manifest, null, 2)}\n`,
     );
+    // The installer's zero-JSON paths: VERSION reads as a plain file, and
+    // SHA256SUMS is the standard two-column format `sha256sum -c` consumes
+    // natively — file list AND verification in one, no JSON parser needed
+    // in a shell installer.
+    await Bun.write(join(outDir, "VERSION"), `${version}\n`);
+    await Bun.write(
+      join(outDir, "SHA256SUMS"),
+      `${manifest.files.map((file) => `${file.sha256}  ${file.file}`).join("\n")}\n`,
+    );
     result.ok = true;
     result.binary = join(outDir, "natalia");
     result.files = manifest.files.length;
