@@ -8,10 +8,8 @@
  * service unchanged. The host owns `init` and close.
  */
 import { createSessionStoreController } from "@natalia/session-store";
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type AttachmentService,
-} from "@natalia/runtime-services";
+import { type AttachmentService } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import type { InitializeOptions, RuntimeContext } from "../context";
 
 export type SessionStoreHandle = { close(): void };
@@ -37,7 +35,9 @@ export function wireSessionStore(
     title: options.title,
     attachments,
   });
-  owner.contribute("services", SESSION_STORE_CONTROLLER_SERVICE, controller);
+  // The controller binds through the directory; the owner stays for its
+  // commands contributions.
+  ctx.state.serviceDirectory.provide(sessionStoreController, controller);
   owner.contribute("commands", "sessions", {
     name: "sessions",
     title: "List sessions",

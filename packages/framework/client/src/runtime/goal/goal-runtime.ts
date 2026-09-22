@@ -14,10 +14,8 @@ import {
   type GoalView,
 } from "@natalia/goal";
 import { admittedInputs } from "@natalia/session";
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/runtime-services";
+import { type SessionStoreController } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import type {
   GoalEditInput,
   RuntimeEvent,
@@ -108,8 +106,8 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
       );
     },
     flush: async (sessionID) => {
-      const store = ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
+      const store = ctx.state.serviceDirectory.getOptional(
+        sessionStoreController,
       );
       await store?.flush(sessionID as SessionID);
     },
@@ -312,9 +310,7 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
     }
   };
   const refresh: GoalRuntime["refresh"] = async (sessionID) => {
-    const store = ctx.ports.resolveService<SessionStoreController>(
-      SESSION_STORE_CONTROLLER_SERVICE,
-    );
+    const store = ctx.state.serviceDirectory.get(sessionStoreController);
     // Any goal mutation already queued for persistence must land before the
     // recovery row is read, or a just-cleared goal would be resurrected.
     await ctx.ports

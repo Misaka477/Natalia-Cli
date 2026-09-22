@@ -8,10 +8,10 @@
  */
 import type { LocalAttachment, SessionID } from "@natalia/contracts";
 import {
-  SESSION_STORE_CONTROLLER_SERVICE,
   type AttachmentService,
   type SessionStoreController,
 } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { attachmentService } from "@natalia/attachments";
 import type { RuntimeContext } from "./context";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
@@ -38,8 +38,8 @@ export function createAttachmentRuntime(
           ctx.ports.getExecutionBySession().get(input.sessionID as SessionID)
             ?.session ??
           (await (async () => {
-            const store = ctx.ports.resolveService<SessionStoreController>(
-              SESSION_STORE_CONTROLLER_SERVICE,
+            const store = ctx.state.serviceDirectory.get(
+              sessionStoreController,
             );
             if (!store)
               throw new Error(

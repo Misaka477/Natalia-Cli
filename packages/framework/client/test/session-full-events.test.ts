@@ -2,6 +2,9 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { SessionExecutionState } from "../src/runtime/context";
 import { ensureSessionFullEvents } from "../src/runtime/session-full-events";
+import { sessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@natalia/runtime-services";
+import { createTestContext } from "@natalia/runtime-services";
 
 test("ensureSessionFullEvents loads the full log when the fast path seeded only a tail", async () => {
   const partial: RuntimeEvent[] = [
@@ -42,6 +45,13 @@ test("ensureSessionFullEvents loads the full log when the fast path seeded only 
     },
   };
   const ctx = {
+    state: {
+      // The full-events path reads only the status/loadFullAsync pair; the
+      // double is path-limited, hence the explicit face cast.
+      serviceDirectory: createTestContext([
+        sessionStoreController.mock(store as unknown as SessionStoreController),
+      ]),
+    },
     ports: {
       resolveService: () => store,
       // Production always exposes this; the test store has no pending

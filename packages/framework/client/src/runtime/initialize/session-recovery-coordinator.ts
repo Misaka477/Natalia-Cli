@@ -22,6 +22,7 @@ import {
   sandboxService,
   terminalController,
 } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
@@ -62,8 +63,8 @@ export class SessionRecoveryCoordinator {
   constructor(options: InitializeOptions, scope: InitializeScope) {
     this.scope = scope;
     this.options = options;
-    const sessionStore = scope.resolveService<SessionStoreController>(
-      scope.SESSION_STORE_CONTROLLER_SERVICE,
+    const sessionStore = scope.serviceDirectory.getOptional(
+      sessionStoreController,
     );
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");

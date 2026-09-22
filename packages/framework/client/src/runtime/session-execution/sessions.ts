@@ -1,7 +1,7 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import {
-  SESSION_STORE_CONTROLLER_SERVICE,
   terminalController,
   type ContextLedgerFactory,
   type SessionStoreController,
@@ -31,12 +31,7 @@ export function createSessionsSurface(
   options: ClientSurfaceOptions,
 ): Surface {
   function requireSessionStore() {
-    const store = ctx.ports.resolveService<SessionStoreController>(
-      SESSION_STORE_CONTROLLER_SERVICE,
-    );
-    if (!store)
-      throw new Error("session store unavailable (natalia-session-store)");
-    return store;
+    return ctx.state.serviceDirectory.get(sessionStoreController);
   }
 
   async function rebuildContextAfterMessageRollback(id: string) {

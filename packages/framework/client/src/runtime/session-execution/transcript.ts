@@ -1,8 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
+import { type SessionStoreController } from "@natalia/runtime-services";
 import { projectInteractiveRequests } from "@natalia/session";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
@@ -20,8 +18,8 @@ export function createTranscriptSurface(
     submitInput: ctx.ports.submitInput,
     async history(options = {}) {
       await ctx.ports.getReady();
-      const sessionStore = ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
+      const sessionStore = ctx.state.serviceDirectory.get(
+        sessionStoreController,
       );
       if (!sessionStore)
         throw new Error("session store unavailable (natalia-session-store)");
@@ -39,8 +37,8 @@ export function createTranscriptSurface(
       const exec = ctx.ports.getExecutionBySession().get(requestedID);
       const session = exec?.session ?? ctx.ports.getSession();
       if (!session) throw new Error("session initialization did not complete");
-      const sessionStore = ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
+      const sessionStore = ctx.state.serviceDirectory.get(
+        sessionStoreController,
       );
       if (!sessionStore)
         throw new Error("session store unavailable (natalia-session-store)");

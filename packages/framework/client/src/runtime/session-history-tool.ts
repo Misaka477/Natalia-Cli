@@ -1,8 +1,6 @@
 import type { RuntimeTool } from "@natalia/tools";
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/runtime-services";
+import { type SessionStoreController } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 
@@ -55,8 +53,8 @@ export function createSessionHistoryTool(ctx: RuntimeContext): RuntimeTool {
       const attached = ctx.ports.getSession();
       const session =
         exec?.session ?? (attached?.id === sessionID ? attached : undefined);
-      const store = ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
+      const store = ctx.state.serviceDirectory.getOptional(
+        sessionStoreController,
       );
       if (!store || !session)
         return JSON.stringify({

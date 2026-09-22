@@ -21,10 +21,7 @@ import {
   settleInterruptedTurnIDs,
   settleInterruptedTurns,
 } from "@natalia/session";
-import {
-  readOnlyToolMessage,
-  SESSION_STORE_CONTROLLER_SERVICE,
-} from "@natalia/runtime-services";
+import { readOnlyToolMessage } from "@natalia/runtime-services";
 import { turnController } from "@natalia/turn-orchestration";
 import {
   cleanupToolOutput,
@@ -111,9 +108,7 @@ export function wireInitialize(
     publishRuntimeCapabilities: features.toolPublish.publishRuntimeCapabilities,
     publishRegisteredTools: features.toolPublish.publishRegisteredTools,
     ProviderConcurrencyLimiter,
-    serviceNames: {
-      sessionStoreController: SESSION_STORE_CONTROLLER_SERVICE,
-    },
+    serviceNames: {},
   };
   ports.initialize = createInitialize(ctx, options).initialize;
   ports.applyConfigFromDisk = features.configReload.applyConfigFromDisk;

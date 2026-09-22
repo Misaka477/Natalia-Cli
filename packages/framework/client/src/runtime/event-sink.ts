@@ -18,10 +18,8 @@ import {
 } from "./collaboration/collab-snapshot";
 import { activePlanForExec } from "./collaboration/plan-doc-runtime";
 import { createGoalRuntime } from "./goal/goal-runtime";
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/runtime-services";
+import { type SessionStoreController } from "@natalia/runtime-services";
+import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { feedSessionEventWindow } from "./session-event-window";
 import { feedSessionFactState } from "./session-facts";
@@ -149,10 +147,9 @@ export function createEventSink(
     feedSessionEventWindow(exec, partialSeq, partial);
     appendSessionEvent(exec.session, partial);
     feedSessionFactState(exec, partial);
-    const sessionStoreController =
-      ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
-      );
+    const sessionStoreController = ctx.state.serviceDirectory.getOptional(
+      sessionStoreControllerToken,
+    );
     if (!sessionStoreController) return;
     // Partials are durable events like any other and must go through the same
     // per-session persistence chain. Writing them directly let a timer-flushed
@@ -222,8 +219,8 @@ export function createEventSink(
     exec: SessionExecutionState,
     trigger: "boundary" | "count" | "interval",
   ) {
-    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
-      SESSION_STORE_CONTROLLER_SERVICE,
+    const sessionStore = ctx.state.serviceDirectory.getOptional(
+      sessionStoreControllerToken,
     );
     if (!sessionStore || !exec.context) return;
     try {
@@ -415,12 +412,9 @@ export function createEventSink(
       event.type !== "session.created" &&
       event.type !== "session.ready"
     ) {
-      const sessionStoreController =
-        ctx.ports.resolveService<SessionStoreController>(
-          SESSION_STORE_CONTROLLER_SERVICE,
-        );
-      if (!sessionStoreController)
-        throw new Error("session store unavailable (natalia-session-store)");
+      const sessionStoreController = ctx.state.serviceDirectory.get(
+        sessionStoreControllerToken,
+      );
       // SQLite already persists the latest context checkpoint in
       // `context_epochs`. Persisting the full checkpoint again in the event
       // journal duplicates multi-MB snapshots and forces every full-session

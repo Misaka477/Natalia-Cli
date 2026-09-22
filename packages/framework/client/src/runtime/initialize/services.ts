@@ -21,6 +21,7 @@ import { compactionService } from "@natalia/compaction";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import { turnController } from "@natalia/turn-orchestration";
 import { workLedgerController } from "@natalia/work-ledger";
+import { sessionStoreController } from "@natalia/session-store";
 
 export async function resolveServices(
   ctx: RuntimeContext,
@@ -49,11 +50,7 @@ export async function resolveServices(
   scope.sessionID =
     options.sessionID ??
     (`ses_${scope.sessionSeed(scope.workspaceRoot)}` as SessionID);
-  const sessionStore = scope.resolveService<
-    import("@natalia/runtime-services").SessionStoreController
-  >(scope.SESSION_STORE_CONTROLLER_SERVICE);
-  if (!sessionStore)
-    throw new Error("session store unavailable (natalia-session-store)");
+  const sessionStore = scope.serviceDirectory.get(sessionStoreController);
   await sessionStore.init();
   // T-2: the sandboxed sub-agent path. A sub-agent spawned with
   // `mode: "sandbox"` gets its own sandbox worktree — its file scope.tools operate

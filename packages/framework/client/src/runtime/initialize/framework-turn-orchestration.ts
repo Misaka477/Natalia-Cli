@@ -12,6 +12,7 @@ import {
   turnController,
 } from "@natalia/turn-orchestration";
 import { providerModelController } from "@natalia/provider-model";
+import { sessionStoreController } from "@natalia/session-store";
 import type { SessionID } from "@natalia/contracts";
 import {
   type ProviderModelController,
@@ -78,11 +79,9 @@ export function wireTurnOrchestration(
       return persistence;
     },
     saveInbox: async (snapshot) => {
-      const sessionStore = ctx.ports.resolveService<SessionStoreController>(
-        deps.serviceNames.sessionStoreController,
+      const sessionStore = ctx.state.serviceDirectory.get(
+        sessionStoreController,
       );
-      if (!sessionStore)
-        throw new Error("session store unavailable (natalia-session-store)");
       await sessionStore.saveInbox(snapshot);
     },
     flush: async () => {

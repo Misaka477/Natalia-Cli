@@ -1,7 +1,5 @@
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/runtime-services";
+import { type SessionStoreController } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { memoryTrace } from "@natalia/runtime";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
@@ -60,8 +58,8 @@ export function ensureSessionFullEvents(
     console.warn(`[full-events] caller session=${exec.session.id}\n${stack}`);
   }
   const promise = (async () => {
-    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
-      SESSION_STORE_CONTROLLER_SERVICE,
+    const sessionStore = ctx.state.serviceDirectory.getOptional(
+      sessionStoreController,
     );
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");

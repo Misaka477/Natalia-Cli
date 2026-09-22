@@ -7,6 +7,9 @@ import {
 import { scanSessionWindowNewestFirst } from "../src/runtime/session-event-window";
 import type { RuntimeContext } from "../src/runtime/context";
 import type { SessionExecutionState } from "../src/runtime/session-execution-state";
+import { sessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@natalia/runtime-services";
+import { createTestContext } from "@natalia/runtime-services";
 
 function entry(seq: number): SessionWindowEntry<RuntimeEvent> {
   return {
@@ -34,6 +37,15 @@ async function harness() {
     eventWindow: window,
   } as unknown as SessionExecutionState;
   const ctx = {
+    state: {
+      // The scan path only needs the binding to exist: with an open window it
+      // returns before touching the store, so a minimal double stands in.
+      serviceDirectory: createTestContext([
+        sessionStoreController.mock({
+          flush: async () => undefined,
+        } as SessionStoreController),
+      ]),
+    },
     ports: { resolveService: () => ({}) },
   } as unknown as RuntimeContext;
   const project = (events: RuntimeEvent[]) =>

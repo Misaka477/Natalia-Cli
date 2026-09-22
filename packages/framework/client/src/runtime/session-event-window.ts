@@ -1,7 +1,5 @@
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/runtime-services";
+import { type SessionStoreController } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { runtimeEventSessionSeq, type RuntimeEvent } from "@natalia/contracts";
 import { ensureSessionFullEvents } from "./session-full-events";
 import type { RuntimeContext } from "./context";
@@ -79,9 +77,7 @@ export async function ensureSessionEventWindow(
   limit = DEFAULT_EVENT_WINDOW_PAGE,
 ): Promise<SessionWindow<SessionWindowEntry<RuntimeEvent>> | undefined> {
   if (exec.fullEventsLoaded) return undefined;
-  const store = ctx.ports.resolveService<SessionStoreController>(
-    SESSION_STORE_CONTROLLER_SERVICE,
-  );
+  const store = ctx.state.serviceDirectory.getOptional(sessionStoreController);
   if (!store) return undefined;
   const existing = exec.eventWindow;
   if (!existing) {

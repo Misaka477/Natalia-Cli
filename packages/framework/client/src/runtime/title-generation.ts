@@ -7,10 +7,8 @@
  */
 import { sessionRunCoordinator } from "@natalia/session";
 import { withProviderConcurrency } from "@natalia/runtime";
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/runtime-services";
+import { type SessionStoreController } from "@natalia/runtime-services";
+import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
 import type { SessionID } from "@natalia/contracts";
 import {
   fallbackSessionTitle,
@@ -104,12 +102,9 @@ export function createTitleGeneration(ctx: RuntimeContext) {
     const sanitized = sanitizeSessionTitleInput(text);
     if (sanitized.replace(/\[redacted\]|\[home path\]/gu, "").trim().length < 3)
       return;
-    const sessionStoreController =
-      ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
-      );
-    if (!sessionStoreController)
-      throw new Error("session store unavailable (natalia-session-store)");
+    const sessionStoreController = ctx.state.serviceDirectory.get(
+      sessionStoreControllerToken,
+    );
     const loadCurrent = async () =>
       (await sessionStoreController.load(id)).session;
     try {

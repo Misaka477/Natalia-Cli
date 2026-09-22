@@ -1,7 +1,7 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { checkpointFactory } from "@natalia/checkpoint";
 import {
-  SESSION_STORE_CONTROLLER_SERVICE,
   sandboxService,
   terminalController,
   type CheckpointFactory,
@@ -108,8 +108,8 @@ export function createLifecycleSurface(
       await shutdownStep("sessionPersistence", () =>
         ctx.ports.getSessionPersistence(),
       );
-      const sessionStore = ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
+      const sessionStore = ctx.state.serviceDirectory.getOptional(
+        sessionStoreController,
       );
       await shutdownStep("sessionStoreFlush", () =>
         sessionStore

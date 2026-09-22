@@ -12,10 +12,8 @@ import type {
   RuntimeTerminalSession,
   TerminalAction,
 } from "@natalia/contracts";
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/runtime-services";
+import { type SessionStoreController } from "@natalia/runtime-services";
+import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 export function createTerminalRuntime(ctx: RuntimeContext) {
@@ -41,12 +39,9 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
     const target = getExecutionBySession().get(forSessionID);
     const targetSession = target?.session;
     if (!targetSession) return;
-    const sessionStoreController =
-      ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
-      );
-    if (!sessionStoreController)
-      throw new Error("session store unavailable (natalia-session-store)");
+    const sessionStoreController = ctx.state.serviceDirectory.get(
+      sessionStoreControllerToken,
+    );
     targetSession.metadata = { ...targetSession.metadata };
     targetSession.metadata.pendingHumanTerminal = {
       terminalID: input.terminalID,
@@ -86,12 +81,9 @@ export function createTerminalRuntime(ctx: RuntimeContext) {
     const target = getExecutionBySession().get(forSessionID);
     const targetSession = target?.session;
     if (!targetSession?.metadata?.pendingHumanTerminal) return false;
-    const sessionStoreController =
-      ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
-      );
-    if (!sessionStoreController)
-      throw new Error("session store unavailable (natalia-session-store)");
+    const sessionStoreController = ctx.state.serviceDirectory.get(
+      sessionStoreControllerToken,
+    );
     targetSession.metadata = { ...targetSession.metadata };
     delete targetSession.metadata.pendingHumanTerminal;
     const sessionPersistence =

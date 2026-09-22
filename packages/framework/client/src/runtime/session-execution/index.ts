@@ -14,11 +14,11 @@ import {
 } from "@natalia/runtime";
 import { projectSession } from "@natalia/session";
 import {
-  SESSION_STORE_CONTROLLER_SERVICE,
   type ContextLedgerFactory,
   type SessionStoreController,
   type TurnController,
 } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { turnController } from "@natalia/turn-orchestration";
 import { contextLedgerFactory as contextLedgerFactoryToken } from "@natalia/context-ledger";
 import type { SessionRecord } from "@natalia/session";
@@ -164,8 +164,8 @@ export function createSessionExecution(
   }
 
   async function loadSessionForAttach(id: SessionID): Promise<SessionRecord> {
-    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
-      SESSION_STORE_CONTROLLER_SERVICE,
+    const sessionStore = ctx.state.serviceDirectory.getOptional(
+      sessionStoreController,
     );
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");
@@ -209,8 +209,8 @@ export function createSessionExecution(
       return existing;
     }
     memoryTrace("execution.ensure.start", { sessionID });
-    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
-      SESSION_STORE_CONTROLLER_SERVICE,
+    const sessionStore = ctx.state.serviceDirectory.getOptional(
+      sessionStoreController,
     );
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");

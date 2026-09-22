@@ -10,12 +10,12 @@ import { contextStatusEvent, type TokenMeterMessage } from "@natalia/runtime";
 import { restoreProjection } from "@natalia/session";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
-  SESSION_STORE_CONTROLLER_SERVICE,
   terminalController,
   type SessionStoreController,
   type StatusSnapshotController,
   type TerminalController,
 } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { statusSnapshotController } from "@natalia/runtime-status";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
@@ -298,8 +298,8 @@ export function createSessionAttach(ctx: RuntimeContext) {
     // D2: a running turn is no longer a reason to refuse. The turn belongs to
     // its own session's exec and keeps running in the background; attach only
     // switches which session the UI is attached to.
-    const sessionStore = ctx.ports.resolveService<SessionStoreController>(
-      SESSION_STORE_CONTROLLER_SERVICE,
+    const sessionStore = ctx.state.serviceDirectory.getOptional(
+      sessionStoreController,
     );
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");

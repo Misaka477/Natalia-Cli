@@ -14,10 +14,8 @@ import {
   buildSessionIntelligenceSnapshot,
   buildSessionIntelligenceSnapshotFromFacts,
 } from "../session-intelligence";
-import {
-  SESSION_STORE_CONTROLLER_SERVICE,
-  type SessionStoreController,
-} from "@natalia/runtime-services";
+import { type SessionStoreController } from "@natalia/runtime-services";
+import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { DurableInFlightOperation } from "@natalia/session";
 import type { RuntimeContext } from "./context";
@@ -182,12 +180,9 @@ export function createSnapshot(ctx: RuntimeContext) {
   ) {
     const { getSessionPersistence, setSessionPersistence, publishForSession } =
       ctx.ports;
-    const sessionStoreController =
-      ctx.ports.resolveService<SessionStoreController>(
-        SESSION_STORE_CONTROLLER_SERVICE,
-      );
-    if (!sessionStoreController)
-      throw new Error("session store unavailable (natalia-session-store)");
+    const sessionStoreController = ctx.state.serviceDirectory.get(
+      sessionStoreControllerToken,
+    );
     const targetSession = exec.session;
     targetSession.metadata = { ...targetSession.metadata };
     if (operation) targetSession.metadata.inFlightOperation = operation;

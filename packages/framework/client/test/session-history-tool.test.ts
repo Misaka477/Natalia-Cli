@@ -3,6 +3,9 @@ import type { RuntimeMessagePage, SessionID } from "@natalia/contracts";
 import { createSessionHistoryTool } from "../src/runtime/session-history-tool";
 import type { RuntimeContext } from "../src/runtime/context";
 import type { SessionRecord } from "@natalia/session";
+import { sessionStoreController } from "@natalia/session-store";
+import type { SessionStoreController } from "@natalia/runtime-services";
+import { createTestContext } from "@natalia/runtime-services";
 
 const PAGE: RuntimeMessagePage = {
   data: [],
@@ -16,6 +19,24 @@ function harness() {
   }> = [];
   const session = { id: "ses_history" } as unknown as SessionRecord;
   const ctx = {
+    state: {
+      serviceDirectory: createTestContext([
+        sessionStoreController.mock({
+          messages: (
+            id: SessionID,
+            _fallback: SessionRecord,
+            options: {
+              limit?: number;
+              order?: "asc" | "desc";
+              cursor?: string;
+            },
+          ) => {
+            captured.push({ id, options });
+            return Promise.resolve(PAGE);
+          },
+        } as unknown as SessionStoreController),
+      ]),
+    },
     ports: {
       getReady: () => Promise.resolve(),
       getSessionID: () => "ses_history",

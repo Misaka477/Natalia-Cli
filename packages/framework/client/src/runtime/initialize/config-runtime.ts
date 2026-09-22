@@ -8,6 +8,7 @@ import type {
 import { collaborationWaiter } from "@natalia/collaboration";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { toolPolicy } from "@natalia/tool-policy";
 
 export async function configureRuntime(
@@ -28,8 +29,8 @@ export async function configureRuntime(
     config: tsConfig.config.plugins,
   });
   mark("mountPlugins");
-  const resolvedSessionStore = scope.resolveService<SessionStoreController>(
-    scope.SESSION_STORE_CONTROLLER_SERVICE,
+  const resolvedSessionStore = scope.serviceDirectory.get(
+    sessionStoreController,
   );
   if (!resolvedSessionStore)
     throw new Error("session store unavailable (natalia-session-store)");

@@ -15,9 +15,9 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { RuntimeInvalidParams } from "@natalia/contracts";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { sessionStoreController } from "@natalia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
 import {
-  SESSION_STORE_CONTROLLER_SERVICE,
   type SessionStoreController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
@@ -226,8 +226,8 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
         sessionID as import("@natalia/contracts").SessionID,
       );
     if (!exec) return { updated: false };
-    const store = ctx.ports.resolveService<SessionStoreController>(
-      SESSION_STORE_CONTROLLER_SERVICE,
+    const store = ctx.state.serviceDirectory.getOptional(
+      sessionStoreController,
     );
     if (!store)
       throw new Error("session store unavailable (natalia-session-store)");
