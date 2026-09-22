@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { updateConfig } from "@natalia/config";
 import { createConfigReload } from "../src/runtime/config-reload";
+import { createTestContext } from "@natalia/runtime-services";
 import { createToolPublish } from "../src/runtime/tool-publish";
 import type { RuntimeContext } from "../src/runtime/context";
 
@@ -29,7 +30,14 @@ async function harness() {
   const diagnostics: string[] = [];
 
   const ctx = {
-    state: { tools, frameworkServices: undefined, pluginStoreRoot: undefined },
+    state: {
+      tools,
+      frameworkServices: undefined,
+      pluginStoreRoot: undefined,
+      // The reload path resolves optional services through the directory; an
+      // empty context reproduces the port stub's "nothing provided".
+      serviceDirectory: createTestContext([]),
+    },
     ports: {
       getWorkspaceRoot: () => root,
       getTsRuntimeConfig: () => config,

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createTestContext } from "@natalia/runtime-services";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -113,7 +114,13 @@ async function makeHarness(
     niaPendingQueue: [],
   } as unknown as SessionExecutionState;
   const ctx = {
-    state: {},
+    // The chat turn path resolves services through the directory now; the
+    // hand-rolled port stub stays for the paths still on ports.
+    state: {
+      // The chat turn path resolves services through the directory now; this
+      // file's paths tolerate nothing provided, matching the port stubs.
+      serviceDirectory: createTestContext([]),
+    },
     ports: {
       getTsRuntimeConfig: () => config,
       getContextWindowResolver: () => ({

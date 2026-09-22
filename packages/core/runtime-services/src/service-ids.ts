@@ -1,7 +1,4 @@
 export const ATTACHMENT_SERVICE = "attachment.service";
-export const CHECKPOINT_FACTORY_SERVICE = "checkpoint.factory";
-export const COMPACTION_SERVICE = "compaction.service";
-export const CONTEXT_LEDGER_FACTORY_SERVICE = "context-ledger.factory";
 export const GOVERNANCE_LEDGER_CONTROLLER_SERVICE =
   "governance-ledger.controller";
 export const PROVIDER_MODEL_CONTROLLER_SERVICE = "provider-model.controller";

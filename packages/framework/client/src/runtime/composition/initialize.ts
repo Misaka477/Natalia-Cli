@@ -24,9 +24,6 @@ import {
 import {
   readOnlyToolMessage,
   ATTACHMENT_SERVICE,
-  CHECKPOINT_FACTORY_SERVICE,
-  COMPACTION_SERVICE,
-  CONTEXT_LEDGER_FACTORY_SERVICE,
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   PROVIDER_MODEL_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
@@ -127,13 +124,10 @@ export function wireInitialize(
     ProviderConcurrencyLimiter,
     serviceNames: {
       attachment: ATTACHMENT_SERVICE,
-      contextLedgerFactory: CONTEXT_LEDGER_FACTORY_SERVICE,
-      compaction: COMPACTION_SERVICE,
       statusSnapshotController: STATUS_SNAPSHOT_CONTROLLER_SERVICE,
       workLedgerController: WORK_LEDGER_CONTROLLER_SERVICE,
       governanceLedgerController: GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
       turnController: TURN_CONTROLLER_SERVICE,
-      checkpointFactory: CHECKPOINT_FACTORY_SERVICE,
       sandbox: SANDBOX_SERVICE,
       subagents: SUBAGENTS_SERVICE,
       sessionStoreController: SESSION_STORE_CONTROLLER_SERVICE,

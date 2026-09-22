@@ -18,6 +18,9 @@ import { createContextLedgerFactory } from "@natalia/context-ledger";
 import { RUNTIME_CONFIG_SERVICE } from "@natalia/runtime-config";
 import { runCheckpointCommand } from "@natalia/runtime";
 import { createRetryService, retryService } from "@natalia/retry";
+import { compactionService } from "@natalia/compaction";
+import { checkpointFactory } from "@natalia/checkpoint";
+import { contextLedgerFactory as contextLedgerFactoryToken } from "@natalia/context-ledger";
 import { createSandboxController, sandboxTools } from "@natalia/sandbox";
 import { agentTools, createSubagentsController } from "@natalia/subagents";
 import { createToolPolicyService } from "@natalia/tool-policy";
@@ -63,9 +66,6 @@ import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import {
   ATTACHMENT_SERVICE,
-  CHECKPOINT_FACTORY_SERVICE,
-  COMPACTION_SERVICE,
-  CONTEXT_LEDGER_FACTORY_SERVICE,
   SANDBOX_SERVICE,
   SUBAGENTS_SERVICE,
   TOOL_POLICY_SERVICE,
@@ -280,7 +280,7 @@ export async function wireFrameworkServices(
     workspaceRoot,
     checkpointDir: options.checkpointDir,
   });
-  checkpointOwner.contribute("services", CHECKPOINT_FACTORY_SERVICE, factory);
+  ctx.state.serviceDirectory.provide(checkpointFactory, factory);
   for (const name of ["checkpoint", "checkpoints", "rollback"])
     checkpointOwner.contribute("commands", name, {
       name,
@@ -401,9 +401,8 @@ export async function wireFrameworkServices(
   });
   const contextLedgerFactory: ContextLedgerFactory =
     createContextLedgerFactory();
-  contextLedgerOwner.contribute(
-    "services",
-    CONTEXT_LEDGER_FACTORY_SERVICE,
+  ctx.state.serviceDirectory.provide(
+    contextLedgerFactoryToken,
     contextLedgerFactory,
   );
 
@@ -528,7 +527,7 @@ export async function wireFrameworkServices(
     grants: ["services"],
   });
   const compaction: CompactionService = createCompactionService({ retry });
-  compactionOwner.contribute("services", COMPACTION_SERVICE, compaction);
+  ctx.state.serviceDirectory.provide(compactionService, compaction);
 
   // Remaining framework subsystems are wired in dependency order:
   // session store (attachments) -> work ledger -> governance ledger (work

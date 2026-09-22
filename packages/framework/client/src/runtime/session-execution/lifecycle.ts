@@ -1,6 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { checkpointFactory } from "@natalia/checkpoint";
 import {
-  CHECKPOINT_FACTORY_SERVICE,
   SANDBOX_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
   terminalController,
@@ -126,11 +126,10 @@ export function createLifecycleSurface(
       await shutdownStep("terminalClose", () =>
         ctx.state.serviceDirectory.getOptional(terminalController)?.close(),
       );
-      ctx.ports
-        .resolveService<
-          CheckpointFactory & { close?(): void }
-        >(CHECKPOINT_FACTORY_SERVICE)
-        ?.close?.();
+      const checkpointClose = ctx.state.serviceDirectory.getOptional(
+        checkpointFactory,
+      ) as (CheckpointFactory & { close?(): void }) | undefined;
+      checkpointClose?.close?.();
       await shutdownStep("pluginsClose", () =>
         ctx.ports.getPluginsController().close(),
       );

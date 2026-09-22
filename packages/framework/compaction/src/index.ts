@@ -1,3 +1,4 @@
+export { compactionService } from "./service-token";
 export {
   createCompactionService,
   type CompactionOutcome,

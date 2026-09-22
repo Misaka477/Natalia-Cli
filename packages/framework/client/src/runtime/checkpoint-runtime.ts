@@ -6,7 +6,6 @@
  * concrete plugin controller.
  */
 import {
-  CHECKPOINT_FACTORY_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   SUBAGENTS_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
@@ -17,6 +16,7 @@ import {
   type StatusSnapshotController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { checkpointFactory } from "@natalia/checkpoint";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { SessionID } from "@natalia/contracts";
@@ -269,9 +269,7 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
   function checkpointControllerFor(exec: SessionExecutionState) {
     const { getTsRuntimeConfig, publishForSession } = ctx.ports;
     const id = exec.session.id;
-    const factory = ctx.ports.resolveService<CheckpointFactory>(
-      CHECKPOINT_FACTORY_SERVICE,
-    );
+    const factory = ctx.state.serviceDirectory.getOptional(checkpointFactory);
     if (!factory) return undefined;
     if (
       !ctx.ports.resolveService<WorkLedgerController>(

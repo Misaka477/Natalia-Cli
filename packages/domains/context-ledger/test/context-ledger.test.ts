@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import type { LocalAttachment, RuntimeEvent } from "@natalia/contracts";
-import { CONTEXT_LEDGER_FACTORY_SERVICE } from "@natalia/runtime-services";
-import { createContextLedgerFactory } from "../src";
+import { contextLedgerFactory, createContextLedgerFactory } from "../src";
 
 test("context ledger restores completed turns and tool pairs once", () => {
   const attachment: LocalAttachment = {
@@ -163,7 +162,7 @@ test("context ledger restores provider reasoning and tool thought signatures", (
 
 test("context ledger factory is provided under the shared service key", () => {
   const factory = createContextLedgerFactory();
-  expect(CONTEXT_LEDGER_FACTORY_SERVICE).toBe("context-ledger.factory");
+  expect(contextLedgerFactory.id).toBe("context-ledger.factory");
   expect(factory.create).toBeTypeOf("function");
   expect(factory.restore).toBeTypeOf("function");
 });

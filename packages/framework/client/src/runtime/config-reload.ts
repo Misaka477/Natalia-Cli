@@ -12,10 +12,8 @@ import { resolveConfig } from "@natalia/config";
 import { ensureBashCommandParser } from "@natalia/tools";
 import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
 import { nextContextInstructionsRevision } from "@natalia/session";
-import {
-  CHECKPOINT_FACTORY_SERVICE,
-  type CheckpointFactory,
-} from "@natalia/runtime-services";
+import { type CheckpointFactory } from "@natalia/runtime-services";
+import { checkpointFactory } from "@natalia/checkpoint";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
 import {
@@ -57,11 +55,10 @@ function refreshAgentSpawnDescription(
 }
 
 function resetCheckpointFactory(ctx: RuntimeContext) {
-  ctx.ports
-    .resolveService<
-      CheckpointFactory & { close?(): void }
-    >(CHECKPOINT_FACTORY_SERVICE)
-    ?.close?.();
+  const checkpointClose = ctx.state.serviceDirectory.getOptional(
+    checkpointFactory,
+  ) as (CheckpointFactory & { close?(): void }) | undefined;
+  checkpointClose?.close?.();
 }
 
 export function createConfigReload(

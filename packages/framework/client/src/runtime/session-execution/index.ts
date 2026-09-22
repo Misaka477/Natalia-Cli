@@ -14,13 +14,13 @@ import {
 } from "@natalia/runtime";
 import { projectSession } from "@natalia/session";
 import {
-  CONTEXT_LEDGER_FACTORY_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
   TURN_CONTROLLER_SERVICE,
   type ContextLedgerFactory,
   type SessionStoreController,
   type TurnController,
 } from "@natalia/runtime-services";
+import { contextLedgerFactory as contextLedgerFactoryToken } from "@natalia/context-ledger";
 import type { SessionRecord } from "@natalia/session";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
@@ -238,11 +238,9 @@ export function createSessionExecution(
     );
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");
-    const contextLedgerFactory = ctx.ports.resolveService<ContextLedgerFactory>(
-      CONTEXT_LEDGER_FACTORY_SERVICE,
+    const contextLedgerFactory = ctx.state.serviceDirectory.get(
+      contextLedgerFactoryToken,
     );
-    if (!contextLedgerFactory)
-      throw new Error("context ledger unavailable (natalia-context-ledger)");
     const fastPathEnabled = process.env.NATALIA_FAST_EXECUTION_LOAD === "1";
     const durableEventCount = await sessionStore.eventCount(sessionID);
     const stored = await sessionStore.load(

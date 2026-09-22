@@ -21,8 +21,6 @@ import { createToolRegistry } from "@natalia/tools";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
-  CHECKPOINT_FACTORY_SERVICE,
-  COMPACTION_SERVICE,
   PROVIDER_MODEL_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
   terminalController,
@@ -30,7 +28,9 @@ import {
   type ProviderModelController,
   type SandboxService,
 } from "@natalia/runtime-services";
+import { checkpointFactory } from "@natalia/checkpoint";
 import { retryService } from "@natalia/retry";
+import { compactionService } from "@natalia/compaction";
 import {
   workspaceFiles,
   workspaceMutations,
@@ -1036,13 +1036,13 @@ test("compaction framework service is always present and stable across reloads",
   client.start(() => undefined);
   await client.runtimeStatus?.();
 
-  expect(kernel.ownerOf("services", COMPACTION_SERVICE)).toBe(
-    "natalia-compaction",
+  expect(kernel.ownerOf("services", compactionService.id)).toMatch(
+    /^service:/u,
   );
   expect(kernel.ownerOf("services", PROVIDER_MODEL_CONTROLLER_SERVICE)).toBe(
     "natalia-provider-model",
   );
-  const firstService = kernel.service<object>(COMPACTION_SERVICE);
+  const firstService = kernel.service<object>(compactionService.id);
   expect(firstService).toBeDefined();
   const firstController = kernel.service<ProviderModelController>(
     PROVIDER_MODEL_CONTROLLER_SERVICE,
@@ -1051,7 +1051,7 @@ test("compaction framework service is always present and stable across reloads",
 
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.service<object>(COMPACTION_SERVICE)).toBe(firstService);
+  expect(kernel.service<object>(compactionService.id)).toBe(firstService);
   expect(
     kernel.service<ProviderModelController>(PROVIDER_MODEL_CONTROLLER_SERVICE),
   ).toBe(firstController);
@@ -1173,7 +1173,7 @@ test("checkpoint config reload reconciles its lifecycle", async () => {
   });
   client.start((event) => events.push(event));
   await client.runtimeStatus?.();
-  expect(kernel.service(CHECKPOINT_FACTORY_SERVICE)).toBeDefined();
+  expect(kernel.service(checkpointFactory.id)).toBeDefined();
   await client.submitAndWait!("without checkpoint");
   expect(events.some((event) => event.type === "checkpoint.created")).toBe(
     false,

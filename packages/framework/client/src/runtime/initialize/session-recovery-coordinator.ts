@@ -20,6 +20,7 @@ import type { InitializeScope } from "./runtime";
 import { mcpService, terminalController } from "@natalia/runtime-services";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
+import { contextLedgerFactory } from "@natalia/context-ledger";
 
 type LoadedSession = Awaited<ReturnType<SessionStoreController["load"]>>;
 type RecoveryView = NonNullable<LoadedSession["recovery"]>;
@@ -68,12 +69,8 @@ export class SessionRecoveryCoordinator {
     if (!attachmentService)
       throw new Error("attachment service unavailable (natalia-attachment)");
     this.attachmentService = attachmentService;
-    const contextLedgerFactory = scope.resolveService<ContextLedgerFactory>(
-      scope.CONTEXT_LEDGER_FACTORY_SERVICE,
-    );
-    if (!contextLedgerFactory)
-      throw new Error("context ledger unavailable (natalia-context-ledger)");
-    this.contextLedgerFactory = contextLedgerFactory;
+    this.contextLedgerFactory =
+      scope.serviceDirectory.get(contextLedgerFactory);
   }
 
   async run(): Promise<SessionRecoveryResult> {

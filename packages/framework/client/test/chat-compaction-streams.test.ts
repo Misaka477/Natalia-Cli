@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { createTestContext } from "@natalia/runtime-services";
+import { compactionService } from "@natalia/compaction";
 import { ContextLedger, TokenMeter } from "@natalia/runtime";
 import type { ContextEntry, ProviderMessage } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
@@ -16,6 +18,12 @@ test("Navi and Nia compaction retain independent ledgers, providers, and durable
   const naviProvider = { provider: "navi", model: "navi-model" };
   const niaProvider = { provider: "nia", model: "nia-model" };
   const compaction = {
+    async compactBeforeProviderStep() {
+      return { compacted: false } as never;
+    },
+    async runWithContextLimitRecovery() {
+      return { recovered: false } as never;
+    },
     async prepareContextRequest(input: {
       ledger: ContextLedger;
       provider: unknown;
@@ -44,6 +52,9 @@ test("Navi and Nia compaction retain independent ledgers, providers, and durable
     },
   };
   const ctx = {
+    state: {
+      serviceDirectory: createTestContext([compactionService.mock(compaction)]),
+    },
     ports: {
       resolveService: () => compaction,
       getTsRuntimeConfig: () => ({ context: { compactionEnabled: true } }),
@@ -126,6 +137,15 @@ test("a truncated stream history resets only its own compaction ledger", async (
     },
   };
   const ctx = {
+    state: {
+      serviceDirectory: createTestContext([
+        compactionService.mock({
+          ...compaction,
+          compactBeforeProviderStep: async () => ({ compacted: false }),
+          runWithContextLimitRecovery: async () => ({ recovered: false }),
+        }),
+      ]),
+    },
     ports: {
       resolveService: () => compaction,
       getTsRuntimeConfig: () => ({ context: { compactionEnabled: true } }),

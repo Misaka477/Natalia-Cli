@@ -23,10 +23,9 @@ import {
 } from "@natalia/contracts";
 import {
   ATTACHMENT_SERVICE,
-  COMPACTION_SERVICE,
   type AttachmentService,
-  type CompactionService,
 } from "@natalia/runtime-services";
+import { compactionService } from "@natalia/compaction";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 
 const ledgerHistories = new WeakMap<ContextLedger, ProviderMessage[]>();
@@ -345,8 +344,7 @@ export async function compactChatBeforeProviderStep(
     ): void;
   },
 ) {
-  const compaction =
-    ctx.ports.resolveService<CompactionService>(COMPACTION_SERVICE);
+  const compaction = ctx.state.serviceDirectory.getOptional(compactionService);
   const budget =
     stream.contextWindow === undefined
       ? exec.runtimeContextConfig

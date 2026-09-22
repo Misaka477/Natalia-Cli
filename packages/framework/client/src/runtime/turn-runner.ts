@@ -16,13 +16,12 @@ import {
 } from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
 import { retryService } from "@natalia/retry";
+import { compactionService } from "@natalia/compaction";
 import {
   ATTACHMENT_SERVICE,
-  COMPACTION_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   mcpService,
   type AttachmentService,
-  type CompactionService,
   type StatusSnapshotController,
 } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "./context";
@@ -82,10 +81,7 @@ export function createTurnRunner(
     const { executionBySession, tools } = ctx.state;
     const exec = executionBySession.get(sessionID);
     if (!exec) throw new Error(`no execution state for session ${sessionID}`);
-    const compactionService =
-      ctx.ports.resolveService<CompactionService>(COMPACTION_SERVICE);
-    if (!compactionService)
-      throw new Error("compaction service unavailable (natalia-compaction)");
+    const compaction = ctx.state.serviceDirectory.get(compactionService);
     const attachmentService =
       ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
     if (!attachmentService)
@@ -115,7 +111,7 @@ export function createTurnRunner(
       tools: () => tools,
       attachmentReferences: () => exec.attachmentReferences,
       attachments: attachmentService,
-      compaction: compactionService,
+      compaction: compaction,
       mcp: () => ctx.state.serviceDirectory.getOptional(mcpService),
       agentRegistry: () => getAgentRegistry(),
       activeAbort: () => exec.activeAbort,

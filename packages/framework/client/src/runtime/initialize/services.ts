@@ -14,6 +14,8 @@ import type {
 import { createInitializeRuntime } from "./runtime";
 
 import { retryService } from "@natalia/retry";
+import { compactionService } from "@natalia/compaction";
+import { contextLedgerFactory } from "@natalia/context-ledger";
 
 export async function resolveServices(
   ctx: RuntimeContext,
@@ -29,18 +31,11 @@ export async function resolveServices(
   // Resolution is fail-fast by construction: a missing binding throws with the
   // service id instead of being re-worded at every call site.
   scope.serviceDirectory.get(retryService);
+  // Resolution is fail-fast by construction (see the retry check above).
   const resolvedContextLedgerFactory =
-    scope.capabilityRegistry.service<ContextLedgerFactory>(
-      scope.CONTEXT_LEDGER_FACTORY_SERVICE,
-    );
-  if (!resolvedContextLedgerFactory)
-    throw new Error("context ledger unavailable (natalia-context-ledger)");
-  const resolvedCompactionService =
-    scope.capabilityRegistry.service<CompactionService>(
-      scope.COMPACTION_SERVICE,
-    );
-  if (!resolvedCompactionService)
-    throw new Error("compaction service unavailable (natalia-compaction)");
+    scope.serviceDirectory.get(contextLedgerFactory);
+  // Resolution is fail-fast by construction (see the retry check above).
+  scope.serviceDirectory.get(compactionService);
   const resolvedStatusController =
     scope.capabilityRegistry.service<StatusSnapshotController>(
       scope.STATUS_SNAPSHOT_CONTROLLER_SERVICE,

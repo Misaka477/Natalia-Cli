@@ -3,10 +3,9 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import { defaultConfigV3 } from "@natalia/config";
 import { ContextLedger, TokenMeter } from "@natalia/runtime";
 import type { ProviderMessage } from "@natalia/runtime";
-import {
-  COMPACTION_SERVICE,
-  type ProviderChatTurnInput,
-} from "@natalia/runtime-services";
+import type { ProviderChatTurnInput } from "@natalia/runtime-services";
+import { compactionService } from "@natalia/compaction";
+import { createTestContext } from "@natalia/runtime-services";
 import type {
   RuntimeContext,
   SessionExecutionState,
@@ -90,6 +89,23 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
   } as unknown as SessionExecutionState;
   let sequence = 0;
   const ctx = {
+    state: {
+      serviceDirectory: createTestContext([
+        compactionService.mock({
+          compactBeforeProviderStep: async () => ({ compacted: false }),
+          runWithContextLimitRecovery: async () => ({ recovered: false }),
+          prepareContextRequest: async (input: {
+            outbound: ProviderMessage[];
+          }) => ({
+            outbound: input.outbound,
+            decision: "none",
+            compacted: false,
+            pruned: 0,
+            used: 0,
+          }),
+        }),
+      ]),
+    },
     ports: {
       getTsRuntimeConfig: () => config,
       getContextWindowResolver: () => ({
@@ -122,19 +138,6 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
   const nia = createNiaChatTurn(ctx);
   const wakeInputs: ProviderChatTurnInput[] = [];
   ctx.ports.resolveService = ((name: string) => {
-    if (name === COMPACTION_SERVICE)
-      return {
-        compactBeforeProviderStep: async () => ({ compacted: false }),
-        prepareContextRequest: async (input: {
-          outbound: ProviderMessage[];
-        }) => ({
-          outbound: input.outbound,
-          decision: "none",
-          compacted: false,
-          pruned: 0,
-          used: 0,
-        }),
-      };
     return {
       runNaviChatTurn: async (input: ProviderChatTurnInput) => {
         wakeInputs.push(input);

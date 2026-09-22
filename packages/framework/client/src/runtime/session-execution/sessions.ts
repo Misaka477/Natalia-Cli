@@ -1,6 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { contextLedgerFactory } from "@natalia/context-ledger";
 import {
-  CONTEXT_LEDGER_FACTORY_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
   terminalController,
   type ContextLedgerFactory,
@@ -42,9 +42,8 @@ export function createSessionsSurface(
   async function rebuildContextAfterMessageRollback(id: string) {
     const exec = ctx.ports.getExecutionBySession().get(id as SessionID);
     if (!exec) return;
-    const factory = ctx.ports.resolveService<ContextLedgerFactory>(
-      CONTEXT_LEDGER_FACTORY_SERVICE,
-    );
+    const factory =
+      ctx.state.serviceDirectory.getOptional(contextLedgerFactory);
     if (!factory) return;
     const loaded = await requireSessionStore().load(id as SessionID);
     exec.session = loaded.session;

@@ -23,6 +23,8 @@ import {
 } from "@natalia/runtime";
 import { createInitializeRuntime } from "./runtime";
 import { retryService } from "@natalia/retry";
+import { contextLedgerFactory } from "@natalia/context-ledger";
+import { compactionService } from "@natalia/compaction";
 
 export async function createSubagentSupport(
   ctx: RuntimeContext,
@@ -32,18 +34,10 @@ export async function createSubagentSupport(
   const subagents = scope.resolveService<SubagentsService>(
     scope.SUBAGENTS_SERVICE,
   );
-  const contextLedgerFactory = scope.resolveService<ContextLedgerFactory>(
-    scope.CONTEXT_LEDGER_FACTORY_SERVICE,
-  );
-  if (!contextLedgerFactory)
-    throw new Error("context ledger unavailable (natalia-context-ledger)");
-  const resolvedContextLedgerFactory = contextLedgerFactory;
-  const compactionService = scope.resolveService<CompactionService>(
-    scope.COMPACTION_SERVICE,
-  );
-  if (!compactionService)
-    throw new Error("compaction service unavailable (natalia-compaction)");
-  const resolvedCompactionService = compactionService;
+  const ledgerFactory = scope.serviceDirectory.get(contextLedgerFactory);
+  const resolvedContextLedgerFactory = ledgerFactory;
+  const resolvedCompactionService =
+    scope.serviceDirectory.get(compactionService);
   const resolvedRetryService = scope.serviceDirectory.get(retryService);
   let sandboxedSubagentActive = 0;
   const sandboxedSubagentWaiters: Array<{
