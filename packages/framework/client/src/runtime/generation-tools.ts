@@ -32,7 +32,10 @@ import {
 import { resolveWorkspaceObjectsRoot } from "@natalia/platform";
 import { createNiaChatSurface } from "./collaboration/chat";
 import { activeConstitutionRows } from "./config-reload";
-import type { RuntimeContext, SessionExecutionState } from "./context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import { niaFace, smokeFace } from "./verification-faces";
 import type { RuntimeTool } from "@anthelia/tools";
 

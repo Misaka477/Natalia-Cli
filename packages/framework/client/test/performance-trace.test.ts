@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { RuntimePerformanceTrace } from "../src/performance-trace";
+import { RuntimePerformanceTrace } from "@anthelia/substrate";
 
 test("writes bounded aggregate samples without retaining event payloads", async () => {
   const directory = await mkdtemp(join(tmpdir(), "natalia-perf-trace-"));

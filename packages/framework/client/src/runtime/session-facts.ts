@@ -26,8 +26,8 @@ import {
 import { runtimeEventSessionSeq, type RuntimeEvent } from "@natalia/contracts";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController } from "@anthelia/session-store";
-import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "./session-execution-state";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
 
 const FACT_PAGE_LIMIT = 2_000;
 

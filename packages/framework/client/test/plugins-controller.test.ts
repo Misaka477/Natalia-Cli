@@ -5,14 +5,14 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createToolRegistry } from "@anthelia/tools";
 import { CapabilityRegistry } from "@natalia/capability";
-import { createPluginsController } from "../src/plugins-controller";
+import { createPluginsController } from "@anthelia/substrate";
 import {
   discoverPluginManifests,
   validatePluginPath,
   type Plugin,
   type DesiredPluginEntry,
 } from "@natalia/plugin";
-import type { PluginConfigSnapshot } from "../src/plugins-controller";
+import type { PluginConfigSnapshot } from "@anthelia/substrate";
 import {
   installPluginSdkLinks,
   pluginSdkImportPath,

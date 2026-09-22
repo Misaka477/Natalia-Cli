@@ -16,7 +16,7 @@ import {
 import { sessionStoreController } from "@anthelia/session-store";
 import { statusSnapshotController } from "@natalia/runtime-status";
 import type { SessionID } from "@natalia/contracts";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import {
   naviChatProviderMessagesFromHistory,
   niaChatProviderMessagesFromHistory,
@@ -31,7 +31,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
   };
 
   async function seedStreamContextSnapshots(
-    exec: import("./context").SessionExecutionState,
+    exec: import("@anthelia/substrate").SessionExecutionState,
   ) {
     // Seed stream meters from the current session window. A consumer that
     // truly needs older snapshots must call the shared full-event escape hatch

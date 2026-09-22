@@ -9,7 +9,7 @@ import type {
   SubagentSupport,
   SubagentsService,
   ToolHookEvent,
-} from "../context";
+} from "@anthelia/substrate";
 import {
   sandboxService,
   subagentsService,

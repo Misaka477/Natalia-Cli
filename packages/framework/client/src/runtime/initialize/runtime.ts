@@ -1,4 +1,4 @@
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 
 export function createInitializeRuntime(ctx: RuntimeContext) {
   const deps = ctx.state.initialize;

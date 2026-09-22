@@ -9,8 +9,8 @@ import { resolve } from "node:path";
 import { verifyTrust } from "@natalia/config";
 import { toolFamilyCapabilityID } from "../capabilities/tool-family-capabilities";
 import type { ConfigV3, SessionID } from "@natalia/contracts";
-import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "./options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { SkillMetadata } from "@natalia/runtime-services";
 
 export function createPluginAssembly(

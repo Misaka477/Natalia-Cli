@@ -17,80 +17,20 @@ import { RuntimeInvalidParams } from "@natalia/contracts";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
-import type { RuntimeContext, SessionExecutionState } from "../context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import type { SessionStoreController } from "@anthelia/session-store";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 import { logOf } from "@natalia/operation-log";
 
-export type PlanDocRuntime = {
-  planDocList(sessionID?: string): Promise<
-    Array<{
-      planID: string;
-      title: string;
-      documentPath: string;
-      status: string;
-      createdBy: "user" | "live_chat" | "main_agent";
-      createdAt: string;
-      updatedAt: string;
-      revision: number;
-      markedAt?: string;
-    }>
-  >;
-  planDocRead(input: {
-    planID?: string;
-    path?: string;
-    sessionID?: string;
-  }): Promise<{
-    planID?: string;
-    title?: string;
-    documentPath: string;
-    content: string;
-  }>;
-  planDocWrite(input: {
-    path: string;
-    content: string;
-    title?: string;
-    planID?: string;
-    sessionID?: string;
-  }): Promise<{ written: boolean; planID?: string }>;
-  planDocMark(input: {
-    path: string;
-    title?: string;
-    /** Who marked the plan (EI §8.1); defaults to `user`. */
-    createdBy?: "user" | "live_chat" | "main_agent";
-    sessionID?: string;
-  }): Promise<{ marked: boolean; planID: string }>;
-  planDocDelete(
-    planID: string,
-    sessionID?: string,
-  ): Promise<{ deleted: boolean }>;
-  planDocStatus(
-    planID: string,
-    sessionID?: string,
-  ): Promise<{ status: string }>;
-  planDocUpdateStatus(input: {
-    planID: string;
-    status: string;
-    sessionID?: string;
-  }): Promise<{ updated: boolean }>;
-  /** Workspace-level plan registry snapshot for synchronous prompt building. */
-  planDocSnapshot(): PlanDocRecord[];
-  /** Workspace-level lookup by planID. */
-  planDocByID(planID: string): PlanDocRecord | undefined;
-  /** Session-scoped active plan pointer. */
-  planDocActive(sessionID?: string): Promise<{ planID?: string }>;
-  planDocActivate(
-    planID: string,
-    sessionID?: string,
-  ): Promise<{ planID?: string; updated: boolean }>;
-  planDocDeactivate(
-    sessionID?: string,
-  ): Promise<{ planID?: string; updated: boolean }>;
-};
+// The port contract moved to @anthelia/substrate (P3): one definition,
+// at the port. Callers importing PlanDocRuntime/PlanDocRecord from here
+// are re-exporting the engine's shape.
+export type { PlanDocRuntime, PlanDocRecord } from "@anthelia/substrate";
+import type { PlanDocRuntime, PlanDocRecord } from "@anthelia/substrate";
 
-export type PlanDocRecord = Awaited<
-  ReturnType<NonNullable<RuntimeServiceClient["planDocList"]>>
->[number];
 type IndexEntry = PlanDocRecord;
 
 const PLAN_DIR = ".natalia/plans";

@@ -26,8 +26,8 @@ import {
   type PluginAdapterInstance,
 } from "@natalia/plugin";
 import { createToolRegistry } from "@anthelia/tools";
-import { discoverDesiredPluginEntries } from "./plugin-discovery";
-import { registerPluginOwner } from "./plugin-owner";
+import { discoverDesiredPluginEntries } from "@anthelia/substrate";
+import { registerPluginOwner } from "@anthelia/substrate";
 
 export type UiAdapterHostOptions = {
   pluginStoreRoot?: string;

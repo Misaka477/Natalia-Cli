@@ -6,7 +6,7 @@
  * connection and a second workspace watcher). A failed initialization keeps
  * its original cause and is re-thrown on every later access.
  */
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 
 export function createEnsureReady(ctx: RuntimeContext) {
   return {

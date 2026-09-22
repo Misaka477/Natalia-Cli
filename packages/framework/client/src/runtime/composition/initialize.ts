@@ -28,11 +28,11 @@ import {
   ensureBashCommandParser,
   evaluatePermissionProfileCommandRules,
 } from "@anthelia/tools";
-import { mountPlugins } from "../../plugin-mount";
+import { mountPlugins } from "@anthelia/substrate";
 import { wireFrameworkServices } from "../initialize/framework-services";
 import { createInitialize } from "../initialize";
-import type { RuntimeContext } from "../context";
-import type { RealRuntimeClientOptions } from "../options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import { lineCount } from "./helpers";
 
 const WAITING_TOOLS = new Set(["terminal_observe"]);

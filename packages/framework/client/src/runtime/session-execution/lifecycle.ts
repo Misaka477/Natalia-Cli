@@ -10,7 +10,7 @@ import {
 import { updateConfigAtScope } from "@natalia/config";
 import { cloneConfigInWorker } from "../secondary-worker-client";
 import { sessionRunCoordinator } from "@anthelia/session";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
 import type { CheckpointFactory } from "@anthelia/checkpoint";
 import type { SessionStoreController } from "@anthelia/session-store";

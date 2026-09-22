@@ -30,6 +30,7 @@ import type { SessionExecutionState } from "./context";
 import type { WorkspaceWriteLock } from "@anthelia/workspace";
 import type { CheckpointController } from "@anthelia/checkpoint";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
+import type { PlanDocRuntime } from "./plan-doc-port";
 
 export type RuntimePorts = {
   resolveService: <T>(serviceID: string) => T | undefined;
@@ -262,7 +263,7 @@ export type RuntimePorts = {
     args: Record<string, unknown>,
     result: string,
   ) => string;
-  planDocRuntime: import("./collaboration/plan-doc-runtime").PlanDocRuntime;
+  planDocRuntime: PlanDocRuntime;
   getSelectedAgent: () => AgentDefinition | undefined;
   getSelectedModel: () => { modelID?: string; variant?: string } | undefined;
   getProviderSource: () =>

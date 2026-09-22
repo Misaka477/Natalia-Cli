@@ -97,7 +97,7 @@ import type {
   FrameworkServices,
   InitializeOptions,
   RuntimeContext,
-} from "../context";
+} from "@anthelia/substrate";
 import { wireGovernanceLedger } from "./framework-governance-ledger";
 import { wireProviderModel } from "./framework-provider-model";
 import { wireRuntimeStatus } from "./framework-runtime-status";
@@ -110,7 +110,7 @@ import type {
   RetryService,
 } from "@natalia/runtime";
 
-export type { FrameworkServices } from "../context";
+export type { FrameworkServices } from "@anthelia/substrate";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";
 
 export async function wireFrameworkServices(

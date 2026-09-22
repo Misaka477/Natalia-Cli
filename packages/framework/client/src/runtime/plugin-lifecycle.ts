@@ -6,7 +6,7 @@ import {
   type SandboxService,
   type TerminalController,
 } from "@natalia/runtime-services";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 
 export function createPluginLifecycle(ctx: RuntimeContext) {
   async function runPluginLifecyclePostReconcile(

@@ -25,8 +25,8 @@ import {
   REPEAT_MAX,
   REPEAT_WINDOW_MS,
 } from "./repeat-guard";
-import type { RuntimeContext } from "../context";
-import type { RealRuntimeClientOptions } from "../options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 const WAITING_TOOLS = new Set(["terminal_observe"]);
 

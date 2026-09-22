@@ -10,7 +10,7 @@ import type {
   SubagentRunnerContext,
   SubagentSupport,
   SubagentsService,
-} from "../context";
+} from "@anthelia/substrate";
 import {
   TokenMeter,
   contextEntriesToProviderMessages,

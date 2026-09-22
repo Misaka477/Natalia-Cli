@@ -1,7 +1,7 @@
 import type { RuntimeTool } from "@anthelia/tools";
 import { sessionStoreController } from "@anthelia/session-store";
 import type { SessionID } from "@natalia/contracts";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionStoreController } from "@anthelia/session-store";
 
 const DEFAULT_LIMIT = 40;

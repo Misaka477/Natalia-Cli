@@ -9,7 +9,7 @@ import type {
   SubagentRunnerContext,
   SubagentSupport,
   SubagentsService,
-} from "../context";
+} from "@anthelia/substrate";
 import { createInitializeRuntime } from "./runtime";
 import { ensureUsableResult } from "./subagent-result-gate";
 import { forkSeedEntries } from "./subagent-fork-seed";

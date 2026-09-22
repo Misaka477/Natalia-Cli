@@ -10,7 +10,7 @@
  */
 import type { RuntimeTool } from "@anthelia/tools";
 import { applyPlanDocTick } from "@natalia/work-ledger";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 
 /** Lists the workspace plan documents with their stable planIDs and paths. */
 export function createPlanDocListTool(ctx: RuntimeContext): RuntimeTool {

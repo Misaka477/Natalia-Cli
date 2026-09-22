@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import type { SessionExecutionState } from "../src/runtime/context";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { ensureSessionFullEvents } from "../src/runtime/session-full-events";
 import { sessionStoreController } from "@anthelia/session-store";
 import { createTestContext } from "@natalia/runtime-services";
@@ -58,7 +58,7 @@ test("ensureSessionFullEvents loads the full log when the fast path seeded only 
       // persistence chain to drain, but the contract must still be honored.
       getSessionPersistenceForSession: async () => undefined,
     },
-  } as unknown as import("../src/runtime/context").RuntimeContext;
+  } as unknown as import("@anthelia/substrate").RuntimeContext;
   const exec = {
     session: {
       id: "ses_full_events" as SessionID,

@@ -9,7 +9,7 @@ import {
   type PackageManagerRun,
 } from "@natalia/installer";
 import { createPluginRuntime } from "../src/runtime/plugin-runtime";
-import type { RuntimeContext } from "../src/runtime/context";
+import type { RuntimeContext } from "@anthelia/substrate";
 
 const packageName = "@fixture/natalia-plugin";
 const pluginID = "fixture.plugin";

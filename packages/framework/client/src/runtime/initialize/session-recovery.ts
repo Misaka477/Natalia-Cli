@@ -1,4 +1,4 @@
-import type { InitializeOptions, RuntimeContext } from "../context";
+import type { InitializeOptions, RuntimeContext } from "@anthelia/substrate";
 import { createInitializeRuntime } from "./runtime";
 import { SessionRecoveryCoordinator } from "./session-recovery-coordinator";
 

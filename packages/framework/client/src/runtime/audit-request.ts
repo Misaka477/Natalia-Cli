@@ -1,6 +1,9 @@
 import { workLedgerController } from "@natalia/work-ledger";
 import type { RuntimeEvent } from "@natalia/contracts";
-import type { RuntimeContext, SessionExecutionState } from "./context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
 /**

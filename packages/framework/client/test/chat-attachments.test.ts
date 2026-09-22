@@ -20,7 +20,7 @@ import {
 import type {
   RuntimeContext,
   SessionExecutionState,
-} from "../src/runtime/context";
+} from "@anthelia/substrate";
 import { createNaviChatTurn } from "../src/runtime/collaboration/chat-turn-navi";
 import { createNiaChatTurn } from "../src/runtime/collaboration/chat-turn-nia";
 import {

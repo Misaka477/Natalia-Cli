@@ -10,7 +10,7 @@
  * the compiler draws it, and the substrate-purity guard keeps the core
  * file clean as extraction proceeds.
  */
-import type { RuntimeContext, RuntimeState } from "./context";
+import type { RuntimeContext, RuntimeState } from "@anthelia/substrate";
 
 /** Policy-owned mutable state: per-domain sequence counters + wake tasks. */
 export type ProductRuntimeState = {

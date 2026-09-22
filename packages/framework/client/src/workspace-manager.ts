@@ -19,7 +19,7 @@ import {
   type WorkspaceToolSettings,
 } from "@natalia/contracts";
 import { createRealRuntimeClient } from "./runtime/main";
-import type { RealRuntimeClientOptions } from "./runtime/options";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 export type WorkspaceManagerOptions = Pick<
   RealRuntimeClientOptions,

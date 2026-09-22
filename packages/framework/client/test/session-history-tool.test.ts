@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { RuntimeMessagePage, SessionID } from "@natalia/contracts";
 import { createSessionHistoryTool } from "../src/runtime/session-history-tool";
-import type { RuntimeContext } from "../src/runtime/context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionRecord } from "@anthelia/session";
 import { sessionStoreController } from "@anthelia/session-store";
 import { createTestContext } from "@natalia/runtime-services";

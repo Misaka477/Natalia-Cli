@@ -9,8 +9,8 @@
 import { projectInteractiveRequests } from "@anthelia/session";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { PluginCommand } from "@natalia/plugin";
-import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { tryActionSlashCommand } from "./slash-action";
 
 export { EGRESS_ADVISORY } from "../../egress-advisory";

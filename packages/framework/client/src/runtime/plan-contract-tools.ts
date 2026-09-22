@@ -26,8 +26,11 @@ import {} from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { providerModelController } from "@anthelia/provider-model";
-import type { RuntimeTool } from "./context";
-import type { RuntimeContext, SessionExecutionState } from "./context";
+import type { RuntimeTool } from "@anthelia/substrate";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import type { ProviderModelController } from "@anthelia/provider-model";
 import type { GovernanceLedgerController } from "@natalia/governance-ledger";
 import type { WorkLedgerController } from "@natalia/work-ledger";

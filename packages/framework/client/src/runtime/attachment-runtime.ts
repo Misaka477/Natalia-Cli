@@ -9,7 +9,7 @@
 import type { LocalAttachment, SessionID } from "@natalia/contracts";
 import { sessionStoreController } from "@anthelia/session-store";
 import { attachmentService } from "@anthelia/attachments";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type { AttachmentService } from "@natalia/runtime";
 import type { SessionStoreController } from "@anthelia/session-store";

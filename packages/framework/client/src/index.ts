@@ -22,7 +22,7 @@ export {
   type SessionWindowOptions,
   type SessionWindowPage,
   type SessionWindowSnapshot,
-} from "./runtime/session-window";
+} from "@anthelia/substrate";
 export type { RuntimeServiceClient } from "@natalia/runtime-services";
 export {
   classifyPermissionFamily,
@@ -30,7 +30,7 @@ export {
   type PermissionFamily,
 } from "@natalia/contracts";
 export { assertConfigApplied } from "@natalia/config";
-export type { RealRuntimeClientOptions } from "./runtime/options";
+export type { RealRuntimeClientOptions } from "@anthelia/substrate";
 export { CapabilityHost } from "@natalia/capability";
 export {
   toolFamilyCapabilityID,

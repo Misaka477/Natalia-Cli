@@ -64,7 +64,7 @@ import type {
   TerminalCommandBuffer,
   ToolRegistry as ToolRegistryType,
 } from "@anthelia/tools";
-import type { RuntimePerformanceTrace } from "../performance-trace";
+import type { RuntimePerformanceTrace } from "./performance-trace";
 import type { SessionExecutionState } from "./session-execution-state";
 import type {
   AttachmentService,

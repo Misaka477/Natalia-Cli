@@ -22,8 +22,8 @@ import {
 } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { workspaceMutations } from "@anthelia/workspace";
-import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
 export type BuildContextInput = {

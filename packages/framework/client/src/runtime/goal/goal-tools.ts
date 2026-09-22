@@ -8,7 +8,10 @@
  */
 import type { GoalBlockReason, SessionID } from "@natalia/contracts";
 import type { RuntimeTool } from "@anthelia/tools";
-import type { RuntimeContext, SessionExecutionState } from "../context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import type { GoalRuntime } from "./goal-runtime";
 
 type Params = Record<string, unknown>;

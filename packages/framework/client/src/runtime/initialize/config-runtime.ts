@@ -3,7 +3,7 @@ import type {
   InitializeOptions,
   RuntimeContext,
   ToolPolicyService,
-} from "../context";
+} from "@anthelia/substrate";
 import { collaborationWaiter } from "@natalia/collaboration";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";

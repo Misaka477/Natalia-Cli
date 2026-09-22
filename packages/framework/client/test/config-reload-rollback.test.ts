@@ -6,7 +6,7 @@ import { updateConfig } from "@natalia/config";
 import { createConfigReload } from "../src/runtime/config-reload";
 import { createTestContext } from "@natalia/runtime-services";
 import { createToolPublish } from "../src/runtime/tool-publish";
-import type { RuntimeContext } from "../src/runtime/context";
+import type { RuntimeContext } from "@anthelia/substrate";
 
 // A config reload mutates live runtime state in place; if a later step throws,
 // rollbackReload puts the previous state back. This exercises that path — which

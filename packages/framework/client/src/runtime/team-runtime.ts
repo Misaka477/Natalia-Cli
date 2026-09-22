@@ -8,7 +8,7 @@ import {
   type SandboxService,
   type SubagentsService,
 } from "@natalia/runtime-services";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { SandboxChangeView } from "@anthelia/tools";
 
 export function createTeamRuntime(ctx: RuntimeContext) {

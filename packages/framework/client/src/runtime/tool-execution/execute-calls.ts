@@ -32,9 +32,9 @@ import type {
   RuntimeEvent,
 } from "@natalia/contracts";
 import type { ToolMaterialization } from "@anthelia/tools";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import { ensureCompleteSessionFactState } from "../session-full-events";
-import type { RealRuntimeClientOptions } from "../options";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
 /**

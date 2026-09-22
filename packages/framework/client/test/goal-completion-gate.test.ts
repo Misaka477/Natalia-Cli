@@ -4,7 +4,7 @@ import { goalTools } from "../src/runtime/goal/goal-tools";
 import type {
   RuntimeContext,
   SessionExecutionState,
-} from "../src/runtime/context";
+} from "@anthelia/substrate";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeTool } from "@anthelia/tools";
 

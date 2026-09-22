@@ -3,7 +3,7 @@ import {
   projectedWorkGraphEdges,
   projectedWorkGraphNodes,
 } from "@anthelia/session";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,

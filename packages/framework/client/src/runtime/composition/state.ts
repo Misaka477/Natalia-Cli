@@ -8,15 +8,15 @@ import {
   ProviderConcurrencyLimiter,
 } from "@natalia/runtime";
 import { createToolRegistry } from "@anthelia/tools";
-import { RuntimePerformanceTrace } from "../../performance-trace";
+import { RuntimePerformanceTrace } from "@anthelia/substrate";
 import { createCapabilityServiceBindings } from "./service-bindings";
 import { defaultContextStatusConfig } from "../provider-selection";
-import type { RuntimeContext, RuntimeState } from "../context";
+import type { RuntimeContext, RuntimeState } from "@anthelia/substrate";
 import type {
   ProductRuntimeContext,
   ProductRuntimeState,
 } from "../product-context";
-import type { RealRuntimeClientOptions } from "../options";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
   at: string;
@@ -28,7 +28,7 @@ export function createCompositionContext(
   const permissionMode = options.permissionMode ?? "ask";
   const executionBySession = new Map<
     SessionID,
-    import("../context").SessionExecutionState
+    import("@anthelia/substrate").SessionExecutionState
   >();
   const turnSession = new Map<string, SessionID>();
   const runtimeDiagnostics: RuntimeDiagnostic[] = [];

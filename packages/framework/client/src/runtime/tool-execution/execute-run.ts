@@ -21,9 +21,9 @@ import { workLedgerController as workLedgerControllerToken } from "@natalia/work
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
 import { workspaceMutations, workspaceWriteLock } from "@anthelia/workspace";
 import { buildToolExecutionContext } from "./execute-context";
-import type { SessionExecutionState } from "../context";
-import type { RealRuntimeClientOptions } from "../options";
-import type { RuntimeContext } from "../context";
+import type { SessionExecutionState } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
+import type { RuntimeContext } from "@anthelia/substrate";
 import { activePlanForExec } from "../collaboration/plan-doc-runtime";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 import { OPAQUE_WORKSPACE_WRITERS, rinaCache } from "@natalia/rina";

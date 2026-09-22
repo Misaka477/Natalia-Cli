@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { CapabilityRegistry } from "@natalia/capability";
-import { snapshotProjectionContributions } from "../src/projection-contributions";
+import { snapshotProjectionContributions } from "@anthelia/substrate";
 
 test("projection contributions keep title and placement and drop unknown keys", () => {
   const registry = new CapabilityRegistry();

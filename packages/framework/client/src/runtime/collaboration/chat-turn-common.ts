@@ -24,7 +24,10 @@ import {
 import type { AttachmentService } from "@natalia/runtime";
 import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
 import { compactionService } from "@anthelia/compaction";
-import type { RuntimeContext, SessionExecutionState } from "../context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import { logOf } from "@natalia/operation-log";
 
 const ledgerHistories = new WeakMap<ContextLedger, ProviderMessage[]>();

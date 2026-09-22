@@ -56,7 +56,7 @@ test("composition lives in the kernel layer — checked where it is declared", (
 });
 
 test("substrate core carries no policy import — the boundary bites", () => {
-  const core = "packages/framework/client/src/runtime/context.ts";
+  const core = "packages/framework/substrate/src/context.ts";
   expect(
     findSubstratePurityViolation(
       core,
@@ -83,6 +83,15 @@ test("substrate core carries no policy import — the boundary bites", () => {
     findSubstratePurityViolation(
       "packages/framework/client/src/runtime/ports.ts",
       'from "@natalia/work-ledger"',
+    ),
+  ).toBeUndefined();
+  // context-ledger stays legal in substrate: the policy BAND governs the
+  // prefix (it remains @natalia), while the import ban names §1.1's
+  // concepts — context machinery underpins exec/initialize/ports.
+  expect(
+    findSubstratePurityViolation(
+      core,
+      'import type { L } from "@natalia/context-ledger";',
     ),
   ).toBeUndefined();
 });

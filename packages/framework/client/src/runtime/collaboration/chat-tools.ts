@@ -26,8 +26,8 @@ import {
   type CollaborationService,
 } from "@natalia/collaboration";
 import { chatToolSummary } from "./chat-summary";
-import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import { captureRepositoryEvidenceFields } from "../repository-refs";
 import { createDetourReviewTool } from "../plan-contract-tools";

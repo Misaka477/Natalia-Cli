@@ -7,8 +7,8 @@ import { createCheckpointRuntime } from "../checkpoint-runtime";
 import { createTitleGeneration } from "../title-generation";
 import { createSessionAdmission } from "../session-admission";
 import { createCommands } from "../commands";
-import type { RuntimeContext } from "../context";
-import type { RealRuntimeClientOptions } from "../options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 export function wireExecution(
   ctx: RuntimeContext,

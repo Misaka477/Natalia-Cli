@@ -26,10 +26,10 @@ import { modelCatalogInWorker } from "./session-project-client";
 import type { AgentDefinition } from "@anthelia/agent";
 import type { ConfigV3, ModelCapabilities } from "@natalia/contracts";
 import type { ContextWindowResolver } from "@natalia/runtime";
-import type { SessionExecutionState } from "./context";
-import type { RuntimeContext } from "./context";
-import type { RuntimeContextStatusConfig } from "./status-config";
-import type { RealRuntimeClientOptions } from "./options";
+import type { SessionExecutionState } from "@anthelia/substrate";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RuntimeContextStatusConfig } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import { perfLog } from "@natalia/runtime-services";
 
 export function defaultContextStatusConfig(): RuntimeContextStatusConfig {

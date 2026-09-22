@@ -20,10 +20,13 @@ import { attachmentService as attachmentServiceToken } from "@anthelia/attachmen
 import { retryService } from "@anthelia/retry";
 import { compactionService } from "@anthelia/compaction";
 import { mcpService } from "@natalia/runtime-services";
-import type { RuntimeContext, SessionExecutionState } from "./context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import { activePlanForExec } from "./collaboration/plan-doc-runtime";
 import { loadProjectDocumentsSync } from "./project-docs";
-import type { RealRuntimeClientOptions } from "./options";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
 import type { AttachmentService } from "@natalia/runtime";
 

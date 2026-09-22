@@ -13,7 +13,10 @@ import {
   projectedNaviChatMessages,
   projectedNiaChatMessages,
 } from "@anthelia/session";
-import type { RuntimeContext, SessionExecutionState } from "../context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import { ensureSessionFullEvents } from "../session-full-events";
 import { scanSessionWindowNewestFirst } from "../session-event-window";
 import { paginateTranscript } from "../transcript-page";

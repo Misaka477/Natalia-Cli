@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
-import type { SessionExecutionState } from "../src/runtime/context";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { mainTurnHasInfrastructureError } from "../src/runtime/event-sink";
 
 function execWith(events: RuntimeEvent[]): SessionExecutionState {

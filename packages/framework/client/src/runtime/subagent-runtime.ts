@@ -16,7 +16,7 @@ import {
   subagentsService,
   type SubagentsService,
 } from "@natalia/runtime-services";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { subagentHistoryInWorker } from "./session-project-client";
 import { ensureSessionFullEvents } from "./session-full-events";

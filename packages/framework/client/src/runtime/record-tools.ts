@@ -20,7 +20,10 @@ import type {
 import { redactToolOutput } from "./engineering-intelligence/redaction";
 import { runValidationCommand } from "./engineering-intelligence/validation";
 import { captureRepositoryEvidenceFields } from "./repository-refs";
-import type { RuntimeContext, SessionExecutionState } from "./context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 
 function resolveExec(
   ctx: RuntimeContext,

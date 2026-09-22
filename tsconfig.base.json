@@ -20,6 +20,7 @@
       "@natalia/capability": ["packages/core/capability/src/index.ts"],
       "@anthelia/checkpoint": ["packages/framework/checkpoint/src/index.ts"],
       "@natalia/composition": ["packages/core/composition/src/index.ts"],
+      "@anthelia/substrate": ["packages/framework/substrate/src/index.ts"],
       "@natalia/collaboration": [
         "packages/framework/collaboration/src/index.ts"
       ],

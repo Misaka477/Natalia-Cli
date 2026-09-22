@@ -1,13 +1,13 @@
 import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextLedger, TokenMeter, memoryTrace } from "@natalia/runtime";
 import type { SessionProjection } from "@anthelia/session";
-import { announcedTurnIDsFrom } from "../session-execution-state";
+import { announcedTurnIDsFrom } from "@anthelia/substrate";
 import { reseedSessionFactState } from "../session-facts";
 import type {
   InitializeOptions,
   SandboxService,
   SessionExecutionState,
-} from "../context";
+} from "@anthelia/substrate";
 import {
   prepareSessionRecoveryContextInWorker,
   projectSessionInWorker,

@@ -8,8 +8,8 @@ import {
   parseToolArguments,
   tryParseToolArguments,
 } from "../../tool-arguments";
-import type { RuntimeContext } from "../context";
-import type { RealRuntimeClientOptions } from "../options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import { isManagedResourceTool, waitForToolExecution } from "./helpers";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
 import { collaborationWaiter } from "@natalia/collaboration";

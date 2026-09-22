@@ -15,8 +15,8 @@ import {
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { workspaceFiles } from "@anthelia/workspace";
-import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { activePlanForExec } from "./plan-doc-runtime";
 import {
   projectedConstitutionRules,

@@ -13,9 +13,9 @@ import { createNiaChatTurn } from "../collaboration/chat-turn-nia";
 import { createPluginAssembly } from "../plugin-assembly";
 import { createConfigReload } from "../config-reload";
 import { createToolPublish } from "../tool-publish";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { ProductRuntimeContext } from "../product-context";
-import type { RealRuntimeClientOptions } from "../options";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 export type FeatureAssembly = ReturnType<typeof wireFeatures>;
 

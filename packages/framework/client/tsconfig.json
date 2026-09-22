@@ -46,6 +46,9 @@
       "path": "../../framework/runtime-diagnostics"
     },
     {
+      "path": "../../framework/substrate"
+    },
+    {
       "path": "../../hosts/config"
     },
     {

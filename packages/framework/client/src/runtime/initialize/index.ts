@@ -1,4 +1,4 @@
-import type { InitializeOptions, RuntimeContext } from "../context";
+import type { InitializeOptions, RuntimeContext } from "@anthelia/substrate";
 import { configureCatalog } from "./config-catalog";
 import { configureRuntime } from "./config-runtime";
 import { resolveServices } from "./services";

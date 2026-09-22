@@ -12,8 +12,8 @@ import {
 } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { statusSnapshotController } from "@natalia/runtime-status";
-import { createPluginsController } from "../../plugins-controller";
-import type { RuntimeContext } from "../context";
+import { createPluginsController } from "@anthelia/substrate";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { ProductRuntimeContext } from "../product-context";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
 import type { WorkLedgerController } from "@natalia/work-ledger";

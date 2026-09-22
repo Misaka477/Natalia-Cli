@@ -14,7 +14,7 @@ import {
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import type { SessionID } from "@natalia/contracts";
 import type { ProviderModelController } from "@anthelia/provider-model";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 
 export type ProviderModelHandle = { close(): void };
 

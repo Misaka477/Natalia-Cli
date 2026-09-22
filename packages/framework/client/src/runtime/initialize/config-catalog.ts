@@ -3,7 +3,7 @@ import type {
   InitializeCatalogResult,
   InitializeOptions,
   RuntimeContext,
-} from "../context";
+} from "@anthelia/substrate";
 
 export async function configureCatalog(
   ctx: RuntimeContext,

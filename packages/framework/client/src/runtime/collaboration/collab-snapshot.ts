@@ -17,9 +17,9 @@ import {
   projectedPlanDocs,
 } from "@anthelia/session";
 import { computeCollabSnapshotInWorker } from "../session-project-client";
-import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../context";
-import type { CollabSnapshot } from "../session-execution-state";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
+import type { CollabSnapshot } from "@anthelia/substrate";
 import { perfLog } from "@natalia/runtime-services";
 import { completeSessionFactState } from "../session-facts";
 

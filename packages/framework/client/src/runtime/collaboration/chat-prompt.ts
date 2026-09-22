@@ -21,9 +21,9 @@ import {
   sessionFactMailboxMessages,
 } from "@anthelia/session";
 import type { RuntimeEvent } from "@natalia/contracts";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import { agentSystemPrompt } from "@natalia/agent-prompts";
-import type { SessionExecutionState } from "../context";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { activePlanForExec } from "./plan-doc-runtime";
 
 /**

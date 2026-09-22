@@ -22,7 +22,10 @@ import type {
   SessionID,
 } from "@natalia/contracts";
 import type { RuntimeTool } from "@anthelia/tools";
-import type { RuntimeContext, SessionExecutionState } from "../context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import { goalTools } from "./goal-tools";
 import { runCompletionCheck } from "./goal-completion-check";
 import { logOf } from "@natalia/operation-log";

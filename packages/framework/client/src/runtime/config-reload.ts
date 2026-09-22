@@ -19,8 +19,8 @@ import {
 } from "@anthelia/checkpoint";
 import { ObjectStore } from "@natalia/object-store";
 import { buildGeneration, storeGeneration } from "@natalia/composition";
-import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "./options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { ConfigV3, ConstitutionRule } from "@natalia/contracts";
 import { resolve } from "node:path";
 import { resolveWorkspaceObjectsRoot } from "@natalia/platform";

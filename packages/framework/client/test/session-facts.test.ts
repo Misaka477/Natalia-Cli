@@ -5,7 +5,7 @@ import {
   feedSessionFactState,
   reseedSessionFactState,
 } from "../src/runtime/session-facts";
-import type { SessionExecutionState } from "../src/runtime/session-execution-state";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { sessionFactConstitutionRules } from "@anthelia/session";
 
 function ruleEvent(id: string, ruleID: string): RuntimeEvent {

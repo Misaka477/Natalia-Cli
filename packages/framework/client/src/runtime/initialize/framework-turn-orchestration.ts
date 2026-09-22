@@ -15,7 +15,10 @@ import { providerModelController } from "@anthelia/provider-model";
 import { sessionStoreController } from "@anthelia/session-store";
 import type { SessionID } from "@natalia/contracts";
 import type { SessionStoreController } from "@anthelia/session-store";
-import type { RuntimeContext, SessionExecutionState } from "../context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import type { ProviderModelController } from "@anthelia/provider-model";
 import { logOf } from "@natalia/operation-log";
 

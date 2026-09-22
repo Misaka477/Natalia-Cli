@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CapabilityRegistry } from "@natalia/capability";
 import { createToolRegistry } from "@anthelia/tools";
-import { createPluginsController } from "../src/plugins-controller";
+import { createPluginsController } from "@anthelia/substrate";
 import type { Plugin } from "@natalia/plugin";
 
 function host(workspaceRoot: string) {

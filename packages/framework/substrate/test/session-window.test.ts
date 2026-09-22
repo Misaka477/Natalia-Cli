@@ -3,7 +3,7 @@ import {
   SessionWindow,
   createRuntimeEventWindowLoader,
   type SessionWindowPage,
-} from "../src/runtime/session-window";
+} from "@anthelia/substrate";
 
 type Event = { seq: number; text: string };
 

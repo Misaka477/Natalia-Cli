@@ -21,7 +21,7 @@ import {
   type RuntimeGitRef,
   type RuntimeWorkspaceDiffChange,
 } from "@natalia/contracts";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import { resolveNamedPluginWorkspaceResource } from "./plugin-workspace-resources";
 
 type WorkspaceRuntime = Pick<

@@ -17,9 +17,9 @@ import type { PermissionProfileCommandRules } from "@anthelia/tools";
 import type { ToolPolicyHookLayer } from "@natalia/runtime-services";
 import { toolPolicy } from "@natalia/tool-policy";
 import { type ToolPolicyService } from "@natalia/runtime-services";
-import type { SessionExecutionState } from "./context";
-import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "./options";
+import type { SessionExecutionState } from "@anthelia/substrate";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 type PermissionProfile = import("@natalia/contracts").PermissionProfile;
 

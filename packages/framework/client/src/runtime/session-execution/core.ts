@@ -2,7 +2,7 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { turnController } from "@anthelia/turn-orchestration";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { sessionRunCoordinator } from "@anthelia/session";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
 import type { TurnController } from "@anthelia/turn-orchestration";
 type Surface = Pick<

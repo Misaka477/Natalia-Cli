@@ -5,7 +5,10 @@ import {
   type ProjectedMailboxMessage,
 } from "@anthelia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
-import type { RuntimeContext, SessionExecutionState } from "../context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import { scanSessionWindowNewestFirst } from "../session-event-window";
 type Surface = Pick<

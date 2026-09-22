@@ -136,8 +136,8 @@ export function prepareSessionRecoveryContextInWorker(
 
 export function computeCollabSnapshotInWorker(
   events: RuntimeEvent[],
-): Promise<import("./session-execution-state").CollabSnapshot> {
-  return run<import("./session-execution-state").CollabSnapshot>({
+): Promise<import("@anthelia/substrate").CollabSnapshot> {
+  return run<import("@anthelia/substrate").CollabSnapshot>({
     op: "collabSnapshot",
     events,
   });

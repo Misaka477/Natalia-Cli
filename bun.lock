@@ -196,6 +196,7 @@
         "@anthelia/session": "workspace:*",
         "@anthelia/session-store": "workspace:*",
         "@anthelia/subagents": "workspace:*",
+        "@anthelia/substrate": "workspace:*",
         "@anthelia/tools": "workspace:*",
         "@anthelia/turn-orchestration": "workspace:*",
         "@anthelia/workspace": "workspace:*",
@@ -386,6 +387,29 @@
       "dependencies": {
         "@anthelia/tools": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
+      },
+    },
+    "packages/framework/substrate": {
+      "name": "@anthelia/substrate",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@anthelia/agent": "workspace:*",
+        "@anthelia/checkpoint": "workspace:*",
+        "@anthelia/provider-model": "workspace:*",
+        "@anthelia/session": "workspace:*",
+        "@anthelia/session-store": "workspace:*",
+        "@anthelia/tools": "workspace:*",
+        "@anthelia/turn-orchestration": "workspace:*",
+        "@anthelia/workspace": "workspace:*",
+        "@natalia/capability": "workspace:*",
+        "@natalia/collaboration": "workspace:*",
+        "@natalia/config": "workspace:*",
+        "@natalia/context-ledger": "workspace:*",
+        "@natalia/contracts": "workspace:*",
+        "@natalia/plugin": "workspace:*",
+        "@natalia/runtime": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+        "@natalia/runtime-status": "workspace:*",
       },
     },
     "packages/framework/tool-policy": {
@@ -772,6 +796,8 @@
     "@anthelia/session-store": ["@anthelia/session-store@workspace:packages/framework/session-store"],
 
     "@anthelia/subagents": ["@anthelia/subagents@workspace:packages/framework/subagents"],
+
+    "@anthelia/substrate": ["@anthelia/substrate@workspace:packages/framework/substrate"],
 
     "@anthelia/tools": ["@anthelia/tools@workspace:packages/core/tools"],
 

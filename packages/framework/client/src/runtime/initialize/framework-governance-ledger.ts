@@ -8,7 +8,7 @@
  * subsystem, which is wired before it.
  */
 import { createGovernanceLedgerController } from "@natalia/governance-ledger";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 
 export function wireGovernanceLedger(ctx: RuntimeContext): void {

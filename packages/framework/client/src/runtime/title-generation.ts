@@ -15,7 +15,7 @@ import {
   isInvalidGeneratedSessionTitle,
   sanitizeSessionTitleInput,
 } from "../session-title";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionStoreController } from "@anthelia/session-store";
 
 export function createTitleGeneration(ctx: RuntimeContext) {

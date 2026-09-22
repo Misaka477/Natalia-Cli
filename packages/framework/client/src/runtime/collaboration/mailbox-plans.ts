@@ -20,8 +20,8 @@ import {
   COLLABORATION_SERVICE,
   type CollaborationService,
 } from "@natalia/collaboration";
-import type { RuntimeContext } from "../context";
-import type { SessionExecutionState } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { ensureSessionFullEvents } from "../session-full-events";
 import { findMailboxMessage } from "./mailbox";
 import { logOf } from "@natalia/operation-log";

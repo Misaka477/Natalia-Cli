@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RuntimeTool } from "@anthelia/tools";
-import type { RuntimeContext } from "../src/runtime/context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import { createChatTools } from "../src/runtime/collaboration/chat-tools";
 
 function tool(name: string): RuntimeTool {

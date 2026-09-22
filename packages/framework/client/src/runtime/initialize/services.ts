@@ -4,7 +4,7 @@ import type {
   SessionID,
   StatusSnapshotController,
   TurnController,
-} from "../context";
+} from "@anthelia/substrate";
 import type {
   ContextLedgerFactory,
   GovernanceLedgerController,

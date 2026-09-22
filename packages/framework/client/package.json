@@ -20,6 +20,7 @@
     "@anthelia/session": "workspace:*",
     "@anthelia/session-store": "workspace:*",
     "@anthelia/subagents": "workspace:*",
+    "@anthelia/substrate": "workspace:*",
     "@anthelia/tools": "workspace:*",
     "@anthelia/turn-orchestration": "workspace:*",
     "@anthelia/workspace": "workspace:*",

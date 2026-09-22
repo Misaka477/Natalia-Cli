@@ -12,7 +12,7 @@ import { createSelectionSurface } from "../src/runtime/provider-selection/select
 import type {
   RuntimeContext,
   SessionExecutionState,
-} from "../src/runtime/context";
+} from "@anthelia/substrate";
 
 async function harness() {
   const root = await mkdtemp(join(tmpdir(), "natalia-provider-management-"));

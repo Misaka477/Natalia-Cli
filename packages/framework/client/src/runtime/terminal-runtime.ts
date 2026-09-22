@@ -15,7 +15,7 @@ import type {
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 export function createTerminalRuntime(ctx: RuntimeContext) {
   return {
     setPendingHumanTerminal,

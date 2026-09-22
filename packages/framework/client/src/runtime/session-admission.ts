@@ -18,8 +18,8 @@ import type { WorkLedgerController } from "@natalia/work-ledger";
 import { workLedgerController } from "@natalia/work-ledger";
 import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
 import type { SessionID, SubmitInput, SubmittedTurn } from "@natalia/contracts";
-import type { RuntimeContext } from "./context";
-import type { RealRuntimeClientOptions } from "./options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { AttachmentService } from "@natalia/runtime";
 
 export function createSessionAdmission(

@@ -9,7 +9,7 @@ import { createTestContext } from "@natalia/runtime-services";
 import type {
   RuntimeContext,
   SessionExecutionState,
-} from "../src/runtime/context";
+} from "@anthelia/substrate";
 import type { ProductRuntimeContext } from "../src/runtime/product-context";
 import { createNaviChatTurn } from "../src/runtime/collaboration/chat-turn-navi";
 import { createNiaChatTurn } from "../src/runtime/collaboration/chat-turn-nia";

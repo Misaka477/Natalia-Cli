@@ -44,7 +44,10 @@ import {
   unattributedChangeNodes,
   verifyWorkGraphIntegrity,
 } from "@natalia/work-ledger";
-import type { RuntimeContext, SessionExecutionState } from "../context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 import { requestAuditAfterCompletion } from "../audit-request";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import { injectFindingIntoMainAgent } from "../drift-inject";

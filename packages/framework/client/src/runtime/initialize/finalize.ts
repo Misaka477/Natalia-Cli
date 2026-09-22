@@ -3,7 +3,7 @@ import {
   loadInstanceGovernance,
   resolveGovernanceRoot,
 } from "@natalia/governance-ledger";
-import type { InitializeOptions, RuntimeContext } from "../context";
+import type { InitializeOptions, RuntimeContext } from "@anthelia/substrate";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";

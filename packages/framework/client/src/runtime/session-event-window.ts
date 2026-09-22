@@ -4,14 +4,14 @@ import {
 } from "@anthelia/session-store";
 import { runtimeEventSessionSeq, type RuntimeEvent } from "@natalia/contracts";
 import { ensureSessionFullEvents } from "./session-full-events";
-import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "./session-execution-state";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { logOf } from "@natalia/operation-log";
 import {
   SessionWindow,
   type SessionWindowEntry,
   type SessionWindowLoader,
-} from "./session-window";
+} from "@anthelia/substrate";
 
 const DEFAULT_EVENT_WINDOW_PAGE = 2_000;
 

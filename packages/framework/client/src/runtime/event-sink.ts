@@ -26,9 +26,9 @@ import { sessionStoreController as sessionStoreControllerToken } from "@anthelia
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { feedSessionEventWindow } from "./session-event-window";
 import { feedSessionFactState } from "./session-facts";
-import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "./context";
-import type { RealRuntimeClientOptions } from "./options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import { perfLog } from "@natalia/runtime-services";
 import { logOf } from "@natalia/operation-log";
 

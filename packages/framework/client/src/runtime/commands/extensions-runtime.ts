@@ -1,8 +1,8 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { manifestIntegrationPoints } from "@natalia/plugin";
 import { projectPluginsInWorker } from "../secondary-worker-client";
-import type { RuntimeContext } from "../context";
-import { snapshotProjectionContributions } from "../../projection-contributions";
+import type { RuntimeContext } from "@anthelia/substrate";
+import { snapshotProjectionContributions } from "@anthelia/substrate";
 type Surface = Pick<
   RuntimeServiceClient,
   | "plugins"

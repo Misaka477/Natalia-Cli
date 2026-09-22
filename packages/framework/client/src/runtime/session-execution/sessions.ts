@@ -6,7 +6,7 @@ import {
   type TerminalController,
 } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
 import type { SessionStoreController } from "@anthelia/session-store";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";

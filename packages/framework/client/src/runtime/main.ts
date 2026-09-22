@@ -11,11 +11,11 @@ import { wireFeatures } from "./composition/features";
 import { wireServices } from "./composition/services";
 import { wireExecution } from "./composition/execution";
 import { wireInitialize } from "./composition/initialize";
-import type { RealRuntimeClientOptions } from "./options";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 export { EGRESS_ADVISORY } from "./commands";
 export { terminalApprovalScope, terminalInputRisk };
-export type { RealRuntimeClientOptions } from "./options";
+export type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 /** Explicit composition root for the production runtime client. */
 export function createRealRuntimeClient(

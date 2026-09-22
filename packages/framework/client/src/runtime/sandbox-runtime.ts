@@ -10,7 +10,7 @@ import {
 import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { workspaceMutations } from "@anthelia/workspace";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
@@ -100,7 +100,7 @@ export function createSandboxRuntime(
   }
 
   async function sandboxIDsFor(
-    owner: import("./context").SessionExecutionState | undefined,
+    owner: import("@anthelia/substrate").SessionExecutionState | undefined,
   ) {
     if (!owner?.session) return new Set<string>();
     const window = await ensureSessionEventWindow(ctx, owner);
@@ -116,7 +116,7 @@ export function createSandboxRuntime(
 
   async function assertSandboxOwned(
     ctx: RuntimeContext,
-    owner: import("./context").SessionExecutionState,
+    owner: import("@anthelia/substrate").SessionExecutionState,
     id: string,
   ) {
     if (!(await sandboxIDsFor(owner)).has(id))

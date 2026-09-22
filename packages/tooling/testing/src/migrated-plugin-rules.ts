@@ -365,6 +365,7 @@ const clientClosureAllowlist = [
   "config",
   "confinement",
   "operation-log",
+  "substrate",
   "rina",
   "runtime-diagnostics",
   "context-ledger",
@@ -394,6 +395,18 @@ const clientClosureAllowlist = [
 ];
 
 /** Keep the client dependency closure free of non-kernel product packages. */
+
+/**
+ * The package's bare name under either prefix — the closure check covers
+ * both worlds (P3 moves mechanisms to @anthelia; round 41 silently
+ * un-guarded them here by testing only @natalia/, which this restores).
+ */
+function bareDep(name: string): string | undefined {
+  if (name.startsWith("@anthelia/")) return name.slice(10);
+  if (name.startsWith("@natalia/")) return name.slice(9);
+  return undefined;
+}
+
 export function findClientClosureViolation(
   path: string,
   text: string,
@@ -413,8 +426,8 @@ export function findClientClosureViolation(
       )
         return `client manifest recreates deleted plugin classification ${name}`;
       else if (
-        name.startsWith("@natalia/") &&
-        !allowed.has(name.slice(9)) &&
+        bareDep(name) !== undefined &&
+        !allowed.has(bareDep(name)!) &&
         !name.startsWith("@natalia/plugin-")
       )
         return `client manifest depends on non-kernel package ${name}`;
@@ -555,18 +568,21 @@ export function findCompositionKernelViolation(
  * so each extraction step extends the machine-checked boundary instead of
  * trusting review.
  *
- * The banned set is the §1.1 policy column's PACKAGES. `@natalia/
+ * The banned set is §1.1's NAMED forbidden CONCEPTS (goal/协作/治理/UI)
+ * as packages. The policy COLUMN governs prefix ownership — a package can
+ * stay @natalia while the engine legitimately imports its types;
+ * `context-ledger` is exactly that case (the runtime's context-window/
+ * epoch machinery underpins exec/initialize/ports — its `plan_handoff`
+ * kind is policy flavor, not the concept ban). Import bans name concepts,
+ * not bands — the extraction's inventory proved the over-reach. `@natalia/
  * collaboration` is deliberately NOT banned: that package hosts
  * InteractiveWaiter (human-in-turn machinery any agent needs); the policy
  * collaboration (Navi/Nia) lives in client's runtime/collaboration and
  * cannot be imported from here anyway (relative paths).
  */
-export const SUBSTRATE_CORE_FILES = [
-  "packages/framework/client/src/runtime/context.ts",
-] as const;
+export const SUBSTRATE_PACKAGE_ROOT = "packages/framework/substrate/src/";
 
 const POLICY_PACKAGES_IN_SUBSTRATE = [
-  "context-ledger",
   "goal",
   "governance-ledger",
   "work-ledger",
@@ -576,8 +592,9 @@ export function findSubstratePurityViolation(
   file: string,
   text: string,
 ): string | undefined {
-  if (!(SUBSTRATE_CORE_FILES as readonly string[]).includes(file))
-    return undefined;
+  // Every file in the extracted package is substrate material (the list
+  // grew with the extraction: whole package, not an enumerated subset).
+  if (!file.startsWith(SUBSTRATE_PACKAGE_ROOT)) return undefined;
   for (const name of POLICY_PACKAGES_IN_SUBSTRATE)
     if (new RegExp(`from ["']@natalia/${name}["']`, "u").test(text))
       return `substrate core (${file}) imports policy package @natalia/${name} — policy belongs in product-context`;

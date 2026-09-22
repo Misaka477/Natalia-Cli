@@ -13,14 +13,14 @@ import {
 } from "@anthelia/session";
 import type { WorkGraphEdge, WorkGraphNode } from "@natalia/contracts";
 import { activePlanForExec } from "./collaboration/plan-doc-runtime";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 
 const WORK_GRAPH_PAGE_LIMIT = 50;
 
 function resolveExec(
   ctx: RuntimeContext,
   sessionID?: string,
-): import("./context").SessionExecutionState | undefined {
+): import("@anthelia/substrate").SessionExecutionState | undefined {
   const exec = sessionID
     ? ctx.ports
         .getExecutionBySession()

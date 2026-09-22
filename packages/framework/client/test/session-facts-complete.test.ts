@@ -9,8 +9,8 @@ import {
   sessionFactStateFromEvents,
 } from "@anthelia/session";
 import { completeSessionFactState } from "../src/runtime/session-facts";
-import type { RuntimeContext } from "../src/runtime/context";
-import type { SessionExecutionState } from "../src/runtime/session-execution-state";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
 import { sessionStoreController } from "@anthelia/session-store";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { createTestContext } from "@natalia/runtime-services";

@@ -53,7 +53,7 @@ export type RuntimePortsExtra = {
   getRuntimeDiagnostics: () => Array<
     Extract<RuntimeEvent, { type: "diagnostic" }> & { at: string }
   >;
-  getPerformanceTrace: () => import("../performance-trace").RuntimePerformanceTrace;
+  getPerformanceTrace: () => import("./performance-trace").RuntimePerformanceTrace;
   getNativeRuntimeID: () => string;
   getUserRuntimeHome: () => string | undefined;
   getUserSkillRoot: () => string | undefined;
@@ -102,7 +102,7 @@ export type RuntimePortsExtra = {
   setProviderConcurrencyLimiter: (limiter: ProviderConcurrencyLimiter) => void;
   setAgentRegistry: (registry: AgentRegistry) => void;
   getPluginsController: () => ReturnType<
-    typeof import("../plugins-controller").createPluginsController
+    typeof import("./plugins-controller").createPluginsController
   >;
   runPluginLifecyclePostReconcile: (
     selectedSkills?: Map<SessionID, string>,

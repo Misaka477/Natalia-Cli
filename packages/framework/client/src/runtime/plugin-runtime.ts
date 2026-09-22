@@ -11,7 +11,7 @@ import {
 import { cp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import type { RuntimeContext } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
 
 type OfficialPlugin = (typeof OFFICIAL_PLUGIN_PACKAGES)[number];
 

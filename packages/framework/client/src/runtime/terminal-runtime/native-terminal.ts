@@ -1,8 +1,8 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { terminalController } from "@natalia/runtime-services";
 import { RuntimeRefusal } from "@natalia/contracts";
-import type { RuntimeContext } from "../context";
-import type { RealRuntimeClientOptions } from "../options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
@@ -45,7 +45,7 @@ function sessionExec(ctx: RuntimeContext, sessionID?: string) {
 
 async function terminalIDsFor(
   ctx: RuntimeContext,
-  exec: import("../context").SessionExecutionState | undefined,
+  exec: import("@anthelia/substrate").SessionExecutionState | undefined,
 ) {
   if (!exec?.session) return new Set<string>();
   const window = await ensureSessionEventWindow(ctx, exec);
@@ -61,7 +61,7 @@ async function terminalIDsFor(
 
 async function assertTerminalOwned(
   ctx: RuntimeContext,
-  exec: import("../context").SessionExecutionState,
+  exec: import("@anthelia/substrate").SessionExecutionState,
   id: string,
 ) {
   if (!(await terminalIDsFor(ctx, exec)).has(id))

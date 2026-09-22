@@ -17,7 +17,10 @@ import {
   type ProcessObserverService,
 } from "@anthelia/tools";
 import type { SessionID } from "@natalia/contracts";
-import type { RuntimeContext, SessionExecutionState } from "../context";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
 
 /** Entry id for one process's terminal notice. */
 function noticeEntryID(processID: string) {

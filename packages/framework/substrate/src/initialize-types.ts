@@ -69,7 +69,7 @@ export type InitializeDependencies = {
     exec: SessionExecutionState,
   ) => Promise<boolean>;
   scheduleTitleGeneration: (sessionID: SessionID) => void;
-  mountPlugins: typeof import("../plugin-mount").mountPlugins;
+  mountPlugins: typeof import("./plugin-mount").mountPlugins;
   agentPolicyLayer: (
     agent?: AgentDefinition,
   ) => import("@natalia/runtime-services").ToolPolicyHookLayer;

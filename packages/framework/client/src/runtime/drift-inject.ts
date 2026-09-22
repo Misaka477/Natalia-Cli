@@ -15,8 +15,8 @@
  * re-reviews it, EI §3.5 "reopen 后 warning/high 自动复审").
  */
 import { admitInput, buildInputAdmission } from "@anthelia/session";
-import type { RuntimeContext } from "./context";
-import type { SessionExecutionState } from "./context";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { SessionExecutionState } from "@anthelia/substrate";
 
 /** The minimal finding facts an injection needs (an opened event or a projection). */
 export type DriftFindingSummary = {

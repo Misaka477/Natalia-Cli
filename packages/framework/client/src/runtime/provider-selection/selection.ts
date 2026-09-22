@@ -2,8 +2,8 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { modelRefKey, parseModelRef } from "@natalia/contracts";
 import { nextContextInstructionsRevision } from "@anthelia/session";
 import { discoverProviderModels, updateConfigAtScope } from "@natalia/config";
-import type { RuntimeContext } from "../context";
-import type { RealRuntimeClientOptions } from "../options";
+import type { RuntimeContext } from "@anthelia/substrate";
+import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 type ClientSurfaceOptions = Pick<RealRuntimeClientOptions, "globalConfigPath">;
 type Surface = Pick<
   RuntimeServiceClient,

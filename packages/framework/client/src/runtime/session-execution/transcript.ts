@@ -2,7 +2,7 @@ import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { projectInteractiveRequests } from "@anthelia/session";
 import type { SessionID } from "@natalia/contracts";
-import type { RuntimeContext } from "../context";
+import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
 import { perfLog } from "@natalia/runtime-services";
 import type { SessionStoreController } from "@anthelia/session-store";
