@@ -311,4 +311,10 @@ export type RuntimePorts = {
     providerReconfigured: boolean;
     reason?: string;
   }>;
+  /**
+   * The global config path THIS runtime read from — set at every config
+   * read, so a writer (the generation tools' apply seam) lands global-model
+   * rows in the same file the reader used instead of guessing.
+   */
+  configGlobalPath?: () => string;
 };

@@ -44,7 +44,9 @@ import {
  * `rule_added` event shape into contract rows. Empty only when no session
  * exists yet — there is no active constitution to violate.
  */
-function activeConstitutionRows(ctx: RuntimeContext): ConstitutionRule[] {
+export function activeConstitutionRows(
+  ctx: RuntimeContext,
+): ConstitutionRule[] {
   const exec = [...ctx.ports.getExecutionBySession().values()][0];
   if (!exec?.session) return [];
   return projectedConstitutionRules(exec.session.events).map((event) => ({

@@ -52,6 +52,11 @@ import {
   createDetourDeclareTool,
 } from "../plan-contract-tools";
 import { createWorkGraphQueryTool } from "../work-graph-tools";
+import {
+  createApplyGenerationTool,
+  createProposeGenerationTool,
+  createRollbackGenerationTool,
+} from "../generation-tools";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import {
   createDriftAcknowledgeTool,
@@ -296,6 +301,11 @@ export async function wireFrameworkServices(
     createRecordDecisionTool(ctx),
     createConstitutionProposeTool(ctx),
     createDriftAcknowledgeTool(ctx),
+    // NGM §4.4: the L2 generation tools (propose -> apply through the
+    // four-face gate -> rollback, always allowed).
+    createProposeGenerationTool(ctx),
+    createApplyGenerationTool(ctx),
+    createRollbackGenerationTool(ctx),
   ]) {
     if (ctx.state.tools.get(tool.name))
       throw new Error(`framework tool already registered: ${tool.name}`);

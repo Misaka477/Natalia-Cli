@@ -1,3 +1,4 @@
+import { defaultGlobalConfigPath } from "@natalia/config";
 import type {
   InitializeCatalogResult,
   InitializeOptions,
@@ -13,6 +14,8 @@ export async function configureCatalog(
     workspaceRoot: ctx.ports.getWorkspaceRoot(),
     globalPath: options.globalConfigPath,
   });
+  ctx.ports.configGlobalPath = () =>
+    options.globalConfigPath ?? defaultGlobalConfigPath();
   ctx.ports.setTsRuntimeConfig(tsConfig.config);
   const runtimeConfig = tsConfig.config;
   deps.reloadPermissionSettings(tsConfig.config);

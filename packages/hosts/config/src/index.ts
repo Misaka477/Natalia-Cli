@@ -5,6 +5,7 @@ export * from "./policy";
 export * from "./registry";
 export * from "./setup";
 export * from "./service";
+export * from "./service-merge";
 export * from "./trust";
 export * from "./tui-config";
 export * from "./config-applied";

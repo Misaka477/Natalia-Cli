@@ -146,8 +146,35 @@ export function smokeFace(options: { timeoutMs?: number } = {}) {
  * polls. The audit round checkpoint and evidence.recorded event her report
  * produces are the evidence trail, already in the journal.
  */
+/**
+ * What the audit face actually needs — the full client satisfies it, and
+ * so does a runtime tool assembling the same surfaces from its context
+ * (ports.planDocRuntime + the Nia chat surface).
+ */
+export type NiaFaceSurfaces = {
+  planDocWrite?: (input: {
+    path: string;
+    content: string;
+    title?: string;
+    planID?: string;
+    sessionID?: string;
+  }) => Promise<{ written: boolean; planID?: string }>;
+  planDocMark?: (input: {
+    path: string;
+    title?: string;
+    createdBy?: "user" | "live_chat" | "main_agent";
+    sessionID?: string;
+  }) => Promise<{ marked: boolean; planID: string }>;
+  planDocActivate?: (planID: string, sessionID?: string) => Promise<unknown>;
+  planDocStatus?: (
+    planID: string,
+    sessionID?: string,
+  ) => Promise<{ status: string }>;
+  niaChat?: { submit?: (input: { text: string }) => Promise<unknown> };
+};
+
 export function niaFace(
-  client: ReturnType<typeof createRealRuntimeClient>,
+  client: NiaFaceSurfaces,
   options: {
     timeoutMs?: number;
     /**
@@ -217,7 +244,7 @@ export function niaFace(
       });
       options.onAuditPlan?.(marked.planID, path);
       await client.planDocActivate!(marked.planID);
-      await client.niaChat!.submit({
+      await client.niaChat!.submit!({
         text: `Audit plan ${marked.planID} (${path}): a composition generation candidate. Verify it against the plan document and call audit_report with planID=${marked.planID}.`,
       });
       const deadline = Date.now() + timeoutMs;
