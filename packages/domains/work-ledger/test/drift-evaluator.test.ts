@@ -703,3 +703,67 @@ test("target_drift evidence shape matches the auto-correction parser", () => {
   ).toBe(true);
   expect(targetDrift!.planID).toBe("plan_1");
 });
+
+test("an open invariant violation is a drift signal — the D3 linkage", async () => {
+  const evaluator = makeEvaluator();
+  const base = {
+    sessionID: "ses_inv",
+    turnID: "t_inv",
+    objective: "fix the parser",
+    currentActivity: "rewriting config",
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+    recentActions: [{ kind: "tool_call" as const }],
+    recentFailures: [],
+  };
+  // The behaviour path (no contract, no changes) carries the linkage: a
+  // broken data relation needs no WorkContract to be a fact.
+  const withHits = evaluator.evaluateBehavior({
+    ...base,
+    invariantHits: [
+      {
+        code: "session.projection_incomplete",
+        at: "2026-01-01T00:00:00.000Z",
+        detail: "ses_inv ran turns",
+      },
+    ],
+  });
+  expect(withHits).toHaveLength(1);
+  expect(withHits[0]).toMatchObject({
+    severity: "warning",
+  });
+  expect(withHits[0]!.ruleHits).toEqual([
+    { rule: "invariant_violation", confidence: 0.75 },
+  ]);
+  // Secret-safe citation only: code + timestamp, never the detail prose.
+  expect(withHits[0]!.evidence).toEqual([
+    "invariant:session.projection_incomplete@2026-01-01T00:00:00.000Z",
+  ]);
+  expect(withHits[0]!.evidence!.join()).not.toContain("ran turns");
+
+  // No open violations -> this rule stays quiet.
+  expect(evaluate(base)).toEqual([]);
+});
+
+test("an already-open invariant finding is not reopened", () => {
+  const open = new Set(["drift:invariant_violation:session:ses_inv"]);
+  const evaluator = createDriftEvaluator({ openFindingIDs: () => open });
+  const findings = evaluator.evaluateBehavior({
+    sessionID: "ses_inv",
+    turnID: "t_2",
+    objective: "o",
+    currentActivity: "",
+    applicableConstraints: [],
+    changes: [],
+    evidenceRefs: [],
+    invariantHits: [{ code: "c", at: "2026-01-01T00:00:00.000Z", detail: "d" }],
+  });
+  expect(findings).toEqual([]); // one fact per divergence, not per evaluation
+});
+
+function evaluate(
+  signal: Parameters<ReturnType<typeof makeEvaluator>["evaluate"]>[0],
+) {
+  return makeEvaluator().evaluate(signal);
+}

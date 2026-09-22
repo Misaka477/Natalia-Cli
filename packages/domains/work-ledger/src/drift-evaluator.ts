@@ -134,6 +134,12 @@ export type DriftSignal = {
    */
   recentFailures?: Array<{ toolName: string; key: string }>;
   /**
+   * Open invariant violations in this session (Discovery D3's linkage:
+   * D2's edge facts become R6's signal) — a violated data relation is
+   * behavior that diverged, cited as secret-safe `invariant:code@at` refs.
+   */
+  invariantHits?: Array<{ code: string; at: string; detail: string }>;
+  /**
    * The accepted WorkContract judged against (EI §3.3 铁律): the user-tier R.
    * Absent (no contract, or only a stale draft) → at most an advisory
    * unverifiable finding — "no commitment yet" is a fact, not a drift.
@@ -591,6 +597,29 @@ function failureLoopRule(): Rule {
  * layer already intercepts the tool call; this finding records the conflict for
  * the audit trail / Work Graph / Nia audit.
  */
+/**
+ * An open domain-invariant violation near this turn (Discovery D3
+ * linkage: D2 -> R6). Session-scoped like the other behaviour signals: a
+ * broken data relation needs no WorkContract to be a fact, and the
+ * evaluator still has no write power — the finding only escalates to the
+ * review surfaces.
+ */
+function invariantViolationRule(): Rule {
+  return {
+    name: "invariant_violation",
+    severity: "warning",
+    sessionScoped: true,
+    match: (signal) => {
+      const hits = signal.invariantHits ?? [];
+      if (!hits.length) return undefined;
+      return {
+        confidence: 0.75,
+        evidence: hits.map((hit) => `invariant:${hit.code}@${hit.at}`),
+      };
+    },
+  };
+}
+
 function constitutionConflictRule(): Rule {
   return {
     name: "constitution_conflict",
@@ -624,6 +653,7 @@ export function createDriftEvaluator(input: {
     noProgressRule(),
     failureLoopRule(),
     constitutionConflictRule(),
+    invariantViolationRule(),
   ];
 
   /**

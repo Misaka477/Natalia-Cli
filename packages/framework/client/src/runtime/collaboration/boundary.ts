@@ -79,6 +79,49 @@ export function deliveredMailboxConstraints(
     .filter((summary) => summary.trim().length > 0);
 }
 
+/**
+ * The open (unresolved) invariant violations in a session journal
+ * (Discovery D3): folds D2's paired edges — every `invariant.violation`
+ * opens a hit, its `invariant.resolved` closes it — so drift sees exactly
+ * what the projection sees, with no second opinion about state.
+ */
+import type { RuntimeEvent } from "@natalia/contracts";
+
+export function openInvariantHits(
+  events: readonly RuntimeEvent[],
+): Array<{ code: string; at: string; detail: string }> {
+  const open = new Map<string, { code: string; at: string; detail: string }>();
+  for (const event of events) {
+    if (event.type === "invariant.violation") {
+      open.set(`${event.code}|${event.detail}`, {
+        code: event.code,
+        at: event.at,
+        detail: event.detail,
+      });
+    } else if (event.type === "invariant.resolved") {
+      open.delete(`${event.code}|${event.detail}`);
+    }
+  }
+  return [...open.values()];
+}
+
+/**
+ * The session's instruction epoch: the highest `context.instructions`
+ * revision (monotonic per session). A change means the reference frame
+ * moved — config reload, agent switch, plan handoff — and drift must
+ * re-anchor even when nothing on disk changed.
+ */
+export function instructionRevision(events: readonly RuntimeEvent[]): number {
+  let revision = 0;
+  for (const event of events)
+    if (event.type === "context.instructions")
+      revision = Math.max(revision, event.revision);
+  return revision;
+}
+
+/** The epoch each execution was last evaluated under (boundary-local). */
+const lastEvaluatedEpoch = new WeakMap<SessionExecutionState, number>();
+
 export function createCollaborationBoundary(ctx: RuntimeContext) {
   const proseStreaks = new Map<string, number>();
 
@@ -270,7 +313,16 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
       // EI Phase 2 机制 2: the L4 behaviour signals (no-progress window, failure
       // loop) run every turn-end, even when there were no workspace changes.
       const behavior = deriveDriftBehaviorSignals(target.session.events);
-      if (confirmed.length) {
+      // Discovery D3's two triggers beyond external edits: open invariant
+      // violations (D2's edges folded back as an R6 signal) and an
+      // instruction-epoch change (the reference frame moved — force a full
+      // evaluation even with an empty change set).
+      const invariantHits = openInvariantHits(target.session.events);
+      const epoch = instructionRevision(target.session.events);
+      const epochChanged =
+        epoch > 0 && lastEvaluatedEpoch.get(target) !== epoch;
+      lastEvaluatedEpoch.set(target, epoch);
+      if (confirmed.length || epochChanged) {
         // EI §8.1: the evaluator needs the R's evidence and constraint keys
         // (a/p/c — attribution/plan/constitution) so validated work is not
         // judged as drift. Wire the session's recorded evidence and the
@@ -278,6 +330,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         const evidenceRefs = evidenceRecordsFor(target).map(
           (record) => record.id,
         );
+        if (epochChanged) evidenceRefs.push(`epoch:instructions:${epoch}`);
         // EI §3.3 机制 1: a user constraint delivered through the Live Work Chat
         // mailbox is an explicit R constraint, not just context prose — feed
         // the delivered/acknowledged `constraint` intents into the judged
@@ -329,6 +382,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           evidenceRefs,
           recentActions: behavior.recentActions,
           recentFailures: behavior.recentFailures,
+          invariantHits,
           constitutionHits,
           ...(contract
             ? {
@@ -369,6 +423,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           evidenceRefs: [],
           recentActions: behavior.recentActions,
           recentFailures: behavior.recentFailures,
+          invariantHits,
         });
         for (const finding of behaviorFindings) {
           publishForSession(target, finding);
