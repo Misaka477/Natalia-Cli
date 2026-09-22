@@ -1,6 +1,7 @@
 export * from "./capabilities";
 export * from "./constitution";
 export * from "./events";
+export * from "./event-modes";
 export * from "./failures";
 export * from "./interactive";
 export * from "./permission-families";
