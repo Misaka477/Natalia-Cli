@@ -15,15 +15,14 @@ import {
   sessionFactCollabMessages,
 } from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
+import { retryService } from "@natalia/retry";
 import {
   ATTACHMENT_SERVICE,
   COMPACTION_SERVICE,
-  RETRY_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   mcpService,
   type AttachmentService,
   type CompactionService,
-  type RetryService,
   type StatusSnapshotController,
 } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "./context";
@@ -98,9 +97,7 @@ export function createTurnRunner(
       throw new Error(
         "status snapshot controller unavailable (natalia-runtime-ui)",
       );
-    const retryService = ctx.ports.resolveService<RetryService>(RETRY_SERVICE);
-    if (!retryService)
-      throw new Error("retry service unavailable (natalia-retry)");
+    const retry = ctx.state.serviceDirectory.get(retryService);
     const activeExec = getActiveExec();
     return {
       provider: () => {
@@ -248,7 +245,7 @@ export function createTurnRunner(
         const snapshot = loadProjectDocumentsSync(getWorkspaceRoot());
         return snapshot?.documents.length ? snapshot : undefined;
       },
-      retry: retryService,
+      retry: retry,
       lastProviderUsage: () => exec.lastProviderUsage,
       setLastProviderUsage: (usage) => {
         exec.lastProviderUsage = usage;

@@ -17,7 +17,7 @@ import { createCompactionService } from "@natalia/compaction";
 import { createContextLedgerFactory } from "@natalia/context-ledger";
 import { RUNTIME_CONFIG_SERVICE } from "@natalia/runtime-config";
 import { runCheckpointCommand } from "@natalia/runtime";
-import { createRetryService } from "@natalia/retry";
+import { createRetryService, retryService } from "@natalia/retry";
 import { createSandboxController, sandboxTools } from "@natalia/sandbox";
 import { agentTools, createSubagentsController } from "@natalia/subagents";
 import { createToolPolicyService } from "@natalia/tool-policy";
@@ -54,6 +54,9 @@ import {
   createMutationRegistry,
   createWorkspaceFilesController,
   createWorkspaceWriteLock,
+  workspaceFiles,
+  workspaceMutations,
+  workspaceWriteLock,
   type WorkspaceMutationIdentity,
 } from "@natalia/workspace";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
@@ -63,13 +66,9 @@ import {
   CHECKPOINT_FACTORY_SERVICE,
   COMPACTION_SERVICE,
   CONTEXT_LEDGER_FACTORY_SERVICE,
-  RETRY_SERVICE,
   SANDBOX_SERVICE,
   SUBAGENTS_SERVICE,
   TOOL_POLICY_SERVICE,
-  WORKSPACE_FILES_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
-  WORKSPACE_WRITE_LOCK_SERVICE,
   localToolsInput,
   mcpInput,
   skillsInput,
@@ -388,17 +387,10 @@ export async function wireFrameworkServices(
   }
   refreshPluginInputs();
 
-  const retryOwner = registry.registerOwner({
-    id: "natalia-retry",
-    name: "Retry",
-    version: "1.0.0",
-    scope: "workspace",
-    grants: ["services"],
-  });
   const retry: RetryService = createRetryService({
     policy: () => ctx.ports.getRetryPolicy(),
   });
-  retryOwner.contribute("services", RETRY_SERVICE, retry);
+  ctx.state.serviceDirectory.provide(retryService, retry);
 
   const contextLedgerOwner = registry.registerOwner({
     id: "natalia-context-ledger",
@@ -474,13 +466,12 @@ export async function wireFrameworkServices(
     files.close();
     throw error;
   }
-  workspaceOwner.contribute(
-    "services",
-    WORKSPACE_WRITE_LOCK_SERVICE,
+  ctx.state.serviceDirectory.provide(
+    workspaceWriteLock,
     createWorkspaceWriteLock(),
   );
-  workspaceOwner.contribute("services", WORKSPACE_MUTATIONS_SERVICE, mutations);
-  workspaceOwner.contribute("services", WORKSPACE_FILES_SERVICE, files);
+  ctx.state.serviceDirectory.provide(workspaceMutations, mutations);
+  ctx.state.serviceDirectory.provide(workspaceFiles, files);
   workspaceOwner.contribute("commands", "files", {
     name: "files",
     title: "Find workspace files",

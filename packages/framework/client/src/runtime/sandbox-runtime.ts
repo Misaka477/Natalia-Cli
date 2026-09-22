@@ -6,13 +6,12 @@ import {
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
   type GovernanceLedgerController,
-  type MutationRegistry,
   type RuntimeServiceClient,
   type SandboxService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { workspaceMutations } from "@natalia/workspace";
 import type { RuntimeContext } from "./context";
 import {
   ensureSessionEventWindow,
@@ -93,9 +92,7 @@ export function createSandboxRuntime(
   }
 
   function mutationRegistry() {
-    return ctx.ports.resolveService<MutationRegistry>(
-      WORKSPACE_MUTATIONS_SERVICE,
-    );
+    return ctx.state.serviceDirectory.getOptional(workspaceMutations);
   }
 
   async function sessionOwner(sessionID?: string) {

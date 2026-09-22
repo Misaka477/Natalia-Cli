@@ -5,7 +5,6 @@ export const CONTEXT_LEDGER_FACTORY_SERVICE = "context-ledger.factory";
 export const GOVERNANCE_LEDGER_CONTROLLER_SERVICE =
   "governance-ledger.controller";
 export const PROVIDER_MODEL_CONTROLLER_SERVICE = "provider-model.controller";
-export const RETRY_SERVICE = "retry.service";
 export const SANDBOX_SERVICE = "sandbox.service";
 export const SESSION_STORE_CONTROLLER_SERVICE = "session-store.controller";
 export const STATUS_SNAPSHOT_CONTROLLER_SERVICE = "status.snapshot.controller";
@@ -13,6 +12,3 @@ export const SUBAGENTS_SERVICE = "subagents.service";
 export const TOOL_POLICY_SERVICE = "tool.policy";
 export const TURN_CONTROLLER_SERVICE = "turn.controller";
 export const WORK_LEDGER_CONTROLLER_SERVICE = "work-ledger.controller";
-export const WORKSPACE_FILES_SERVICE = "workspace.files";
-export const WORKSPACE_MUTATIONS_SERVICE = "workspace.mutations";
-export const WORKSPACE_WRITE_LOCK_SERVICE = "workspace.writeLock";

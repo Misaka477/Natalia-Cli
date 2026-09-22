@@ -15,13 +15,12 @@ import {
   SUBAGENTS_SERVICE,
   terminalController,
   WORK_LEDGER_CONTROLLER_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
-  type MutationRegistry,
   type SandboxService,
   type SubagentsService,
   type TerminalController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { workspaceMutations } from "@natalia/workspace";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -152,8 +151,8 @@ export function buildToolExecutionContext(input: BuildContextInput) {
       // WG4 Phase 3: the tool settled successfully — the expected
       // mutation stops matching unrelated later hints, but its identity
       // stays available for attributing the change it caused.
-      ctx.ports
-        .resolveService<MutationRegistry>(WORKSPACE_MUTATIONS_SERVICE)
+      ctx.state.serviceDirectory
+        .getOptional(workspaceMutations)
         ?.settle(call.id);
       if (!exec?.session) return;
       const workLedgerController =

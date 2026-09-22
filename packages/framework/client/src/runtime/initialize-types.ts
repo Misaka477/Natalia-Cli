@@ -116,7 +116,6 @@ export type InitializeDependencies = {
   ProviderConcurrencyLimiter: typeof import("@natalia/runtime").ProviderConcurrencyLimiter;
   serviceNames: {
     attachment: string;
-    retry: string;
     contextLedgerFactory: string;
     compaction: string;
     statusSnapshotController: string;
@@ -124,9 +123,6 @@ export type InitializeDependencies = {
     governanceLedgerController: string;
     turnController: string;
     checkpointFactory: string;
-    workspaceWriteLock: string;
-    workspaceMutations: string;
-    workspaceFiles: string;
     sandbox: string;
     subagents: string;
     sessionStoreController: string;

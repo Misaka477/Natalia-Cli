@@ -1,3 +1,8 @@
+export {
+  workspaceFiles,
+  workspaceMutations,
+  workspaceWriteLock,
+} from "./service-tokens";
 export { createMutationRegistry } from "./mutation-registry";
 export {
   createWorkspaceChangeAuditor,

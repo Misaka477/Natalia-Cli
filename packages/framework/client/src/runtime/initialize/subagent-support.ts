@@ -22,6 +22,7 @@ import {
   type ContextBudget,
 } from "@natalia/runtime";
 import { createInitializeRuntime } from "./runtime";
+import { retryService } from "@natalia/retry";
 
 export async function createSubagentSupport(
   ctx: RuntimeContext,
@@ -43,10 +44,7 @@ export async function createSubagentSupport(
   if (!compactionService)
     throw new Error("compaction service unavailable (natalia-compaction)");
   const resolvedCompactionService = compactionService;
-  const retryService = scope.resolveService<RetryService>(scope.RETRY_SERVICE);
-  if (!retryService)
-    throw new Error("retry service unavailable (natalia-retry)");
-  const resolvedRetryService = retryService;
+  const resolvedRetryService = scope.serviceDirectory.get(retryService);
   let sandboxedSubagentActive = 0;
   const sandboxedSubagentWaiters: Array<{
     resume: () => void;

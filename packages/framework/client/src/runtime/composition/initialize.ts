@@ -29,7 +29,6 @@ import {
   CONTEXT_LEDGER_FACTORY_SERVICE,
   GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   PROVIDER_MODEL_CONTROLLER_SERVICE,
-  RETRY_SERVICE,
   SANDBOX_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
@@ -37,9 +36,6 @@ import {
   TOOL_POLICY_SERVICE,
   TURN_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
-  WORKSPACE_FILES_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
-  WORKSPACE_WRITE_LOCK_SERVICE,
 } from "@natalia/runtime-services";
 import {
   cleanupToolOutput,
@@ -131,7 +127,6 @@ export function wireInitialize(
     ProviderConcurrencyLimiter,
     serviceNames: {
       attachment: ATTACHMENT_SERVICE,
-      retry: RETRY_SERVICE,
       contextLedgerFactory: CONTEXT_LEDGER_FACTORY_SERVICE,
       compaction: COMPACTION_SERVICE,
       statusSnapshotController: STATUS_SNAPSHOT_CONTROLLER_SERVICE,
@@ -139,9 +134,6 @@ export function wireInitialize(
       governanceLedgerController: GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
       turnController: TURN_CONTROLLER_SERVICE,
       checkpointFactory: CHECKPOINT_FACTORY_SERVICE,
-      workspaceWriteLock: WORKSPACE_WRITE_LOCK_SERVICE,
-      workspaceMutations: WORKSPACE_MUTATIONS_SERVICE,
-      workspaceFiles: WORKSPACE_FILES_SERVICE,
       sandbox: SANDBOX_SERVICE,
       subagents: SUBAGENTS_SERVICE,
       sessionStoreController: SESSION_STORE_CONTROLLER_SERVICE,

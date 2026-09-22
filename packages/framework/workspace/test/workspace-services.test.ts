@@ -2,14 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  WORKSPACE_FILES_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
-  WORKSPACE_WRITE_LOCK_SERVICE,
-  type MutationRegistry,
-  type WorkspaceFilesController,
-  type WorkspaceWriteLock,
+import type {
+  MutationRegistry,
+  WorkspaceFilesController,
+  WorkspaceWriteLock,
 } from "@natalia/runtime-services";
+import { workspaceFiles, workspaceMutations, workspaceWriteLock } from "../src";
 import {
   createMutationRegistry,
   createWorkspaceFilesController,
@@ -42,9 +40,9 @@ test("workspace framework services construct and release their resources", async
   const writeLock: WorkspaceWriteLock = createWorkspaceWriteLock();
 
   try {
-    expect(WORKSPACE_WRITE_LOCK_SERVICE).toBe("workspace.writeLock");
-    expect(WORKSPACE_MUTATIONS_SERVICE).toBe("workspace.mutations");
-    expect(WORKSPACE_FILES_SERVICE).toBe("workspace.files");
+    expect(workspaceWriteLock.id).toBe("workspace.writeLock");
+    expect(workspaceMutations.id).toBe("workspace.mutations");
+    expect(workspaceFiles.id).toBe("workspace.files");
 
     await files.init();
     expect(files.observationStatus()).toMatchObject({

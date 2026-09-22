@@ -27,12 +27,15 @@ import {
   SANDBOX_SERVICE,
   terminalController,
   TURN_CONTROLLER_SERVICE,
-  WORKSPACE_FILES_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
-  WORKSPACE_WRITE_LOCK_SERVICE,
   type ProviderModelController,
   type SandboxService,
 } from "@natalia/runtime-services";
+import { retryService } from "@natalia/retry";
+import {
+  workspaceFiles,
+  workspaceMutations,
+  workspaceWriteLock,
+} from "@natalia/workspace";
 import {
   TerminalTestRegistry as NativeTerminalRegistry,
   WorkspaceSandboxTestManager as WorkspaceSandboxManager,
@@ -946,27 +949,25 @@ test("workspace framework services are always present and stable across reloads"
 
   // The workspace subsystem is framework-internal: it is not gated by
   // plugins.enabled and is present on first boot.
-  expect(kernel.ownerOf("services", WORKSPACE_WRITE_LOCK_SERVICE)).toBe(
-    "natalia-workspace",
+  // Framework-internal services now bind through the service directory, whose
+  // owner per binding is `service:<token.id>` — still not a plugin owner.
+  expect(kernel.ownerOf("services", workspaceWriteLock.id)).toMatch(
+    /^service:/u,
   );
-  expect(kernel.service(WORKSPACE_WRITE_LOCK_SERVICE)).toBeDefined();
-  expect(kernel.service(WORKSPACE_MUTATIONS_SERVICE)).toBeDefined();
-  expect(kernel.service(WORKSPACE_FILES_SERVICE)).toBeDefined();
+  expect(kernel.service(workspaceWriteLock.id)).toBeDefined();
+  expect(kernel.service(workspaceMutations.id)).toBeDefined();
+  expect(kernel.service(workspaceFiles.id)).toBeDefined();
 
-  const firstWriteLock = kernel.service<object>(WORKSPACE_WRITE_LOCK_SERVICE);
-  const firstMutations = kernel.service<object>(WORKSPACE_MUTATIONS_SERVICE);
-  const firstFiles = kernel.service<object>(WORKSPACE_FILES_SERVICE);
+  const firstWriteLock = kernel.service<object>(workspaceWriteLock.id);
+  const firstMutations = kernel.service<object>(workspaceMutations.id);
+  const firstFiles = kernel.service<object>(workspaceFiles.id);
 
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
   // Framework services survive reload: same instances, no teardown/recreate.
-  expect(kernel.service<object>(WORKSPACE_WRITE_LOCK_SERVICE)).toBe(
-    firstWriteLock,
-  );
-  expect(kernel.service<object>(WORKSPACE_MUTATIONS_SERVICE)).toBe(
-    firstMutations,
-  );
-  expect(kernel.service<object>(WORKSPACE_FILES_SERVICE)).toBe(firstFiles);
+  expect(kernel.service<object>(workspaceWriteLock.id)).toBe(firstWriteLock);
+  expect(kernel.service<object>(workspaceMutations.id)).toBe(firstMutations);
+  expect(kernel.service<object>(workspaceFiles.id)).toBe(firstFiles);
   await client.dispose?.();
 }, 60_000);
 

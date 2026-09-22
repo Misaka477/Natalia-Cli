@@ -19,13 +19,10 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import {
   TOOL_POLICY_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
-  WORKSPACE_MUTATIONS_SERVICE,
-  WORKSPACE_WRITE_LOCK_SERVICE,
-  type MutationRegistry,
   type ToolPolicyService,
   type WorkLedgerController,
-  type WorkspaceWriteLock,
 } from "@natalia/runtime-services";
+import { workspaceMutations, workspaceWriteLock } from "@natalia/workspace";
 import { buildToolExecutionContext } from "./execute-context";
 import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
@@ -75,16 +72,11 @@ export async function runExecuteStage(
     ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
   if (!toolPolicy)
     throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
-  const workspaceWriteLock = ctx.ports.resolveService<WorkspaceWriteLock>(
-    WORKSPACE_WRITE_LOCK_SERVICE,
-  );
-  if (!workspaceWriteLock)
-    throw new Error("workspace write lock unavailable (natalia-workspace)");
+  const writeLock = ctx.state.serviceDirectory.get(workspaceWriteLock);
   const terminalCommandBuffer = getTerminalCommandBuffer();
   const interactive = getInteractive();
-  const mutationRegistry = ctx.ports.resolveService<MutationRegistry>(
-    WORKSPACE_MUTATIONS_SERVICE,
-  );
+  const mutationRegistry =
+    ctx.state.serviceDirectory.getOptional(workspaceMutations);
   const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
     WORK_LEDGER_CONTROLLER_SERVICE,
   );
@@ -245,7 +237,7 @@ export async function runExecuteStage(
       parsed as Record<string, unknown>,
     );
     releaseWriteLock = writePathForLock
-      ? await workspaceWriteLock.acquire(exec.session.id, [writePathForLock])
+      ? await writeLock.acquire(exec.session.id, [writePathForLock])
       : undefined;
     // E1: create a pre-tool checkpoint for side-effecting calls so a tool card
     // can offer a precise "restore to just before this call".  The checkpoint

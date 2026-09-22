@@ -13,6 +13,8 @@ import type {
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
 
+import { retryService } from "@natalia/retry";
+
 export async function resolveServices(
   ctx: RuntimeContext,
   options: InitializeOptions,
@@ -24,11 +26,9 @@ export async function resolveServices(
     );
   if (!resolvedAttachmentService)
     throw new Error("attachment service unavailable (natalia-attachment)");
-  const resolvedRetryService = scope.capabilityRegistry.service<RetryService>(
-    scope.RETRY_SERVICE,
-  );
-  if (!resolvedRetryService)
-    throw new Error("retry service unavailable (natalia-retry)");
+  // Resolution is fail-fast by construction: a missing binding throws with the
+  // service id instead of being re-worded at every call site.
+  scope.serviceDirectory.get(retryService);
   const resolvedContextLedgerFactory =
     scope.capabilityRegistry.service<ContextLedgerFactory>(
       scope.CONTEXT_LEDGER_FACTORY_SERVICE,

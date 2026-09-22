@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
-import { RETRY_SERVICE, type RetryService } from "@natalia/runtime-services";
+import type { RetryService } from "@natalia/runtime-services";
+import { retryService } from "../src";
 import { createRetryService } from "../src";
 
 test("retry service is provided under the shared service key", () => {
   const service = createRetryService({ policy: () => undefined });
-  expect(RETRY_SERVICE).toBe("retry.service");
+  expect(retryService.id).toBe("retry.service");
   expect(service.policy).toBeTypeOf("function");
   expect(service.run).toBeTypeOf("function");
 });
