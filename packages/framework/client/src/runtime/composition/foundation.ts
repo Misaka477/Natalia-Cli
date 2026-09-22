@@ -6,15 +6,12 @@ import {
 } from "@natalia/platform";
 import { TerminalCommandBuffer } from "@natalia/tools";
 import {
-  SKILL_SERVICE,
-  TEAM_BEHAVIOR_SERVICE,
-  TERMINAL_CONTROLLER_SERVICE,
+  skillService,
+  teamBehavior,
+  terminalController,
   WORK_LEDGER_CONTROLLER_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-  type SkillService,
   type StatusSnapshotController,
-  type TeamBehaviorService,
-  type TerminalController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import { createPluginsController } from "../../plugins-controller";
@@ -46,9 +43,8 @@ export function wireFoundation(ctx: RuntimeContext) {
   state.terminalCommandBuffer = new TerminalCommandBuffer({
     foregroundProgram: async (paneID) => {
       try {
-        const terminal = ports.resolveService<TerminalController>(
-          TERMINAL_CONTROLLER_SERVICE,
-        );
+        const terminal =
+          ctx.state.serviceDirectory.getOptional(terminalController);
         const ttyName = await terminal?.ttyName(paneID);
         if (!ttyName)
           return {
@@ -144,13 +140,13 @@ export function wireFoundation(ctx: RuntimeContext) {
     if (!status) throw new Error("runtime UI unavailable (natalia-runtime-ui)");
     return status.snapshot();
   };
+  // Both surfaces tolerate an absent plugin: resolution states the tolerance
+  // instead of every call site re-checking.
   ports.skillService = () =>
-    state.capabilityRegistry.service<SkillService>(SKILL_SERVICE);
+    ctx.state.serviceDirectory.getOptional(skillService);
   ports.skillsList = () => ports.skillService()?.list() ?? [];
   ports.teamBehavior = () =>
-    state.capabilityRegistry.service<TeamBehaviorService>(
-      TEAM_BEHAVIOR_SERVICE,
-    );
+    ctx.state.serviceDirectory.getOptional(teamBehavior);
   ports.getProviderSource = () => state.providerSource;
   ports.getWorkspaceRoot = () => state.workspaceRoot;
   ports.getAgentRegistry = () => state.agentRegistry;

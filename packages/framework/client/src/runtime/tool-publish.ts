@@ -5,7 +5,7 @@
  * hot-reloads one out-of-tree tool family through the local-tools plugin.
  * Reads host state through `RuntimeContext` at call time.
  */
-import { LOCAL_TOOLS_RELOAD_SERVICE } from "@natalia/runtime-services";
+import { localToolsReload } from "@natalia/runtime-services";
 import {
   WORK_LEDGER_CONTROLLER_SERVICE,
   type WorkLedgerController,
@@ -69,9 +69,7 @@ export function createToolPublish(
       throw new Error("tool family reload is not available");
     // The local-tools plugin owns the family lifecycle; the host only asks it
     // to swap the family and then reports what changed in the tool catalog.
-    const reload = getCapabilityRegistry().service<
-      (familyID: string) => Promise<ToolFamily>
-    >(LOCAL_TOOLS_RELOAD_SERVICE);
+    const reload = ctx.state.serviceDirectory.getOptional(localToolsReload);
     if (!reload)
       throw new Error(
         "local tool families are not loaded (natalia-local-tools)",

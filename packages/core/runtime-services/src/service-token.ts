@@ -135,6 +135,16 @@ export class ServiceDirectory {
       throw new Error(`service "${token.id}" is not provided`);
     return value;
   }
+
+  /**
+   * Resolves `token` when present, `undefined` when not. For consumers whose
+   * contract tolerates a missing service (an optional plugin's registry), so
+   * the tolerance is stated at the resolution instead of a try/catch per call
+   * site.
+   */
+  getOptional<T>(token: ServiceToken<T>): T | undefined {
+    return this.channel.get<T>(token.id);
+  }
 }
 
 /**

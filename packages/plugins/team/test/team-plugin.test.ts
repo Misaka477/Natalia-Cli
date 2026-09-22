@@ -3,7 +3,7 @@ import { createPluginRegistry, type Plugin } from "@natalia/plugin";
 import {
   SANDBOX_SERVICE,
   SUBAGENTS_SERVICE,
-  TEAM_BEHAVIOR_SERVICE,
+  teamBehavior,
   type TeamBehaviorService,
 } from "@natalia/runtime-services";
 import { createToolRegistry } from "@natalia/tools";
@@ -42,7 +42,7 @@ test("team plugin declares its service and package dependencies", () => {
   expect(manifest.apiVersion).toBe(2);
   if (manifest.apiVersion !== 2) throw new Error("team plugin must use v2");
   expect(manifest.requires).toEqual([SUBAGENTS_SERVICE, SANDBOX_SERVICE]);
-  expect(manifest.provides).toEqual([TEAM_BEHAVIOR_SERVICE]);
+  expect(manifest.provides).toEqual([teamBehavior.id]);
   expect(manifest.dependencies).toEqual([]);
   expect(manifest.integrationPoints).toEqual(["tools", "services"]);
 });
@@ -87,12 +87,12 @@ test("team plugin owns both tools and unload removes them", async () => {
   expect([...tools.keys()]).toEqual(["team_fanout", "team_review"]);
   expect(owners.get("tools:team_fanout")).toBe(TEAM_PLUGIN_ID);
   expect(
-    (services.get(TEAM_BEHAVIOR_SERVICE) as TeamBehaviorService)
+    (services.get(teamBehavior.id) as TeamBehaviorService)
       .directive()
       .includes("explicitly requested the agent team"),
   ).toBe(true);
 
   await registry.unload(TEAM_PLUGIN_ID);
   expect([...tools.keys()]).toEqual([]);
-  expect(services.has(TEAM_BEHAVIOR_SERVICE)).toBe(false);
+  expect(services.has(teamBehavior.id)).toBe(false);
 });

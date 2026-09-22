@@ -1,6 +1,6 @@
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type { ToolFamily } from "@natalia/tools";
-import { LOCAL_TOOLS_RELOAD_SERVICE } from "@natalia/runtime-services";
+import { localToolsReload } from "@natalia/runtime-services";
 import {
   loadLocalToolFamilies,
   reloadLocalToolFamily,
@@ -18,7 +18,7 @@ export const LOCAL_TOOLS_PLUGIN_MANIFEST: PluginManifest = {
   description: "Out-of-tree tool families discovered in configured paths.",
   entry: "index.js",
   scope: "workspace",
-  provides: [LOCAL_TOOLS_RELOAD_SERVICE],
+  provides: [localToolsReload.id],
   requires: [],
   optionalRequires: [],
   conflicts: [],
@@ -50,7 +50,7 @@ export function createLocalToolsPlugin(input: {
       for (const family of loaded) registerFamily(family);
 
       api.services.provide(
-        LOCAL_TOOLS_RELOAD_SERVICE,
+        localToolsReload.id,
         async (familyID: string): Promise<ToolFamily> => {
           const family = await reloadLocalToolFamily({ ...input, familyID });
           registerFamily(family);

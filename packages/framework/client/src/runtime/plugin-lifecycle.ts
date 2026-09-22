@@ -1,9 +1,8 @@
 import type { SessionID } from "@natalia/contracts";
 import {
-  MCP_SERVICE,
+  mcpService,
   SANDBOX_SERVICE,
-  TERMINAL_CONTROLLER_SERVICE,
-  type McpService,
+  terminalController,
   type SandboxService,
   type TerminalController,
 } from "@natalia/runtime-services";
@@ -13,11 +12,9 @@ export function createPluginLifecycle(ctx: RuntimeContext) {
   async function runPluginLifecyclePostReconcile(
     selectedSkills: Map<SessionID, string> = new Map(),
   ) {
-    const terminal = ctx.ports.resolveService<TerminalController>(
-      TERMINAL_CONTROLLER_SERVICE,
-    );
+    const terminal = ctx.state.serviceDirectory.getOptional(terminalController);
     const sandbox = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
-    const mcp = ctx.ports.resolveService<McpService>(MCP_SERVICE);
+    const mcp = ctx.state.serviceDirectory.getOptional(mcpService);
     await mcp?.reload();
     await terminal?.init();
     terminal?.setActiveSession(ctx.ports.getSessionID());

@@ -70,6 +70,12 @@ test("provide binds through the channel and the disposer unbinds", () => {
   expect(() => directory.get(namedToken)).toThrow(/is not provided/u);
 });
 
+test("getOptional resolves when present and returns undefined when not", () => {
+  const ctx = createTestContext([namedToken.mock({ name: "here" })]);
+  expect(ctx.getOptional(namedToken)?.name).toBe("here");
+  expect(ctx.getOptional(controllerToken)).toBeUndefined();
+});
+
 test("createTestContext builds a directory from heterogeneous mocks", () => {
   const ctx = createTestContext([
     controllerToken.mock({ ping: () => "test-pong" }),

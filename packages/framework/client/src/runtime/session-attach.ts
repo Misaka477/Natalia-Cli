@@ -12,7 +12,7 @@ import { RuntimeRefusal } from "@natalia/contracts";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-  TERMINAL_CONTROLLER_SERVICE,
+  terminalController,
   type SessionStoreController,
   type StatusSnapshotController,
   type TerminalController,
@@ -303,9 +303,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
     );
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");
-    const terminal = ctx.ports.resolveService<TerminalController>(
-      TERMINAL_CONTROLLER_SERVICE,
-    );
+    const terminal = ctx.state.serviceDirectory.getOptional(terminalController);
     const status = ctx.ports.resolveService<StatusSnapshotController>(
       STATUS_SNAPSHOT_CONTROLLER_SERVICE,
     );

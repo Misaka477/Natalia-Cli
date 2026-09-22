@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginRegistry } from "@natalia/plugin";
-import { MCP_SERVICE, type McpService } from "@natalia/runtime-services";
+import { mcpService, type McpService } from "@natalia/runtime-services";
 import { createToolRegistry } from "@natalia/tools";
 import { createMcpPlugin, MCP_PLUGIN_ID } from "../src";
 import { createMcpController } from "../src/mcp-controller";
@@ -63,7 +63,7 @@ test("MCP plugin unload owns connection and tool teardown", async () => {
     registerOwner: async () => ({
       contribute: (kind, name, payload) => {
         contributions.push([kind, name]);
-        if (kind === "services" && name === MCP_SERVICE)
+        if (kind === "services" && name === mcpService.id)
           service = payload as McpService;
         return () => undefined;
       },

@@ -127,9 +127,7 @@ export type InitializeDependencies = {
     workspaceWriteLock: string;
     workspaceMutations: string;
     workspaceFiles: string;
-    terminalController: string;
     sandbox: string;
-    mcp: string;
     subagents: string;
     sessionStoreController: string;
     toolPolicy: string;

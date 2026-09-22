@@ -18,7 +18,7 @@ import {
   initializeOfficialPlugins,
   type PackageManagerRun,
 } from "@natalia/installer";
-import { TERMINAL_CONTROLLER_SERVICE } from "@natalia/runtime-services";
+import { terminalController } from "@natalia/runtime-services";
 import { initializeOfficialPluginsForHostCommand } from "../src/official-plugins";
 
 const pluginDistributionRoot = resolve(
@@ -147,7 +147,7 @@ test("dev official terminal plugin shim loads and starts a PTY", async () => {
     client.start(() => undefined);
     await client.runtimeStatus?.();
     expect(kernel.has("natalia-tool-terminal")).toBe(true);
-    expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).toBeDefined();
+    expect(kernel.service(terminalController.id)).toBeDefined();
     const started = await client.nativeTerminalStart?.({
       // A pane command runs inside the managed profile-sourcing shell
       // (`sh -lc`), so a bare `bash` would source the developer's ~/.bashrc — conda/nvm/agent

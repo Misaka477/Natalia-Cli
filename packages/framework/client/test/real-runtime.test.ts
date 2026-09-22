@@ -25,7 +25,7 @@ import {
   COMPACTION_SERVICE,
   PROVIDER_MODEL_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
-  TERMINAL_CONTROLLER_SERVICE,
+  terminalController,
   TURN_CONTROLLER_SERVICE,
   WORKSPACE_FILES_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
@@ -1100,14 +1100,14 @@ test("terminal plugin config reload preserves its host-owned registry", async ()
   await client.runtimeStatus?.();
 
   expect(kernel.has("natalia-tool-terminal")).toBe(true);
-  expect(kernel.service(TERMINAL_CONTROLLER_SERVICE)).toBeDefined();
+  expect(kernel.service(terminalController.id)).toBeDefined();
   expect(await client.nativeTerminalList?.()).toMatchObject([
     { id: "reload_terminal" },
   ]);
   await expect(client.nativeTerminalRead?.("reload_terminal")).resolves.toEqual(
     { id: "reload_terminal", text: "reload pane output" },
   );
-  const firstController = kernel.service<object>(TERMINAL_CONTROLLER_SERVICE);
+  const firstController = kernel.service<object>(terminalController.id);
 
   // A reload with the same windowMode must not rebuild the plugin: the input
   // callbacks and the host-owned registry are recreated per catalog build, but
@@ -1123,7 +1123,7 @@ test("terminal plugin config reload preserves its host-owned registry", async ()
   // windowMode changed, so the plugin is rebuilt; the host-owned registry is
   // borrowed as-is, so its sessions survive and nothing is disposed.
   expect(kernel.has("natalia-tool-terminal")).toBe(true);
-  expect(kernel.service<object>(TERMINAL_CONTROLLER_SERVICE)).not.toBe(
+  expect(kernel.service<object>(terminalController.id)).not.toBe(
     firstController,
   );
   expect(await client.nativeTerminalList?.()).toMatchObject([
@@ -1141,7 +1141,7 @@ test("terminal plugin config reload preserves its host-owned registry", async ()
     }),
   );
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.service<object>(TERMINAL_CONTROLLER_SERVICE)).toBeDefined();
+  expect(kernel.service<object>(terminalController.id)).toBeDefined();
   expect(await client.nativeTerminalList?.()).toMatchObject([
     { id: "reload_terminal" },
   ]);

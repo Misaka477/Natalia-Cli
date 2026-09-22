@@ -13,7 +13,7 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import {
   SANDBOX_SERVICE,
   SUBAGENTS_SERVICE,
-  TERMINAL_CONTROLLER_SERVICE,
+  terminalController,
   WORK_LEDGER_CONTROLLER_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
   type MutationRegistry,
@@ -68,9 +68,7 @@ export function buildToolExecutionContext(input: BuildContextInput) {
   const { sandboxResourcesByID } = ctx.state;
   const subagents =
     ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
-  const terminal = ctx.ports.resolveService<TerminalController>(
-    TERMINAL_CONTROLLER_SERVICE,
-  );
+  const terminal = ctx.state.serviceDirectory.getOptional(terminalController);
   const sandboxes = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
   return {
     workspaceRoot,

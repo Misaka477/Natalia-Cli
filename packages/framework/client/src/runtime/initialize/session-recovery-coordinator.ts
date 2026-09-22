@@ -7,11 +7,9 @@ import type {
   AttachmentService,
   ContextLedgerFactory,
   InitializeOptions,
-  McpService,
   SandboxService,
   SessionExecutionState,
   SessionStoreController,
-  TerminalController,
 } from "../context";
 import {
   prepareSessionRecoveryContextInWorker,
@@ -19,6 +17,7 @@ import {
   type RecoveryContextPlan,
 } from "../session-project-client";
 import type { InitializeScope } from "./runtime";
+import { mcpService, terminalController } from "@natalia/runtime-services";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
 
@@ -111,11 +110,9 @@ export class SessionRecoveryCoordinator {
     const scope = this.scope;
     memoryTrace("recovery.phase0.start", { sessionID: scope.sessionID });
     if (scope.tsRuntimeConfig && scope.extensionEnabled("mcp")) {
-      scope.resolveService<McpService>(scope.MCP_SERVICE)?.reload();
+      scope.serviceDirectory.getOptional(mcpService)?.reload();
     }
-    const terminal = scope.resolveService<TerminalController>(
-      scope.TERMINAL_CONTROLLER_SERVICE,
-    );
+    const terminal = scope.serviceDirectory.getOptional(terminalController);
     await terminal?.init();
     terminal?.setActiveSession(scope.sessionID);
 

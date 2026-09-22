@@ -11,7 +11,7 @@ import type { Plugin, PluginManifest } from "@natalia/plugin";
 import {
   SANDBOX_SERVICE,
   SUBAGENTS_SERVICE,
-  TEAM_BEHAVIOR_SERVICE,
+  teamBehavior,
   type SandboxService,
   type SubagentsService,
 } from "@natalia/runtime-services";
@@ -32,7 +32,7 @@ export const TEAM_PLUGIN_MANIFEST: PluginManifest = {
     "Parallel fan-out of sandboxed subagents and the lead reviewer's merge.",
   entry: "index.js",
   scope: "workspace",
-  provides: [TEAM_BEHAVIOR_SERVICE],
+  provides: [teamBehavior.id],
   requires: [SUBAGENTS_SERVICE, SANDBOX_SERVICE],
   optionalRequires: [],
   conflicts: [],
@@ -45,7 +45,7 @@ export function createTeamPlugin(): Plugin {
   return {
     manifest: TEAM_PLUGIN_MANIFEST,
     setup(api) {
-      api.services.provide(TEAM_BEHAVIOR_SERVICE, {
+      api.services.provide(teamBehavior.id, {
         directive: () => TEAM_MODE_DIRECTIVE,
         sandboxedSubagentSystemPrompt,
       });

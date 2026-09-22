@@ -1,6 +1,6 @@
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 import {
-  TERMINAL_CONTROLLER_SERVICE,
+  terminalController,
   type TerminalController,
   type TerminalControllerInput,
 } from "@natalia/runtime-services";
@@ -19,7 +19,7 @@ export const TERMINAL_PLUGIN_MANIFEST: PluginManifest = {
   description: "Native terminal panes and interactive programs.",
   entry: "index.js",
   scope: "session",
-  provides: [TERMINAL_CONTROLLER_SERVICE],
+  provides: [terminalController.id],
   requires: [],
   optionalRequires: [],
   conflicts: [],
@@ -41,7 +41,7 @@ export const TERMINAL_PLUGIN_MANIFEST: PluginManifest = {
 /**
  * The one true terminal plugin. It owns the native host implementation, the
  * terminal resource controller and the terminal tools/aliases: on setup it
- * constructs the controller, provides `TERMINAL_CONTROLLER_SERVICE` and
+ * constructs the controller, provides the `terminalController` token and
  * registers the tool surface; on unload it disposes the controller so every
  * pane stops and the host is torn down.
  */
@@ -59,7 +59,7 @@ export function createTerminalPlugin(input: TerminalControllerInput): Plugin {
               external: input.external as NativeTerminalRegistry | undefined,
             })
           : createPtyTerminalController(input);
-      api.services.provide(TERMINAL_CONTROLLER_SERVICE, controller);
+      api.services.provide(terminalController.id, controller);
       for (const tool of terminalTools()) api.tools.register(tool);
       for (const [alias, target] of Object.entries(
         terminalToolFamily().aliases ?? {},

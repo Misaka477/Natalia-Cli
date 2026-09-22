@@ -1,5 +1,5 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { MCP_SERVICE, type McpService } from "@natalia/runtime-services";
+import { mcpService } from "@natalia/runtime-services";
 import { updateConfigAtScope } from "@natalia/config";
 import type { RuntimeContext } from "./context";
 type Surface = Pick<
@@ -16,7 +16,7 @@ export function createMcpRuntime(
 ): Surface {
   return {
     async mcpCatalog() {
-      const mcp = ctx.ports.resolveService<McpService>(MCP_SERVICE);
+      const mcp = ctx.state.serviceDirectory.getOptional(mcpService);
       return (
         (await mcp?.catalog()) ?? {
           prompts: [],
@@ -25,12 +25,12 @@ export function createMcpRuntime(
       );
     },
     async getMcpPrompt(server, name, arguments_) {
-      const mcp = ctx.ports.resolveService<McpService>(MCP_SERVICE);
+      const mcp = ctx.state.serviceDirectory.getOptional(mcpService);
       if (!mcp) throw new Error(`MCP server is not connected: ${server}`);
       return await mcp.getPrompt(server, name, arguments_);
     },
     async readMcpResource(server, uri) {
-      const mcp = ctx.ports.resolveService<McpService>(MCP_SERVICE);
+      const mcp = ctx.state.serviceDirectory.getOptional(mcpService);
       if (!mcp) throw new Error(`MCP server is not connected: ${server}`);
       return await mcp.readResource(server, uri);
     },

@@ -10,7 +10,7 @@ import {
   terminalToolFamily,
   terminalTools,
 } from "../src";
-import { TERMINAL_CONTROLLER_SERVICE } from "@natalia/runtime-services";
+import { terminalController } from "@natalia/runtime-services";
 import {
   encodeTerminalKey,
   nativeTerminalReadPage,
@@ -97,7 +97,7 @@ test("omitted backend uses the in-process PTY controller", async () => {
       run: async (effect) => effect(new AbortController().signal),
     },
   });
-  const controller = services.get(TERMINAL_CONTROLLER_SERVICE) as {
+  const controller = services.get(terminalController.id) as {
     subscribeOutput?: unknown;
     close(): Promise<void>;
   };

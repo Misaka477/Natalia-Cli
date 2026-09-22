@@ -6,12 +6,11 @@ import {
   type Skill,
 } from "./skills";
 import type { ToolExecutionContext } from "@natalia/tools";
-import { SKILL_SERVICE } from "@natalia/runtime-services";
+import { skillService } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import { join } from "node:path";
 
 export const SKILLS_PLUGIN_ID = "natalia-skills";
-export const SKILLS_REGISTRY_SERVICE = SKILL_SERVICE;
 
 export const SKILLS_PLUGIN_MANIFEST: PluginManifest = {
   apiVersion: 2,
@@ -21,7 +20,7 @@ export const SKILLS_PLUGIN_MANIFEST: PluginManifest = {
   description: "Discovered project, user and remote skills.",
   entry: "index.js",
   scope: "workspace",
-  provides: [SKILLS_REGISTRY_SERVICE],
+  provides: [skillService.id],
   requires: [],
   optionalRequires: [],
   conflicts: [],
@@ -63,7 +62,7 @@ export function createSkillsPlugin(input: {
         ...(input.userRoot ? { userRoot: input.userRoot } : {}),
         ...(input.remoteURLs ? { remoteURLs: input.remoteURLs } : {}),
       });
-      api.services.provide(SKILLS_REGISTRY_SERVICE, skills);
+      api.services.provide(skillService.id, skills);
       api.tools.register(
         createSkillLoadTool({ registry: () => skills, onLoad: input.onLoad }),
       );

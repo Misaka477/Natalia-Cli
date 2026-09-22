@@ -9,7 +9,7 @@
  */
 import { readOnlyToolMessage } from "@natalia/runtime-services";
 import {
-  TERMINAL_CONTROLLER_SERVICE,
+  terminalController,
   TOOL_POLICY_SERVICE,
   type TerminalController,
   type ToolPolicyService,
@@ -63,9 +63,7 @@ export function createExecuteOne(
       ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
     if (!toolPolicy)
       throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
-    const terminalController = ctx.ports.resolveService<TerminalController>(
-      TERMINAL_CONTROLLER_SERVICE,
-    );
+    const terminal = ctx.state.serviceDirectory.getOptional(terminalController);
     const publish = (event: RuntimeEvent) => publishForSession(exec, event);
     const toolID = `${turnID}:${call.id}`;
     const dedupKey = repeatKey(
@@ -118,7 +116,7 @@ export function createExecuteOne(
           ).id;
           if (typeof terminalID === "string") {
             try {
-              await terminalController?.write(terminalID, "\x15");
+              await terminal?.write(terminalID, "\x15");
               publish({
                 type: "diagnostic",
                 level: "warning",

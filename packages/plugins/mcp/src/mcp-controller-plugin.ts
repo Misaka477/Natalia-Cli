@@ -9,7 +9,7 @@
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 import type { MCPServerConfig, RuntimeEvent } from "@natalia/contracts";
 import { createMcpController } from "./mcp-controller";
-import { MCP_SERVICE } from "@natalia/runtime-services";
+import { mcpService } from "@natalia/runtime-services";
 
 export const MCP_PLUGIN_ID = "natalia-mcp";
 
@@ -21,7 +21,7 @@ export const MCP_PLUGIN_MANIFEST: PluginManifest = {
   description: "Native MCP connections and their tools.",
   entry: "index.js",
   scope: "session",
-  provides: [MCP_SERVICE],
+  provides: [mcpService.id],
   requires: [],
   optionalRequires: [],
   conflicts: [],
@@ -55,7 +55,7 @@ export function createMcpPlugin(input: {
         ...input,
         tools: { register: (tool) => api.tools.register(tool) },
       });
-      api.services.provide(MCP_SERVICE, controller);
+      api.services.provide(mcpService.id, controller);
     },
     async dispose() {
       await controller?.close();

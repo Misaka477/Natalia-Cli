@@ -3,7 +3,7 @@ import {
   CHECKPOINT_FACTORY_SERVICE,
   SANDBOX_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
-  TERMINAL_CONTROLLER_SERVICE,
+  terminalController,
   type CheckpointFactory,
   type SandboxService,
   type SessionStoreController,
@@ -124,9 +124,7 @@ export function createLifecycleSurface(
         ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE)?.close(),
       );
       await shutdownStep("terminalClose", () =>
-        ctx.ports
-          .resolveService<TerminalController>(TERMINAL_CONTROLLER_SERVICE)
-          ?.close(),
+        ctx.state.serviceDirectory.getOptional(terminalController)?.close(),
       );
       ctx.ports
         .resolveService<

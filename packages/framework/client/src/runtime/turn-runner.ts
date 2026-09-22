@@ -18,12 +18,11 @@ import type { ProviderRunnerInput } from "@natalia/runtime-services";
 import {
   ATTACHMENT_SERVICE,
   COMPACTION_SERVICE,
-  MCP_SERVICE,
   RETRY_SERVICE,
   STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+  mcpService,
   type AttachmentService,
   type CompactionService,
-  type McpService,
   type RetryService,
   type StatusSnapshotController,
 } from "@natalia/runtime-services";
@@ -120,7 +119,7 @@ export function createTurnRunner(
       attachmentReferences: () => exec.attachmentReferences,
       attachments: attachmentService,
       compaction: compactionService,
-      mcp: () => ctx.ports.resolveService<McpService>(MCP_SERVICE),
+      mcp: () => ctx.state.serviceDirectory.getOptional(mcpService),
       agentRegistry: () => getAgentRegistry(),
       activeAbort: () => exec.activeAbort,
       setActiveAbort: (controller) => {

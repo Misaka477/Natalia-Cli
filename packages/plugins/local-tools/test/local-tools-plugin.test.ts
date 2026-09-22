@@ -4,11 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginAPI } from "@natalia/plugin";
 import type { RuntimeTool } from "@natalia/tools";
-import {
-  createLocalToolsPlugin,
-  LOCAL_TOOLS_PLUGIN_ID,
-  LOCAL_TOOLS_RELOAD_SERVICE,
-} from "../src";
+import { createLocalToolsPlugin, LOCAL_TOOLS_PLUGIN_ID } from "../src";
+import { localToolsReload } from "@natalia/runtime-services";
 
 async function fixtureFamily(root: string, toolName: string) {
   const dir = join(root, "fixture.a");
@@ -69,7 +66,7 @@ test("local tools plugin registers families and replaces them on reload", async 
   expect(tools.has("fixture_run")).toBe(true);
 
   await fixtureFamily(root, "fixture_run_v2");
-  const reload = services.get(LOCAL_TOOLS_RELOAD_SERVICE) as (
+  const reload = services.get(localToolsReload.id) as (
     familyID: string,
   ) => Promise<unknown>;
   await reload("fixture.a");
