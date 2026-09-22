@@ -42,6 +42,7 @@ export function createPluginsController(input: {
 }) {
   let registry: ReturnType<typeof createPluginRegistry> | undefined;
   let controller: ReturnType<typeof createDesiredPluginController> | undefined;
+  let lastCatalog: DesiredPluginEntry[] = [];
   let closed = false;
   let hostInputGeneration = 0;
 
@@ -106,11 +107,15 @@ export function createPluginsController(input: {
             }
           : entry,
       );
-      return await resolveDesiredPluginCatalog({
+      const catalog = await resolveDesiredPluginCatalog({
         entries,
         previous: current.previous,
         onError: publishLoadError,
       });
+      // The resolved catalog is the runtime's plugin composition: the
+      // generation record snapshots it by identity and fingerprint.
+      lastCatalog = catalog.entries;
+      return catalog;
     }, snapshot.settings);
   }
 
@@ -165,6 +170,12 @@ export function createPluginsController(input: {
   return {
     init,
     reconcileDesired,
+    catalog: () =>
+      lastCatalog.map(({ id, enabled, fingerprint }) => ({
+        id,
+        enabled,
+        fingerprint,
+      })),
     get,
     list,
     status: (id: string) => registry?.status(id),

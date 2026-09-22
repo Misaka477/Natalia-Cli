@@ -49,6 +49,7 @@ export const EVENT_MODES: EventModeTable = {
   audit: "emit",
   capability: "emit",
   checkpoint: "emit",
+  composition: "emit",
   collab: "emit",
   compaction: "emit",
   completion: "emit",

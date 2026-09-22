@@ -1259,7 +1259,7 @@ Deployment notes:
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 121.
+- Runtime event types (`RuntimeEventData` union): 122.
 - view-store projections (`case` labels in `packages/hosts/view-store/src`): 124.
 
 ### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
@@ -1523,6 +1523,7 @@ Deployment notes:
 | `workspace.added`               | `workspace`: WorkspaceSummary, `workspaceID`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | —                                                                                   |
 | `workspace.activated`           | `workspace`: WorkspaceSummary, `workspaceID`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | —                                                                                   |
 | `workspace.removed`             | `workspaceID`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                   |
+| `composition.switched`          | `from?`: string, `to`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                   |
 <!-- /api-reference:generated -->
 
 <a id="chinese"></a>
@@ -2633,7 +2634,7 @@ createRuntimeHttpServer({
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 121.
+- Runtime event types (`RuntimeEventData` union): 122.
 - view-store projections (`case` labels in `packages/hosts/view-store/src`): 124.
 
 ### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
@@ -2897,4 +2898,5 @@ createRuntimeHttpServer({
 | `workspace.added`               | `workspace`: WorkspaceSummary, `workspaceID`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | —                                                                                   |
 | `workspace.activated`           | `workspace`: WorkspaceSummary, `workspaceID`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | —                                                                                   |
 | `workspace.removed`             | `workspaceID`: string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                   |
+| `composition.switched`          | `from?`: string, `to`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                   |
 <!-- /api-reference:generated -->

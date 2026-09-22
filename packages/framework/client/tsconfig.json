@@ -7,10 +7,55 @@
   "include": ["src", "test"],
   "references": [
     {
+      "path": "../../core/capability"
+    },
+    {
+      "path": "../../core/contracts"
+    },
+    {
+      "path": "../../core/plugin"
+    },
+    {
+      "path": "../../core/runtime-services"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../domains/context-ledger"
+    },
+    {
       "path": "../../domains/goal"
     },
     {
+      "path": "../../domains/governance-ledger"
+    },
+    {
+      "path": "../../domains/work-ledger"
+    },
+    {
+      "path": "../../hosts/config"
+    },
+    {
+      "path": "../../hosts/platform"
+    },
+    {
+      "path": "../../hosts/ui-model"
+    },
+    {
+      "path": "../../hosts/view-store"
+    },
+    {
+      "path": "../../tooling/installer"
+    },
+    {
+      "path": "../../tooling/testing"
+    },
+    {
       "path": "../agent"
+    },
+    {
+      "path": "../agent-prompts"
     },
     {
       "path": "../attachments"
@@ -25,25 +70,10 @@
       "path": "../compaction"
     },
     {
-      "path": "../../core/capability"
+      "path": "../composition"
     },
     {
-      "path": "../../hosts/config"
-    },
-    {
-      "path": "../../core/contracts"
-    },
-    {
-      "path": "../../domains/context-ledger"
-    },
-    {
-      "path": "../../domains/governance-ledger"
-    },
-    {
-      "path": "../../hosts/platform"
-    },
-    {
-      "path": "../../core/plugin"
+      "path": "../diff"
     },
     {
       "path": "../provider-model"
@@ -53,9 +83,6 @@
     },
     {
       "path": "../runtime"
-    },
-    {
-      "path": "../../core/runtime-services"
     },
     {
       "path": "../runtime-config"
@@ -76,37 +103,13 @@
       "path": "../subagents"
     },
     {
-      "path": "../../tooling/testing"
-    },
-    {
-      "path": "../../tooling/installer"
-    },
-    {
-      "path": "../../core/tools"
-    },
-    {
       "path": "../tool-policy"
     },
     {
       "path": "../turn-orchestration"
     },
     {
-      "path": "../../hosts/ui-model"
-    },
-    {
-      "path": "../../domains/work-ledger"
-    },
-    {
       "path": "../workspace"
-    },
-    {
-      "path": "../diff"
-    },
-    {
-      "path": "../../hosts/view-store"
-    },
-    {
-      "path": "../agent-prompts"
     }
   ]
 }

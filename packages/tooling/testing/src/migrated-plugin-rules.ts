@@ -361,6 +361,7 @@ const clientClosureAllowlist = [
   "checkpoint",
   "collaboration",
   "compaction",
+  "composition",
   "config",
   "context-ledger",
   "contracts",

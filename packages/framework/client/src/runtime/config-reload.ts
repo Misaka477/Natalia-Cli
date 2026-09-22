@@ -13,8 +13,12 @@ import { ensureBashCommandParser } from "@natalia/tools";
 import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
 import { nextContextInstructionsRevision } from "@natalia/session";
 import { checkpointFactory, type CheckpointFactory } from "@natalia/checkpoint";
+import { ObjectStore } from "@natalia/object-store";
+import { buildGeneration, storeGeneration } from "@natalia/composition";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
+import type { ConfigV3 } from "@natalia/contracts";
+import { resolve } from "node:path";
 import {
   providerAdapterModuleRequests,
   reloadProviderAdapterModules,
@@ -59,6 +63,8 @@ function resetCheckpointFactory(ctx: RuntimeContext) {
   ) as (CheckpointFactory & { close?(): void }) | undefined;
   checkpointClose?.close?.();
 }
+
+let lastGenerationID: string | undefined;
 
 export function createConfigReload(
   ctx: RuntimeContext,
@@ -136,7 +142,43 @@ export function createConfigReload(
       });
     }
     scheduleRuntimeStatusSnapshot();
+    await recordComposition("config.reload");
     return { applied: true };
+  }
+
+  /**
+   * Records the post-reload composition as a content-addressed generation and
+   * publishes the switch (P2 / NGM G1). The reload is today's only real
+   * composition-changing trigger, so it is the event's first producer; the
+   * from-link comes from this closure's memory of the last generation, while
+   * the journal remains the durable record.
+   */
+  async function recordComposition(reason: string) {
+    try {
+      const config = ctx.ports.getTsRuntimeConfig();
+      if (!config) return;
+      const store = new ObjectStore(
+        resolve(ctx.ports.getWorkspaceRoot(), ".natalia", "objects"),
+      );
+      const catalog = ctx.ports.getPluginsController().catalog();
+      const to = await storeGeneration(
+        store,
+        buildGeneration({ config, catalog }),
+      );
+      ctx.ports.publish({
+        type: "composition.switched",
+        ...(lastGenerationID ? { from: lastGenerationID } : {}),
+        to,
+        reason,
+      });
+      lastGenerationID = to;
+    } catch (error) {
+      ctx.ports.publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `composition record failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   }
 
   async function reloadConfigFromDisk(): Promise<{

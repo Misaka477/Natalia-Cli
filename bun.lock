@@ -156,6 +156,7 @@
         "@jsquash/resize": "2.1.1",
         "@jsquash/webp": "1.5.0",
         "@natalia/contracts": "workspace:*",
+        "@natalia/runtime": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
         "@natalia/session": "workspace:*",
       },
@@ -167,6 +168,7 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
+        "@natalia/work-ledger": "workspace:*",
       },
     },
     "packages/framework/client": {
@@ -180,6 +182,7 @@
         "@natalia/checkpoint": "workspace:*",
         "@natalia/collaboration": "workspace:*",
         "@natalia/compaction": "workspace:*",
+        "@natalia/composition": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/context-ledger": "workspace:*",
         "@natalia/contracts": "workspace:*",
@@ -219,6 +222,7 @@
         "@natalia/runtime-services": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/tools": "workspace:*",
+        "@natalia/work-ledger": "workspace:*",
       },
       "devDependencies": {
         "@natalia/work-ledger": "workspace:*",
@@ -235,6 +239,14 @@
       "devDependencies": {
         "@natalia/context-ledger": "workspace:*",
         "@natalia/retry": "workspace:*",
+      },
+    },
+    "packages/framework/composition": {
+      "name": "@natalia/composition",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/object-store": "workspace:*",
       },
     },
     "packages/framework/diff": {
@@ -281,11 +293,14 @@
       "name": "@natalia/runtime",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/agent": "workspace:*",
         "@natalia/config": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/diff-wasm": "workspace:*",
         "@natalia/object-store": "workspace:*",
         "@natalia/platform": "workspace:*",
+        "@natalia/session": "workspace:*",
+        "@natalia/tools": "workspace:*",
       },
       "devDependencies": {
         "@natalia/session": "workspace:*",
@@ -892,6 +907,8 @@
     "@natalia/collaboration": ["@natalia/collaboration@workspace:packages/framework/collaboration"],
 
     "@natalia/compaction": ["@natalia/compaction@workspace:packages/framework/compaction"],
+
+    "@natalia/composition": ["@natalia/composition@workspace:packages/framework/composition"],
 
     "@natalia/config": ["@natalia/config@workspace:packages/hosts/config"],
 

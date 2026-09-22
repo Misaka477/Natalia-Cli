@@ -1,4 +1,5 @@
 export * from "./capabilities";
+export * from "./composition";
 export * from "./constitution";
 export * from "./events";
 export * from "./event-modes";

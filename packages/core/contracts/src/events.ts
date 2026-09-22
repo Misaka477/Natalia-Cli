@@ -2046,6 +2046,17 @@ type RuntimeEventData =
   | {
       type: "workspace.removed";
       workspaceID: string;
+    }
+  | {
+      type: "composition.switched";
+      /** The generation that was running before this switch, if any. */
+      from?: string;
+      /** The generation now running: a content id from the object store. */
+      to: string;
+      /** What caused the switch (config.reload, plugin.reconcile, rollback...). */
+      reason: string;
+      workspaceID?: string;
+      sessionID?: SessionID;
     };
 
 /**
