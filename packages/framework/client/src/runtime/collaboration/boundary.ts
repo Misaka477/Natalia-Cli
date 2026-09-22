@@ -15,7 +15,6 @@ import {
 import { buildMailboxStatus } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { workspaceFiles } from "@natalia/workspace";
-import { type WorkLedgerController } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { activePlanForExec } from "./plan-doc-runtime";
@@ -35,6 +34,7 @@ import {
 } from "@natalia/work-ledger";
 import { foldGoal } from "@natalia/goal";
 import { constitutionPathMatch as globPathMatch } from "@natalia/governance-ledger";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 /**
  * The main agent's narration for the finished turn: the latest assistant

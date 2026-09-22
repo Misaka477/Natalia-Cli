@@ -15,7 +15,6 @@ import type {
 } from "@natalia/contracts";
 import type {
   ProviderRunnerInput,
-  RuntimeContextLedger,
   SkillMetadata,
   SkillService,
   TeamBehaviorService,
@@ -30,6 +29,7 @@ import type { RuntimeContextStatusConfig } from "./status-config";
 import type { SessionExecutionState } from "./context";
 import type { WorkspaceWriteLock } from "@natalia/workspace";
 import type { CheckpointController } from "@natalia/checkpoint";
+import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 export type RuntimePorts = {
   resolveService: <T>(serviceID: string) => T | undefined;

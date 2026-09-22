@@ -1,8 +1,5 @@
 import type { CompactionTrigger, RuntimeEvent } from "@natalia/contracts";
-import type {
-  CompactionBudget,
-  RuntimeContextLedger,
-} from "@natalia/runtime-services";
+import type { CompactionBudget } from "@natalia/runtime-services";
 import {
   compactContext,
   compactionTrigger,
@@ -13,6 +10,7 @@ import {
 } from "@natalia/runtime";
 import { prepareContextRequest } from "./prepare-context-request";
 import type { CompactionService, RetryService } from "@natalia/runtime";
+import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 export type CompactionOutcome = Awaited<ReturnType<typeof compactContext>>;
 

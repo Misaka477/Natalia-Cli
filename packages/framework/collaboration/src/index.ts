@@ -1,3 +1,4 @@
+export * from "./contracts";
 export {
   collaborationTools,
   type CollaborationToolPorts,

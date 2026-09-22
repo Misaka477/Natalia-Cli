@@ -1,5 +1,5 @@
-import type { ContextLedgerFactory } from "@natalia/runtime-services";
 import { defineService } from "@natalia/runtime-services";
+import type { ContextLedgerFactory } from "@natalia/context-ledger";
 
 /** The context ledger factory token; lives with the mechanism. */
 export const contextLedgerFactory = defineService<ContextLedgerFactory>(

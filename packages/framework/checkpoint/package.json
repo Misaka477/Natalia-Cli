@@ -11,6 +11,7 @@
   "dependencies": {
     "@natalia/contracts": "workspace:*",
     "@natalia/runtime": "workspace:*",
-    "@natalia/runtime-services": "workspace:*"
+    "@natalia/runtime-services": "workspace:*",
+    "@natalia/work-ledger": "workspace:*"
   }
 }

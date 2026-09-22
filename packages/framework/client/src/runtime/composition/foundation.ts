@@ -9,13 +9,13 @@ import {
   skillService,
   teamBehavior,
   terminalController,
-  type WorkLedgerController,
 } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { statusSnapshotController } from "@natalia/runtime-status";
 import { createPluginsController } from "../../plugins-controller";
 import type { RuntimeContext } from "../context";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 function userSkillRoot() {
   const root = join(globalConfigHome(), "natalia-cli", "skills");

@@ -17,9 +17,9 @@ import { RuntimeInvalidParams } from "@natalia/contracts";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { sessionStoreController } from "@natalia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
-import { type WorkLedgerController } from "@natalia/runtime-services";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import type { SessionStoreController } from "@natalia/session-store";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 export type PlanDocRuntime = {
   planDocList(sessionID?: string): Promise<

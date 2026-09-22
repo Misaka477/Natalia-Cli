@@ -4,10 +4,8 @@ import { dirname, resolve } from "node:path";
 import type { EpisodeID, SandboxDiffKind, SessionID } from "@natalia/contracts";
 import {
   sandboxService,
-  type GovernanceLedgerController,
   type RuntimeServiceClient,
   type SandboxService,
-  type WorkLedgerController,
 } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
@@ -23,6 +21,8 @@ import {
   SandboxPromotionConflict,
 } from "@natalia/sandbox";
 import { captureRepositoryEvidenceFields } from "./repository-refs";
+import type { GovernanceLedgerController } from "@natalia/governance-ledger";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 async function appendSandboxMutation(
   ctx: RuntimeContext,

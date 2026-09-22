@@ -22,7 +22,8 @@ export type {
 } from "./initialize-types";
 export type { RuntimeEvent, SessionID } from "@natalia/contracts";
 export type { ProviderToolCall, StreamingProvider } from "@natalia/runtime";
-export type { RuntimeContextLedger } from "@natalia/runtime-services";
+export type { RuntimeContextLedger } from "@natalia/context-ledger";
+
 import type { StatusSnapshotController } from "@natalia/runtime-status";
 export type { StatusSnapshotController } from "@natalia/runtime-status";
 export type {
@@ -44,21 +45,15 @@ import type {
 } from "@natalia/contracts";
 import type { SessionRecord } from "@natalia/session";
 import type {
-  InteractiveWaiterDeps,
   ServiceDirectory,
   SkillMetadata,
 } from "@natalia/runtime-services";
 export type {
-  ContextLedgerFactory,
-  GovernanceLedgerController,
-  InteractiveWaiter,
   McpService,
   SandboxService,
   SubagentsService,
   TerminalController,
   ToolPolicyService,
-  TurnController,
-  WorkLedgerController,
 } from "@natalia/runtime-services";
 export type { PermissionProfileCommandRules } from "@natalia/tools";
 import type {
@@ -92,6 +87,14 @@ export type {
   WorkspaceWriteLock,
 } from "@natalia/workspace";
 export type { SessionExecutionState } from "./session-execution-state";
+import type {
+  InteractiveWaiter,
+  InteractiveWaiterDeps,
+} from "@natalia/collaboration";
+import type { ContextLedgerFactory } from "@natalia/context-ledger";
+import type { GovernanceLedgerController } from "@natalia/governance-ledger";
+import type { TurnController } from "@natalia/turn-orchestration";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 type PermissionProfile = import("@natalia/contracts").PermissionProfile;
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
@@ -216,3 +219,11 @@ export type RuntimeContext = {
 };
 
 /** The resolved context window status carried by the runtime and each exec. */
+export type { ContextLedgerFactory } from "@natalia/context-ledger";
+export type { GovernanceLedgerController } from "@natalia/governance-ledger";
+export type { TurnController } from "@natalia/turn-orchestration";
+export type { WorkLedgerController } from "@natalia/work-ledger";
+export type {
+  InteractiveWaiter,
+  InteractiveWaiterDeps,
+} from "@natalia/collaboration";

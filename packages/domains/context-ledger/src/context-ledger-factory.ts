@@ -1,6 +1,6 @@
 import { ContextLedger } from "@natalia/runtime";
-import type { ContextLedgerFactory } from "@natalia/runtime-services";
 import { perfLog } from "@natalia/runtime-services";
+import type { ContextLedgerFactory } from "@natalia/context-ledger";
 
 export function createContextLedgerFactory(): ContextLedgerFactory {
   return {

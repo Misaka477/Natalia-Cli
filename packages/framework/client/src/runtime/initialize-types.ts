@@ -6,11 +6,7 @@ import type {
   ProviderToolCall,
   StreamingProvider,
 } from "@natalia/runtime";
-import type {
-  InteractiveWaiterDeps,
-  RuntimeContextLedger,
-  ServiceDirectory,
-} from "@natalia/runtime-services";
+import type { ServiceDirectory } from "@natalia/runtime-services";
 import type {
   PermissionProfileCommandRules,
   RuntimeTool,
@@ -18,6 +14,8 @@ import type {
   TerminalCommandBuffer,
 } from "@natalia/tools";
 import type { SessionExecutionState } from "./session-execution-state";
+import type { InteractiveWaiterDeps } from "@natalia/collaboration";
+import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 export type InitializeOptions = {
   sessionID?: SessionID;

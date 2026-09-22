@@ -31,7 +31,7 @@ export type RuntimePortsExtra = {
   setSessionID: (id: SessionID) => void;
   setSession: (session: import("@natalia/session").SessionRecord) => void;
   setRuntimeContext: (
-    context: import("@natalia/runtime-services").RuntimeContextLedger,
+    context: import("@natalia/context-ledger").RuntimeContextLedger,
   ) => void;
   setActiveExec: (exec: SessionExecutionState | undefined) => void;
   setAttachmentReferences: (
@@ -149,7 +149,7 @@ export type RuntimePortsExtra = {
     arguments_: Record<string, string>,
     exec: SessionExecutionState,
   ) => Promise<void>;
-  getInteractive: () => import("@natalia/runtime-services").InteractiveWaiter;
+  getInteractive: () => import("@natalia/collaboration").InteractiveWaiter;
   getTerminalCommandBuffer: () => import("@natalia/tools").TerminalCommandBuffer;
   getSandboxResourcesByID: () => Map<string, number>;
   getEndTurnWaitingHuman: () =>

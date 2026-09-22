@@ -1,10 +1,8 @@
 import type { ContextEntry, ProviderUsageView } from "@natalia/runtime";
 import type {
-  ContextLedgerFactory,
   InitializeOptions,
   ProviderToolCall,
   RuntimeContext,
-  RuntimeContextLedger,
   RuntimeEvent,
   RuntimeTool,
   SessionID,
@@ -25,6 +23,10 @@ import { contextLedgerFactory } from "@natalia/context-ledger";
 import { compactionService } from "@natalia/compaction";
 import { subagentsService } from "@natalia/runtime-services";
 import type { CompactionService, RetryService } from "@natalia/runtime";
+import type {
+  ContextLedgerFactory,
+  RuntimeContextLedger,
+} from "@natalia/context-ledger";
 
 export async function createSubagentSupport(
   ctx: RuntimeContext,

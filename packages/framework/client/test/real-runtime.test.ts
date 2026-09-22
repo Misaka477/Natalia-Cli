@@ -14008,7 +14008,7 @@ test("a generic interactive kind round-trips through projection and response", a
   client.start((event) => events.push(event));
   await waitFor(() => events.some((event) => event.type === "session.ready"));
   const waiter = await client.service<
-    import("@natalia/runtime-services").InteractiveWaiter
+    import("@natalia/collaboration").InteractiveWaiter
   >("collaboration.waiter");
   expect(waiter).toBeDefined();
 

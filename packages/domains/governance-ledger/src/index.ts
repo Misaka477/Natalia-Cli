@@ -1,3 +1,4 @@
+export * from "./contracts";
 export { governanceLedgerController } from "./service-token";
 export { createGovernanceLedgerController } from "./governance-ledger-controller";
 export {

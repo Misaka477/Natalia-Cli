@@ -11,11 +11,9 @@ import {
   type StreamingProvider,
 } from "@natalia/runtime";
 import type { SessionFactState, SessionRecord } from "@natalia/session";
-import type {
-  RuntimeContextLedger,
-  SkillMetadata,
-} from "@natalia/runtime-services";
+import type { SkillMetadata } from "@natalia/runtime-services";
 import type { RuntimeContextStatusConfig } from "./status-config";
+import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 export type CollabSnapshot = {
   collabMessages: import("@natalia/session").ProjectedCollabMessage[];

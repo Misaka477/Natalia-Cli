@@ -7,10 +7,10 @@
  */
 import { localToolsReload } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
-import { type WorkLedgerController } from "@natalia/runtime-services";
 import type { ToolFamily } from "@natalia/tools";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 export function createToolPublish(
   ctx: RuntimeContext,

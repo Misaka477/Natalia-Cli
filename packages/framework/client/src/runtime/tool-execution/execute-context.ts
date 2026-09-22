@@ -17,12 +17,12 @@ import {
   type SandboxService,
   type SubagentsService,
   type TerminalController,
-  type WorkLedgerController,
 } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { workspaceMutations } from "@natalia/workspace";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 export type BuildContextInput = {
   exec: SessionExecutionState | undefined;

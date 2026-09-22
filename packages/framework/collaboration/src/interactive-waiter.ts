@@ -37,10 +37,11 @@ import {
 import type { ProviderToolCall } from "@natalia/runtime";
 import { parseToolArguments, type RuntimeTool } from "@natalia/tools";
 import { projectInteractiveRequests } from "@natalia/session";
+import type {} from "@natalia/runtime-services";
 import type {
   InteractiveWaiter,
   InteractiveWaiterDeps,
-} from "@natalia/runtime-services";
+} from "@natalia/collaboration";
 import {
   defineService,
   readOnlyToolMessage,

@@ -3,13 +3,13 @@ import { sessionStoreController } from "@natalia/session-store";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import {
   terminalController,
-  type ContextLedgerFactory,
   type TerminalController,
 } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
 import type { SessionStoreController } from "@natalia/session-store";
+import type { ContextLedgerFactory } from "@natalia/context-ledger";
 type Surface = Pick<
   RuntimeServiceClient,
   | "sessionList"

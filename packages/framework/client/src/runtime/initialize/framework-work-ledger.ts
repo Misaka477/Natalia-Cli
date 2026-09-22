@@ -8,10 +8,10 @@
  * unchanged.
  */
 import { createWorkLedgerController } from "@natalia/work-ledger";
-import { type WorkLedgerController } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 export function wireWorkLedger(ctx: RuntimeContext): WorkLedgerController {
   const registry = ctx.state.capabilityRegistry;

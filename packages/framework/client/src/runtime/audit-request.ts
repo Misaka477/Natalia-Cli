@@ -1,7 +1,7 @@
-import { type WorkLedgerController } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext, SessionExecutionState } from "./context";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 /**
  * EI §3.9: completion.recorded is a durable audit trigger. The request is

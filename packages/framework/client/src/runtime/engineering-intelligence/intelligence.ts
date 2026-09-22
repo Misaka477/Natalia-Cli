@@ -1,10 +1,7 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import { sessionStoreController } from "@natalia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
-import {
-  type ConstitutionDocRule,
-  type WorkLedgerController,
-} from "@natalia/runtime-services";
+import { type ConstitutionDocRule } from "@natalia/runtime-services";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { loadProjectDocuments } from "../project-docs";
 import { applyConstitutionDocEdit } from "../constitution-doc";
@@ -59,6 +56,7 @@ import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
 import { captureRepositoryEvidenceFields } from "../repository-refs";
 import type { SessionStoreController } from "@natalia/session-store";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 /**
  * The `ClientSurfaceOptions` the engineering-intelligence surface shares with

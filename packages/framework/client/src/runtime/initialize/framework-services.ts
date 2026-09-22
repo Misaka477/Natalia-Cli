@@ -72,7 +72,6 @@ import {
   skillsInput,
   subagentsService,
   terminalInput,
-  type ContextLedgerFactory,
   type SandboxService,
   type TerminalInput,
 } from "@natalia/runtime-services";
@@ -94,6 +93,7 @@ import type {
 } from "@natalia/runtime";
 
 export type { FrameworkServices } from "../context";
+import type { ContextLedgerFactory } from "@natalia/context-ledger";
 
 export async function wireFrameworkServices(
   ctx: RuntimeContext,

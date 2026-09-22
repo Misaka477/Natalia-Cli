@@ -10,10 +10,8 @@ import type {
   CreateCheckpointInput,
   DurableContextCheckpoint,
 } from "@natalia/runtime";
-import type {
-  SubagentsService,
-  WorkLedgerController,
-} from "@natalia/runtime-services";
+import type { WorkLedgerController } from "@natalia/work-ledger";
+import type { SubagentsService } from "@natalia/runtime-services";
 
 /**
  * Checkpoint mechanism contracts, moved from runtime-services as the token

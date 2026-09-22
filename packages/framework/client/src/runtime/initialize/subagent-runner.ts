@@ -1,7 +1,6 @@
 import type {
   InitializeOptions,
   RuntimeContext,
-  RuntimeContextLedger,
   RuntimeEvent,
   SandboxService,
   SessionExecutionState,
@@ -23,6 +22,7 @@ import {
 } from "./subagent-settled-notice";
 import { activePlanForExec } from "../collaboration/plan-doc-runtime";
 import { sandboxService, subagentsService } from "@natalia/runtime-services";
+import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 /**
  * The active plan pointer for a subagent (ADR D4/B2): planID + documentPath +

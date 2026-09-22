@@ -3,7 +3,7 @@ import {
   createTestContext,
   defineService,
   ServiceDirectory,
-  type ServiceChannel,
+  type ServiceBindings,
   type ServiceToken,
 } from "../src";
 
@@ -53,7 +53,7 @@ test("a directory resolves by token and fails loud on a missing service", () => 
   );
 });
 
-test("provide binds through the channel and the disposer unbinds", () => {
+test("provide binds through the bindings and the disposer unbinds", () => {
   const values = new Map<string, unknown>();
   const directory = new ServiceDirectory({
     provide: (id, value) => {
@@ -107,10 +107,10 @@ test("the token type flows to consumers without a cast", () => {
   expect(asUnknown.id).toBe("fake.controller");
 });
 
-// A channel that counts resolutions, proving the directory stays a thin seam.
+// A bindings double that counts resolutions, proving the directory stays a thin seam.
 test("the directory adds no resolution layer of its own", async () => {
   let gets = 0;
-  const channel: ServiceChannel = {
+  const bindings: ServiceBindings = {
     provide: () => () => {},
     get: <T>(id: string) => {
       gets++;
@@ -119,13 +119,13 @@ test("the directory adds no resolution layer of its own", async () => {
         : undefined;
     },
   };
-  const directory = new ServiceDirectory(channel);
+  const directory = new ServiceDirectory(bindings);
   directory.get(controllerToken);
   directory.get(controllerToken);
   expect(gets).toBe(2);
 });
 
-test("provide passes the token's declared scope to the channel", () => {
+test("provide passes the token's declared scope to the bindings", () => {
   const scopes: (string | undefined)[] = [];
   const directory = new ServiceDirectory({
     provide: (_id, _value, scope) => {

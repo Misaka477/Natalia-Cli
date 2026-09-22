@@ -9,7 +9,6 @@ import {
   subagentsService,
   type RuntimeServiceClient,
   type SubagentsService,
-  type WorkLedgerController,
 } from "@natalia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { statusSnapshotController } from "@natalia/runtime-status";
@@ -20,6 +19,7 @@ import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 import type {
   CheckpointController,
   CheckpointFactory,

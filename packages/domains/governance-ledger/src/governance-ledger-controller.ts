@@ -15,7 +15,7 @@ import {
   buildHumanValidation,
   evidenceStatusForPlanState,
 } from "./evidence-ledger";
-import type { GovernanceLedgerController } from "@natalia/runtime-services";
+import type { GovernanceLedgerController } from "./contracts";
 
 export function createGovernanceLedgerController(): GovernanceLedgerController {
   return {

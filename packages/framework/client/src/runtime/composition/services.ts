@@ -11,7 +11,7 @@ import {
 import type { RuntimeContext } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
 import { isManagedResourceTool, waitForToolExecution } from "./helpers";
-import type { RuntimeContextLedger } from "@natalia/runtime-services";
+import type { RuntimeContextLedger } from "@natalia/context-ledger";
 import { collaborationWaiter } from "@natalia/collaboration";
 
 export function wireServices(

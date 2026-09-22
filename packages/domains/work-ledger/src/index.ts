@@ -1,3 +1,4 @@
+export * from "./contracts";
 export { workLedgerController } from "./service-token";
 export {
   DRIFT_CONTRACT_VERSION,

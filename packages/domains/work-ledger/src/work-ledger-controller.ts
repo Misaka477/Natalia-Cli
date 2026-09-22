@@ -37,7 +37,7 @@ import {
   workspaceChangeEdge,
   workspaceChangeNode,
 } from "./work-graph";
-import type { WorkLedgerController } from "@natalia/runtime-services";
+import type { WorkLedgerController } from "./contracts";
 
 export function createWorkLedgerController(
   input: Parameters<typeof createDriftEvaluator>[0],

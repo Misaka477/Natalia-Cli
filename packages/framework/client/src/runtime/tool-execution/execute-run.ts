@@ -16,10 +16,7 @@ import {
   type RuntimeTool,
 } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
-import {
-  type ToolPolicyService,
-  type WorkLedgerController,
-} from "@natalia/runtime-services";
+import { type ToolPolicyService } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
 import { workspaceMutations, workspaceWriteLock } from "@natalia/workspace";
@@ -28,6 +25,7 @@ import type { SessionExecutionState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
 import type { RuntimeContext } from "../context";
 import { activePlanForExec } from "../collaboration/plan-doc-runtime";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 export type ExecuteStageInput = {
   exec: SessionExecutionState | undefined;

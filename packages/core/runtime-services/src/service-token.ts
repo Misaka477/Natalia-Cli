@@ -9,9 +9,9 @@
  * what makes "token.id is the wire name" safe — a duplicated definition is a
  * second spelling of one wire, not a second service.
  *
- * The directory resolves tokens through a narrow channel seam: the runtime
- * channel is backed by the capability registry's service contributions, a test
- * channel is a plain map, and the primitive knows about neither.
+ * The directory resolves tokens through a narrow bindings seam: the runtime
+ * binding is backed by the capability registry's service contributions, a test
+ * binding is a plain map, and the primitive knows about neither.
  */
 
 declare const SERVICE_TYPE: unique symbol;
@@ -96,22 +96,22 @@ export function defineService<T>(
 
 /**
  * The minimal resolution seam behind a directory. The runtime implementation
- * forwards `provide`/`get` to the capability registry's service channel; tests
+ * forwards `provide`/`get` to the capability registry's service bindings; tests
  * use `createTestContext`. Keeping it this narrow is what lets one directory
  * serve both.
  */
-export interface ServiceChannel {
+export interface ServiceBindings {
   /**
    * Binds `value` to `id`. `scope` is the owner lifetime the binding takes
    * (the capability registry's scopes), so a token's declared lifetime reaches
-   * the channel that enforces it. Returns the disposer that unbinds it.
+   * the binding that enforces it. Returns the disposer that unbinds it.
    */
   provide(id: string, value: unknown, scope?: ServiceScope): () => void;
   get<T>(id: string): T | undefined;
 }
 
 /**
- * The typed face over a service channel.
+ * The typed face over a service bindings.
  *
  * Resolution is call-time, matching the ports semantics it migrates: modules
  * read services when they use them, so construction order never matters and a
@@ -121,16 +121,16 @@ export interface ServiceChannel {
  * optimization.
  */
 export class ServiceDirectory {
-  constructor(private readonly channel: ServiceChannel) {}
+  constructor(private readonly bindings: ServiceBindings) {}
 
   /** Binds `value` to `token`; the disposer unbinds it. */
   provide<T>(token: ServiceToken<T>, value: T): () => void {
-    return this.channel.provide(token.id, value, token.meta.scope);
+    return this.bindings.provide(token.id, value, token.meta.scope);
   }
 
   /** Resolves `token`, failing loud when nothing provides it. */
   get<T>(token: ServiceToken<T>): T {
-    const value = this.channel.get<T>(token.id);
+    const value = this.bindings.get<T>(token.id);
     if (value === undefined)
       throw new Error(`service "${token.id}" is not provided`);
     return value;
@@ -143,7 +143,7 @@ export class ServiceDirectory {
    * site.
    */
   getOptional<T>(token: ServiceToken<T>): T | undefined {
-    return this.channel.get<T>(token.id);
+    return this.bindings.get<T>(token.id);
   }
 }
 

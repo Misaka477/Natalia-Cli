@@ -15,7 +15,8 @@ import {
 import type {
   TurnController,
   TurnControllerInput,
-} from "@natalia/runtime-services";
+} from "@natalia/turn-orchestration";
+import type {} from "@natalia/runtime-services";
 
 export function createTurnController(
   input: TurnControllerInput,

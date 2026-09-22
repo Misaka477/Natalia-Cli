@@ -3,16 +3,13 @@ import {
   loadInstanceGovernance,
   resolveGovernanceRoot,
 } from "@natalia/governance-ledger";
-import type {
-  GovernanceLedgerController,
-  InitializeOptions,
-  RuntimeContext,
-  WorkLedgerController,
-} from "../context";
+import type { InitializeOptions, RuntimeContext } from "../context";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { governanceLedgerController as governanceLedgerControllerToken } from "@natalia/governance-ledger";
+import type { GovernanceLedgerController } from "@natalia/governance-ledger";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 export async function finalizeInitialize(
   ctx: RuntimeContext,

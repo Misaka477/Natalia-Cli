@@ -1,10 +1,8 @@
 import type { AgentRegistry } from "@natalia/agent";
 import type { ProviderConcurrencyLimiter } from "@natalia/runtime";
-import type {
-  InteractiveWaiter,
-  RuntimeContextLedger,
-} from "@natalia/runtime-services";
 import type { SessionRecord } from "@natalia/session";
+import type { InteractiveWaiter } from "@natalia/collaboration";
+import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 export type RuntimeInitializePorts = {
   getSession: () => SessionRecord | undefined;

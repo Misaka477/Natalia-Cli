@@ -4,13 +4,11 @@ import {
   sessionRunCoordinator,
   type AdmittedSessionInput,
 } from "@natalia/session";
-import {
-  type RuntimeServiceClient,
-  type TurnController,
-} from "@natalia/runtime-services";
+import { type RuntimeServiceClient } from "@natalia/runtime-services";
 import { turnController } from "@natalia/turn-orchestration";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
+import type { TurnController } from "@natalia/turn-orchestration";
 
 type Surface = Pick<
   RuntimeServiceClient,

@@ -4,7 +4,6 @@ import type { SessionProjection } from "@natalia/session";
 import { announcedTurnIDsFrom } from "../session-execution-state";
 import { reseedSessionFactState } from "../session-facts";
 import type {
-  ContextLedgerFactory,
   InitializeOptions,
   SandboxService,
   SessionExecutionState,
@@ -27,6 +26,7 @@ import { today } from "@natalia/runtime";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import type { AttachmentService } from "@natalia/runtime";
 import type { SessionStoreController } from "@natalia/session-store";
+import type { ContextLedgerFactory } from "@natalia/context-ledger";
 
 type LoadedSession = Awaited<ReturnType<SessionStoreController["load"]>>;
 type RecoveryView = NonNullable<LoadedSession["recovery"]>;

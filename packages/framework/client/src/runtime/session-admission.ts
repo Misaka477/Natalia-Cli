@@ -14,7 +14,7 @@ import {
   buildSubmittedTurn,
   sessionRunCoordinator,
 } from "@natalia/session";
-import { type WorkLedgerController } from "@natalia/runtime-services";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 import { workLedgerController } from "@natalia/work-ledger";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import type { SessionID, SubmitInput, SubmittedTurn } from "@natalia/contracts";

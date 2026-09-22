@@ -9,7 +9,7 @@ import {
 } from "@natalia/runtime";
 import { createToolRegistry } from "@natalia/tools";
 import { RuntimePerformanceTrace } from "../../performance-trace";
-import { createCapabilityServiceChannel } from "./service-channel";
+import { createCapabilityServiceBindings } from "./service-bindings";
 import { defaultContextStatusConfig } from "../provider-selection";
 import type { RuntimeContext, RuntimeState } from "../context";
 import type { RealRuntimeClientOptions } from "../options";
@@ -42,7 +42,7 @@ export function createCompositionContext(
     providerSource: options.provider ? "explicit" : "unconfigured",
     capabilityRegistry,
     serviceDirectory: new ServiceDirectory(
-      createCapabilityServiceChannel(capabilityRegistry),
+      createCapabilityServiceBindings(capabilityRegistry),
     ),
     capabilityHost: options.capabilityHost,
     workspaceCapabilityView: options.capabilityHost?.view,

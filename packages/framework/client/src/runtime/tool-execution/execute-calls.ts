@@ -20,10 +20,7 @@ import {
 import { readOnlyToolMessage } from "@natalia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
-import {
-  type ToolPolicyService,
-  type WorkLedgerController,
-} from "@natalia/runtime-services";
+import { type ToolPolicyService } from "@natalia/runtime-services";
 import {
   uniqueProviderToolCallIds,
   type ProviderToolCall,
@@ -38,6 +35,7 @@ import type { ToolMaterialization } from "@natalia/tools";
 import type { RuntimeContext } from "../context";
 import { ensureCompleteSessionFactState } from "../session-full-events";
 import type { RealRuntimeClientOptions } from "../options";
+import type { WorkLedgerController } from "@natalia/work-ledger";
 
 /**
  * The constitution self-protection patterns: shell and terminal input that must

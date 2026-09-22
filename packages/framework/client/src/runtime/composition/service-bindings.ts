@@ -1,8 +1,8 @@
 import type { CapabilityRegistryHost } from "@natalia/capability";
-import type { ServiceChannel, ServiceScope } from "@natalia/runtime-services";
+import type { ServiceBindings, ServiceScope } from "@natalia/runtime-services";
 
 /**
- * Backs a service directory with the capability registry's service channel.
+ * Backs a service directory with the capability registry's service bindings.
  *
  * Each provide registers its own owner: the registry's contribution model
  * already carries per-owner disposal, listener notification and precedence
@@ -11,9 +11,9 @@ import type { ServiceChannel, ServiceScope } from "@natalia/runtime-services";
  * long-lived owner for every directory binding — would couple unrelated
  * services' lifetimes for no gain.
  */
-export function createCapabilityServiceChannel(
+export function createCapabilityServiceBindings(
   registry: CapabilityRegistryHost,
-): ServiceChannel {
+): ServiceBindings {
   return {
     provide: (id, value, scope) => {
       const owner = registry.registerOwner({
