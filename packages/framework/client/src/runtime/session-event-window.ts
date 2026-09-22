@@ -1,5 +1,7 @@
-import { type SessionStoreController } from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
+import {
+  sessionStoreController,
+  type SessionStoreController,
+} from "@natalia/session-store";
 import { runtimeEventSessionSeq, type RuntimeEvent } from "@natalia/contracts";
 import { ensureSessionFullEvents } from "./session-full-events";
 import type { RuntimeContext } from "./context";

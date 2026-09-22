@@ -49,13 +49,11 @@ import type {
   SkillMetadata,
 } from "@natalia/runtime-services";
 export type {
-  CheckpointFactory,
   ContextLedgerFactory,
   GovernanceLedgerController,
   InteractiveWaiter,
   McpService,
   SandboxService,
-  SessionStoreController,
   SubagentsService,
   TerminalController,
   ToolPolicyService,
@@ -81,6 +79,8 @@ import type {
   RetryService,
 } from "@natalia/runtime";
 import type { ProviderModelController } from "@natalia/provider-model";
+import type { CheckpointFactory } from "@natalia/checkpoint";
+import type { SessionStoreController } from "@natalia/session-store";
 import type {
   MutationRegistry,
   WorkspaceFilesController,

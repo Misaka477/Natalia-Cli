@@ -14,7 +14,7 @@ import {
   buildSessionIntelligenceSnapshot,
   buildSessionIntelligenceSnapshotFromFacts,
 } from "../session-intelligence";
-import { type SessionStoreController } from "@natalia/runtime-services";
+import type { SessionStoreController } from "@natalia/session-store";
 import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { DurableInFlightOperation } from "@natalia/session";

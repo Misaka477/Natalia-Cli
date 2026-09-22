@@ -1,5 +1,7 @@
-import { type SessionStoreController } from "@natalia/runtime-services";
-import { sessionStoreController } from "@natalia/session-store";
+import {
+  sessionStoreController,
+  type SessionStoreController,
+} from "@natalia/session-store";
 import { memoryTrace } from "@natalia/runtime";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";

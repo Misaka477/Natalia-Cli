@@ -14,7 +14,7 @@ import {
   type GoalView,
 } from "@natalia/goal";
 import { admittedInputs } from "@natalia/session";
-import { type SessionStoreController } from "@natalia/runtime-services";
+import type { SessionStoreController } from "@natalia/session-store";
 import { sessionStoreController } from "@natalia/session-store";
 import type {
   GoalEditInput,

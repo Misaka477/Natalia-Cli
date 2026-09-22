@@ -1,10 +1,8 @@
 import { join } from "node:path";
 import type { SessionID } from "@natalia/contracts";
-import type {
-  CheckpointController,
-  CheckpointControllerAccessors,
-  CheckpointFactory,
-} from "@natalia/runtime-services";
+import type { CheckpointFactory } from "./contracts";
+import type { CheckpointControllerAccessors } from "./contracts";
+import type { CheckpointController } from "./contracts";
 import { createCheckpointController } from "./checkpoint-controller";
 
 /**

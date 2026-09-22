@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type {
+  SessionStoreController,
+  SessionStoreRecoveryView,
+} from "./contracts";
+import type {
   DurableContextCheckpointRecord,
   LocalAttachment,
   RuntimeEvent,
@@ -21,10 +25,7 @@ import {
   type SessionRow,
   type StoredContextEpoch,
 } from "@natalia/session";
-import type {
-  SessionStoreController,
-  SessionStoreRecoveryView,
-} from "@natalia/runtime-services";
+import type {} from "@natalia/runtime-services";
 import {
   ensureMessageIndexInWorker,
   loadMessagePageInWorker,

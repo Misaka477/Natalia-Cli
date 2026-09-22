@@ -12,8 +12,7 @@ import { resolveConfig } from "@natalia/config";
 import { ensureBashCommandParser } from "@natalia/tools";
 import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
 import { nextContextInstructionsRevision } from "@natalia/session";
-import { type CheckpointFactory } from "@natalia/runtime-services";
-import { checkpointFactory } from "@natalia/checkpoint";
+import { checkpointFactory, type CheckpointFactory } from "@natalia/checkpoint";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
 import {

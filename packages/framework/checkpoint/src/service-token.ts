@@ -1,4 +1,4 @@
-import type { CheckpointFactory } from "@natalia/runtime-services";
+import type { CheckpointFactory } from "./contracts";
 import { defineService } from "@natalia/runtime-services";
 
 /**

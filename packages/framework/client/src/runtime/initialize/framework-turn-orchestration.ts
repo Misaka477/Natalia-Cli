@@ -14,7 +14,7 @@ import {
 import { providerModelController } from "@natalia/provider-model";
 import { sessionStoreController } from "@natalia/session-store";
 import type { SessionID } from "@natalia/contracts";
-import { type SessionStoreController } from "@natalia/runtime-services";
+import type { SessionStoreController } from "@natalia/session-store";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 import type { ProviderModelController } from "@natalia/provider-model";
 

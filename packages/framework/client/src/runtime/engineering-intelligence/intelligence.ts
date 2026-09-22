@@ -32,7 +32,6 @@ import {
   sessionFactEvidenceRecords,
 } from "@natalia/session";
 import type { PlanLifecycleState } from "@natalia/runtime-services";
-import { type SessionStoreController } from "@natalia/runtime-services";
 import { isHardProtectedConstitutionRule } from "@natalia/contracts";
 import type { EpisodeID } from "@natalia/contracts";
 import { readFile } from "node:fs/promises";
@@ -59,6 +58,7 @@ import {
 import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
 import { captureRepositoryEvidenceFields } from "../repository-refs";
+import type { SessionStoreController } from "@natalia/session-store";
 
 /**
  * The `ClientSurfaceOptions` the engineering-intelligence surface shares with

@@ -1,4 +1,4 @@
-import type { SessionStoreController } from "@natalia/runtime-services";
+import type { SessionStoreController } from "./contracts";
 import { defineService } from "@natalia/runtime-services";
 
 /**

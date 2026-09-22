@@ -24,7 +24,7 @@ import {
   type SessionFactState,
 } from "@natalia/session";
 import { runtimeEventSessionSeq, type RuntimeEvent } from "@natalia/contracts";
-import { type SessionStoreController } from "@natalia/runtime-services";
+import type { SessionStoreController } from "@natalia/session-store";
 import { sessionStoreController } from "@natalia/session-store";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./session-execution-state";

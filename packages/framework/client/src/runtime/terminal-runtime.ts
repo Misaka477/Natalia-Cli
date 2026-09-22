@@ -12,7 +12,7 @@ import type {
   RuntimeTerminalSession,
   TerminalAction,
 } from "@natalia/contracts";
-import { type SessionStoreController } from "@natalia/runtime-services";
+import type { SessionStoreController } from "@natalia/session-store";
 import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";

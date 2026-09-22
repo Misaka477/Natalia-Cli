@@ -4,8 +4,8 @@ import { createSessionHistoryTool } from "../src/runtime/session-history-tool";
 import type { RuntimeContext } from "../src/runtime/context";
 import type { SessionRecord } from "@natalia/session";
 import { sessionStoreController } from "@natalia/session-store";
-import type { SessionStoreController } from "@natalia/runtime-services";
 import { createTestContext } from "@natalia/runtime-services";
+import type { SessionStoreController } from "@natalia/session-store";
 
 const PAGE: RuntimeMessagePage = {
   data: [],

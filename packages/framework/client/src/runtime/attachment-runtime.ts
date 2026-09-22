@@ -7,12 +7,12 @@
  * files into the user workspace.
  */
 import type { LocalAttachment, SessionID } from "@natalia/contracts";
-import { type SessionStoreController } from "@natalia/runtime-services";
 import { sessionStoreController } from "@natalia/session-store";
 import { attachmentService } from "@natalia/attachments";
 import type { RuntimeContext } from "./context";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type { AttachmentService } from "@natalia/runtime";
+import type { SessionStoreController } from "@natalia/session-store";
 
 export function createAttachmentRuntime(
   ctx: RuntimeContext,

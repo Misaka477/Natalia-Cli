@@ -8,7 +8,6 @@ import type {
   InitializeOptions,
   SandboxService,
   SessionExecutionState,
-  SessionStoreController,
 } from "../context";
 import {
   prepareSessionRecoveryContextInWorker,
@@ -27,6 +26,7 @@ import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import type { AttachmentService } from "@natalia/runtime";
+import type { SessionStoreController } from "@natalia/session-store";
 
 type LoadedSession = Awaited<ReturnType<SessionStoreController["load"]>>;
 type RecoveryView = NonNullable<LoadedSession["recovery"]>;

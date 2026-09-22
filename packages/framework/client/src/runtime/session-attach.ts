@@ -11,7 +11,6 @@ import { restoreProjection } from "@natalia/session";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
   terminalController,
-  type SessionStoreController,
   type TerminalController,
 } from "@natalia/runtime-services";
 import { sessionStoreController } from "@natalia/session-store";
@@ -24,6 +23,7 @@ import {
 } from "./collaboration/chat-turn-common";
 import { perfLog } from "@natalia/runtime-services";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
+import type { SessionStoreController } from "@natalia/session-store";
 
 export function createSessionAttach(ctx: RuntimeContext) {
   return {

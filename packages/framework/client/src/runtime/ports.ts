@@ -14,7 +14,6 @@ import type {
   SessionID,
 } from "@natalia/contracts";
 import type {
-  CheckpointController,
   ProviderRunnerInput,
   RuntimeContextLedger,
   SkillMetadata,
@@ -30,6 +29,7 @@ import type {
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { SessionExecutionState } from "./context";
 import type { WorkspaceWriteLock } from "@natalia/workspace";
+import type { CheckpointController } from "@natalia/checkpoint";
 
 export type RuntimePorts = {
   resolveService: <T>(serviceID: string) => T | undefined;

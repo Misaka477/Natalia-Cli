@@ -7,7 +7,6 @@
  */
 import { sessionRunCoordinator } from "@natalia/session";
 import { withProviderConcurrency } from "@natalia/runtime";
-import { type SessionStoreController } from "@natalia/runtime-services";
 import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
 import type { SessionID } from "@natalia/contracts";
 import {
@@ -17,6 +16,7 @@ import {
   sanitizeSessionTitleInput,
 } from "../session-title";
 import type { RuntimeContext } from "./context";
+import type { SessionStoreController } from "@natalia/session-store";
 
 export function createTitleGeneration(ctx: RuntimeContext) {
   return {

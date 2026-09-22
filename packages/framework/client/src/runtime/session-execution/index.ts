@@ -15,7 +15,6 @@ import {
 import { projectSession } from "@natalia/session";
 import {
   type ContextLedgerFactory,
-  type SessionStoreController,
   type TurnController,
 } from "@natalia/runtime-services";
 import { sessionStoreController } from "@natalia/session-store";
@@ -29,6 +28,7 @@ import type { RealRuntimeClientOptions } from "../options";
 import { filterRuntimeRetainedEvents } from "../session-event-retention";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
+import type { SessionStoreController } from "@natalia/session-store";
 
 const MAX_IDLE_SESSION_EXECUTIONS = Math.max(
   64,

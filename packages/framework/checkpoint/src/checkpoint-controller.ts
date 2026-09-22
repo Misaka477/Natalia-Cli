@@ -8,11 +8,9 @@ import {
   CheckpointStore,
   type DurableContextCheckpoint,
 } from "@natalia/runtime";
-import type {
-  CheckpointController,
-  CheckpointSubagents,
-  CheckpointWorkLedger,
-} from "@natalia/runtime-services";
+import type { CheckpointWorkLedger } from "./contracts";
+import type { CheckpointSubagents } from "./contracts";
+import type { CheckpointController } from "./contracts";
 
 /** Owns one session's durable checkpoint store and rollback policy. */
 export function createCheckpointController(input: {

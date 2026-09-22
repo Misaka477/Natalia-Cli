@@ -97,156 +97,6 @@ export type SkillsInput = {
 
 export type TerminalInput = TerminalControllerInput;
 
-export type SessionStoreRecoveryView = {
-  activeTurnIDs: string[];
-  goal?: GoalSnapshot & {
-    roundsStarted: number;
-    activation: "armed" | "disarmed";
-    createdAt?: string;
-    updatedAt?: string;
-  };
-  approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
-  questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
-  interactives: Array<Extract<RuntimeEvent, { type: "interactive.request" }>>;
-  selectedAgent?: string;
-  selectedModel?: { modelID?: string; variant?: string };
-  reasoningEffort?: RuntimeReasoningEffort;
-  chatModelProfile?: Record<string, ChatModelProfile>;
-  permissionMode?: "ask" | "auto" | "read_only";
-  permissionProfile?: string;
-  attachments: Map<string, LocalAttachment[]>;
-  diagnostics: Array<Extract<RuntimeEvent, { type: "diagnostic" }>>;
-};
-
-export interface SessionStoreController {
-  init(): Promise<void>;
-  status(): { initialized: boolean; mode: "sqlite" | "json" };
-  load(
-    id: SessionID,
-    options?: {
-      title?: string;
-      create?: boolean;
-      indexedRecovery?: boolean;
-      /** Load only events the live execution projection needs. */
-      runtimeEvents?: boolean;
-    },
-  ): Promise<{
-    session: SessionRecord;
-    contextEpoch?: StoredContextEpoch;
-    recovery?: SessionStoreRecoveryView;
-  }>;
-  saveInbox(session: SessionRecord): Promise<void>;
-  /**
-   * Cheap read of the fast-restore recovery projection (no full event load).
-   * Used to re-seed live projections — e.g. the goal status bar — on attach.
-   */
-  loadRecoveryProjection(id: SessionID): SessionStoreRecoveryView | undefined;
-  appendEvent(session: SessionRecord, event: RuntimeEvent): Promise<void>;
-  appendEvents(session: SessionRecord, events: RuntimeEvent[]): Promise<void>;
-  updateMetadata(
-    session: SessionRecord | SessionID,
-    partial: Partial<SessionMetadata>,
-  ): Promise<void>;
-  contextEventsAfter(
-    id: SessionID,
-    epoch?: StoredContextEpoch,
-  ): RuntimeEvent[] | undefined;
-  writeContextEpoch(
-    id: SessionID,
-    snapshot: import("@natalia/contracts").DurableContextCheckpointRecord,
-  ): void;
-  ensureMessageIndex(id: SessionID): void;
-  ensureMessageIndexAsync(id: SessionID): Promise<void>;
-  prewarmMessagePage(id: SessionID): Promise<void>;
-  loadFullAsync(
-    id: SessionID,
-    options?: { runtimeEvents?: boolean },
-  ): Promise<SessionRecord>;
-  referencedAttachments(): Promise<LocalAttachment[]>;
-  /** Durable event count for one session, independent of the live window. */
-  eventCount(id: SessionID): Promise<number>;
-  history(
-    id: SessionID,
-    fallback: RuntimeEvent[],
-    options?: { after?: number; offset?: number; limit?: number },
-  ): Promise<{
-    events: Array<{
-      seq: number;
-      sessionSeq?: number;
-      event: RuntimeEvent;
-    }>;
-    hasMore: boolean;
-  }>;
-  eventWindow(
-    id: SessionID,
-    fallback: RuntimeEvent[],
-    options?: { beforeSeq?: number; limit?: number },
-  ): Promise<{
-    events: Array<{
-      seq: number;
-      sessionSeq?: number;
-      event: RuntimeEvent;
-    }>;
-    hasMore: boolean;
-  }>;
-  messages(
-    id: SessionID,
-    fallback: SessionRecord,
-    options?: { limit?: number; order?: "asc" | "desc"; cursor?: string },
-  ): Promise<RuntimeMessagePage>;
-  flush(id?: SessionID): Promise<void>;
-  list(): Promise<RuntimeSessionSummary[]>;
-  touch(id: string): Promise<void>;
-  rename(id: string, title: string): Promise<RuntimeSessionSummary>;
-  pin(id: string, pinned: boolean): Promise<RuntimeSessionSummary>;
-  duplicate(id: string, title?: string): Promise<RuntimeSessionSummary>;
-  fork(
-    id: string,
-    turnID: string,
-    title?: string,
-  ): Promise<RuntimeSessionSummary>;
-  messageRollback(
-    id: string,
-    turnID: string,
-  ): Promise<{ id: string; rolledBackTo: string; safetyCheckpointID?: string }>;
-  delete(id: string): Promise<{ id: string; removedAttachments: number }>;
-  create(input: {
-    id?: string;
-    title?: string;
-  }): Promise<{ sessionID: string; created: boolean }>;
-  setAutoTitle(
-    id: string,
-    title: string,
-    source: "generated" | "fallback",
-  ): Promise<RuntimeSessionSummary>;
-  archive(id: string): Promise<{ id: string; archived: boolean }>;
-  restore(id: string): Promise<{ id: string; archived: boolean }>;
-  export(id: string): Promise<{
-    sessionID: string;
-    title: string;
-    createdAt: string;
-    archived: boolean;
-    events: Array<{ seq: number; event: RuntimeEvent }>;
-  }>;
-  close(): Promise<void>;
-  /**
-   * Persist a serialized projection checkpoint stamped with the current max
-   * event sequence, so a later attach can resume by folding only the tail.
-   * Returns the stamped last sequence.
-   */
-  saveProjectionCheckpoint(id: SessionID, serializedState: string): number;
-  /**
-   * Load a serialized projection checkpoint. Returns undefined when absent,
-   * written by an older state version, or corrupt, so the caller fails soft to
-   * a full projection.
-   */
-  loadProjectionCheckpoint(
-    id: SessionID,
-  ): { serializedState: string; lastSeq: number } | undefined;
-  /** Durable events after a sequence, for tail-replaying a checkpoint. */
-  eventsAfter(id: SessionID, after: number): RuntimeEvent[];
-}
-
 export type TurnControllerInput = {
   session(): SessionRecord | undefined;
   activeAbort(): AbortController | undefined;
@@ -505,78 +355,28 @@ export interface SubagentsService extends SubagentToolService {
   enabled(): boolean;
 }
 
-export type CheckpointSubagents = {
-  list(): Array<{ id: string; task: string; status: string }>;
-  stop(id: string): unknown;
-};
-export type CheckpointWorkLedger = {
-  checkpointNode(input: {
-    checkpointID: string;
-    reason: string;
-    sessionID: SessionID;
-    turnID?: string;
-  }): RuntimeEvent;
-  rollbackCheckpointEdge(input: {
-    checkpointID: string;
-    safetyCheckpointID: string;
-    sessionID: SessionID;
-  }): RuntimeEvent;
-};
-export interface CheckpointController {
-  init(): Promise<void>;
-  get(): CheckpointStore;
-  list(): ReturnType<CheckpointStore["list"]>;
-  preview(id: string): ReturnType<CheckpointStore["previewRollback"]>;
-  rollback(
-    id: string,
-    options: { dryRun?: boolean },
-  ): ReturnType<CheckpointStore["rollbackTo"]>;
-  createCheckpoint(
-    input: import("@natalia/runtime").CreateCheckpointInput,
-  ): ReturnType<CheckpointStore["createCheckpoint"]>;
-  rename(id: string, name: string): ReturnType<CheckpointStore["rename"]>;
-  workspaceDiff(): ReturnType<CheckpointStore["workspaceDiff"]>;
-  listCheckpointsByKind(
-    kind?: import("@natalia/contracts").CheckpointKind,
-  ): ReturnType<CheckpointStore["listCheckpointsByKind"]>;
-  listAuditRounds(
-    planID?: string,
-  ): ReturnType<CheckpointStore["listAuditRounds"]>;
-  createAuditRoundCheckpoint(
-    input: Parameters<CheckpointStore["createAuditRoundCheckpoint"]>[0],
-  ): ReturnType<CheckpointStore["createAuditRoundCheckpoint"]>;
-  diffCheckpoints(
-    from: import("@natalia/contracts").CheckpointRef,
-    to: import("@natalia/contracts").CheckpointRef,
-    options?: import("@natalia/contracts").DiffCheckpointsOptions,
-  ): ReturnType<CheckpointStore["diffCheckpoints"]>;
-  isEnabled(): boolean;
-  resources(): Array<{
-    kind: "subagent" | "tool";
-    id: string;
-    status: "running" | "waiting" | "stopped";
-    summary: string;
-  }>;
-  rollbackOptions(): {
-    resources: ReturnType<CheckpointController["resources"]>;
-    onResourcePolicy(policy: CheckpointResourcePolicy): Promise<void>;
-    onContextRestored(snapshot: DurableContextCheckpoint): Promise<void>;
-  };
-}
-export type CheckpointControllerAccessors = {
-  sessionID(): SessionID;
-  checkpoint(): ConfigV3["checkpoint"] | undefined;
-  workspace(): ConfigV3["workspace"] | undefined;
+export type TerminalControllerInput = {
+  workspaceRoot: string;
   publish(event: RuntimeEvent): void;
-  context(): ContextLedger;
-  subagents(): CheckpointSubagents | undefined;
-  activeAbort(): AbortController | undefined;
-  workLedger(): CheckpointWorkLedger;
+  onPerformance(name: string, durationMs: number): void;
+  runtimeID(): string;
+  userRuntimeHome(): string | undefined;
+  windowMode(): "auto" | "windowless" | "window";
+  /** Provider-private native registry, interpreted only by the terminal subsystem. */
+  external?: unknown;
+  /** Interactive terminal host. Omitted / unknown values use in-process PTY. */
+  backend?: "wezterm" | "pty";
+  /** Cap on concurrent PTYs for one Natalia session. PTY backend only. */
+  maxPerSession?: number;
+  /** Recycle a session's idle PTY when the cap is hit. PTY backend only. */
+  idleMs?: number;
 };
-export type CheckpointFactory = (
-  accessors: CheckpointControllerAccessors,
-) => CheckpointController;
-
+export interface SandboxService extends SandboxToolService {
+  init(): Promise<void>;
+  close(): Promise<void>;
+  referencedObjectIDs(): Promise<Set<string> | undefined>;
+  runningResourceCount(): number;
+}
 /** Backend-neutral terminal port. Native registry classes never cross this boundary. */
 export interface TerminalController {
   init(): Promise<void>;
@@ -656,28 +456,7 @@ export interface TerminalController {
   stopForSession?(sessionID: string): Promise<void>;
   close(): Promise<void>;
 }
-export type TerminalControllerInput = {
-  workspaceRoot: string;
-  publish(event: RuntimeEvent): void;
-  onPerformance(name: string, durationMs: number): void;
-  runtimeID(): string;
-  userRuntimeHome(): string | undefined;
-  windowMode(): "auto" | "windowless" | "window";
-  /** Provider-private native registry, interpreted only by the terminal subsystem. */
-  external?: unknown;
-  /** Interactive terminal host. Omitted / unknown values use in-process PTY. */
-  backend?: "wezterm" | "pty";
-  /** Cap on concurrent PTYs for one Natalia session. PTY backend only. */
-  maxPerSession?: number;
-  /** Recycle a session's idle PTY when the cap is hit. PTY backend only. */
-  idleMs?: number;
-};
-export interface SandboxService extends SandboxToolService {
-  init(): Promise<void>;
-  close(): Promise<void>;
-  referencedObjectIDs(): Promise<Set<string> | undefined>;
-  runningResourceCount(): number;
-}
+
 export interface McpService {
   reload(): Promise<void>;
   catalog(): Promise<MCPCatalogSnapshot>;

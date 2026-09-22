@@ -4,9 +4,7 @@ import { checkpointFactory } from "@natalia/checkpoint";
 import {
   sandboxService,
   terminalController,
-  type CheckpointFactory,
   type SandboxService,
-  type SessionStoreController,
   type TerminalController,
 } from "@natalia/runtime-services";
 import { updateConfigAtScope } from "@natalia/config";
@@ -14,6 +12,8 @@ import { cloneConfigInWorker } from "../secondary-worker-client";
 import { sessionRunCoordinator } from "@natalia/session";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
+import type { CheckpointFactory } from "@natalia/checkpoint";
+import type { SessionStoreController } from "@natalia/session-store";
 type Surface = Pick<
   RuntimeServiceClient,
   "dispose" | "canReloadConfig" | "reloadConfig" | "updateConfig" | "configGet"

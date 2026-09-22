@@ -18,7 +18,7 @@ import {
 } from "./collaboration/collab-snapshot";
 import { activePlanForExec } from "./collaboration/plan-doc-runtime";
 import { createGoalRuntime } from "./goal/goal-runtime";
-import { type SessionStoreController } from "@natalia/runtime-services";
+import type { SessionStoreController } from "@natalia/session-store";
 import { sessionStoreController as sessionStoreControllerToken } from "@natalia/session-store";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { feedSessionEventWindow } from "./session-event-window";
