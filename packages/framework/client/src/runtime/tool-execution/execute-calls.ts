@@ -33,7 +33,7 @@ import type {
 } from "@natalia/contracts";
 import type { ToolMaterialization } from "@anthelia/tools";
 import type { RuntimeContext } from "@anthelia/substrate";
-import { ensureCompleteSessionFactState } from "../session-full-events";
+import { ensureCompleteSessionFactState } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 

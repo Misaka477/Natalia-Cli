@@ -19,7 +19,7 @@ import {
   sessionFactConstitutionRules,
   sessionFactWorkContracts,
 } from "@anthelia/session";
-import { ensureCompleteSessionFactState } from "./session-full-events";
+import { ensureCompleteSessionFactState } from "@anthelia/substrate";
 import { targetDriftAbsorbedByScope } from "@natalia/work-ledger";
 import { checkContractAgainstConstitution } from "./contract-constitution-check";
 import {} from "@natalia/runtime-services";

@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
-import {
-  maxLiveSessionEvents,
-  windowRuntimeEvents,
-} from "../src/runtime/session-event-retention";
+import { maxLiveSessionEvents, windowRuntimeEvents } from "@anthelia/substrate";
 
 function submitted(id: string): RuntimeEvent {
   return {

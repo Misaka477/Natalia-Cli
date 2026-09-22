@@ -28,8 +28,8 @@ import {
 import { chatToolSummary } from "./chat-summary";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
-import { ensureCompleteSessionFactState } from "../session-full-events";
-import { captureRepositoryEvidenceFields } from "../repository-refs";
+import { ensureCompleteSessionFactState } from "@anthelia/substrate";
+import { captureRepositoryEvidenceFields } from "@anthelia/substrate";
 import { createDetourReviewTool } from "../plan-contract-tools";
 import { logOf } from "@natalia/operation-log";
 

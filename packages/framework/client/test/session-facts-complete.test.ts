@@ -8,7 +8,7 @@ import {
   sessionFactMailboxMessages,
   sessionFactStateFromEvents,
 } from "@anthelia/session";
-import { completeSessionFactState } from "../src/runtime/session-facts";
+import { completeSessionFactState } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import { sessionStoreController } from "@anthelia/session-store";

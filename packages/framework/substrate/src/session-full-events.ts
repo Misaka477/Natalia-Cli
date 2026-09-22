@@ -3,8 +3,8 @@ import {
   type SessionStoreController,
 } from "@anthelia/session-store";
 import { memoryTrace } from "@natalia/runtime";
-import type { RuntimeContext } from "@anthelia/substrate";
-import type { SessionExecutionState } from "@anthelia/substrate";
+import type { RuntimeContext } from "./context";
+import type { SessionExecutionState } from "./session-execution-state";
 import {
   filterRuntimeRetainedEvents,
   maxLiveSessionEvents,

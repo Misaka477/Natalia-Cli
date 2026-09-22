@@ -2,7 +2,7 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import { ContextLedger, TokenMeter, memoryTrace } from "@natalia/runtime";
 import type { SessionProjection } from "@anthelia/session";
 import { announcedTurnIDsFrom } from "@anthelia/substrate";
-import { reseedSessionFactState } from "../session-facts";
+import { reseedSessionFactState } from "@anthelia/substrate";
 import type {
   InitializeOptions,
   SandboxService,
@@ -12,7 +12,7 @@ import {
   prepareSessionRecoveryContextInWorker,
   projectSessionInWorker,
   type RecoveryContextPlan,
-} from "../session-project-client";
+} from "@anthelia/substrate";
 import type { InitializeScope } from "./runtime";
 import {
   mcpService,

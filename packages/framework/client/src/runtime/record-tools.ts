@@ -19,7 +19,7 @@ import type {
 } from "./product-context";
 import { redactToolOutput } from "./engineering-intelligence/redaction";
 import { runValidationCommand } from "./engineering-intelligence/validation";
-import { captureRepositoryEvidenceFields } from "./repository-refs";
+import { captureRepositoryEvidenceFields } from "@anthelia/substrate";
 import type {
   RuntimeContext,
   SessionExecutionState,

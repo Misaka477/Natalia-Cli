@@ -18,7 +18,7 @@ import type {
   RuntimeContext,
   SessionExecutionState,
 } from "@anthelia/substrate";
-import { ensureCompleteSessionFactState } from "../session-full-events";
+import { ensureCompleteSessionFactState } from "@anthelia/substrate";
 import { logOf } from "@natalia/operation-log";
 import {
   type ConcreteRuntimeEvent,

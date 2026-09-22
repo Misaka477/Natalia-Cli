@@ -9,8 +9,8 @@ import type {
   RuntimeContext,
   SessionExecutionState,
 } from "@anthelia/substrate";
-import { ensureCompleteSessionFactState } from "../session-full-events";
-import { scanSessionWindowNewestFirst } from "../session-event-window";
+import { ensureCompleteSessionFactState } from "@anthelia/substrate";
+import { scanSessionWindowNewestFirst } from "@anthelia/substrate";
 type Surface = Pick<
   RuntimeServiceClient,
   | "mailboxList"
@@ -46,7 +46,7 @@ async function mailboxesWithWorkerFallback(
 ) {
   try {
     const { runSessionProjectionInWorker } = await import(
-      "../session-project-client"
+      "@anthelia/substrate"
     );
     const result = await runSessionProjectionInWorker(
       "mailboxMessages",

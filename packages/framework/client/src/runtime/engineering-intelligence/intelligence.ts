@@ -49,15 +49,15 @@ import type {
   SessionExecutionState,
 } from "@anthelia/substrate";
 import { requestAuditAfterCompletion } from "../audit-request";
-import { ensureCompleteSessionFactState } from "../session-full-events";
+import { ensureCompleteSessionFactState } from "@anthelia/substrate";
 import { injectFindingIntoMainAgent } from "../drift-inject";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
-} from "../session-event-window";
+} from "@anthelia/substrate";
 import { redactToolOutput } from "./redaction";
 import { runValidationCommand } from "./validation";
-import { captureRepositoryEvidenceFields } from "../repository-refs";
+import { captureRepositoryEvidenceFields } from "@anthelia/substrate";
 import type { SessionStoreController } from "@anthelia/session-store";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
@@ -106,7 +106,7 @@ async function projectedCanonicalToolsWithFallback(
 ) {
   try {
     const { projectedCanonicalToolsInWorker } = await import(
-      "../session-project-client"
+      "@anthelia/substrate"
     );
     const result = (await projectedCanonicalToolsInWorker(events)) as Array<{
       name: string;
@@ -137,7 +137,7 @@ async function runSessionProjectionWithFallback(
 ) {
   try {
     const { runSessionProjectionInWorker } = await import(
-      "../session-project-client"
+      "@anthelia/substrate"
     );
     return await runSessionProjectionInWorker(name, events);
   } catch {

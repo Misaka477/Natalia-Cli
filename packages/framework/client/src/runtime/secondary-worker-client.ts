@@ -6,7 +6,7 @@ import type {
 import {
   createRuntimeWorkerPool,
   defaultRuntimeWorkerPoolSize,
-} from "./worker-pool";
+} from "@anthelia/substrate";
 
 let nextID = 1;
 const pending = new Map<

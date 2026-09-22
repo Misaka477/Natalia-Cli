@@ -18,14 +18,14 @@ import {
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { subagentHistoryInWorker } from "./session-project-client";
-import { ensureSessionFullEvents } from "./session-full-events";
+import { subagentHistoryInWorker } from "@anthelia/substrate";
+import { ensureSessionFullEvents } from "@anthelia/substrate";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
-} from "./session-event-window";
+} from "@anthelia/substrate";
 import { projectSubagentsInWorker } from "./secondary-worker-client";
-import { paginateTranscript } from "./transcript-page";
+import { paginateTranscript } from "@anthelia/substrate";
 import { perfLog } from "@natalia/runtime-services";
 
 export function createSubagentRuntime(

@@ -7,7 +7,7 @@ import {
   captureRepositoryEvidenceFields,
   captureRepositoryRefFields,
   captureRepositoryRefsSync,
-} from "../src/runtime/repository-refs";
+} from "@anthelia/substrate";
 import { buildEvidenceRecorded } from "@natalia/governance-ledger";
 
 async function makeGitRepo(): Promise<string | undefined> {

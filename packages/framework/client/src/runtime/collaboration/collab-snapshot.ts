@@ -16,12 +16,12 @@ import {
   projectedMailboxMessages,
   projectedPlanDocs,
 } from "@anthelia/session";
-import { computeCollabSnapshotInWorker } from "../session-project-client";
+import { computeCollabSnapshotInWorker } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import type { CollabSnapshot } from "@anthelia/substrate";
 import { perfLog } from "@natalia/runtime-services";
-import { completeSessionFactState } from "../session-facts";
+import { completeSessionFactState } from "@anthelia/substrate";
 
 const SNAPSHOT_DEBOUNCE_MS = 80;
 

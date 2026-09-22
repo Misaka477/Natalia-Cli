@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { SessionWindow, type SessionWindowEntry } from "@anthelia/substrate";
-import { scanSessionWindowNewestFirst } from "../src/runtime/session-event-window";
+import { scanSessionWindowNewestFirst } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import { sessionStoreController } from "@anthelia/session-store";

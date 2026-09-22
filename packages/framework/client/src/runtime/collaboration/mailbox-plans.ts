@@ -22,7 +22,7 @@ import {
 } from "@natalia/collaboration";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
-import { ensureSessionFullEvents } from "../session-full-events";
+import { ensureSessionFullEvents } from "@anthelia/substrate";
 import { findMailboxMessage } from "./mailbox";
 import { logOf } from "@natalia/operation-log";
 

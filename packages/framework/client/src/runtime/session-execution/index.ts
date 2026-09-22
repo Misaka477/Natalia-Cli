@@ -22,7 +22,7 @@ import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
-import { filterRuntimeRetainedEvents } from "../session-event-retention";
+import { filterRuntimeRetainedEvents } from "@anthelia/substrate";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
 import type { SessionStoreController } from "@anthelia/session-store";

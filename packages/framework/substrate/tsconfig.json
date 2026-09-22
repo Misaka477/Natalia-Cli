@@ -46,6 +46,9 @@
       "path": "../../core/contracts"
     },
     {
+      "path": "../../framework/operation-log"
+    },
+    {
       "path": "../../core/plugin"
     },
     {

@@ -4,7 +4,7 @@ import {
   ensureSessionFactState,
   feedSessionFactState,
   reseedSessionFactState,
-} from "../src/runtime/session-facts";
+} from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import { sessionFactConstitutionRules } from "@anthelia/session";
 

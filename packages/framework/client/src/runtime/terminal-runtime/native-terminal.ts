@@ -6,7 +6,7 @@ import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
-} from "../session-event-window";
+} from "@anthelia/substrate";
 
 type ClientSurfaceOptions = Pick<
   RealRuntimeClientOptions,

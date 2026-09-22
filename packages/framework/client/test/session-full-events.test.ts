@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { SessionExecutionState } from "@anthelia/substrate";
-import { ensureSessionFullEvents } from "../src/runtime/session-full-events";
+import { ensureSessionFullEvents } from "@anthelia/substrate";
 import { sessionStoreController } from "@anthelia/session-store";
 import { createTestContext } from "@natalia/runtime-services";
 import type { SessionStoreController } from "@anthelia/session-store";

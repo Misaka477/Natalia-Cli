@@ -1,4 +1,5 @@
 import type { SessionProjection } from "@anthelia/session";
+import type { CollabSnapshot } from "./session-execution-state";
 import type { RuntimeEvent, RuntimeMessagePage } from "@natalia/contracts";
 import type {
   SessionProjectWorkerRequest,
@@ -136,8 +137,8 @@ export function prepareSessionRecoveryContextInWorker(
 
 export function computeCollabSnapshotInWorker(
   events: RuntimeEvent[],
-): Promise<import("@anthelia/substrate").CollabSnapshot> {
-  return run<import("@anthelia/substrate").CollabSnapshot>({
+): Promise<CollabSnapshot> {
+  return run<CollabSnapshot>({
     op: "collabSnapshot",
     events,
   });

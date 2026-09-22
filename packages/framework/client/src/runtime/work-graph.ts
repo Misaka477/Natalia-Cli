@@ -7,7 +7,7 @@ import type { RuntimeContext } from "@anthelia/substrate";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,
-} from "./session-event-window";
+} from "@anthelia/substrate";
 
 type WorkGraphRuntime = Pick<
   RuntimeServiceClient,
@@ -20,7 +20,7 @@ async function graphProjectionWithFallback(
 ) {
   try {
     const { runSessionProjectionInWorker } = await import(
-      "./session-project-client"
+      "@anthelia/substrate"
     );
     return await runSessionProjectionInWorker(name, events);
   } catch {

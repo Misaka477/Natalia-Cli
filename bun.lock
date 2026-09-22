@@ -406,6 +406,7 @@
         "@natalia/config": "workspace:*",
         "@natalia/context-ledger": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/operation-log": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
