@@ -495,3 +495,55 @@ export function findMigratedPluginViolations(
   }
   return violations;
 }
+
+/**
+ * decisions §1.1/§1.2 + master plan P3: product policy never depends on
+ * the host layer (hosts are the engine's platform adapters; policy talks
+ * to the engine's API and its siblings, never to platform plumbing).
+ * Deep imports are already banned globally (the deep-import rule); this
+ * is the direction ban, scoped to domains (the policy-fold sublayer) —
+ * extend the scan roots as P3 moves policy into their own packages.
+ * Keep the list in step with packages/hosts/.
+ */
+export const HOST_LAYER_PACKAGES = [
+  "@natalia/config",
+  "@natalia/confinement",
+  "@natalia/installer",
+  "@natalia/object-store",
+  "@natalia/platform",
+  "@natalia/transport",
+  "@natalia/ui-host",
+  "@natalia/view-store",
+] as const;
+
+export function findPolicyHostDependencyViolation(
+  specifier: string,
+  file: string,
+): string | undefined {
+  if (!file.startsWith("packages/domains/")) return undefined;
+  if (!file.includes("/src/")) return undefined; // tests may reach anywhere
+  const hit = HOST_LAYER_PACKAGES.find(
+    (name) => specifier === name || specifier.startsWith(`${name}/`),
+  );
+  if (hit)
+    return `product policy (domains) must not depend on the host layer: imports ${hit}`;
+  return undefined;
+}
+
+/**
+ * master plan P3 row (composition 归内核) + interface spec's substrate list:
+ * the generation-switch/composition machinery is ENGINE substrate, so
+ * `@natalia/composition` must resolve into the kernel layer
+ * (packages/core/...) — checked against the paths map, which is the one
+ * place the placement is declared.
+ */
+export function findCompositionKernelViolation(
+  pathsEntry: readonly string[] | string | undefined,
+): string | undefined {
+  if (!pathsEntry)
+    return "@natalia/composition is missing from tsconfig.base paths";
+  const first = Array.isArray(pathsEntry) ? pathsEntry[0] : pathsEntry;
+  if (!first?.startsWith("packages/core/"))
+    return `composition must live in the kernel layer (packages/core/...), paths says ${first}`;
+  return undefined;
+}

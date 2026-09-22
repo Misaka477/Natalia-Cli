@@ -10,6 +10,9 @@
       "path": "../../core/capability"
     },
     {
+      "path": "../../core/composition"
+    },
+    {
       "path": "../../core/contracts"
     },
     {
@@ -80,9 +83,6 @@
     },
     {
       "path": "../compaction"
-    },
-    {
-      "path": "../composition"
     },
     {
       "path": "../diff"

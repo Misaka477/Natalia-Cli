@@ -19,7 +19,7 @@
       "@natalia/attachments": ["packages/framework/attachments/src/index.ts"],
       "@natalia/capability": ["packages/core/capability/src/index.ts"],
       "@natalia/checkpoint": ["packages/framework/checkpoint/src/index.ts"],
-      "@natalia/composition": ["packages/framework/composition/src/index.ts"],
+      "@natalia/composition": ["packages/core/composition/src/index.ts"],
       "@natalia/collaboration": [
         "packages/framework/collaboration/src/index.ts"
       ],

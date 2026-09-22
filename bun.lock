@@ -65,6 +65,14 @@
       "name": "@natalia/capability",
       "version": "0.0.0-m13",
     },
+    "packages/core/composition": {
+      "name": "@natalia/composition",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+        "@natalia/object-store": "workspace:*",
+      },
+    },
     "packages/core/contracts": {
       "name": "@natalia/contracts",
       "version": "0.0.0-m13",
@@ -246,14 +254,6 @@
       "devDependencies": {
         "@natalia/context-ledger": "workspace:*",
         "@natalia/retry": "workspace:*",
-      },
-    },
-    "packages/framework/composition": {
-      "name": "@natalia/composition",
-      "version": "0.0.0-m13",
-      "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/object-store": "workspace:*",
       },
     },
     "packages/framework/diff": {
@@ -945,7 +945,7 @@
 
     "@natalia/compaction": ["@natalia/compaction@workspace:packages/framework/compaction"],
 
-    "@natalia/composition": ["@natalia/composition@workspace:packages/framework/composition"],
+    "@natalia/composition": ["@natalia/composition@workspace:packages/core/composition"],
 
     "@natalia/config": ["@natalia/config@workspace:packages/hosts/config"],
 

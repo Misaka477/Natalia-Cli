@@ -8,7 +8,9 @@ import {
   findClientServiceContractViolation,
   findClientPluginSurfaceViolation,
   findClientToolDependencyViolation,
+  findCompositionKernelViolation,
   findForbiddenRepositoryPathViolation,
+  findPolicyHostDependencyViolation,
   findMigratedPluginViolations,
   findTeamPluginDependencyViolation,
   frameworkSubsystemFiles,
@@ -580,6 +582,32 @@ for (const entry of await workspacePackageEntries("packages")) {
       `${relative}/test has tests that the root "test" script never runs`,
     );
 }
+
+// master plan P3: composition is engine substrate — the paths map is the
+// declaration, and this keeps the placement machine-checked.
+{
+  const tsconfigBase = JSON.parse(
+    await readFile(join(root, "tsconfig.base.json"), "utf8"),
+  ) as {
+    compilerOptions?: { paths?: Record<string, readonly string[] | string> };
+  };
+  const violation = findCompositionKernelViolation(
+    tsconfigBase.compilerOptions?.paths?.["@natalia/composition"],
+  );
+  if (violation) failures.push(`tsconfig.base.json: ${violation}`);
+}
+
+// decisions §1.2: product policy (domains) never depends on the host layer.
+await scan(join(root, "packages/domains"), sourceExtensions, (full, text) => {
+  const relative = full.slice(root.length + 1).replaceAll("\\", "/");
+  if (!relative.includes("/src/")) return;
+  for (const match of text.matchAll(
+    /from\s+["'](@natalia\/[a-z-]+(?:\/[^"']*)?)["']/gu,
+  )) {
+    const violation = findPolicyHostDependencyViolation(match[1]!, relative);
+    if (violation) failures.push(`${relative}: ${violation}`);
+  }
+});
 
 if (failures.length) {
   console.error(failures.join("\n"));
