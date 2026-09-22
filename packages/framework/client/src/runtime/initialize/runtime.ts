@@ -1,11 +1,9 @@
 import type { RuntimeContext } from "../context";
-import { initializeConstants } from "./constants";
 
 export function createInitializeRuntime(ctx: RuntimeContext) {
   const deps = ctx.state.initialize;
   return {
     ...deps,
-    ...initializeConstants(ctx),
     resolveService: ctx.ports.resolveService,
     get workspaceRoot() {
       return ctx.ports.getWorkspaceRoot();

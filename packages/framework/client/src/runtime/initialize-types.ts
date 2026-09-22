@@ -114,7 +114,6 @@ export type InitializeDependencies = {
   MAX_STEPS_PROMPT: string;
   MISSING_FINAL_RESPONSE_FALLBACK: string;
   ProviderConcurrencyLimiter: typeof import("@natalia/runtime").ProviderConcurrencyLimiter;
-  serviceNames: {};
 };
 
 export type InitializeCatalogResult = {

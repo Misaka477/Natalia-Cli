@@ -108,7 +108,6 @@ export function wireInitialize(
     publishRuntimeCapabilities: features.toolPublish.publishRuntimeCapabilities,
     publishRegisteredTools: features.toolPublish.publishRegisteredTools,
     ProviderConcurrencyLimiter,
-    serviceNames: {},
   };
   ports.initialize = createInitialize(ctx, options).initialize;
   ports.applyConfigFromDisk = features.configReload.applyConfigFromDisk;

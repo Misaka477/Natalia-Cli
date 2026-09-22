@@ -1,4 +1,3 @@
-export * from "./service-ids";
 export * from "./services";
 export * from "./service-token";
 export * from "./service-tokens";
