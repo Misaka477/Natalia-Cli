@@ -94,6 +94,7 @@
       "name": "@natalia/tools",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@natalia/confinement": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@vscode/tree-sitter-wasm": "0.3.1",

@@ -10,6 +10,7 @@
  * implementation so a caller can reason about what a tool is allowed to do without
  * holding the code that does it.
  */
+import type { ConfinementMode } from "@natalia/confinement";
 import type {
   ExecutionTarget,
   RuntimeEvent,
@@ -448,6 +449,14 @@ export type ToolExecutionContext = {
   workspaceRoot: string;
   /** Session that owns the turn invoking this tool. */
   sessionID?: string;
+  /**
+   * The confinement mode this call runs under (sandbox study: policy rides
+   * the call — two callers may run under different modes simultaneously).
+   * Per-call truth: `undefined` and `danger-full-access` both run
+   * unconfined today; the tool layer resolves the effective mode
+   * (session override ?? composition default) before handing the call down.
+   */
+  confinement?: ConfinementMode;
   /**
    * Effective timeout the runtime is enforcing for this call. Tools that also
    * run their own child-process timer use this so the two layers cannot drift.

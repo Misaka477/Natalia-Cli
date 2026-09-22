@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@natalia/confinement": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/platform": "workspace:*",
     "@vscode/tree-sitter-wasm": "0.3.1",
