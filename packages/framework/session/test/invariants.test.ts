@@ -21,6 +21,8 @@ test("turns with an incomplete projection violate", () => {
   expect(violations).toHaveLength(1);
   expect(violations[0]!.code).toBe("session.projection_incomplete");
   expect(violations[0]!.detail).toContain("ses_inv");
+  // D2: the citation travels on the violation itself, for the journal event.
+  expect(violations[0]!.sessionID).toBe("ses_inv");
 });
 
 test("a completed projection is clean, and sessions without turns are exempt", () => {

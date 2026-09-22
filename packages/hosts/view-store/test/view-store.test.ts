@@ -3011,3 +3011,41 @@ test("a subagent step's cache metrics fold into the session totals", () => {
     10,
   );
 });
+
+test("invariant findings project as an open->resolved lifecycle, once per edge", () => {
+  const state = initialState();
+  const violation = {
+    type: "invariant.violation",
+    at: "2026-01-01T00:00:00.000Z",
+    owner: "session",
+    invariant: "session.projection-complete-after-turns",
+    code: "session.projection_incomplete",
+    detail: "ses_x ran turns",
+    sessionID: "ses_x" as const,
+  } as unknown as RuntimeEvent;
+
+  applyEvent(state, violation);
+  // A repeated or replayed violation of the same identity stacks nothing.
+  applyEvent(state, violation);
+  expect(state.invariantFindings).toHaveLength(1);
+  expect(state.invariantFindings[0]).toMatchObject({
+    key: "session|session.projection-complete-after-turns|session.projection_incomplete|ses_x ran turns",
+    owner: "session",
+    resolved: false,
+    sessionID: "ses_x",
+  });
+
+  applyEvent(state, {
+    ...violation,
+    type: "invariant.resolved",
+  } as unknown as RuntimeEvent);
+  expect(state.invariantFindings).toHaveLength(1);
+  expect(state.invariantFindings[0]!.resolved).toBe(true);
+
+  // A re-open is a fresh row (the clone round-trip keeps them all).
+  applyEvent(state, violation);
+  expect(state.invariantFindings).toHaveLength(2);
+  expect(
+    state.invariantFindings.filter((finding) => !finding.resolved),
+  ).toHaveLength(1);
+});

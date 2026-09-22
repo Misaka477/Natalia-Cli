@@ -25,6 +25,12 @@ export type Violation = {
   /** Machine-readable code (dsh pattern): stable, greppable, per-invariant. */
   code: string;
   detail: string;
+  /**
+   * The window this violation cites, when it is session-scoped — D2's
+   * journal event carries it into the correlation fields; invariants
+   * spanning windows leave it absent.
+   */
+  sessionID?: string;
 };
 
 export type Invariant = {

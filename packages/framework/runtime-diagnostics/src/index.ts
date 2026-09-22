@@ -1,5 +1,6 @@
 import type {
   Invariant,
+  SessionID,
   InvariantCheckInput,
   RuntimeEvent,
   Violation,
@@ -47,6 +48,7 @@ export type InvariantFinding = {
   invariant: string;
   code: string;
   detail: string;
+  sessionID?: string;
 };
 
 export type RuntimeDiagnosticsState = {
@@ -80,6 +82,13 @@ export type RuntimeDiagnosticsOptions = {
   enabled?: boolean;
   /** Owner allow/block lists (dsh's package filter): block wins. */
   owners?: { allow?: readonly string[]; block?: readonly string[] };
+  /**
+   * The journal seam (Discovery D2): findings cross into the journal EDGE-
+   * TRIGGERED — `invariant.violation` when one OPENS, `invariant.resolved`
+   * when it clears — so a 30s tick can never flood the single source of
+   * truth with the same fact.
+   */
+  publish?: (event: RuntimeEvent) => void;
 };
 
 export interface RuntimeDiagnostics {
@@ -116,6 +125,25 @@ export function createRuntimeDiagnostics(
     findings: 0,
     byInvariant: {},
   };
+  /** key -> the payload that opened it: only transitions reach the journal. */
+  const open = new Map<
+    string,
+    {
+      at: string;
+      owner: string;
+      invariant: string;
+      code: string;
+      detail: string;
+      sessionID?: string;
+    }
+  >();
+  const findingKey = (finding: {
+    owner: string;
+    invariant: string;
+    code: string;
+    detail: string;
+  }) =>
+    `${finding.owner}|${finding.invariant}|${finding.code}|${finding.detail}`;
 
   function eligible(owner: string): boolean {
     if (block.includes(owner)) return false;
@@ -129,6 +157,7 @@ export function createRuntimeDiagnostics(
       state.lastTickAt = new Date().toISOString();
       const findings: InvariantFinding[] = [];
       if (!enabled) return findings;
+      const seen = new Set<string>();
       for (const set of options.sets) {
         if (!eligible(set.owner)) continue;
         for (const invariant of set.invariants) {
@@ -152,8 +181,27 @@ export function createRuntimeDiagnostics(
               invariant: invariant.id,
               code: violation.code,
               detail: violation.detail,
+              ...(violation.sessionID
+                ? { sessionID: violation.sessionID }
+                : {}),
             };
             findings.push(finding);
+            const key = findingKey(finding);
+            seen.add(key);
+            if (!open.has(key)) {
+              open.set(key, finding);
+              options.publish?.({
+                type: "invariant.violation",
+                at: finding.at,
+                owner: finding.owner,
+                invariant: finding.invariant,
+                code: finding.code,
+                detail: finding.detail,
+                ...(finding.sessionID
+                  ? { sessionID: finding.sessionID as SessionID }
+                  : {}),
+              });
+            }
             state.findings += 1;
             const owned = (state.byInvariant[set.owner] ??= {});
             owned[invariant.id] = (owned[invariant.id] ?? 0) + 1;
@@ -165,6 +213,21 @@ export function createRuntimeDiagnostics(
             });
           }
         }
+      }
+      for (const [key, finding] of [...open]) {
+        if (seen.has(key)) continue;
+        open.delete(key);
+        options.publish?.({
+          type: "invariant.resolved",
+          at: new Date().toISOString(),
+          owner: finding.owner,
+          invariant: finding.invariant,
+          code: finding.code,
+          detail: finding.detail,
+          ...(finding.sessionID
+            ? { sessionID: finding.sessionID as SessionID }
+            : {}),
+        });
       }
       return findings;
     },

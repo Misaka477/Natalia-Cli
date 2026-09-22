@@ -50,6 +50,8 @@ export const EVENT_MODES: EventModeTable = {
   capability: "emit",
   checkpoint: "emit",
   composition: "emit",
+  // Discovery D2: findings are observation — emit, never flow-stopping.
+  invariant: "emit",
   collab: "emit",
   compaction: "emit",
   completion: "emit",

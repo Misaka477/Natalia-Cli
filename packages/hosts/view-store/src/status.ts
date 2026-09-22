@@ -17,6 +17,7 @@ import {
   decisionLimit,
   driftFindingLimit,
   evidenceLimit,
+  invariantFindingLimit,
   policyDecisionLimit,
   upsertBlock,
   type AppState,
@@ -424,6 +425,41 @@ export function applyStatusEvent(
     case "diagnostic":
       state.footer = `${event.level}: ${event.message}`;
       return true;
+    case "invariant.violation": {
+      // The edge opens the record once — a replayed or repeated violation
+      // of the same identity must not stack (the journal holds one fact,
+      // the view holds one row per open/closed lifecycle).
+      const key = `${event.owner}|${event.invariant}|${event.code}|${event.detail}`;
+      if (
+        state.invariantFindings.some(
+          (finding) => finding.key === key && !finding.resolved,
+        )
+      )
+        return true;
+      state.invariantFindings = appendBounded(
+        state.invariantFindings,
+        {
+          key,
+          at: event.at,
+          owner: event.owner,
+          invariant: event.invariant,
+          code: event.code,
+          detail: event.detail,
+          ...(event.sessionID ? { sessionID: event.sessionID } : {}),
+          resolved: false,
+        },
+        invariantFindingLimit,
+      );
+      return true;
+    }
+    case "invariant.resolved": {
+      const key = `${event.owner}|${event.invariant}|${event.code}|${event.detail}`;
+      const open = state.invariantFindings.find(
+        (finding) => finding.key === key && !finding.resolved,
+      );
+      if (open) open.resolved = true;
+      return true;
+    }
     default:
       return false;
   }

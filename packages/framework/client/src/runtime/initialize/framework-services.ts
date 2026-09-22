@@ -548,6 +548,17 @@ export async function wireFrameworkServices(
   // relations, this ticks them live over the running sessions' event
   // windows — findings report to the operation log with owner attribution
   // (a finding that cannot cite events is a guess; these cite windows).
+  //
+  // D2's journal seam: session-scoped findings ride their session's stream
+  // (correlation survives replay), workspace-level ones publish plainly.
+  const publishFinding = (event: RuntimeEvent) => {
+    const exec =
+      "sessionID" in event && event.sessionID
+        ? ctx.ports.getExecutionBySession().get(event.sessionID)
+        : undefined;
+    if (exec) ctx.ports.publishForSession(exec, event);
+    else ctx.ports.publish(event);
+  };
   const diagnostics = createRuntimeDiagnostics({
     sets: [
       { owner: "session", invariants: sessionInvariants },
@@ -555,6 +566,7 @@ export async function wireFrameworkServices(
       { owner: "work-ledger", invariants: workLedgerInvariants },
     ],
     log: telemetry,
+    publish: publishFinding,
   });
   ctx.state.serviceDirectory.provide(runtimeDiagnostics, diagnostics);
   diagnostics.start(30_000, () => ({

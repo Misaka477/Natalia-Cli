@@ -2076,6 +2076,32 @@ type RuntimeEventData =
       checks: Array<{ check: string; ok: boolean; detail?: string }>;
       workspaceID?: string;
       sessionID?: SessionID;
+    }
+  | {
+      type: "invariant.violation";
+      /**
+       * A domain-invariant finding as a FIRST-CLASS FACT (Discovery D2):
+       * edge-triggered — published when a violation opens, not per tick,
+       * so a persistent problem cannot flood the journal.
+       */
+      at: string;
+      owner: string;
+      invariant: string;
+      code: string;
+      detail: string;
+      workspaceID?: string;
+      sessionID?: SessionID;
+    }
+  | {
+      type: "invariant.resolved";
+      /** The same key the violation opened with — the closing edge. */
+      at: string;
+      owner: string;
+      invariant: string;
+      code: string;
+      detail: string;
+      workspaceID?: string;
+      sessionID?: SessionID;
     };
 
 /**

@@ -145,3 +145,59 @@ test("the interval runner ticks and stops", async () => {
   await new Promise((resolve) => setTimeout(resolve, 40));
   expect(diagnostics.state().ticks).toBe(ticks); // stopped for real
 });
+
+test("the journal seam is edge-triggered: open once, resolve, re-open", async () => {
+  // A controllable violation: the test decides when the problem stops.
+  let offending = true;
+  const controlled: Invariant = {
+    id: "test.edge",
+    statement: "controlled by the test",
+    check: () =>
+      offending
+        ? [
+            {
+              code: "test.edge_tripped",
+              detail: "still broken",
+              sessionID: "ses_edge",
+            },
+          ]
+        : [],
+  };
+  const published: RuntimeEvent[] = [];
+  const out = reporter();
+  const diagnostics = createRuntimeDiagnostics({
+    sets: [{ owner: "test-domain", invariants: [controlled] }],
+    log: out.log,
+    publish: (event) => published.push(event),
+  });
+
+  // Ticks 1-3: the same violation — ONE opening event (no per-tick flood).
+  diagnostics.tick(input);
+  diagnostics.tick(input);
+  diagnostics.tick(input);
+  expect(published).toHaveLength(1);
+  expect(published[0]).toMatchObject({
+    type: "invariant.violation",
+    owner: "test-domain",
+    invariant: "test.edge",
+    code: "test.edge_tripped",
+    sessionID: "ses_edge",
+  });
+
+  // The problem clears: the closing edge publishes exactly once.
+  offending = false;
+  diagnostics.tick(input);
+  diagnostics.tick(input);
+  expect(published).toHaveLength(2);
+  expect(published[1]).toMatchObject({
+    type: "invariant.resolved",
+    code: "test.edge_tripped",
+    sessionID: "ses_edge",
+  });
+
+  // It comes back: a NEW opening (the lifecycle restarts).
+  offending = true;
+  diagnostics.tick(input);
+  expect(published).toHaveLength(3);
+  expect(published[2]).toMatchObject({ type: "invariant.violation" });
+});

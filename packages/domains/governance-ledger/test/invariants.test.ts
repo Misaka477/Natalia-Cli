@@ -50,6 +50,7 @@ test("removing a protected rule violates", () => {
   expect(violations).toHaveLength(1);
   expect(violations[0]!.code).toBe("constitution.protected_rule_removed");
   expect(violations[0]!.detail).toContain("C-1");
+  expect(violations[0]!.sessionID).toBe("ses_c");
 });
 
 test("weakening a protected rule violates; strengthening or touching others does not", () => {

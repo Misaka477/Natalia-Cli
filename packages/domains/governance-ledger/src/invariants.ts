@@ -43,6 +43,7 @@ export const constitutionInvariants: readonly Invariant[] = [
               violations.push({
                 code: "constitution.protected_rule_removed",
                 detail: `rule ${event.ruleID} (${row!.priority}/forbidden) was removed in session ${window.sessionID}`,
+                sessionID: window.sessionID,
               });
             ledger.delete(event.ruleID);
             continue;
@@ -61,6 +62,7 @@ export const constitutionInvariants: readonly Invariant[] = [
               violations.push({
                 code: "constitution.protected_rule_weakened",
                 detail: `rule ${event.ruleID} weakened (${row!.priority}/${row!.overridePolicy} -> ${next.priority}/${next.overridePolicy}) in session ${window.sessionID}`,
+                sessionID: window.sessionID,
               });
             ledger.set(event.ruleID, next);
           }

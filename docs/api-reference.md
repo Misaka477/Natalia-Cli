@@ -1259,8 +1259,8 @@ Deployment notes:
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 124.
-- view-store projections (`case` labels in `packages/hosts/view-store/src`): 124.
+- Runtime event types (`RuntimeEventData` union): 126.
+- view-store projections (`case` labels in `packages/hosts/view-store/src`): 126.
 
 ### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
 
@@ -1526,6 +1526,8 @@ Deployment notes:
 | `composition.proposed`          | `candidateID`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                                   | —                                                                                   |
 | `composition.switched`          | `from?`: string, `to`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                   |
 | `composition.verified`          | `candidateID`: string, `verdict`: "passed" | "failed", `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                     | —                                                                                   |
+| `invariant.violation`           | `at`: string, `owner`: string, `invariant`: string, `code`: string, `detail`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                   |
+| `invariant.resolved`            | `at`: string, `owner`: string, `invariant`: string, `code`: string, `detail`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                   |
 <!-- /api-reference:generated -->
 
 <a id="chinese"></a>
@@ -2636,8 +2638,8 @@ createRuntimeHttpServer({
 
 ### Events and projection (source scan)
 
-- Runtime event types (`RuntimeEventData` union): 124.
-- view-store projections (`case` labels in `packages/hosts/view-store/src`): 124.
+- Runtime event types (`RuntimeEventData` union): 126.
+- view-store projections (`case` labels in `packages/hosts/view-store/src`): 126.
 
 ### SDK methods → RPC routes (source scan of `packages/tooling/sdk/src/sdk.ts`)
 
@@ -2903,4 +2905,6 @@ createRuntimeHttpServer({
 | `composition.proposed`          | `candidateID`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                                   | —                                                                                   |
 | `composition.switched`          | `from?`: string, `to`: string, `reason`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                           | —                                                                                   |
 | `composition.verified`          | `candidateID`: string, `verdict`: "passed" | "failed", `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                                                     | —                                                                                   |
+| `invariant.violation`           | `at`: string, `owner`: string, `invariant`: string, `code`: string, `detail`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                   |
+| `invariant.resolved`            | `at`: string, `owner`: string, `invariant`: string, `code`: string, `detail`: string, `workspaceID?`: string, `sessionID?`: SessionID                                                                                                                                                                                                                                                                                                                                                                                      | —                                                                                   |
 <!-- /api-reference:generated -->

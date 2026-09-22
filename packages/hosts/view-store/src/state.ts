@@ -28,6 +28,21 @@ export const subagentHistoryLimit = 100;
 export const policyDecisionLimit = 200;
 export const checkpointLimit = 200;
 export const evidenceLimit = 200;
+/** Open invariant findings are edge-lifecycle objects; bounded like evidence. */
+export const invariantFindingLimit = 200;
+
+/** A journal invariant finding, projected for display (D2). */
+export type InvariantFindingView = {
+  /** owner|invariant|code|detail — the identity the edges key on. */
+  key: string;
+  at: string;
+  owner: string;
+  invariant: string;
+  code: string;
+  detail: string;
+  sessionID?: string;
+  resolved: boolean;
+};
 export const completionLimit = 100;
 export const decisionLimit = 200;
 export const driftFindingLimit = 200;
@@ -471,6 +486,7 @@ export type AppState = {
   >;
   decisions: Array<Extract<RuntimeEvent, { type: "decision.recorded" }>>;
   evidence: Array<Extract<RuntimeEvent, { type: "evidence.recorded" }>>;
+  invariantFindings: InvariantFindingView[];
   completions: Array<Extract<RuntimeEvent, { type: "completion.recorded" }>>;
   driftFindings: DriftFindingView[];
   mailbox: Record<string, MailboxMessageView>;
@@ -593,6 +609,7 @@ export function initialState(): AppState {
     constitutionConflicts: [],
     decisions: [],
     evidence: [],
+    invariantFindings: [],
     completions: [],
     driftFindings: [],
     mailbox: {},
@@ -666,6 +683,7 @@ export function cloneState(state: AppState): AppState {
     constitutionConflicts: [...state.constitutionConflicts],
     decisions: [...state.decisions],
     evidence: [...state.evidence],
+    invariantFindings: [...state.invariantFindings],
     completions: [...state.completions],
     driftFindings: state.driftFindings.map((finding) => ({
       ...finding,

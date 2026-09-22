@@ -20,6 +20,7 @@ export const sessionInvariants: readonly Invariant[] = [
           violations.push({
             code: "session.projection_incomplete",
             detail: `session ${window.sessionID} ran turns but its fact projection is incomplete (${window.events.length} events unfolded)`,
+            sessionID: window.sessionID,
           });
       }
       return violations;
