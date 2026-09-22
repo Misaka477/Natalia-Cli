@@ -28,15 +28,19 @@ export type VerificationFace = (
   generation: Generation,
 ) => Promise<VerificationCheck> | VerificationCheck;
 
-/** The repo's architecture guards, as the verify chain spells them. */
+/**
+ * The architecture guards, exactly the set the plan and study name for
+ * the candidate gate (imports/deps/contract/suppressions). The verify
+ * chain's test-hygiene guards are deliberately NOT here: they judge the
+ * repository's test suite, not a candidate's composition — and running
+ * them from inside a test necessarily flags that test's own live
+ * workspaces as residue.
+ */
 export const GUARD_SCRIPTS = [
   "guard:imports",
   "guard:contract",
   "guard:deps",
   "guard:suppressions",
-  "guard:tests",
-  "guard:test-workspaces",
-  "guard:events",
 ] as const;
 
 export type GuardRunner = (
