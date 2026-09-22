@@ -22,6 +22,10 @@
 import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import {
+  resolveWorkspaceChunksRoot,
+  resolveWorkspaceCheckpointSessionsRoot,
+} from "@natalia/platform";
+import {
   copyFile,
   open,
   readdir,
@@ -806,7 +810,7 @@ export class CheckpointJournal {
 export async function migrateAllCheckpointJournals(
   workspaceRoot: string,
 ): Promise<Array<{ sessionID: string; migrated: number; backup: string }>> {
-  const sessionsDir = join(workspaceRoot, ".natalia", "checkpoints");
+  const sessionsDir = resolveWorkspaceCheckpointSessionsRoot(workspaceRoot);
   let entries;
   try {
     entries = await readdir(sessionsDir, { withFileTypes: true });
@@ -821,7 +825,7 @@ export async function migrateAllCheckpointJournals(
   }> = [];
   // The chunk store is shared across sessions; fold any pre-shared per-session
   // roots in first so migrated refs and existing chunks live in one place.
-  const chunks = new ChunkStore(join(workspaceRoot, ".natalia", "chunks"));
+  const chunks = new ChunkStore(resolveWorkspaceChunksRoot(workspaceRoot));
   await chunks.migrateLegacyRoots();
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -843,7 +847,7 @@ export async function migrateAllCheckpointJournals(
 export async function pruneV2Backups(
   workspaceRoot: string,
 ): Promise<{ pruned: number; bytes: number }> {
-  const sessionsDir = join(workspaceRoot, ".natalia", "checkpoints");
+  const sessionsDir = resolveWorkspaceCheckpointSessionsRoot(workspaceRoot);
   let entries;
   try {
     entries = await readdir(sessionsDir, { withFileTypes: true });
@@ -852,7 +856,7 @@ export async function pruneV2Backups(
       return { pruned: 0, bytes: 0 };
     throw error;
   }
-  const chunks = new ChunkStore(join(workspaceRoot, ".natalia", "chunks"));
+  const chunks = new ChunkStore(resolveWorkspaceChunksRoot(workspaceRoot));
   let pruned = 0;
   let bytes = 0;
   for (const entry of entries) {

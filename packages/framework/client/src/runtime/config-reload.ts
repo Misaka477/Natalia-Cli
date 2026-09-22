@@ -19,6 +19,7 @@ import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
 import type { ConfigV3 } from "@natalia/contracts";
 import { resolve } from "node:path";
+import { resolveWorkspaceObjectsRoot } from "@natalia/platform";
 import {
   providerAdapterModuleRequests,
   reloadProviderAdapterModules,
@@ -158,7 +159,7 @@ export function createConfigReload(
       const config = ctx.ports.getTsRuntimeConfig();
       if (!config) return undefined;
       const store = new ObjectStore(
-        resolve(ctx.ports.getWorkspaceRoot(), ".natalia", "objects"),
+        resolveWorkspaceObjectsRoot(ctx.ports.getWorkspaceRoot()),
       );
       const catalog = ctx.ports.getPluginsController().catalog();
       const candidateID = await storeGeneration(

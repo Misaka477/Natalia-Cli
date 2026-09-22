@@ -32,7 +32,11 @@ import {
   createInteractiveWaiter,
 } from "@natalia/collaboration";
 import type { ServiceToken } from "@natalia/runtime-services";
-import { findWorkspaceFiles, searchWorkspaceFiles } from "@natalia/platform";
+import {
+  findWorkspaceFiles,
+  migrateLegacyWorkspaceStore,
+  searchWorkspaceFiles,
+} from "@natalia/platform";
 import { createSessionHistoryTool } from "../session-history-tool";
 import {
   createPlanDocListTool,
@@ -101,6 +105,31 @@ export async function wireFrameworkServices(
 ): Promise<FrameworkServices> {
   const registry = ctx.state.capabilityRegistry;
   const workspaceRoot = ctx.ports.getWorkspaceRoot();
+  // §1.6: before anything opens a store, move a legacy workspace-local
+  // store (checkpoints/objects/chunks) outside the workspace. Idempotent
+  // and gated on the opt-in: an explicit checkpointDir means the user chose
+  // the portable layout, and their data stays put.
+  if (options.checkpointDir === undefined) {
+    try {
+      const moved = await migrateLegacyWorkspaceStore(workspaceRoot);
+      if (moved > 0)
+        ctx.ports.publish({
+          type: "diagnostic",
+          level: "info",
+          message: `checkpoint store migrated to the external store (${moved} moved)`,
+        });
+    } catch (error) {
+      // An unwritable home must not stop the boot and must not pretend:
+      // the store resolves workspace-local (every path resolver degrades the
+      // same way) and this line is the visible record that the rescue ring
+      // is tied to this workspace for now.
+      ctx.ports.publish({
+        type: "diagnostic",
+        level: "warning",
+        message: `external store unavailable (${error instanceof Error ? error.message : String(error)}); checkpoint store runs workspace-local — the rescue ring is tied to this workspace`,
+      });
+    }
+  }
   const closeHandles: Array<() => void> = [];
   const dispose = () => {
     for (const handle of closeHandles.reverse()) handle();

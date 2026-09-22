@@ -23,12 +23,15 @@ import {
 } from "node:fs/promises";
 import {
   createSymlink,
+  defaultCheckpointStoreDir,
   ensureNataliaIgnoreFile,
   forceRemove,
   isSnapshotIgnored,
   loadNataliaIgnore,
   NATALIA_IGNORE_FILE,
   normalizeLinkTarget,
+  resolveWorkspaceChunksRoot,
+  resolveWorkspaceObjectsRoot,
   type SnapshotIgnoreRule,
 } from "@natalia/platform";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -239,12 +242,19 @@ export class CheckpointStore {
   constructor(options: CheckpointStoreOptions) {
     this.sessionID = options.sessionID;
     this.workspaceRoot = resolve(options.workspaceRoot);
+    // §1.6: the rescue ring defaults OUTSIDE the workspace; an explicit
+    // storeDir is the portable opt-in and takes the whole store local with it
+    // (metadata, objects and chunks move together — a half-moved store is
+    // metadata pointing at data that died with the workspace).
+    const explicitStore = options.storeDir !== undefined;
     this.storeDir = resolve(
       options.storeDir ??
-        join(this.workspaceRoot, ".natalia", "checkpoints", options.sessionID),
+        defaultCheckpointStoreDir(this.workspaceRoot, options.sessionID),
     );
     this.objects = new ObjectStore(
-      resolve(this.workspaceRoot, ".natalia", "objects"),
+      explicitStore
+        ? join(this.workspaceRoot, ".natalia", "objects")
+        : resolveWorkspaceObjectsRoot(this.workspaceRoot),
     );
     this.diffCache = new DiffCache(this.objects, "checkpoint-diff");
     this.enabled = options.enabled ?? true;
@@ -258,7 +268,9 @@ export class CheckpointStore {
     // disk footprint, and `storeDir` is what `diskUsageBytes` reports. One
     // shared root lets identical payloads dedupe across sessions; GC unions
     // every session's references so that sharing stays safe.
-    this.chunkRoot = resolve(this.workspaceRoot, ".natalia", "chunks");
+    this.chunkRoot = explicitStore
+      ? join(this.workspaceRoot, ".natalia", "chunks")
+      : resolveWorkspaceChunksRoot(this.workspaceRoot);
     this.chunks = new ChunkStore(this.chunkRoot);
   }
 

@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { ObjectStore } from "@natalia/object-store";
 import {
+  resolveWorkspaceObjectsRoot,
   createWorkspaceFile,
   deleteWorkspaceFile,
   findWorkspaceFiles,
@@ -359,7 +360,7 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
     }) {
       await ctx.ports.getReady();
       const astIndexStore = new ObjectStore(
-        resolve(ctx.ports.getWorkspaceRoot(), ".natalia", "objects"),
+        resolveWorkspaceObjectsRoot(ctx.ports.getWorkspaceRoot()),
       );
       const files = input.files.slice(0, 50);
       const results: Array<{

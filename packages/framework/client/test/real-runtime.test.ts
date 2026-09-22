@@ -172,6 +172,7 @@ test("real runtime client streams provider output and persists replayable sessio
   const replay: RuntimeEvent[] = [];
   const reopened = createRealRuntimeClient({
     workspaceRoot: root,
+    checkpointDir: join(root, ".natalia", "checkpoint-store"),
     sessionID: "ses_ts7_real",
     provider: scriptedProvider("unused"),
   });
@@ -377,6 +378,9 @@ test("runtime status and diagnostics expose only published safe state", async ()
   const root = await mkdtemp(join(tmpdir(), "natalia-runtime-status-"));
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: no migration attempt, no external-store
+    // diagnostic — this test asserts the exact diagnostics surface.
+    checkpointDir: join(root, ".natalia", "checkpoint-store"),
     sessionID: "ses_runtime_status",
     provider: scriptedProvider("ready"),
     nativeTerminal: nativeTerminalFixture(),
@@ -2468,6 +2472,9 @@ test("durable diagnostics restore on runtime reopen and render through the comma
   const sessionID = "ses_diagnostic_replay";
   const first = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the exact-diagnostics assertion below must
+    // not see an external-store diagnostic from this harness's read-only home.
+    checkpointDir: join(root, ".natalia", "checkpoint-store"),
     sessionID,
     provider: scriptedProvider("first"),
     nativeTerminal: nativeTerminalFixture(),
@@ -2479,6 +2486,7 @@ test("durable diagnostics restore on runtime reopen and render through the comma
   const events: RuntimeEvent[] = [];
   const reopened = createRealRuntimeClient({
     workspaceRoot: root,
+    checkpointDir: join(root, ".natalia", "checkpoint-store"),
     sessionID,
     provider: scriptedProvider("reopened"),
     nativeTerminal: nativeTerminalFixture(),
