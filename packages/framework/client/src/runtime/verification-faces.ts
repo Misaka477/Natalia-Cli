@@ -134,3 +134,116 @@ export function smokeFace(options: { timeoutMs?: number } = {}) {
   };
   return face;
 }
+
+/**
+ * The Nia audit face of the verification gate (study §4.3's audit face:
+ * "只读审计候选组成,audit_report verdict=passed + evidence 落盘").
+ *
+ * It reuses the existing plan-audit machinery end to end rather than
+ * inventing a target type for audit_report: the candidate is written as a
+ * plan document, Nia is asked through the same Nia chat surface a user
+ * would use, and her audit_report flips the plan's status — which the face
+ * polls. The audit round checkpoint and evidence.recorded event her report
+ * produces are the evidence trail, already in the journal.
+ */
+export function niaFace(
+  client: ReturnType<typeof createRealRuntimeClient>,
+  options: {
+    timeoutMs?: number;
+    /**
+     * The plan the audit is filed under, reported as soon as it exists
+     * (before Nia is woken): the orchestrator records it for evidence
+     * linking, and a scripted auditor needs the id to report against —
+     * planDocMark generates the id itself, so there is no other way in.
+     */
+    onAuditPlan?: (planID: string, path: string) => void;
+  } = {},
+) {
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const face: VerificationFace = async (generation: Generation) => {
+    // The plan-doc members are functions; the chat surface is an OBJECT
+    // ({ submit, abort, ... }) — capability is checked per surface, or the
+    // object surface reads as "missing" forever.
+    const missing: string[] = [];
+    if (typeof client.planDocWrite !== "function") missing.push("planDocWrite");
+    if (typeof client.planDocMark !== "function") missing.push("planDocMark");
+    if (typeof client.planDocActivate !== "function")
+      missing.push("planDocActivate");
+    if (typeof client.planDocStatus !== "function")
+      missing.push("planDocStatus");
+    if (typeof client.niaChat?.submit !== "function")
+      missing.push("niaChat.submit");
+    if (missing.length)
+      return {
+        check: "nia",
+        ok: false,
+        detail: `runtime exposes no ${missing.join(", ")} — the audit face needs the plan and Nia surfaces`,
+      };
+    const short = generation.schema.replace(/[^a-z0-9]/gi, "").slice(0, 8);
+    const path = `plans/generation-verify-${short}-${Date.now().toString(36)}.md`;
+    const summary = [
+      `# Composition generation audit: ${generation.schema}`,
+      "",
+      "Audit this composition generation candidate. When verified call",
+      "audit_report with this plan's planID.",
+      "",
+      "## Plugins",
+      ...generation.plugins.map(
+        (plugin) =>
+          `- ${plugin.id} (${plugin.enabled ? "enabled" : "disabled"}) ${plugin.fingerprint}`,
+      ),
+      "",
+      "## Policy rows",
+      ...generation.policyRows.map(
+        (row) =>
+          `- ${row.id}: ${row.statement} [${row.enforcement}/${row.overridePolicy}]`,
+      ),
+      "",
+      "## Config",
+      "```json",
+      JSON.stringify(generation.config, null, 2),
+      "```",
+      "",
+    ].join("\n");
+    try {
+      await client.planDocWrite!({
+        path,
+        content: summary,
+        title: "Generation audit",
+      });
+      const marked = await client.planDocMark!({
+        path,
+        title: "Generation audit",
+      });
+      options.onAuditPlan?.(marked.planID, path);
+      await client.planDocActivate!(marked.planID);
+      await client.niaChat!.submit({
+        text: `Audit plan ${marked.planID} (${path}): a composition generation candidate. Verify it against the plan document and call audit_report with planID=${marked.planID}.`,
+      });
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const { status } = await client.planDocStatus!(marked.planID);
+        if (status === "completed") return { check: "nia", ok: true };
+        if (status === "audit_gaps")
+          return {
+            check: "nia",
+            ok: false,
+            detail: `Nia reported audit_gaps (evidence: the audit round checkpoint and evidence.recorded in the journal)`,
+          };
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return {
+        check: "nia",
+        ok: false,
+        detail: `no audit_report verdict for plan ${marked.planID} within ${timeoutMs}ms`,
+      };
+    } catch (error) {
+      return {
+        check: "nia",
+        ok: false,
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+  return face;
+}
