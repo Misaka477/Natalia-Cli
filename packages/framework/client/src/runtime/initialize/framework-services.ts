@@ -32,6 +32,7 @@ import {
   createInteractiveWaiter,
 } from "@natalia/collaboration";
 import type { ServiceToken } from "@natalia/runtime-services";
+import { createCacheFabric, L1_CACHE_KINDS, rinaCache } from "@natalia/rina";
 import {
   findWorkspaceFiles,
   migrateLegacyWorkspaceStore,
@@ -503,6 +504,15 @@ export async function wireFrameworkServices(
     createWorkspaceWriteLock(),
   );
   ctx.state.serviceDirectory.provide(workspaceMutations, mutations);
+  // The cache fabric: one per runtime, kind registry preloaded with the
+  // classified L1 kinds (RINA study — mechanism first, plugins consume it
+  // through the port when their first consumer lands). compute() refuses
+  // unregistered kinds, so this list and READ_CACHE_TOOL_KINDS are only
+  // safe together: forgetting the loop breaks every classified tool — which
+  // is exactly the loudness the registry exists for.
+  const cacheFabric = createCacheFabric();
+  for (const kind of L1_CACHE_KINDS) cacheFabric.registerKind(kind);
+  ctx.state.serviceDirectory.provide(rinaCache, cacheFabric);
   ctx.state.serviceDirectory.provide(workspaceFiles, files);
   workspaceOwner.contribute("commands", "files", {
     name: "files",

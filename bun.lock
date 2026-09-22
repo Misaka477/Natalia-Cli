@@ -194,6 +194,7 @@
         "@natalia/plugin": "workspace:*",
         "@natalia/provider-model": "workspace:*",
         "@natalia/retry": "workspace:*",
+        "@natalia/rina": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/runtime-config": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
@@ -288,6 +289,13 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/runtime": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+      },
+    },
+    "packages/framework/rina": {
+      "name": "@natalia/rina",
+      "version": "0.0.0-m13",
+      "dependencies": {
         "@natalia/runtime-services": "workspace:*",
       },
     },
@@ -986,6 +994,8 @@
     "@natalia/provider-model": ["@natalia/provider-model@workspace:packages/framework/provider-model"],
 
     "@natalia/retry": ["@natalia/retry@workspace:packages/framework/retry"],
+
+    "@natalia/rina": ["@natalia/rina@workspace:packages/framework/rina"],
 
     "@natalia/runtime": ["@natalia/runtime@workspace:packages/framework/runtime"],
 

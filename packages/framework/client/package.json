@@ -28,6 +28,7 @@
     "@natalia/plugin": "workspace:*",
     "@natalia/provider-model": "workspace:*",
     "@natalia/retry": "workspace:*",
+    "@natalia/rina": "workspace:*",
     "@natalia/runtime": "workspace:*",
     "@natalia/runtime-config": "workspace:*",
     "@natalia/runtime-services": "workspace:*",

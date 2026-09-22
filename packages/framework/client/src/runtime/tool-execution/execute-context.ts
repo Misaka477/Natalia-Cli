@@ -9,6 +9,7 @@
  */
 import type { ProviderToolCall } from "@natalia/runtime";
 import type { ConfinementMode } from "@natalia/confinement";
+import { rinaCache } from "@natalia/rina";
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
@@ -174,6 +175,12 @@ export function buildToolExecutionContext(input: BuildContextInput) {
       }
     },
     onWorkspaceChange: (changes: Array<{ path: string }>) => {
+      // Invalidate-on-write (RINA law 2): the paths a settled tool changed
+      // drop out of the read cache immediately; tree-scoped kinds go with
+      // them (any write can move a listing).
+      ctx.state.serviceDirectory
+        .getOptional(rinaCache)
+        ?.invalidatePaths(changes.map((change) => change.path));
       // WG4 Phase 3: the tool settled successfully — the expected
       // mutation stops matching unrelated later hints, but its identity
       // stays available for attributing the change it caused.

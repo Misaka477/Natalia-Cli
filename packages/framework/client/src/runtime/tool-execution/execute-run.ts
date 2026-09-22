@@ -26,6 +26,8 @@ import type { RealRuntimeClientOptions } from "../options";
 import type { RuntimeContext } from "../context";
 import { activePlanForExec } from "../collaboration/plan-doc-runtime";
 import type { WorkLedgerController } from "@natalia/work-ledger";
+import { OPAQUE_WORKSPACE_WRITERS, rinaCache } from "@natalia/rina";
+import { executeWithReadCache } from "./read-cache";
 
 export type ExecuteStageInput = {
   exec: SessionExecutionState | undefined;
@@ -309,29 +311,41 @@ export async function runExecuteStage(
         expectedOperations: ["modified", "added", "deleted", "renamed"],
       });
     }
+    const rina = ctx.state.serviceDirectory.getOptional(rinaCache);
     const completeResult = await waitForToolExecution(
-      tool.execute(
+      executeWithReadCache({
+        fabric: rina,
+        toolName: tool.name,
         parsed,
-        buildToolExecutionContext({
-          exec,
-          publish,
-          toolID,
-          tool,
-          call,
-          turnID,
-          attachImage,
-          ctx,
-          sessionID,
-          workspaceRoot,
-          signal,
-          timeoutSec: effectiveTimeoutSec,
-          parsed,
-        }),
-      ),
+        execute: () =>
+          tool.execute(
+            parsed,
+            buildToolExecutionContext({
+              exec,
+              publish,
+              toolID,
+              tool,
+              call,
+              turnID,
+              attachImage,
+              ctx,
+              sessionID,
+              workspaceRoot,
+              signal,
+              timeoutSec: effectiveTimeoutSec,
+              parsed,
+            }),
+          ),
+      }),
       signal,
     ).finally(() => {
       if (timeoutTimer) clearTimeout(timeoutTimer);
       exec?.activeAbort?.signal.removeEventListener("abort", cancelExecution);
+      // An opaque workspace writer just finished — or failed after writing
+      // — so tree-scoped results (glob/grep listings) can no longer be
+      // trusted: the study's invalidate-on-write for the writer the
+      // mutation declarations cannot see into.
+      if (OPAQUE_WORKSPACE_WRITERS.has(tool.name)) rina?.markTreeChanged();
     });
     // A declared output shape is a contract for the tools whose result is JSON.
     // One that has drifted from its implementation fails here, naming the paths,

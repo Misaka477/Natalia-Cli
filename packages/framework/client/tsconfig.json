@@ -34,6 +34,9 @@
       "path": "../../domains/work-ledger"
     },
     {
+      "path": "../../framework/rina"
+    },
+    {
       "path": "../../hosts/config"
     },
     {
