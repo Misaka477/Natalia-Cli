@@ -72,23 +72,33 @@ export function buildGeneration(input: {
 }
 
 /**
- * Derives the composition pointer from an event stream. The last recorded
- * switch wins (`to` becomes current, its `from` becomes previous); a stream
- * without switches has no pointer, which is a valid state — the composition
- * existed before anyone pointed at it.
+ * Derives the composition pointer from an event stream.
+ *
+ * `current`/`previous` come from the recorded switches: the last switch wins,
+ * its `from` becomes the rollback target. `candidate` is the most recent
+ * proposal that was never switched to — the staged-but-uncommitted state.
+ * A proposal that a later switch commits stops being a candidate. A stream
+ * without any of these has no pointer, which is a valid state: the
+ * composition existed before anyone pointed at it.
  */
 export function deriveCompositionPointer(
   events: Iterable<RuntimeEvent>,
 ): CompositionPointer {
   let current: string | undefined;
   let previous: string | undefined;
+  let candidate: string | undefined;
   for (const event of events) {
-    if (event.type !== "composition.switched") continue;
-    previous = event.from ?? previous;
-    current = event.to;
+    if (event.type === "composition.switched") {
+      previous = event.from ?? previous;
+      current = event.to;
+      if (candidate === event.to) candidate = undefined;
+      continue;
+    }
+    if (event.type === "composition.proposed") candidate = event.candidateID;
   }
   return {
     ...(current ? { current } : {}),
     ...(previous ? { previous } : {}),
+    ...(candidate ? { candidate } : {}),
   };
 }

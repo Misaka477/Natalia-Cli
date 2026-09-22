@@ -142,43 +142,54 @@ export function createConfigReload(
       });
     }
     scheduleRuntimeStatusSnapshot();
-    await recordComposition("config.reload");
+    const candidateID = await stageCandidate("config.reload");
+    if (candidateID) commitCandidate(candidateID, "config.reload");
     return { applied: true };
   }
 
   /**
-   * Records the post-reload composition as a content-addressed generation and
-   * publishes the switch (P2 / NGM G1). The reload is today's only real
-   * composition-changing trigger, so it is the event's first producer; the
-   * from-link comes from this closure's memory of the last generation, while
-   * the journal remains the durable record.
+   * Stages the reloaded composition as a content-addressed candidate and
+   * publishes the attempt (P2 / NGM G2). The candidate is stored before the
+   * switch is decided, so a failed apply leaves a proposal in the journal
+   * with no matching switch — the record of what was tried.
    */
-  async function recordComposition(reason: string) {
+  async function stageCandidate(reason: string): Promise<string | undefined> {
     try {
       const config = ctx.ports.getTsRuntimeConfig();
-      if (!config) return;
+      if (!config) return undefined;
       const store = new ObjectStore(
         resolve(ctx.ports.getWorkspaceRoot(), ".natalia", "objects"),
       );
       const catalog = ctx.ports.getPluginsController().catalog();
-      const to = await storeGeneration(
+      const candidateID = await storeGeneration(
         store,
         buildGeneration({ config, catalog }),
       );
-      ctx.ports.publish({
-        type: "composition.switched",
-        ...(lastGenerationID ? { from: lastGenerationID } : {}),
-        to,
-        reason,
-      });
-      lastGenerationID = to;
+      ctx.ports.publish({ type: "composition.proposed", candidateID, reason });
+      return candidateID;
     } catch (error) {
       ctx.ports.publish({
         type: "diagnostic",
         level: "warning",
         message: `composition record failed: ${error instanceof Error ? error.message : String(error)}`,
       });
+      return undefined;
     }
+  }
+
+  /**
+   * Commits the staged candidate as the running generation (P2 / NGM G1/G2).
+   * The from-link comes from this closure's memory of the last committed
+   * generation; the journal remains the durable record either way.
+   */
+  function commitCandidate(candidateID: string, reason: string) {
+    ctx.ports.publish({
+      type: "composition.switched",
+      ...(lastGenerationID ? { from: lastGenerationID } : {}),
+      to: candidateID,
+      reason,
+    });
+    lastGenerationID = candidateID;
   }
 
   async function reloadConfigFromDisk(): Promise<{

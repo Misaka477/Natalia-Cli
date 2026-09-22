@@ -110,6 +110,36 @@ test("the pointer derives from the last switch, previous from its from", () => {
   expect(pointer).toEqual({ current: "gen-c", previous: "gen-b" });
 });
 
+test("a proposal that never commits stays the candidate", () => {
+  const pointer = deriveCompositionPointer([
+    switched("gen-a", undefined, "config.reload"),
+    proposed("gen-b", "agent.proposal"),
+  ]);
+  expect(pointer).toEqual({
+    current: "gen-a",
+    previous: undefined,
+    candidate: "gen-b",
+  });
+});
+
+test("a committed proposal stops being the candidate", () => {
+  const pointer = deriveCompositionPointer([
+    switched("gen-a", undefined, "config.reload"),
+    proposed("gen-b", "agent.proposal"),
+    switched("gen-b", "gen-a", "config.reload"),
+  ]);
+  expect(pointer.candidate).toBeUndefined();
+  expect(pointer.current).toBe("gen-b");
+});
+
+test("the latest proposal wins as the candidate", () => {
+  const pointer = deriveCompositionPointer([
+    proposed("gen-x", "agent.proposal"),
+    proposed("gen-y", "agent.proposal"),
+  ]);
+  expect(pointer.candidate).toBe("gen-y");
+});
+
 test("a stream without switches has no pointer", () => {
   expect(deriveCompositionPointer([])).toEqual({});
 });
@@ -120,6 +150,14 @@ test("the first switch has no previous", () => {
   ]);
   expect(pointer).toEqual({ current: "gen-a" });
 });
+
+function proposed(candidateID: string, reason: string): RuntimeEvent {
+  return {
+    type: "composition.proposed",
+    candidateID,
+    reason,
+  } as unknown as RuntimeEvent;
+}
 
 function switched(
   to: string,

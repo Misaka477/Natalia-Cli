@@ -2048,6 +2048,15 @@ type RuntimeEventData =
       workspaceID: string;
     }
   | {
+      type: "composition.proposed";
+      /** The staged candidate: a content id from the object store. */
+      candidateID: string;
+      /** What staged it (config.reload, plugin.reconcile, agent.proposal...). */
+      reason: string;
+      workspaceID?: string;
+      sessionID?: SessionID;
+    }
+  | {
       type: "composition.switched";
       /** The generation that was running before this switch, if any. */
       from?: string;

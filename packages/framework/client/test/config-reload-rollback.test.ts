@@ -80,6 +80,7 @@ async function harness() {
       setRuntimeContextConfig: () => {},
       applyAgentPolicy: () => {},
       getPluginsController: () => ({
+        catalog: () => [],
         reconcileDesired: async (
           _entries: unknown,
           plugins: { enabled?: Record<string, boolean> } | undefined,
@@ -94,7 +95,8 @@ async function harness() {
       publish: (event: { type: string; name?: string; message?: string }) => {
         if (
           event.type === "tool.registered" ||
-          event.type === "tool.unregistered"
+          event.type === "tool.unregistered" ||
+          event.type.startsWith("composition.")
         )
           published.push({ type: event.type, name: event.name ?? "" });
         else if (event.type === "diagnostic" && event.message)
@@ -237,6 +239,27 @@ test("a failed reload restores the previous config's provider adapter modules", 
     // was withdrawn and A's reloaded rather than left live.
     expect(h.diagnostics.some((m) => m.includes("b.ts"))).toBe(true);
     expect(h.diagnostics.some((m) => m.includes("a.ts"))).toBe(true);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("a successful reload records the candidate then commits it", async () => {
+  const h = await harness();
+  try {
+    await updateConfig(h.root, { version: 3, agents: { alpha } });
+    h.published.length = 0;
+    const applied = await h.reload.applyConfigFromDisk();
+    expect(applied.applied).toBe(true);
+    const composition = h.published.filter((event) =>
+      event.type.startsWith("composition."),
+    );
+    // G2 journal signature: the attempt is recorded, then the outcome. The
+    // ids are content hashes, so the pair is verified by shape and order.
+    expect(composition.map((event) => event.type)).toEqual([
+      "composition.proposed",
+      "composition.switched",
+    ]);
   } finally {
     await h.dispose();
   }
