@@ -8,10 +8,8 @@
  * unchanged.
  */
 import { createWorkLedgerController } from "@natalia/work-ledger";
-import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
-  type WorkLedgerController,
-} from "@natalia/runtime-services";
+import { type WorkLedgerController } from "@natalia/runtime-services";
+import { workLedgerController } from "@natalia/work-ledger";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
 
@@ -39,6 +37,6 @@ export function wireWorkLedger(ctx: RuntimeContext): WorkLedgerController {
           .map((event) => event.findingID),
       ),
   });
-  owner.contribute("services", WORK_LEDGER_CONTROLLER_SERVICE, controller);
+  ctx.state.serviceDirectory.provide(workLedgerController, controller);
   return controller;
 }

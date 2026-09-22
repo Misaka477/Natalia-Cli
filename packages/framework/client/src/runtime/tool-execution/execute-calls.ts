@@ -18,9 +18,9 @@ import {
   sessionFactConstitutionRules,
 } from "@natalia/session";
 import { readOnlyToolMessage } from "@natalia/runtime-services";
+import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
 import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
   type ToolPolicyService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
@@ -92,11 +92,9 @@ export function createExecuteCalls(
     commandText?: string,
   ): Promise<string | undefined> {
     const { executionForTurn, publishForSession } = ctx.ports;
-    const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
-      WORK_LEDGER_CONTROLLER_SERVICE,
+    const workLedgerController = ctx.state.serviceDirectory.get(
+      workLedgerControllerToken,
     );
-    if (!workLedgerController)
-      throw new Error("work ledger unavailable (natalia-work-ledger)");
     const sessionID = ctx.ports.getSessionID();
     const exec =
       executionForTurn(turnID) ??

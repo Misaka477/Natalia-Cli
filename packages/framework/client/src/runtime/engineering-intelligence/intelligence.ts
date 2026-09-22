@@ -1,6 +1,6 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { workLedgerController } from "@natalia/work-ledger";
 import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
   type ConstitutionDocRule,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
@@ -289,11 +289,7 @@ export function createIntelligenceSurface(
     return ledger;
   }
   function requireWorkLedger() {
-    const ledger = ctx.ports.resolveService<WorkLedgerController>(
-      WORK_LEDGER_CONTROLLER_SERVICE,
-    );
-    if (!ledger)
-      throw new Error("work ledger unavailable (natalia-work-ledger)");
+    const ledger = ctx.state.serviceDirectory.get(workLedgerController);
     return ledger;
   }
   async function intelligenceExecWindow(sessionID?: string) {

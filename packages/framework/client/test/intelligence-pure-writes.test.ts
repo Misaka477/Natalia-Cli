@@ -4,6 +4,7 @@ import { createIntelligenceSurface } from "../src/runtime/engineering-intelligen
 import type { RuntimeContext } from "../src/runtime/context";
 import { createTestContext } from "@natalia/runtime-services";
 import { governanceLedgerController } from "@natalia/governance-ledger";
+import { workLedgerController } from "@natalia/work-ledger";
 import type { SessionExecutionState } from "../src/runtime/session-execution-state";
 import { sessionFactStateFromEvents } from "@natalia/session";
 
@@ -77,6 +78,36 @@ function harness() {
     buildConstitutionRuleUpdate: () => undefined,
     buildUserConstitutionRule: () => undefined,
     buildConstitutionRuleRemoved: () => undefined,
+    // WorkLedgerController face of the same double (the port stub answered
+    // every lookup with it; the directory needs it registered per token).
+    buildPlanDocCreated: () => undefined,
+    buildPlanDocUpdated: () => undefined,
+    buildPlanDocMarked: () => undefined,
+    buildPlanDocDeleted: () => undefined,
+    buildPlanDocStatus: () => undefined,
+    evaluateBehaviorDrift: () => [],
+    buildWorkContractDrafted: () => undefined,
+    buildWorkContractAccepted: () => undefined,
+    buildDetourRequested: () => undefined,
+    buildDetourReviewed: () => undefined,
+    validateDetour: () => [],
+    mergeDetourIntoContract: () => undefined,
+    validateWorkContractFields: () => [],
+    evaluateCompletionCard: () => undefined,
+    agentActionNode: () => undefined,
+    approvalEdge: () => undefined,
+    approvalNode: () => undefined,
+    completionNode: () => undefined,
+    checkpointNode: () => undefined,
+    constitutionCheckEdge: () => undefined,
+    constitutionRuleNode: () => undefined,
+    externalWorkspaceChangeNode: () => undefined,
+    toolCallEdge: () => undefined,
+    toolCallNode: () => undefined,
+    rollbackCheckpointEdge: () => undefined,
+    buildDriftFindingUpdate: () => undefined,
+    workspaceChangeEdge: () => undefined,
+    workspaceChangeNode: () => undefined,
   };
 
   const ctx = {
@@ -84,6 +115,7 @@ function harness() {
       pluginStoreRoot: "/tmp/natalia-pure-writes",
       serviceDirectory: createTestContext([
         governanceLedgerController.mock(ledger),
+        workLedgerController.mock(ledger),
       ]),
     },
     ports: {
@@ -200,12 +232,40 @@ test("acknowledgeDriftFinding reads a complete hot state without a full load", a
     buildConstitutionRuleUpdate: () => undefined,
     buildUserConstitutionRule: () => undefined,
     buildConstitutionRuleRemoved: () => undefined,
+    buildPlanDocCreated: () => undefined,
+    buildPlanDocUpdated: () => undefined,
+    buildPlanDocMarked: () => undefined,
+    buildPlanDocDeleted: () => undefined,
+    buildPlanDocStatus: () => undefined,
+    evaluateBehaviorDrift: () => [],
+    buildWorkContractDrafted: () => undefined,
+    buildWorkContractAccepted: () => undefined,
+    buildDetourRequested: () => undefined,
+    buildDetourReviewed: () => undefined,
+    validateDetour: () => [],
+    mergeDetourIntoContract: () => undefined,
+    validateWorkContractFields: () => [],
+    evaluateCompletionCard: () => undefined,
+    agentActionNode: () => undefined,
+    approvalEdge: () => undefined,
+    approvalNode: () => undefined,
+    completionNode: () => undefined,
+    checkpointNode: () => undefined,
+    constitutionCheckEdge: () => undefined,
+    constitutionRuleNode: () => undefined,
+    externalWorkspaceChangeNode: () => undefined,
+    toolCallEdge: () => undefined,
+    toolCallNode: () => undefined,
+    rollbackCheckpointEdge: () => undefined,
+    workspaceChangeEdge: () => undefined,
+    workspaceChangeNode: () => undefined,
   };
   const ctx = {
     state: {
       pluginStoreRoot: "/tmp/natalia-hot-state",
       serviceDirectory: createTestContext([
         governanceLedgerController.mock(ledger),
+        workLedgerController.mock(ledger),
       ]),
     },
     ports: {

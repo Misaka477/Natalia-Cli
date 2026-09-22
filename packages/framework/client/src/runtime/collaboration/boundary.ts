@@ -13,11 +13,9 @@ import {
   sessionFactMailboxMessages,
 } from "@natalia/session";
 import { buildMailboxStatus } from "@natalia/runtime-services";
+import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { workspaceFiles } from "@natalia/workspace";
-import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
-  type WorkLedgerController,
-} from "@natalia/runtime-services";
+import { type WorkLedgerController } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 import { activePlanForExec } from "./plan-doc-runtime";
@@ -238,12 +236,9 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     return (async () => {
       if (ctx.ports.isDisposed()) return [];
       const { publishForSession } = ctx.ports;
-      const workLedgerController =
-        ctx.ports.resolveService<WorkLedgerController>(
-          WORK_LEDGER_CONTROLLER_SERVICE,
-        );
-      if (!workLedgerController)
-        throw new Error("work ledger unavailable (natalia-work-ledger)");
+      const workLedgerController = ctx.state.serviceDirectory.get(
+        workLedgerControllerToken,
+      );
       const workspaceFilesController =
         ctx.state.serviceDirectory.getOptional(workspaceFiles);
       const target = exec;

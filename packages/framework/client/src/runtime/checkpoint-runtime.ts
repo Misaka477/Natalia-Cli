@@ -6,7 +6,6 @@
  * concrete plugin controller.
  */
 import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
   subagentsService,
   type CheckpointController,
   type CheckpointFactory,
@@ -15,6 +14,7 @@ import {
   type SubagentsService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { workLedgerController } from "@natalia/work-ledger";
 import { statusSnapshotController } from "@natalia/runtime-status";
 import { checkpointFactory } from "@natalia/checkpoint";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -268,12 +268,7 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
     const id = exec.session.id;
     const factory = ctx.state.serviceDirectory.getOptional(checkpointFactory);
     if (!factory) return undefined;
-    if (
-      !ctx.ports.resolveService<WorkLedgerController>(
-        WORK_LEDGER_CONTROLLER_SERVICE,
-      )
-    )
-      throw new Error("work ledger unavailable (natalia-work-ledger)");
+    ctx.state.serviceDirectory.get(workLedgerController);
     return factory({
       sessionID: () => id,
       checkpoint: () => getTsRuntimeConfig()?.checkpoint,
@@ -286,14 +281,7 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
         return subagents?.enabled() ? subagents : undefined;
       },
       activeAbort: () => exec.activeAbort,
-      workLedger: () => {
-        const workLedger = ctx.ports.resolveService<WorkLedgerController>(
-          WORK_LEDGER_CONTROLLER_SERVICE,
-        );
-        if (!workLedger)
-          throw new Error("work ledger unavailable (natalia-work-ledger)");
-        return workLedger;
-      },
+      workLedger: () => ctx.state.serviceDirectory.get(workLedgerController),
     });
   }
 

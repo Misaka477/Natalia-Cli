@@ -9,10 +9,10 @@ import {
   skillService,
   teamBehavior,
   terminalController,
-  WORK_LEDGER_CONTROLLER_SERVICE,
   type StatusSnapshotController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { workLedgerController } from "@natalia/work-ledger";
 import { statusSnapshotController } from "@natalia/runtime-status";
 import { createPluginsController } from "../../plugins-controller";
 import type { RuntimeContext } from "../context";
@@ -79,12 +79,7 @@ export function wireFoundation(ctx: RuntimeContext) {
     capabilityOwnerForTool: (toolName) =>
       state.capabilityRegistry.ownerOf("tools", toolName),
     workLedger: () => {
-      const workLedger = ports.resolveService<WorkLedgerController>(
-        WORK_LEDGER_CONTROLLER_SERVICE,
-      );
-      if (!workLedger)
-        throw new Error("work ledger unavailable (natalia-work-ledger)");
-      return workLedger;
+      return ctx.state.serviceDirectory.get(workLedgerController);
     },
     publishForSession: (sessionID, event) =>
       ports.publishForSession(state.executionBySession.get(sessionID), event),

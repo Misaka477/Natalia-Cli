@@ -15,9 +15,9 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { RuntimeInvalidParams } from "@natalia/contracts";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { workLedgerController } from "@natalia/work-ledger";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
-  WORK_LEDGER_CONTROLLER_SERVICE,
   type SessionStoreController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
@@ -198,12 +198,7 @@ export function activePlanForExec(
 
 export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
   function requireWorkLedger() {
-    const ledger = ctx.ports.resolveService<WorkLedgerController>(
-      WORK_LEDGER_CONTROLLER_SERVICE,
-    );
-    if (!ledger)
-      throw new Error("work ledger unavailable (natalia-work-ledger)");
-    return ledger;
+    return ctx.state.serviceDirectory.get(workLedgerController);
   }
 
   function sessionExec(sessionID?: string) {

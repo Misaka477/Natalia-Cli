@@ -11,6 +11,7 @@ import type {
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";
+import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { governanceLedgerController as governanceLedgerControllerToken } from "@natalia/governance-ledger";
 
 export async function finalizeInitialize(
@@ -30,11 +31,9 @@ export async function finalizeInitialize(
   const governanceLedgerController = scope.serviceDirectory.get(
     governanceLedgerControllerToken,
   );
-  const workLedgerController = scope.resolveService<WorkLedgerController>(
-    scope.WORK_LEDGER_CONTROLLER_SERVICE,
+  const workLedgerController = scope.serviceDirectory.get(
+    workLedgerControllerToken,
   );
-  if (!workLedgerController)
-    throw new Error("work ledger unavailable (natalia-work-ledger)");
   const session = scope.session;
   if (!session) throw new Error("session initialization did not complete");
   // Warm the collaboration snapshot in the background so the first

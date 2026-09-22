@@ -7,7 +7,7 @@
  * same pure builders the surfaces use — the event vocabulary stays the
  * journal-face one and no prompt ever carries the正文.
  */
-import { WORK_LEDGER_CONTROLLER_SERVICE } from "@natalia/runtime-services";
+import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { projectedDriftFindings } from "@natalia/session";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -34,9 +34,9 @@ function resolveExec(
 function requireWorkLedger(
   ctx: RuntimeContext,
 ): import("./context").WorkLedgerController | undefined {
-  return ctx.ports.resolveService<import("./context").WorkLedgerController>(
-    WORK_LEDGER_CONTROLLER_SERVICE,
-  );
+  return ctx.state.serviceDirectory.getOptional(
+    workLedgerController,
+  ) as unknown as import("./context").WorkLedgerController | undefined;
 }
 
 function requireGovernanceLedger(

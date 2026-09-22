@@ -20,6 +20,7 @@ import { governanceLedgerController } from "@natalia/governance-ledger";
 import { compactionService } from "@natalia/compaction";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import { turnController } from "@natalia/turn-orchestration";
+import { workLedgerController } from "@natalia/work-ledger";
 
 export async function resolveServices(
   ctx: RuntimeContext,
@@ -39,12 +40,8 @@ export async function resolveServices(
   // Resolution is fail-fast by construction (see the retry check above).
   scope.serviceDirectory.get(statusSnapshotController);
   scope.runtimeContext = resolvedContextLedgerFactory.create();
-  const resolvedWorkLedgerController =
-    scope.capabilityRegistry.service<WorkLedgerController>(
-      scope.WORK_LEDGER_CONTROLLER_SERVICE,
-    );
-  if (!resolvedWorkLedgerController)
-    throw new Error("work ledger unavailable (natalia-work-ledger)");
+  // Resolution is fail-fast by construction (see the retry check above).
+  scope.serviceDirectory.get(workLedgerController);
   // Resolution is fail-fast by construction (see the retry check above).
   scope.serviceDirectory.get(governanceLedgerController);
   // Resolution is fail-fast by construction (see the retry check above).

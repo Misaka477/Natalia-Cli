@@ -15,10 +15,10 @@ import {
   sessionRunCoordinator,
 } from "@natalia/session";
 import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
   type AttachmentService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { workLedgerController } from "@natalia/work-ledger";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import type { SessionID, SubmitInput, SubmittedTurn } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
@@ -54,11 +54,7 @@ export function createSessionAdmission(
     const attachmentService = ctx.state.serviceDirectory.get(
       attachmentServiceToken,
     );
-    const workLedger = ctx.ports.resolveService<WorkLedgerController>(
-      WORK_LEDGER_CONTROLLER_SERVICE,
-    );
-    if (!workLedger)
-      throw new Error("work ledger unavailable (natalia-work-ledger)");
+    const workLedger = ctx.state.serviceDirectory.get(workLedgerController);
     const targetSessionID = (input.sessionID ??
       forSessionID ??
       getSessionID()) as SessionID;

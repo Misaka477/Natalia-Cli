@@ -11,7 +11,6 @@ import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
   sandboxService,
   subagentsService,
   terminalController,
@@ -20,6 +19,7 @@ import {
   type TerminalController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { workspaceMutations } from "@natalia/workspace";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
@@ -154,10 +154,9 @@ export function buildToolExecutionContext(input: BuildContextInput) {
         .getOptional(workspaceMutations)
         ?.settle(call.id);
       if (!exec?.session) return;
-      const workLedgerController =
-        ctx.ports.resolveService<WorkLedgerController>(
-          WORK_LEDGER_CONTROLLER_SERVICE,
-        );
+      const workLedgerController = ctx.state.serviceDirectory.get(
+        workLedgerControllerToken,
+      );
       if (!workLedgerController)
         throw new Error("work ledger unavailable (natalia-work-ledger)");
       for (const change of changes) {

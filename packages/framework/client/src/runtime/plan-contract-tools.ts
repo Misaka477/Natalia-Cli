@@ -23,11 +23,11 @@ import { ensureCompleteSessionFactState } from "./session-full-events";
 import { targetDriftAbsorbedByScope } from "@natalia/work-ledger";
 import { checkContractAgainstConstitution } from "./contract-constitution-check";
 import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
   type GovernanceLedgerController,
   type ProviderModelController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { providerModelController } from "@natalia/provider-model";
 import type { RuntimeTool } from "./context";
@@ -48,9 +48,7 @@ function resolveExec(
 function requireWorkLedger(
   ctx: RuntimeContext,
 ): WorkLedgerController | undefined {
-  return ctx.ports.resolveService<WorkLedgerController>(
-    WORK_LEDGER_CONTROLLER_SERVICE,
-  );
+  return ctx.state.serviceDirectory.getOptional(workLedgerController);
 }
 
 /**

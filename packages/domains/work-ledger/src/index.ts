@@ -1,3 +1,4 @@
+export { workLedgerController } from "./service-token";
 export {
   DRIFT_CONTRACT_VERSION,
   DRIFT_FINDING_WRITER_OWNER,

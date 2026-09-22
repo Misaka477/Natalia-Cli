@@ -1,7 +1,5 @@
-import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
-  type WorkLedgerController,
-} from "@natalia/runtime-services";
+import { type WorkLedgerController } from "@natalia/runtime-services";
+import { workLedgerController } from "@natalia/work-ledger";
 import type { RuntimeEvent } from "@natalia/contracts";
 import type { RuntimeContext, SessionExecutionState } from "./context";
 
@@ -21,9 +19,7 @@ export function requestAuditAfterCompletion(
       candidate.triggerEventID === completion.id,
   );
   if (alreadyRequested) return;
-  const ledger = ctx.ports.resolveService<WorkLedgerController>(
-    WORK_LEDGER_CONTROLLER_SERVICE,
-  );
+  const ledger = ctx.state.serviceDirectory.getOptional(workLedgerController);
   if (!ledger) return;
   const planID = completion.taskID;
   const round =

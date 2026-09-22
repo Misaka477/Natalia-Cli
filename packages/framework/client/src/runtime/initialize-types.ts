@@ -115,7 +115,6 @@ export type InitializeDependencies = {
   MISSING_FINAL_RESPONSE_FALLBACK: string;
   ProviderConcurrencyLimiter: typeof import("@natalia/runtime").ProviderConcurrencyLimiter;
   serviceNames: {
-    workLedgerController: string;
     sessionStoreController: string;
   };
 };

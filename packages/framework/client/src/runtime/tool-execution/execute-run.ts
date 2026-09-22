@@ -17,10 +17,10 @@ import {
 } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
-  WORK_LEDGER_CONTROLLER_SERVICE,
   type ToolPolicyService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
 import { workspaceMutations, workspaceWriteLock } from "@natalia/workspace";
 import { buildToolExecutionContext } from "./execute-context";
@@ -76,11 +76,9 @@ export async function runExecuteStage(
   const interactive = getInteractive();
   const mutationRegistry =
     ctx.state.serviceDirectory.getOptional(workspaceMutations);
-  const workLedgerController = ctx.ports.resolveService<WorkLedgerController>(
-    WORK_LEDGER_CONTROLLER_SERVICE,
+  const workLedgerController = ctx.state.serviceDirectory.get(
+    workLedgerControllerToken,
   );
-  if (!workLedgerController)
-    throw new Error("work ledger unavailable (natalia-work-ledger)");
   const redactToolOutput = ctx.ports.redactToolOutput;
   const redactToolOutputEnabled = ctx.ports.redactToolOutputEnabled;
   const waitForToolExecution = ctx.ports.waitForToolExecution;
@@ -273,7 +271,7 @@ export async function runExecuteStage(
           try {
             const workLedger = ctx.ports.resolveService<
               import("../context").WorkLedgerController
-            >(WORK_LEDGER_CONTROLLER_SERVICE);
+            >(workLedgerControllerToken.id);
             const activePlan = activePlanForExec(ctx, exec);
             if (workLedger && created && activePlan)
               ctx.ports.publishForSession(

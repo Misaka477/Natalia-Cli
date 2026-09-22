@@ -24,7 +24,6 @@ import {
 import {
   readOnlyToolMessage,
   SESSION_STORE_CONTROLLER_SERVICE,
-  WORK_LEDGER_CONTROLLER_SERVICE,
 } from "@natalia/runtime-services";
 import { turnController } from "@natalia/turn-orchestration";
 import {
@@ -113,7 +112,6 @@ export function wireInitialize(
     publishRegisteredTools: features.toolPublish.publishRegisteredTools,
     ProviderConcurrencyLimiter,
     serviceNames: {
-      workLedgerController: WORK_LEDGER_CONTROLLER_SERVICE,
       sessionStoreController: SESSION_STORE_CONTROLLER_SERVICE,
     },
   };
