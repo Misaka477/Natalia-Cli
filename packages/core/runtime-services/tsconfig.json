@@ -7,19 +7,22 @@
   "include": ["src"],
   "references": [
     {
-      "path": "../capability"
-    },
-    {
       "path": "../../framework/agent"
-    },
-    {
-      "path": "../contracts"
     },
     {
       "path": "../../framework/runtime"
     },
     {
+      "path": "../../framework/runtime-diagnostics"
+    },
+    {
       "path": "../../framework/session"
+    },
+    {
+      "path": "../capability"
+    },
+    {
+      "path": "../contracts"
     },
     {
       "path": "../tools"

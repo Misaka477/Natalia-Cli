@@ -1,3 +1,4 @@
+export * from "./invariants";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import { normalizeInbox } from "./inbox";
 import {

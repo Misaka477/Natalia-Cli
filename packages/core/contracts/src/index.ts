@@ -10,3 +10,4 @@ export * from "./refusals";
 export * from "./schemas";
 export * from "./token-usage";
 export * from "./workspace-observation";
+export * from "./diagnostics";

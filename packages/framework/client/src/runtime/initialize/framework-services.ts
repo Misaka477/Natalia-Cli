@@ -35,6 +35,11 @@ import type { ServiceToken } from "@natalia/runtime-services";
 import { createCacheFabric, L1_CACHE_KINDS, rinaCache } from "@natalia/rina";
 import { join } from "node:path";
 import { createOperationLog, operationLog } from "@natalia/operation-log";
+import { createRuntimeDiagnostics } from "@natalia/runtime-diagnostics";
+import { runtimeDiagnostics } from "@natalia/runtime-services";
+import { sessionInvariants } from "@natalia/session";
+import { constitutionInvariants } from "@natalia/governance-ledger";
+import { workLedgerInvariants } from "@natalia/work-ledger";
 import {
   findWorkspaceFiles,
   migrateLegacyWorkspaceStore,
@@ -539,6 +544,27 @@ export async function wireFrameworkServices(
   });
   ctx.state.serviceDirectory.provide(operationLog, telemetry);
   closeHandles.push(() => telemetry.close());
+  // The domain-invariant layer (Discovery D1): domains declare their data
+  // relations, this ticks them live over the running sessions' event
+  // windows — findings report to the operation log with owner attribution
+  // (a finding that cannot cite events is a guess; these cite windows).
+  const diagnostics = createRuntimeDiagnostics({
+    sets: [
+      { owner: "session", invariants: sessionInvariants },
+      { owner: "governance-ledger", invariants: constitutionInvariants },
+      { owner: "work-ledger", invariants: workLedgerInvariants },
+    ],
+    log: telemetry,
+  });
+  ctx.state.serviceDirectory.provide(runtimeDiagnostics, diagnostics);
+  diagnostics.start(30_000, () => ({
+    sessions: [...ctx.ports.getExecutionBySession().values()].map((exec) => ({
+      sessionID: exec.session.id,
+      events: exec.session.events,
+      factStateComplete: exec.factStateComplete === true,
+    })),
+  }));
+  closeHandles.push(() => diagnostics.stop());
   ctx.state.serviceDirectory.provide(workspaceFiles, files);
   workspaceOwner.contribute("commands", "files", {
     name: "files",

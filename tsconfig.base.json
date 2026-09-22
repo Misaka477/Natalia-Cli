@@ -58,6 +58,9 @@
         "packages/framework/operation-log/src/index.ts"
       ],
       "@natalia/rina": ["packages/framework/rina/src/index.ts"],
+      "@natalia/runtime-diagnostics": [
+        "packages/framework/runtime-diagnostics/src/index.ts"
+      ],
       "@natalia/plugin-native-terminal": [
         "packages/plugins/native-terminal/src/index.ts"
       ],

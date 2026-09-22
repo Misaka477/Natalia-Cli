@@ -115,3 +115,13 @@ export const sandboxService = defineService<SandboxService>("sandbox.service", {
   scope: "workspace",
   capability: "services",
 });
+
+/**
+ * The domain-invariant layer's service (Discovery D1). The token lives
+ * with the other boundary tokens: runtime-diagnostics must stay free of
+ * this package's dependency fan-out (it already reaches framework/session
+ * through here — a token declared there would close a reference cycle).
+ */
+export const runtimeDiagnostics = defineService<
+  import("@natalia/runtime-diagnostics").RuntimeDiagnostics
+>("runtime.diagnostics", { scope: "process", capability: "services" });

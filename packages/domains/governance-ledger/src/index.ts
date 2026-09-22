@@ -1,4 +1,5 @@
 export * from "./contracts";
+export * from "./invariants";
 export { governanceLedgerController } from "./service-token";
 export { createGovernanceLedgerController } from "./governance-ledger-controller";
 export {

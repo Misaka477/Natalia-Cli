@@ -12,6 +12,7 @@
     "@natalia/agent": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/runtime": "workspace:*",
+    "@natalia/runtime-diagnostics": "workspace:*",
     "@natalia/session": "workspace:*",
     "@natalia/tools": "workspace:*"
   }

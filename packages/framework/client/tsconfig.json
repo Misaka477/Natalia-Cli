@@ -40,6 +40,9 @@
       "path": "../../framework/rina"
     },
     {
+      "path": "../../framework/runtime-diagnostics"
+    },
+    {
       "path": "../../hosts/config"
     },
     {

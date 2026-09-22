@@ -86,6 +86,7 @@
         "@natalia/agent": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/runtime": "workspace:*",
+        "@natalia/runtime-diagnostics": "workspace:*",
         "@natalia/session": "workspace:*",
         "@natalia/tools": "workspace:*",
       },
@@ -190,6 +191,7 @@
         "@natalia/contracts": "workspace:*",
         "@natalia/goal": "workspace:*",
         "@natalia/governance-ledger": "workspace:*",
+        "@natalia/operation-log": "workspace:*",
         "@natalia/platform": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/provider-model": "workspace:*",
@@ -197,6 +199,7 @@
         "@natalia/rina": "workspace:*",
         "@natalia/runtime": "workspace:*",
         "@natalia/runtime-config": "workspace:*",
+        "@natalia/runtime-diagnostics": "workspace:*",
         "@natalia/runtime-services": "workspace:*",
         "@natalia/runtime-status": "workspace:*",
         "@natalia/sandbox": "workspace:*",
@@ -266,6 +269,13 @@
       "name": "@natalia/diff-wasm",
       "version": "1.0.0",
     },
+    "packages/framework/operation-log": {
+      "name": "@natalia/operation-log",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/runtime-services": "workspace:*",
+      },
+    },
     "packages/framework/provider-model": {
       "name": "@natalia/provider-model",
       "version": "0.0.0-m13",
@@ -319,6 +329,13 @@
     },
     "packages/framework/runtime-config": {
       "name": "@natalia/runtime-config",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
+    },
+    "packages/framework/runtime-diagnostics": {
+      "name": "@natalia/runtime-diagnostics",
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
@@ -951,6 +968,8 @@
 
     "@natalia/object-store": ["@natalia/object-store@workspace:packages/hosts/object-store"],
 
+    "@natalia/operation-log": ["@natalia/operation-log@workspace:packages/framework/operation-log"],
+
     "@natalia/platform": ["@natalia/platform@workspace:packages/hosts/platform"],
 
     "@natalia/plugin": ["@natalia/plugin@workspace:packages/core/plugin"],
@@ -1000,6 +1019,8 @@
     "@natalia/runtime": ["@natalia/runtime@workspace:packages/framework/runtime"],
 
     "@natalia/runtime-config": ["@natalia/runtime-config@workspace:packages/framework/runtime-config"],
+
+    "@natalia/runtime-diagnostics": ["@natalia/runtime-diagnostics@workspace:packages/framework/runtime-diagnostics"],
 
     "@natalia/runtime-services": ["@natalia/runtime-services@workspace:packages/core/runtime-services"],
 

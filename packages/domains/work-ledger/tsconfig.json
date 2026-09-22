@@ -7,10 +7,10 @@
   "include": ["src", "test"],
   "references": [
     {
-      "path": "../../core/runtime-services"
+      "path": "../../core/contracts"
     },
     {
-      "path": "../../core/contracts"
+      "path": "../../core/runtime-services"
     }
   ]
 }
