@@ -23,6 +23,8 @@ export type {
 export type { RuntimeEvent, SessionID } from "@natalia/contracts";
 export type { ProviderToolCall, StreamingProvider } from "@natalia/runtime";
 export type { RuntimeContextLedger } from "@natalia/runtime-services";
+import type { StatusSnapshotController } from "@natalia/runtime-status";
+export type { StatusSnapshotController } from "@natalia/runtime-status";
 export type {
   RuntimeTool,
   SubagentRunnerContext,
@@ -55,19 +57,15 @@ export type {
   GovernanceLedgerController,
   InteractiveWaiter,
   McpService,
-  MutationRegistry,
   ProviderModelController,
   RetryService,
   SandboxService,
   SessionStoreController,
-  StatusSnapshotController,
   SubagentsService,
   TerminalController,
   ToolPolicyService,
   TurnController,
   WorkLedgerController,
-  WorkspaceFilesController,
-  WorkspaceWriteLock,
 } from "@natalia/runtime-services";
 export type { PermissionProfileCommandRules } from "@natalia/tools";
 import type {
@@ -81,6 +79,16 @@ import type {
 } from "@natalia/tools";
 import type { RuntimePerformanceTrace } from "../performance-trace";
 import type { SessionExecutionState } from "./session-execution-state";
+import type {
+  MutationRegistry,
+  WorkspaceFilesController,
+  WorkspaceWriteLock,
+} from "@natalia/workspace";
+export type {
+  MutationRegistry,
+  WorkspaceFilesController,
+  WorkspaceWriteLock,
+} from "@natalia/workspace";
 export type { SessionExecutionState } from "./session-execution-state";
 
 type PermissionProfile = import("@natalia/contracts").PermissionProfile;

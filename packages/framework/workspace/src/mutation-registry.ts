@@ -17,10 +17,7 @@
  * no command text, no tool arguments or results ever enter it.
  */
 import type { WorkspaceOperation } from "@natalia/contracts";
-import type {
-  ExpectedMutation,
-  MutationRegistry,
-} from "@natalia/runtime-services";
+import type { ExpectedMutation, MutationRegistry } from "./contracts";
 
 export function createMutationRegistry(): MutationRegistry {
   const expected = new Map<string, ExpectedMutation>();

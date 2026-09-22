@@ -1,7 +1,6 @@
 import { attachmentService } from "@natalia/attachments";
 import { providerModelController } from "@natalia/provider-model";
 import type {
-  AttachmentService,
   ProviderModelController,
   RuntimeServiceClient,
 } from "@natalia/runtime-services";
@@ -50,6 +49,7 @@ async function removedAfterMessage(
   return index === -1 ? undefined : history.length - index - 1;
 }
 import { streamEvent } from "./chat-turn-common";
+import type { AttachmentService } from "@natalia/runtime-services";
 
 type Surface = Pick<RuntimeServiceClient, "naviChat" | "niaChat">;
 type SubmitInput = {

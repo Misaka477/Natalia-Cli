@@ -12,7 +12,6 @@ import { RuntimeRefusal } from "@natalia/contracts";
 import {
   terminalController,
   type SessionStoreController,
-  type StatusSnapshotController,
   type TerminalController,
 } from "@natalia/runtime-services";
 import { sessionStoreController } from "@natalia/session-store";
@@ -24,6 +23,7 @@ import {
   niaChatProviderMessagesFromHistory,
 } from "./collaboration/chat-turn-common";
 import { perfLog } from "@natalia/runtime-services";
+import type { StatusSnapshotController } from "@natalia/runtime-status";
 
 export function createSessionAttach(ctx: RuntimeContext) {
   return {

@@ -93,20 +93,6 @@ export type SkillsInput = {
 
 export type TerminalInput = TerminalControllerInput;
 
-export type AttachmentService = {
-  store(paths: string[]): Promise<LocalAttachment[]>;
-  storeBytes(input: {
-    name: string;
-    mediaType: string;
-    data: Uint8Array;
-  }): Promise<LocalAttachment>;
-  dataURL(attachment: LocalAttachment): Promise<string>;
-  text(attachment: LocalAttachment): Promise<string>;
-  isText(attachment: LocalAttachment): boolean;
-  cleanup(attachments: LocalAttachment[]): Promise<string[]>;
-  referencedForSessions(sessions: SessionRecord[]): LocalAttachment[];
-};
-
 export type SessionStoreRecoveryView = {
   activeTurnIDs: string[];
   goal?: GoalSnapshot & {
@@ -384,6 +370,36 @@ export type ProviderUsage = {
   cacheCreationInputTokens?: number;
   cacheReadInputTokens?: number;
 };
+export interface RetryService {
+  policy(): RetryRunnerOptions["policy"];
+  run<T>(
+    context: RetryContext,
+    fn: (attempt: RetryAttemptContext) => Promise<T>,
+    options?: Omit<RetryRunnerOptions, "policy">,
+  ): Promise<T>;
+}
+
+export interface CompactionService {
+  compactBeforeProviderStep(input: any): Promise<any>;
+  runWithContextLimitRecovery(input: any): Promise<any>;
+  /** Identity-free prune -> remeasure -> decide -> summarize preflight. */
+  prepareContextRequest(input: any): Promise<any>;
+}
+
+export type AttachmentService = {
+  store(paths: string[]): Promise<LocalAttachment[]>;
+  storeBytes(input: {
+    name: string;
+    mediaType: string;
+    data: Uint8Array;
+  }): Promise<LocalAttachment>;
+  dataURL(attachment: LocalAttachment): Promise<string>;
+  text(attachment: LocalAttachment): Promise<string>;
+  isText(attachment: LocalAttachment): boolean;
+  cleanup(attachments: LocalAttachment[]): Promise<string[]>;
+  referencedForSessions(sessions: SessionRecord[]): LocalAttachment[];
+};
+
 export type ProviderRunnerInput = {
   provider(): StreamingProvider | undefined;
   session(): SessionRecord | undefined;
@@ -559,30 +575,6 @@ export interface ProviderModelController {
   dispose(): Promise<void>;
 }
 
-export interface RetryService {
-  policy(): RetryRunnerOptions["policy"];
-  run<T>(
-    context: RetryContext,
-    fn: (attempt: RetryAttemptContext) => Promise<T>,
-    options?: Omit<RetryRunnerOptions, "policy">,
-  ): Promise<T>;
-}
-
-export type StatusProvider = { provider: string; model: string };
-export type StatusContextLedger = {
-  journalStatus(): { tokenEstimate: number; messageCount: number };
-};
-export interface StatusSnapshotController {
-  snapshot(): Promise<Extract<RuntimeEvent, { type: "status.snapshot" }>>;
-  snapshotFor(overrides?: {
-    provider?: StatusProvider;
-    context?: StatusContextLedger;
-    permissionMode?: "ask" | "auto" | "read_only";
-  }): Promise<Extract<RuntimeEvent, { type: "status.snapshot" }>>;
-  schedule(): void;
-  dispose(): void;
-}
-
 export interface SubagentsService extends SubagentToolService {
   /**
    * Install or clear the live-delivery hook for one subagent.
@@ -677,53 +669,6 @@ export type CheckpointControllerAccessors = {
 export type CheckpointFactory = (
   accessors: CheckpointControllerAccessors,
 ) => CheckpointController;
-
-export type ExpectedMutation = {
-  sessionID?: string;
-  episodeID?: string;
-  turnID?: string;
-  callID?: string;
-  operationID?: string;
-  toolName: string;
-  authorizedPaths: string[];
-  expectedOperations: WorkspaceOperation[];
-  settled: boolean;
-};
-export interface MutationRegistry {
-  register(input: Omit<ExpectedMutation, "settled">): string;
-  match(input: { path: string; operation: WorkspaceOperation }):
-    | {
-        turnID?: string;
-        callID?: string;
-        operationID?: string;
-        sessionID?: string;
-        episodeID?: string;
-        toolName: string;
-      }
-    | undefined;
-  settle(key: string): void;
-  forget(key: string): void;
-  pendingCount(): number;
-}
-export type WorkspaceWriteActivity = {
-  sessionID?: string;
-  paths: string[];
-  acquiredAt: number;
-  queuedAt: number;
-  active: boolean;
-};
-
-export interface WorkspaceWriteLock {
-  acquire(sessionID?: string, paths?: string[]): Promise<() => void>;
-  snapshot(): WorkspaceWriteActivity[];
-}
-export interface WorkspaceFilesController {
-  init(): Promise<void>;
-  close(): void;
-  reconcile(): Promise<ConfirmedWorkspaceChange[]>;
-  observationStatus(): unknown;
-  auditor: unknown;
-}
 
 /** Backend-neutral terminal port. Native registry classes never cross this boundary. */
 export interface TerminalController {
@@ -1026,9 +971,3 @@ export type CompactionBudget = {
   thresholdPercent: number;
   reserved: number;
 };
-export interface CompactionService {
-  compactBeforeProviderStep(input: any): Promise<any>;
-  runWithContextLimitRecovery(input: any): Promise<any>;
-  /** Identity-free prune -> remeasure -> decide -> summarize preflight. */
-  prepareContextRequest(input: any): Promise<any>;
-}

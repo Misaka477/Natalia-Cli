@@ -2,7 +2,7 @@ import type {
   MutationRegistry,
   WorkspaceFilesController,
   WorkspaceWriteLock,
-} from "@natalia/runtime-services";
+} from "./contracts";
 import { defineService } from "@natalia/runtime-services";
 
 /**

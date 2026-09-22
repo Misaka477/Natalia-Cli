@@ -6,7 +6,7 @@ import type {
   MutationRegistry,
   WorkspaceFilesController,
   WorkspaceWriteLock,
-} from "@natalia/runtime-services";
+} from "../src";
 import { workspaceFiles, workspaceMutations, workspaceWriteLock } from "../src";
 import {
   createMutationRegistry,

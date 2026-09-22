@@ -22,7 +22,6 @@ import {
   type StoredContextEpoch,
 } from "@natalia/session";
 import type {
-  AttachmentService,
   SessionStoreController,
   SessionStoreRecoveryView,
 } from "@natalia/runtime-services";
@@ -32,6 +31,7 @@ import {
   loadSessionEventsInWorker,
 } from "./session-load-worker-client";
 import { perfLog } from "@natalia/runtime-services";
+import type { AttachmentService } from "@natalia/runtime-services";
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in

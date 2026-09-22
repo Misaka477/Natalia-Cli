@@ -1,6 +1,6 @@
 import { watchWorkspaceFiles } from "@natalia/platform";
 import { createWorkspaceChangeAuditor } from "./workspace-change-auditor";
-import type { WorkspaceFilesController } from "@natalia/runtime-services";
+import type { WorkspaceFilesController } from "./contracts";
 
 /** The identity a watcher-confirmed change carries when a mutation matched it. */
 export type WorkspaceMutationIdentity = {

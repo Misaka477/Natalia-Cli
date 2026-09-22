@@ -3,11 +3,21 @@ import type {
   RuntimeEvent,
   SessionID,
 } from "@natalia/contracts";
-import type {
-  StatusContextLedger,
-  StatusProvider,
-  StatusSnapshotController,
-} from "@natalia/runtime-services";
+
+export type StatusProvider = { provider: string; model: string };
+export type StatusContextLedger = {
+  journalStatus(): { tokenEstimate: number; messageCount: number };
+};
+export interface StatusSnapshotController {
+  snapshot(): Promise<Extract<RuntimeEvent, { type: "status.snapshot" }>>;
+  snapshotFor(overrides?: {
+    provider?: StatusProvider;
+    context?: StatusContextLedger;
+    permissionMode?: "ask" | "auto" | "read_only";
+  }): Promise<Extract<RuntimeEvent, { type: "status.snapshot" }>>;
+  schedule(): void;
+  dispose(): void;
+}
 
 export type RuntimeStatusInput = {
   provider(): StatusProvider | undefined;

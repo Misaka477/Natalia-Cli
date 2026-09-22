@@ -21,7 +21,6 @@ import type {
   SkillService,
   TeamBehaviorService,
   ToolPolicyHookLayer,
-  WorkspaceWriteLock,
 } from "@natalia/runtime-services";
 import type {
   ContextWindowResolver,
@@ -30,6 +29,7 @@ import type {
 } from "@natalia/runtime";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { SessionExecutionState } from "./context";
+import type { WorkspaceWriteLock } from "@natalia/workspace";
 
 export type RuntimePorts = {
   resolveService: <T>(serviceID: string) => T | undefined;

@@ -13,13 +13,13 @@ import {
   sandboxService,
   subagentsService,
   type SandboxService,
-  type StatusSnapshotController,
   type SubagentsService,
 } from "@natalia/runtime-services";
 import { EGRESS_ADVISORY } from "../../egress-advisory";
 import type { RuntimeContext } from "../context";
 import { wireProcessSettledNotices } from "./process-settled-notices";
 import { statusSnapshotController } from "@natalia/runtime-status";
+import type { StatusSnapshotController } from "@natalia/runtime-status";
 
 export type RuntimeStatusHandle = { close(): void };
 

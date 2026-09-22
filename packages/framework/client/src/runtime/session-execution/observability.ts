@@ -1,8 +1,8 @@
-import { type StatusSnapshotController } from "@natalia/runtime-services";
 import { statusSnapshotController } from "@natalia/runtime-status";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
+import type { StatusSnapshotController } from "@natalia/runtime-status";
 type Surface = Pick<
   RuntimeServiceClient,
   "runtimeStatus" | "diagnostics" | "sessionSnapshot"

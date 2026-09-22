@@ -1,3 +1,10 @@
+export type {
+  ExpectedMutation,
+  MutationRegistry,
+  WorkspaceFilesController,
+  WorkspaceWriteActivity,
+  WorkspaceWriteLock,
+} from "./contracts";
 export {
   workspaceFiles,
   workspaceMutations,

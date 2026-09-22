@@ -1,5 +1,5 @@
-import type { StatusSnapshotController } from "@natalia/runtime-services";
 import { defineService } from "@natalia/runtime-services";
+import type { StatusSnapshotController } from "./status-controller";
 
 /** The runtime status snapshot controller token; lives with the mechanism. */
 export const statusSnapshotController = defineService<StatusSnapshotController>(

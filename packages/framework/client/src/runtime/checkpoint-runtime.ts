@@ -10,7 +10,6 @@ import {
   type CheckpointController,
   type CheckpointFactory,
   type RuntimeServiceClient,
-  type StatusSnapshotController,
   type SubagentsService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
@@ -22,6 +21,7 @@ import { dirname, resolve } from "node:path";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./context";
+import type { StatusSnapshotController } from "@natalia/runtime-status";
 
 async function appendCheckpointMutation(
   ctx: RuntimeContext,

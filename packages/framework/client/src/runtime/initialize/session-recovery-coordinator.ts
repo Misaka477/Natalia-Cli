@@ -4,7 +4,6 @@ import type { SessionProjection } from "@natalia/session";
 import { announcedTurnIDsFrom } from "../session-execution-state";
 import { reseedSessionFactState } from "../session-facts";
 import type {
-  AttachmentService,
   ContextLedgerFactory,
   InitializeOptions,
   SandboxService,
@@ -21,6 +20,7 @@ import {
   mcpService,
   sandboxService,
   terminalController,
+  type AttachmentService,
 } from "@natalia/runtime-services";
 import { sessionStoreController } from "@natalia/session-store";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";

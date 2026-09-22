@@ -11,10 +11,7 @@
  * which session is currently or about to write which paths. It is observational
  * only; it never changes the serialisation guarantee.
  */
-import type {
-  WorkspaceWriteActivity,
-  WorkspaceWriteLock,
-} from "@natalia/runtime-services";
+import type { WorkspaceWriteActivity, WorkspaceWriteLock } from "./contracts";
 
 type LockRequest = {
   sessionID?: string;
