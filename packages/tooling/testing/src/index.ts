@@ -1,4 +1,5 @@
 export * from "./data";
+export * from "./service-graph";
 export * from "./provider-fixtures";
 export {
   NativeTerminalRegistry as TerminalTestRegistry,

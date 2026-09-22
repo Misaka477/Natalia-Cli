@@ -10,6 +10,13 @@
  * output under `dist/` is skipped), keeps only edges whose target is another
  * workspace package, and reports any cycle in the `dependencies` graph.
  *
+ * Interface spec §5.3 also requires the *service* graph: services have their
+ * own dependency edges (a plugin requires a service another plugin provides),
+ * and those can deadlock while every package.json edge stays acyclic. The
+ * second half of this guard therefore reads token declarations — where the
+ * spec says "从猜 import 升级为读声明" — and checks id uniqueness, provider
+ * ownership, missing providers and Kahn cycles over the declared graph.
+ *
  * devDependency cycles are reported as advisory, not enforced: §11 scopes the
  * invariant to production, and a test-only package re-exporting a real
  * implementation (e.g. `@natalia/testing` -> a plugin) can legitimately close a
@@ -38,6 +45,26 @@ async function workspacePackageJsonFiles(rootDir: string): Promise<string[]> {
     if (await Bun.file(join(full, "package.json")).exists())
       found.push(join(full, "package.json"));
     found.push(...(await workspacePackageJsonFiles(full)));
+  }
+  return found;
+}
+
+/** Every `.ts` source file under a root, recursively, skipping build output. */
+async function workspaceSourceFiles(rootDir: string): Promise<string[]> {
+  const found: string[] = [];
+  let entries;
+  try {
+    entries = await readdir(rootDir, { withFileTypes: true });
+  } catch {
+    return found;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === "dist") continue;
+      found.push(...(await workspaceSourceFiles(join(rootDir, entry.name))));
+      continue;
+    }
+    if (entry.name.endsWith(".ts")) found.push(join(rootDir, entry.name));
   }
   return found;
 }
@@ -130,4 +157,44 @@ if (productionCycles.length) {
   process.exit(1);
 }
 
-console.log("production dependency graph is acyclic");
+// --- service-level graph (interface spec §5.3) ---
+const { analyzeServiceGraph, packageOf } = await import("../src/service-graph");
+
+const sourceFiles = [
+  ...(await workspaceSourceFiles(join(root, "packages"))),
+  ...(await workspaceSourceFiles(join(root, "apps"))),
+];
+const scanned = [];
+for (const path of sourceFiles) {
+  const text = await Bun.file(path).text();
+  scanned.push({ path, pkg: packageOf(path), text });
+}
+
+const graph = analyzeServiceGraph(scanned);
+console.log(
+  `service graph: ${graph.tokens.length} declared tokens, ${graph.nodes.length} nodes`,
+);
+
+const ownershipProblems = graph.problems.filter(
+  (p) => !p.startsWith("dependency cycle:"),
+);
+if (ownershipProblems.length) {
+  console.error(`service declaration problems: ${ownershipProblems.length}`);
+  for (const problem of ownershipProblems) console.error(`  DECL ${problem}`);
+}
+
+const cycleProblems = graph.problems.filter((p) =>
+  p.startsWith("dependency cycle:"),
+);
+if (cycleProblems.length) {
+  for (const problem of cycleProblems) console.error(`  SVC  ${problem}`);
+}
+
+if (graph.problems.length) {
+  console.error(
+    "service graph is unsound (spec §5.3: duplicate ids, unowned services and cycles are hard failures)",
+  );
+  process.exit(1);
+}
+
+console.log("service declaration graph is sound");
