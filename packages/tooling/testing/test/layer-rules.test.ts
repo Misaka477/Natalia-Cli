@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   findCompositionKernelViolation,
   findPolicyHostDependencyViolation,
+  findSubstratePurityViolation,
 } from "../src/migrated-plugin-rules";
 
 /**
@@ -52,4 +53,36 @@ test("composition lives in the kernel layer — checked where it is declared", (
     ]),
   ).toContain("kernel layer");
   expect(findCompositionKernelViolation(undefined)).toContain("missing");
+});
+
+test("substrate core carries no policy import — the boundary bites", () => {
+  const core = "packages/framework/client/src/runtime/context.ts";
+  expect(
+    findSubstratePurityViolation(
+      core,
+      'import type { X } from "@natalia/work-ledger";',
+    ),
+  ).toContain("product-context");
+  expect(
+    findSubstratePurityViolation(
+      core,
+      'import type { X } from "@natalia/governance-ledger";',
+    ),
+  ).toContain("governance-ledger");
+  // Generic machinery stays legal (InteractiveWaiter's package is not the
+  // policy collaboration of runtime/collaboration).
+  expect(
+    findSubstratePurityViolation(
+      core,
+      'import type { X } from "@natalia/collaboration";',
+    ),
+  ).toBeUndefined();
+  // Files not yet on the list are simply not checked (the list grows per
+  // extraction step).
+  expect(
+    findSubstratePurityViolation(
+      "packages/framework/client/src/runtime/ports.ts",
+      'from "@natalia/work-ledger"',
+    ),
+  ).toBeUndefined();
 });

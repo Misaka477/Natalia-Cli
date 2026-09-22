@@ -1,13 +1,15 @@
 import type {
-  ContextLedgerFactory,
-  GovernanceLedgerController,
   InitializeOptions,
   RuntimeContext,
   SessionID,
   StatusSnapshotController,
   TurnController,
-  WorkLedgerController,
 } from "../context";
+import type {
+  ContextLedgerFactory,
+  GovernanceLedgerController,
+  WorkLedgerController,
+} from "../product-context";
 import { createInitializeRuntime } from "./runtime";
 
 import { statusSnapshotController } from "@natalia/runtime-status";

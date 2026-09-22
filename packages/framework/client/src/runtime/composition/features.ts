@@ -14,12 +14,13 @@ import { createPluginAssembly } from "../plugin-assembly";
 import { createConfigReload } from "../config-reload";
 import { createToolPublish } from "../tool-publish";
 import type { RuntimeContext } from "../context";
+import type { ProductRuntimeContext } from "../product-context";
 import type { RealRuntimeClientOptions } from "../options";
 
 export type FeatureAssembly = ReturnType<typeof wireFeatures>;
 
 export function wireFeatures(
-  ctx: RuntimeContext,
+  ctx: ProductRuntimeContext,
   options: RealRuntimeClientOptions,
 ) {
   const { state, ports } = ctx;

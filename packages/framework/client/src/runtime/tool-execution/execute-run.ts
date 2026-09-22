@@ -270,7 +270,7 @@ export async function runExecuteStage(
           // effect.
           try {
             const workLedger = ctx.ports.resolveService<
-              import("../context").WorkLedgerController
+              import("../product-context").WorkLedgerController
             >(workLedgerControllerToken.id);
             const activePlan = activePlanForExec(ctx, exec);
             if (workLedger && created && activePlan)

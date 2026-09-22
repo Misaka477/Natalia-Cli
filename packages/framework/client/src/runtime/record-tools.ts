@@ -13,7 +13,10 @@ import { projectedDriftFindings } from "@anthelia/session";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { requestAuditAfterCompletion } from "./audit-request";
-import type { GovernanceLedgerController } from "./context";
+import type {
+  GovernanceLedgerController,
+  WorkLedgerController,
+} from "./product-context";
 import { redactToolOutput } from "./engineering-intelligence/redaction";
 import { runValidationCommand } from "./engineering-intelligence/validation";
 import { captureRepositoryEvidenceFields } from "./repository-refs";
@@ -33,10 +36,10 @@ function resolveExec(
 
 function requireWorkLedger(
   ctx: RuntimeContext,
-): import("./context").WorkLedgerController | undefined {
+): import("./product-context").WorkLedgerController | undefined {
   return ctx.state.serviceDirectory.getOptional(
     workLedgerController,
-  ) as unknown as import("./context").WorkLedgerController | undefined;
+  ) as unknown as import("./product-context").WorkLedgerController | undefined;
 }
 
 function requireGovernanceLedger(

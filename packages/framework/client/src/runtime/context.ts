@@ -22,7 +22,6 @@ export type {
 } from "./initialize-types";
 export type { RuntimeEvent, SessionID } from "@natalia/contracts";
 export type { ProviderToolCall, StreamingProvider } from "@natalia/runtime";
-export type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 import type { StatusSnapshotController } from "@natalia/runtime-status";
 export type { StatusSnapshotController } from "@natalia/runtime-status";
@@ -91,10 +90,7 @@ import type {
   InteractiveWaiter,
   InteractiveWaiterDeps,
 } from "@natalia/collaboration";
-import type { ContextLedgerFactory } from "@natalia/context-ledger";
-import type { GovernanceLedgerController } from "@natalia/governance-ledger";
 import type { TurnController } from "@anthelia/turn-orchestration";
-import type { WorkLedgerController } from "@natalia/work-ledger";
 
 type PermissionProfile = import("@natalia/contracts").PermissionProfile;
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
@@ -186,14 +182,6 @@ export type RuntimeState = {
   sandboxResourcesByID: Map<string, number>;
   activeToolByTurn: Map<string, string>;
   sessionSnapshotSequence: number;
-  decisionSequence: number;
-  evidenceSequence: number;
-  mailboxSequence: number;
-  chatSequence: number;
-  collabSequence: number;
-  internalWakeTasks: Set<Promise<unknown>>;
-  planSequence: number;
-  completionSequence: number;
   /** Title generation owned state (title-generation module). */
   titleGenerationTasks: Map<
     SessionID,
@@ -219,10 +207,7 @@ export type RuntimeContext = {
 };
 
 /** The resolved context window status carried by the runtime and each exec. */
-export type { ContextLedgerFactory } from "@natalia/context-ledger";
-export type { GovernanceLedgerController } from "@natalia/governance-ledger";
 export type { TurnController } from "@anthelia/turn-orchestration";
-export type { WorkLedgerController } from "@natalia/work-ledger";
 export type {
   InteractiveWaiter,
   InteractiveWaiterDeps,

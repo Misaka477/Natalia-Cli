@@ -14,6 +14,7 @@ import { workLedgerController } from "@natalia/work-ledger";
 import { statusSnapshotController } from "@natalia/runtime-status";
 import { createPluginsController } from "../../plugins-controller";
 import type { RuntimeContext } from "../context";
+import type { ProductRuntimeContext } from "../product-context";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
@@ -31,7 +32,7 @@ function redactToolOutput(output: string, redact: boolean | undefined) {
   );
 }
 
-export function wireFoundation(ctx: RuntimeContext) {
+export function wireFoundation(ctx: ProductRuntimeContext) {
   const { state, ports } = ctx;
   const pluginsController = createPluginsController({
     pluginStoreRoot: state.pluginStoreRoot,

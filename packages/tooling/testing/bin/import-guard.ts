@@ -11,6 +11,7 @@ import {
   findCompositionKernelViolation,
   findForbiddenRepositoryPathViolation,
   findPolicyHostDependencyViolation,
+  findSubstratePurityViolation,
   findMigratedPluginViolations,
   findTeamPluginDependencyViolation,
   frameworkSubsystemFiles,
@@ -600,6 +601,18 @@ for (const entry of await workspacePackageEntries("packages")) {
   );
   if (violation) failures.push(`tsconfig.base.json: ${violation}`);
 }
+
+// P3 substrate purity: the core context file carries no policy package
+// import — the boundary each extraction step widens, machine-checked.
+await scan(
+  join(root, "packages/framework/client/src"),
+  /\.tsx?$/u,
+  (full, text) => {
+    const relative = full.slice(root.length + 1).replaceAll("\\", "/");
+    const violation = findSubstratePurityViolation(relative, text);
+    if (violation) failures.push(`${relative}: ${violation}`);
+  },
+);
 
 // decisions §1.2: product policy (domains) never depends on the host layer.
 await scan(join(root, "packages/domains"), sourceExtensions, (full, text) => {

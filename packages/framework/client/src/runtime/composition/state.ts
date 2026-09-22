@@ -12,6 +12,10 @@ import { RuntimePerformanceTrace } from "../../performance-trace";
 import { createCapabilityServiceBindings } from "./service-bindings";
 import { defaultContextStatusConfig } from "../provider-selection";
 import type { RuntimeContext, RuntimeState } from "../context";
+import type {
+  ProductRuntimeContext,
+  ProductRuntimeState,
+} from "../product-context";
 import type { RealRuntimeClientOptions } from "../options";
 
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
@@ -20,7 +24,7 @@ type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
 
 export function createCompositionContext(
   options: RealRuntimeClientOptions,
-): RuntimeContext {
+): ProductRuntimeContext {
   const permissionMode = options.permissionMode ?? "ask";
   const executionBySession = new Map<
     SessionID,
@@ -82,9 +86,12 @@ export function createCompositionContext(
     planSequence: 0,
     completionSequence: 0,
     titleGenerationTasks: new Map(),
-  } as unknown as RuntimeState;
-  return { state, ports: {} as RuntimeContext["ports"] };
+  } as unknown as RuntimeState & ProductRuntimeState;
+  return {
+    state,
+    ports: {} as RuntimeContext["ports"],
+  } as ProductRuntimeContext;
 }
 
-export type CompositionState = RuntimeState;
+export type CompositionState = RuntimeState & ProductRuntimeState;
 export type PermissionProfile = import("@natalia/contracts").PermissionProfile;

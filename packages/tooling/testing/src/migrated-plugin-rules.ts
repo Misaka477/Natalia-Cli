@@ -547,3 +547,39 @@ export function findCompositionKernelViolation(
     return `composition must live in the kernel layer (packages/core/...), paths says ${first}`;
   return undefined;
 }
+
+/**
+ * Substrate purity (master plan P3, decisions §1.1): substrate material
+ * knows no product concept. The list grows as `framework/client` is split
+ * — context.ts first, then the port files, then the initialize assembly —
+ * so each extraction step extends the machine-checked boundary instead of
+ * trusting review.
+ *
+ * The banned set is the §1.1 policy column's PACKAGES. `@natalia/
+ * collaboration` is deliberately NOT banned: that package hosts
+ * InteractiveWaiter (human-in-turn machinery any agent needs); the policy
+ * collaboration (Navi/Nia) lives in client's runtime/collaboration and
+ * cannot be imported from here anyway (relative paths).
+ */
+export const SUBSTRATE_CORE_FILES = [
+  "packages/framework/client/src/runtime/context.ts",
+] as const;
+
+const POLICY_PACKAGES_IN_SUBSTRATE = [
+  "context-ledger",
+  "goal",
+  "governance-ledger",
+  "work-ledger",
+];
+
+export function findSubstratePurityViolation(
+  file: string,
+  text: string,
+): string | undefined {
+  if (!(SUBSTRATE_CORE_FILES as readonly string[]).includes(file))
+    return undefined;
+  for (const name of POLICY_PACKAGES_IN_SUBSTRATE)
+    if (new RegExp(`from ["']@natalia/${name}["']`, "u").test(text))
+      return `substrate core (${file}) imports policy package @natalia/${name} — policy belongs in product-context`;
+  return undefined;
+}

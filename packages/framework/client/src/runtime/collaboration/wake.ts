@@ -15,11 +15,12 @@ import type { ProviderModelController } from "@anthelia/provider-model";
 import { providerModelController } from "@anthelia/provider-model";
 import type { SessionID, SubmitInput } from "@natalia/contracts";
 import type { RuntimeContext } from "../context";
+import type { ProductRuntimeContext } from "../product-context";
 import type { SessionExecutionState } from "../context";
 import { streamEvent } from "./chat-turn-common";
 import { logOf } from "@natalia/operation-log";
 
-export function createCollaborationWake(ctx: RuntimeContext) {
+export function createCollaborationWake(ctx: ProductRuntimeContext) {
   return {
     wakeMainForCollaboration,
     scheduleInternalWake,

@@ -10,6 +10,7 @@ import type {
   RuntimeContext,
   SessionExecutionState,
 } from "../src/runtime/context";
+import type { ProductRuntimeContext } from "../src/runtime/product-context";
 import { createNaviChatTurn } from "../src/runtime/collaboration/chat-turn-navi";
 import { createNiaChatTurn } from "../src/runtime/collaboration/chat-turn-nia";
 import { createCollaborationWake } from "../src/runtime/collaboration/wake";
@@ -205,7 +206,7 @@ test("Nia normal and Navi expert resolve independent adapters, models and thinki
       url: "https://grok.invalid/v1/chat/completions",
       body: { model: "grok-4.6", reasoning_effort: "high" },
     });
-    const wake = createCollaborationWake(ctx);
+    const wake = createCollaborationWake(ctx as ProductRuntimeContext);
     await wake.wakeNia(exec);
     expect(requests[1]).toMatchObject({
       url: "https://grok.invalid/v1/chat/completions",
