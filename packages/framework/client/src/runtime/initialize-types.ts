@@ -115,10 +115,7 @@ export type InitializeDependencies = {
   MISSING_FINAL_RESPONSE_FALLBACK: string;
   ProviderConcurrencyLimiter: typeof import("@natalia/runtime").ProviderConcurrencyLimiter;
   serviceNames: {
-    attachment: string;
-    statusSnapshotController: string;
     workLedgerController: string;
-    governanceLedgerController: string;
     sandbox: string;
     subagents: string;
     sessionStoreController: string;

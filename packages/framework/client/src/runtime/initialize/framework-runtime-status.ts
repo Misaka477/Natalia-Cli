@@ -10,7 +10,6 @@ import { createStatusSnapshotController } from "@natalia/runtime-status";
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
-  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   type SandboxService,
   type StatusSnapshotController,
   type SubagentsService,
@@ -18,6 +17,7 @@ import {
 import { EGRESS_ADVISORY } from "../../egress-advisory";
 import type { RuntimeContext } from "../context";
 import { wireProcessSettledNotices } from "./process-settled-notices";
+import { statusSnapshotController } from "@natalia/runtime-status";
 
 export type RuntimeStatusHandle = { close(): void };
 
@@ -43,12 +43,9 @@ export function wireRuntimeStatus(ctx: RuntimeContext): RuntimeStatusHandle {
     session: async (sessionID: SessionID) => {
       const exec = ctx.state.executionBySession.get(sessionID);
       if (!exec) throw new Error(`session not found: ${sessionID}`);
-      const statusController =
-        ctx.ports.resolveService<StatusSnapshotController>(
-          deps.serviceNames.statusSnapshotController,
-        );
-      if (!statusController)
-        throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+      const statusController = ctx.state.serviceDirectory.get(
+        statusSnapshotController,
+      );
       return {
         provider: exec.provider,
         providerSource: ctx.ports.getProviderSource(),
@@ -102,7 +99,9 @@ export function wireRuntimeStatus(ctx: RuntimeContext): RuntimeStatusHandle {
     publish: ctx.ports.publish,
     commands,
   });
-  owner.contribute("services", STATUS_SNAPSHOT_CONTROLLER_SERVICE, controller);
+  // The controller binds through the service directory; the owner stays for
+  // the commands contributions below.
+  ctx.state.serviceDirectory.provide(statusSnapshotController, controller);
   // Managed-process exits reach the session that started them. Wired here
   // because this is where the capability registry is already in hand.
   const unwatchProcesses = wireProcessSettledNotices(ctx, {

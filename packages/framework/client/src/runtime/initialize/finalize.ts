@@ -11,6 +11,7 @@ import type {
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";
+import { governanceLedgerController as governanceLedgerControllerToken } from "@natalia/governance-ledger";
 
 export async function finalizeInitialize(
   ctx: RuntimeContext,
@@ -26,14 +27,9 @@ export async function finalizeInitialize(
     perfLog(
       `[perf] finalizeInitialize.${name} +${(performance.now() - start).toFixed(1)}ms`,
     );
-  const governanceLedgerController =
-    scope.resolveService<GovernanceLedgerController>(
-      scope.GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
-    );
-  if (!governanceLedgerController)
-    throw new Error(
-      "governance ledger unavailable (natalia-governance-ledger)",
-    );
+  const governanceLedgerController = scope.serviceDirectory.get(
+    governanceLedgerControllerToken,
+  );
   const workLedgerController = scope.resolveService<WorkLedgerController>(
     scope.WORK_LEDGER_CONTROLLER_SERVICE,
   );

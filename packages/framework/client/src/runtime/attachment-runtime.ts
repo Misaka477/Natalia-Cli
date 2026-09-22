@@ -8,11 +8,11 @@
  */
 import type { LocalAttachment, SessionID } from "@natalia/contracts";
 import {
-  ATTACHMENT_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
   type AttachmentService,
   type SessionStoreController,
 } from "@natalia/runtime-services";
+import { attachmentService } from "@natalia/attachments";
 import type { RuntimeContext } from "./context";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 
@@ -27,10 +27,7 @@ export function createAttachmentRuntime(
       sessionID?: string;
     }): Promise<string> {
       await ctx.ports.getReady();
-      const attachments =
-        ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
-      if (!attachments)
-        throw new Error("attachment service unavailable (natalia-attachments)");
+      const attachments = ctx.state.serviceDirectory.get(attachmentService);
 
       if (input.attachmentID || input.sessionID) {
         if (!input.attachmentID || !input.sessionID)
@@ -81,10 +78,7 @@ export function createAttachmentRuntime(
       data: string;
     }): Promise<LocalAttachment> {
       await ctx.ports.getReady();
-      const attachments =
-        ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
-      if (!attachments)
-        throw new Error("attachment service unavailable (natalia-attachments)");
+      const attachments = ctx.state.serviceDirectory.get(attachmentService);
       const bytes = Buffer.from(input.data, "base64");
       return await attachments.storeBytes({
         name: input.name,

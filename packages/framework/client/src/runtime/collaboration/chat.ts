@@ -1,4 +1,4 @@
-import { ATTACHMENT_SERVICE } from "@natalia/runtime-services";
+import { attachmentService } from "@natalia/attachments";
 import { providerModelController } from "@natalia/provider-model";
 import type {
   AttachmentService,
@@ -155,8 +155,8 @@ function scheduleChatTitle(
 
 async function prepareSubmit(ctx: RuntimeContext, input: SubmitInput) {
   const attachments = input.attachments?.length
-    ? await ctx.ports
-        .resolveService<AttachmentService>(ATTACHMENT_SERVICE)
+    ? await ctx.state.serviceDirectory
+        .getOptional(attachmentService)
         ?.store(input.attachments)
     : undefined;
   await ctx.ports.getReady();

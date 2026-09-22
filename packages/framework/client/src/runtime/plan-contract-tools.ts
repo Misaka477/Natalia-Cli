@@ -23,12 +23,12 @@ import { ensureCompleteSessionFactState } from "./session-full-events";
 import { targetDriftAbsorbedByScope } from "@natalia/work-ledger";
 import { checkContractAgainstConstitution } from "./contract-constitution-check";
 import {
-  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type GovernanceLedgerController,
   type ProviderModelController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { governanceLedgerController } from "@natalia/governance-ledger";
 import { providerModelController } from "@natalia/provider-model";
 import type { RuntimeTool } from "./context";
 import type { RuntimeContext, SessionExecutionState } from "./context";
@@ -663,10 +663,9 @@ export function createConstitutionProposeTool(
       };
       const exec = resolveExec(ctx, context.sessionID);
       if (!exec) return "no session";
-      const governanceLedger =
-        ctx.ports.resolveService<GovernanceLedgerController>(
-          GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
-        );
+      const governanceLedger = ctx.state.serviceDirectory.getOptional(
+        governanceLedgerController,
+      );
       if (!governanceLedger) return "governance ledger unavailable";
       if (!args.statement?.trim() || !args.enforcement)
         return "constitution_propose_rule requires statement and enforcement";

@@ -15,11 +15,11 @@ import {
   sessionFactCollabMessages,
 } from "@natalia/session";
 import type { ProviderRunnerInput } from "@natalia/runtime-services";
+import { statusSnapshotController } from "@natalia/runtime-status";
+import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { retryService } from "@natalia/retry";
 import { compactionService } from "@natalia/compaction";
 import {
-  ATTACHMENT_SERVICE,
-  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   mcpService,
   type AttachmentService,
   type StatusSnapshotController,
@@ -82,12 +82,11 @@ export function createTurnRunner(
     const exec = executionBySession.get(sessionID);
     if (!exec) throw new Error(`no execution state for session ${sessionID}`);
     const compaction = ctx.state.serviceDirectory.get(compactionService);
-    const attachmentService =
-      ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
-    if (!attachmentService)
-      throw new Error("attachment service unavailable (natalia-attachment)");
-    const statusController = ctx.ports.resolveService<StatusSnapshotController>(
-      STATUS_SNAPSHOT_CONTROLLER_SERVICE,
+    const attachmentService = ctx.state.serviceDirectory.get(
+      attachmentServiceToken,
+    );
+    const statusController = ctx.state.serviceDirectory.get(
+      statusSnapshotController,
     );
     if (!statusController)
       throw new Error(

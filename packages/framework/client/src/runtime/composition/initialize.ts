@@ -23,11 +23,8 @@ import {
 } from "@natalia/session";
 import {
   readOnlyToolMessage,
-  ATTACHMENT_SERVICE,
-  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
-  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   SUBAGENTS_SERVICE,
   TOOL_POLICY_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
@@ -119,10 +116,7 @@ export function wireInitialize(
     publishRegisteredTools: features.toolPublish.publishRegisteredTools,
     ProviderConcurrencyLimiter,
     serviceNames: {
-      attachment: ATTACHMENT_SERVICE,
-      statusSnapshotController: STATUS_SNAPSHOT_CONTROLLER_SERVICE,
       workLedgerController: WORK_LEDGER_CONTROLLER_SERVICE,
-      governanceLedgerController: GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
       sandbox: SANDBOX_SERVICE,
       subagents: SUBAGENTS_SERVICE,
       sessionStoreController: SESSION_STORE_CONTROLLER_SERVICE,

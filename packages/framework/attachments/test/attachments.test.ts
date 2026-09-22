@@ -3,7 +3,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LocalAttachment } from "@natalia/contracts";
-import { ATTACHMENT_SERVICE } from "@natalia/runtime-services";
+import { attachmentService } from "../src";
 import {
   attachmentDataURL,
   attachmentText,
@@ -239,7 +239,7 @@ test("attachment service is a framework service with a durable store", async () 
   const root = await mkdtemp(join(tmpdir(), "natalia-attachment-service-"));
   await writeFile(join(root, "image.png"), pngBytes());
   const service = createAttachmentService(root);
-  expect(ATTACHMENT_SERVICE).toBe("attachment.service");
+  expect(attachmentService.id).toBe("attachment.service");
   expect(service.store).toBeTypeOf("function");
   expect(service.dataURL).toBeTypeOf("function");
   expect(service.text).toBeTypeOf("function");

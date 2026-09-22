@@ -21,10 +21,8 @@ import {
   type ModelCapabilities,
   type ProviderContentPart,
 } from "@natalia/contracts";
-import {
-  ATTACHMENT_SERVICE,
-  type AttachmentService,
-} from "@natalia/runtime-services";
+import { type AttachmentService } from "@natalia/runtime-services";
+import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { compactionService } from "@natalia/compaction";
 import type { RuntimeContext, SessionExecutionState } from "../context";
 
@@ -114,8 +112,9 @@ export async function applyChatAttachments(
   },
 ): Promise<void> {
   if (!input.attachments?.length) return;
-  const attachmentService =
-    ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
+  const attachmentService = ctx.state.serviceDirectory.getOptional(
+    attachmentServiceToken,
+  );
   if (!attachmentService) return;
 
   const textBlocks: string[] = [];

@@ -6,7 +6,6 @@
  * concrete plugin controller.
  */
 import {
-  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   SUBAGENTS_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type CheckpointController,
@@ -16,6 +15,7 @@ import {
   type StatusSnapshotController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { statusSnapshotController } from "@natalia/runtime-status";
 import { checkpointFactory } from "@natalia/checkpoint";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -201,10 +201,7 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
         );
       }
     }
-    const status = ctx.ports.resolveService<StatusSnapshotController>(
-      STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-    );
-    if (!status) throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+    const status = ctx.state.serviceDirectory.get(statusSnapshotController);
     ctx.ports.publishForSession(
       owner,
       await status.snapshotFor({

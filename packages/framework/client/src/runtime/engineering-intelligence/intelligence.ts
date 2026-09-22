@@ -1,11 +1,10 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import {
-  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type ConstitutionDocRule,
-  type GovernanceLedgerController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { governanceLedgerController } from "@natalia/governance-ledger";
 import { loadProjectDocuments } from "../project-docs";
 import { applyConstitutionDocEdit } from "../constitution-doc";
 import { writeWorkspaceFile } from "@natalia/platform";
@@ -280,8 +279,8 @@ export function createIntelligenceSurface(
   options: ClientSurfaceOptions,
 ): Surface {
   function requireGovernanceLedger() {
-    const ledger = ctx.ports.resolveService<GovernanceLedgerController>(
-      GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+    const ledger = ctx.state.serviceDirectory.getOptional(
+      governanceLedgerController,
     );
     if (!ledger)
       throw new Error(

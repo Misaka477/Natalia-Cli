@@ -1,7 +1,5 @@
-import {
-  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-  type StatusSnapshotController,
-} from "@natalia/runtime-services";
+import { type StatusSnapshotController } from "@natalia/runtime-services";
+import { statusSnapshotController } from "@natalia/runtime-status";
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { ClientSurfaceOptions } from "./types";
@@ -33,11 +31,7 @@ export function createObservabilitySurface(
       await ctx.ports.ensureReady();
       const exec = await observabilityExec(ctx, sessionID);
       if (!exec) return await ctx.ports.runtimeStatusSnapshot();
-      const status = ctx.ports.resolveService<StatusSnapshotController>(
-        STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-      );
-      if (!status)
-        throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+      const status = ctx.state.serviceDirectory.get(statusSnapshotController);
       return {
         ...(await status.snapshotFor({
           provider: exec.provider,

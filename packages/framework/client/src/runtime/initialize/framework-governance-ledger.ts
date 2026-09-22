@@ -8,8 +8,8 @@
  * subsystem, which is wired before it.
  */
 import { createGovernanceLedgerController } from "@natalia/governance-ledger";
-import { GOVERNANCE_LEDGER_CONTROLLER_SERVICE } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
+import { governanceLedgerController } from "@natalia/governance-ledger";
 
 export function wireGovernanceLedger(ctx: RuntimeContext): void {
   const registry = ctx.state.capabilityRegistry;
@@ -20,9 +20,8 @@ export function wireGovernanceLedger(ctx: RuntimeContext): void {
     scope: "workspace",
     grants: ["services"],
   });
-  owner.contribute(
-    "services",
-    GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
+  ctx.state.serviceDirectory.provide(
+    governanceLedgerController,
     createGovernanceLedgerController(),
   );
 }

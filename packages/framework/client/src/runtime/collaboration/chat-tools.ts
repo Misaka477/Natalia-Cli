@@ -20,7 +20,7 @@ import {
 } from "@natalia/tools";
 import { niaShellPolicyDenial } from "./nia-shell-policy";
 import type { SessionID } from "@natalia/contracts";
-import { GOVERNANCE_LEDGER_CONTROLLER_SERVICE } from "@natalia/runtime-services";
+import { governanceLedgerController } from "@natalia/governance-ledger";
 import {
   COLLABORATION_SERVICE,
   type CollaborationService,
@@ -932,7 +932,7 @@ export function createChatTools(ctx: RuntimeContext) {
                   commit?: string;
                   manifestRef?: string;
                 }) => import("@natalia/contracts").RuntimeEvent;
-              }>(GOVERNANCE_LEDGER_CONTROLLER_SERVICE);
+              }>(governanceLedgerController.id);
               if (governanceLedger) {
                 const now = new Date().toISOString();
                 evidenceID = `evidence:${args.planID}:audit:${round}`;

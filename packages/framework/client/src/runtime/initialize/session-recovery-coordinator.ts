@@ -18,6 +18,7 @@ import {
 } from "../session-project-client";
 import type { InitializeScope } from "./runtime";
 import { mcpService, terminalController } from "@natalia/runtime-services";
+import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
 import { contextLedgerFactory } from "@natalia/context-ledger";
@@ -63,12 +64,8 @@ export class SessionRecoveryCoordinator {
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");
     this.sessionStore = sessionStore;
-    const attachmentService = scope.resolveService<AttachmentService>(
-      scope.ATTACHMENT_SERVICE,
-    );
-    if (!attachmentService)
-      throw new Error("attachment service unavailable (natalia-attachment)");
-    this.attachmentService = attachmentService;
+    // Resolution is fail-fast by construction.
+    this.attachmentService = scope.serviceDirectory.get(attachmentServiceToken);
     this.contextLedgerFactory =
       scope.serviceDirectory.get(contextLedgerFactory);
   }

@@ -47,6 +47,7 @@ import {
   createDetourDeclareTool,
 } from "../plan-contract-tools";
 import { createWorkGraphQueryTool } from "../work-graph-tools";
+import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import {
   createDriftAcknowledgeTool,
   createRecordCompletionTool,
@@ -65,7 +66,6 @@ import {
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import {
-  ATTACHMENT_SERVICE,
   SANDBOX_SERVICE,
   SUBAGENTS_SERVICE,
   TOOL_POLICY_SERVICE,
@@ -414,7 +414,9 @@ export async function wireFrameworkServices(
     grants: ["services", "commands"],
   });
   const attachments: AttachmentService = createAttachmentService(workspaceRoot);
-  attachmentOwner.contribute("services", ATTACHMENT_SERVICE, attachments);
+  // The service binds through the directory; the owner stays for the attach
+  // command below.
+  ctx.state.serviceDirectory.provide(attachmentServiceToken, attachments);
   attachmentOwner.contribute("commands", "attach", {
     name: "attach",
     title: "Attach",

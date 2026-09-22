@@ -3,7 +3,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { EpisodeID, SandboxDiffKind, SessionID } from "@natalia/contracts";
 import {
-  GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
   SANDBOX_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type GovernanceLedgerController,
@@ -11,6 +10,7 @@ import {
   type SandboxService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { governanceLedgerController } from "@natalia/governance-ledger";
 import { workspaceMutations } from "@natalia/workspace";
 import type { RuntimeContext } from "./context";
 import {
@@ -131,9 +131,7 @@ export function createSandboxRuntime(
   }
 
   function requireGovernanceLedger() {
-    const ledger = ctx.ports.resolveService<GovernanceLedgerController>(
-      GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
-    );
+    const ledger = ctx.state.serviceDirectory.get(governanceLedgerController);
     if (!ledger)
       throw new Error(
         "governance ledger unavailable (natalia-governance-ledger)",

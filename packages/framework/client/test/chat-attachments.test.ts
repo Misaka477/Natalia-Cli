@@ -12,8 +12,11 @@ import {
   type ProviderStreamRequest,
   type StreamingProvider,
 } from "@natalia/runtime";
-import { ATTACHMENT_SERVICE } from "@natalia/runtime-services";
-import { createAttachmentService } from "@natalia/attachments";
+
+import {
+  attachmentService as attachmentServiceToken,
+  createAttachmentService,
+} from "@natalia/attachments";
 import type {
   RuntimeContext,
   SessionExecutionState,
@@ -115,9 +118,11 @@ async function makeHarness(
     // The chat turn path resolves services through the directory now; the
     // hand-rolled port stub stays for the paths still on ports.
     state: {
-      // The chat turn path resolves services through the directory now; this
-      // file's paths tolerate nothing provided, matching the port stubs.
-      serviceDirectory: createTestContext([]),
+      // The chat turn path resolves services through the directory now; the
+      // attachment service has a real double, everything else stays absent.
+      serviceDirectory: createTestContext([
+        attachmentServiceToken.mock(attachmentService),
+      ]),
     },
     ports: {
       getTsRuntimeConfig: () => config,
@@ -149,7 +154,7 @@ async function makeHarness(
       getReady: async () => undefined,
       rememberTitleInput: () => undefined,
       resolveService: (name: string) =>
-        name === ATTACHMENT_SERVICE ? attachmentService : undefined,
+        name === attachmentServiceToken.id ? attachmentService : undefined,
     },
   } as unknown as RuntimeContext;
   return {
@@ -369,11 +374,12 @@ test("Navi and Nia busy submits store the same attachments in their pending queu
       new Map([[harness.exec.session.id, harness.exec]]);
     harness.ctx.ports.ensureExecution = async () => harness.exec;
     harness.ctx.ports.resolveService = ((name: string) => {
-      if (name === ATTACHMENT_SERVICE) return attachmentService;
+      if (name === attachmentServiceToken.id) return attachmentService;
       return undefined;
     }) as typeof harness.ctx.ports.resolveService;
     harness.ctx.state.serviceDirectory = createTestContext([
       providerModelController.mock(controller),
+      attachmentServiceToken.mock(attachmentService),
     ]);
     const surface =
       channel === "navi"

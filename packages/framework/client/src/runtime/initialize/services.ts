@@ -13,7 +13,10 @@ import type {
 } from "../context";
 import { createInitializeRuntime } from "./runtime";
 
+import { statusSnapshotController } from "@natalia/runtime-status";
+import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { retryService } from "@natalia/retry";
+import { governanceLedgerController } from "@natalia/governance-ledger";
 import { compactionService } from "@natalia/compaction";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import { turnController } from "@natalia/turn-orchestration";
@@ -23,12 +26,8 @@ export async function resolveServices(
   options: InitializeOptions,
 ) {
   const scope = createInitializeRuntime(ctx);
-  const resolvedAttachmentService =
-    scope.capabilityRegistry.service<AttachmentService>(
-      scope.ATTACHMENT_SERVICE,
-    );
-  if (!resolvedAttachmentService)
-    throw new Error("attachment service unavailable (natalia-attachment)");
+  // Resolution is fail-fast by construction (see the retry check above).
+  scope.serviceDirectory.get(attachmentServiceToken);
   // Resolution is fail-fast by construction: a missing binding throws with the
   // service id instead of being re-worded at every call site.
   scope.serviceDirectory.get(retryService);
@@ -37,12 +36,8 @@ export async function resolveServices(
     scope.serviceDirectory.get(contextLedgerFactory);
   // Resolution is fail-fast by construction (see the retry check above).
   scope.serviceDirectory.get(compactionService);
-  const resolvedStatusController =
-    scope.capabilityRegistry.service<StatusSnapshotController>(
-      scope.STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-    );
-  if (!resolvedStatusController)
-    throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+  // Resolution is fail-fast by construction (see the retry check above).
+  scope.serviceDirectory.get(statusSnapshotController);
   scope.runtimeContext = resolvedContextLedgerFactory.create();
   const resolvedWorkLedgerController =
     scope.capabilityRegistry.service<WorkLedgerController>(
@@ -50,14 +45,8 @@ export async function resolveServices(
     );
   if (!resolvedWorkLedgerController)
     throw new Error("work ledger unavailable (natalia-work-ledger)");
-  const resolvedGovernanceLedgerController =
-    scope.capabilityRegistry.service<GovernanceLedgerController>(
-      scope.GOVERNANCE_LEDGER_CONTROLLER_SERVICE,
-    );
-  if (!resolvedGovernanceLedgerController)
-    throw new Error(
-      "governance ledger unavailable (natalia-governance-ledger)",
-    );
+  // Resolution is fail-fast by construction (see the retry check above).
+  scope.serviceDirectory.get(governanceLedgerController);
   // Resolution is fail-fast by construction (see the retry check above).
   scope.serviceDirectory.get(turnController);
   scope.sessionID =

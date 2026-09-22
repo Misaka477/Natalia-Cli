@@ -1,3 +1,4 @@
+export { statusSnapshotController } from "./service-token";
 export {
   createStatusSnapshotController,
   statusSnapshot,

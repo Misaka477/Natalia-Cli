@@ -10,10 +10,10 @@ import {
   teamBehavior,
   terminalController,
   WORK_LEDGER_CONTROLLER_SERVICE,
-  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   type StatusSnapshotController,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { statusSnapshotController } from "@natalia/runtime-status";
 import { createPluginsController } from "../../plugins-controller";
 import type { RuntimeContext } from "../context";
 
@@ -128,16 +128,11 @@ export function wireFoundation(ctx: RuntimeContext) {
   ports.getWorkspaceCapabilityView = () => state.workspaceCapabilityView;
   ports.getTools = () => state.tools;
   ports.scheduleRuntimeStatusSnapshot = () =>
-    ports
-      .resolveService<StatusSnapshotController>(
-        STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-      )
+    ctx.state.serviceDirectory
+      .getOptional(statusSnapshotController)
       ?.schedule();
   ports.runtimeStatusSnapshot = () => {
-    const status = ports.resolveService<StatusSnapshotController>(
-      STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-    );
-    if (!status) throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+    const status = ctx.state.serviceDirectory.get(statusSnapshotController);
     return status.snapshot();
   };
   // Both surfaces tolerate an absent plugin: resolution states the tolerance

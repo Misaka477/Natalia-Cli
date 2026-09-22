@@ -15,11 +15,11 @@ import {
   sessionRunCoordinator,
 } from "@natalia/session";
 import {
-  ATTACHMENT_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type AttachmentService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import type { SessionID, SubmitInput, SubmittedTurn } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
@@ -51,10 +51,9 @@ export function createSessionAdmission(
     const { turnSession } = ctx.state;
     await getReady();
     if (isDisposed()) throw new Error("runtime disposed");
-    const attachmentService =
-      ctx.ports.resolveService<AttachmentService>(ATTACHMENT_SERVICE);
-    if (!attachmentService)
-      throw new Error("attachment service unavailable (natalia-attachment)");
+    const attachmentService = ctx.state.serviceDirectory.get(
+      attachmentServiceToken,
+    );
     const workLedger = ctx.ports.resolveService<WorkLedgerController>(
       WORK_LEDGER_CONTROLLER_SERVICE,
     );

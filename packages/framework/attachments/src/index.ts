@@ -1,3 +1,4 @@
+export { attachmentService } from "./service-token";
 export { createAttachmentService } from "./attachment-service";
 export {
   DEFAULT_MAX_IMAGE_LONG_EDGE,

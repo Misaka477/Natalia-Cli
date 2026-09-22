@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { createIntelligenceSurface } from "../src/runtime/engineering-intelligence/intelligence";
 import type { RuntimeContext } from "../src/runtime/context";
+import { createTestContext } from "@natalia/runtime-services";
+import { governanceLedgerController } from "@natalia/governance-ledger";
 import type { SessionExecutionState } from "../src/runtime/session-execution-state";
 import { sessionFactStateFromEvents } from "@natalia/session";
 
@@ -20,6 +22,7 @@ function harness() {
   } as unknown as SessionExecutionState;
 
   const ledger = {
+    seedConstitutionRules: () => [],
     recordDecision: (input: { id: string; decision: string }) => ({
       type: "decision.recorded",
       id: input.id,
@@ -64,10 +67,25 @@ function harness() {
       toNodeID: "wg:completion:1",
       kind: "validated_by",
     }),
+    boundValidationOutcome: () => undefined,
+    buildHumanValidation: () => undefined,
+    buildEvidenceRecorded: () => undefined,
+    evidenceStatusForPlanState: () => undefined,
+    validateConstitutionRuleProposal: () => [],
+    buildProposedConstitutionRule: () => undefined,
+    buildPromotedConstitutionRule: () => undefined,
+    buildConstitutionRuleUpdate: () => undefined,
+    buildUserConstitutionRule: () => undefined,
+    buildConstitutionRuleRemoved: () => undefined,
   };
 
   const ctx = {
-    state: { pluginStoreRoot: "/tmp/natalia-pure-writes" },
+    state: {
+      pluginStoreRoot: "/tmp/natalia-pure-writes",
+      serviceDirectory: createTestContext([
+        governanceLedgerController.mock(ledger),
+      ]),
+    },
     ports: {
       getReady: async () => undefined,
       getExecutionBySession: () => new Map([["ses_pure_writes", exec]]),
@@ -152,8 +170,44 @@ test("acknowledgeDriftFinding reads a complete hot state without a full load", a
     factState: sessionFactStateFromEvents([earlier]),
     factStateComplete: true,
   } as unknown as SessionExecutionState;
+  const ledger = {
+    buildDriftFindingUpdate: (input: {
+      id: string;
+      findingID: string;
+      status: string;
+      rationale?: string;
+    }) => ({
+      type: "drift.finding_updated",
+      id: input.id,
+      findingID: input.findingID,
+      status: input.status,
+      ...(input.rationale ? { rationale: input.rationale } : {}),
+    }),
+    seedConstitutionRules: () => [],
+    recordDecision: () => undefined,
+    decisionNode: () => undefined,
+    evaluateDrift: () => [],
+    buildCompletionRecorded: () => undefined,
+    buildAuditRequested: () => undefined,
+    completionValidationEdge: () => undefined,
+    boundValidationOutcome: () => undefined,
+    buildHumanValidation: () => undefined,
+    buildEvidenceRecorded: () => undefined,
+    evidenceStatusForPlanState: () => undefined,
+    validateConstitutionRuleProposal: () => [],
+    buildProposedConstitutionRule: () => undefined,
+    buildPromotedConstitutionRule: () => undefined,
+    buildConstitutionRuleUpdate: () => undefined,
+    buildUserConstitutionRule: () => undefined,
+    buildConstitutionRuleRemoved: () => undefined,
+  };
   const ctx = {
-    state: { pluginStoreRoot: "/tmp/natalia-hot-state" },
+    state: {
+      pluginStoreRoot: "/tmp/natalia-hot-state",
+      serviceDirectory: createTestContext([
+        governanceLedgerController.mock(ledger),
+      ]),
+    },
     ports: {
       getReady: async () => undefined,
       getExecutionBySession: () => new Map([["ses_hot_state", exec]]),

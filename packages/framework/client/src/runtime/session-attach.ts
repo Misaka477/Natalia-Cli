@@ -11,12 +11,12 @@ import { restoreProjection } from "@natalia/session";
 import { RuntimeRefusal } from "@natalia/contracts";
 import {
   SESSION_STORE_CONTROLLER_SERVICE,
-  STATUS_SNAPSHOT_CONTROLLER_SERVICE,
   terminalController,
   type SessionStoreController,
   type StatusSnapshotController,
   type TerminalController,
 } from "@natalia/runtime-services";
+import { statusSnapshotController } from "@natalia/runtime-status";
 import type { SessionID } from "@natalia/contracts";
 import type { RuntimeContext } from "./context";
 import {
@@ -304,10 +304,7 @@ export function createSessionAttach(ctx: RuntimeContext) {
     if (!sessionStore)
       throw new Error("session store unavailable (natalia-session-store)");
     const terminal = ctx.state.serviceDirectory.getOptional(terminalController);
-    const status = ctx.ports.resolveService<StatusSnapshotController>(
-      STATUS_SNAPSHOT_CONTROLLER_SERVICE,
-    );
-    if (!status) throw new Error("runtime UI unavailable (natalia-runtime-ui)");
+    const status = ctx.state.serviceDirectory.get(statusSnapshotController);
     const sessionID = getSessionID();
     const nextID = id as SessionID;
     if (nextID === sessionID) {
