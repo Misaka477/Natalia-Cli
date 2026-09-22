@@ -394,6 +394,10 @@
         "zod": "3.25.76",
       },
     },
+    "packages/hosts/confinement": {
+      "name": "@natalia/confinement",
+      "version": "0.0.0-m13",
+    },
     "packages/hosts/object-store": {
       "name": "@natalia/object-store",
       "version": "0.0.0-m13",
@@ -911,6 +915,8 @@
     "@natalia/composition": ["@natalia/composition@workspace:packages/framework/composition"],
 
     "@natalia/config": ["@natalia/config@workspace:packages/hosts/config"],
+
+    "@natalia/confinement": ["@natalia/confinement@workspace:packages/hosts/confinement"],
 
     "@natalia/context-ledger": ["@natalia/context-ledger@workspace:packages/domains/context-ledger"],
 
