@@ -1,3 +1,4 @@
+export * from "./switch";
 export * from "./verification";
 import { ObjectStore } from "@natalia/object-store";
 import type {
