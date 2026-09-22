@@ -38,6 +38,7 @@
     "ts:cli": "npx bun apps/cli/src/main.ts",
     "ts:release-check": "npm run licenses:check && npx bun scripts/ts-release-check.ts",
     "ts:build": "npm run licenses:check && npx bun scripts/ts-build.ts",
+    "release:build": "bun scripts/build-standalone.ts",
     "licenses:check": "npx bun scripts/license-check.ts",
     "licenses:generate": "npx bun scripts/generate-third-party-licenses.ts",
     "verify": "npm run format && npm run typecheck && npm run test && npm run guard:imports && npm run guard:contract && npm run guard:deps && npm run guard:suppressions && npm run guard:tests && npm run guard:events",
