@@ -8,6 +8,7 @@
  * `execute-run.ts` stays within the source line limit.
  */
 import type { ProviderToolCall } from "@natalia/runtime";
+import type { ConfinementMode } from "@natalia/confinement";
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
@@ -73,6 +74,32 @@ export function buildToolExecutionContext(input: BuildContextInput) {
     signal,
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
     sessionID: exec?.session.id ?? sessionID,
+    // The file-effect mode for this call: composition default, per-call
+    // truth rides down to runShell (sandbox study: policy rides the call).
+    confinement: getTsRuntimeConfig()?.confinement?.mode ?? "workspace-write",
+    // The escalation channel, closed over this call's identity — the same
+    // approval seam tools already use, routed by turn so the permission
+    // floors decide (read_only refuses, auto grants, ask prompts).
+    sandboxApprover: {
+      request: async ({
+        requestedMode,
+        justification,
+      }: {
+        requestedMode: ConfinementMode;
+        justification: string;
+      }) => {
+        const interactive = getInteractive();
+        if (!interactive) return "unavailable";
+        const refusal = await interactive.requireApproval(
+          `${toolID}:sandbox`,
+          tool,
+          call,
+          turnID,
+          { reason: `escalate sandbox to ${requestedMode}: ${justification}` },
+        );
+        return refusal ? "rejected" : "allowed-once";
+      },
+    },
     askQuestion: async (input: {
       title: string;
       questions: Array<{

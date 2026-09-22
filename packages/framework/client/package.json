@@ -19,6 +19,7 @@
     "@natalia/compaction": "workspace:*",
     "@natalia/composition": "workspace:*",
     "@natalia/config": "workspace:*",
+    "@natalia/confinement": "workspace:*",
     "@natalia/context-ledger": "workspace:*",
     "@natalia/contracts": "workspace:*",
     "@natalia/goal": "workspace:*",

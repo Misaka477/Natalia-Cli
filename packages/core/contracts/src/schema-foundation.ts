@@ -53,6 +53,29 @@ export const sandboxConfigSchema = z.object({
   promoteCommand: z.string().trim().min(1).default("npm run typecheck"),
 });
 
+/** The three-mode file axis (sandbox study §3 item 1, decision 25). */
+export const CONFINEMENT_MODES = [
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
+] as const;
+
+/**
+ * Execution confinement for tool subprocesses — the FILE-effect axis, kept
+ * apart from the permission mode (the approval axis): a write that confinement
+ * allows may still need human approval, and the two resolve independently
+ * per call (sandbox study §3, the two-axis clarification).
+ *
+ * `workspace-write` as the shipped default is the threat model speaking:
+ * `runShell` gets Landlock-level L1 enforcement for everything the agent
+ * executes, with `/tmp` and the workspace writable and the rest of the
+ * filesystem read-only. A deployment that wants the old unconstrained
+ * behavior opts into `danger-full-access` explicitly.
+ */
+export const confinementConfigSchema = z.object({
+  mode: z.enum(CONFINEMENT_MODES).default("workspace-write"),
+});
+
 /**
  * Wall-clock budget for one subagent run, in milliseconds.
  *

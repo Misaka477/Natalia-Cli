@@ -11,6 +11,10 @@ export type SandboxBackend = z.infer<
 export type GoalConfig = z.infer<typeof foundation.goalConfigSchema>;
 
 export type ConfigV3 = z.infer<typeof config.configV3Schema>;
+/** The file-effect mode a subprocess runs under (see foundation.schema). */
+export type ConfinementMode = z.infer<
+  typeof foundation.confinementConfigSchema
+>["mode"];
 export type PluginPackageSource = z.infer<
   typeof config.pluginPackageSourceSchema
 >;

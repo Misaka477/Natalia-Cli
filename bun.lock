@@ -185,6 +185,7 @@
         "@natalia/compaction": "workspace:*",
         "@natalia/composition": "workspace:*",
         "@natalia/config": "workspace:*",
+        "@natalia/confinement": "workspace:*",
         "@natalia/context-ledger": "workspace:*",
         "@natalia/contracts": "workspace:*",
         "@natalia/goal": "workspace:*",
@@ -398,6 +399,9 @@
     "packages/hosts/confinement": {
       "name": "@natalia/confinement",
       "version": "0.0.0-m13",
+      "dependencies": {
+        "@natalia/contracts": "workspace:*",
+      },
     },
     "packages/hosts/object-store": {
       "name": "@natalia/object-store",
@@ -574,6 +578,7 @@
       "name": "@natalia/plugin-tool-shell",
       "version": "1.0.0",
       "dependencies": {
+        "@natalia/confinement": "workspace:*",
         "@natalia/plugin": "workspace:*",
         "@natalia/tools": "workspace:*",
       },

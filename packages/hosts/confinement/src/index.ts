@@ -1,3 +1,4 @@
+export * from "./escalation";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,11 +21,13 @@ import { resolve } from "node:path";
  * degradation).
  */
 
-/** The file-effect axis (dsh's three modes). */
-export type ConfinementMode =
-  | "read-only"
-  | "workspace-write"
-  | "danger-full-access";
+import type { ConfinementMode } from "@natalia/contracts";
+
+// The mode vocabulary has one home (the config schema in contracts); this
+// package re-exports it so callers take both the policy words and the
+// enforcement primitive from one import.
+export type { ConfinementMode };
+export { CONFINEMENT_MODES } from "@natalia/contracts";
 
 /** Resource ceilings the wrapper applies before exec (the study's family). */
 export type ConfinementRlimits = {

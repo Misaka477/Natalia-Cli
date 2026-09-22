@@ -363,6 +363,7 @@ const clientClosureAllowlist = [
   "compaction",
   "composition",
   "config",
+  "confinement",
   "context-ledger",
   "contracts",
   "goal",

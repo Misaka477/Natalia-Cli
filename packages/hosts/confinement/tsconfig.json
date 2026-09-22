@@ -5,5 +5,9 @@
     "rootDir": "../../.."
   },
   "include": ["src", "test"],
-  "references": []
+  "references": [
+    {
+      "path": "../../core/contracts"
+    }
+  ]
 }

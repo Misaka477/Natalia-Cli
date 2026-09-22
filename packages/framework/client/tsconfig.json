@@ -37,6 +37,9 @@
       "path": "../../hosts/config"
     },
     {
+      "path": "../../hosts/confinement"
+    },
+    {
       "path": "../../hosts/platform"
     },
     {

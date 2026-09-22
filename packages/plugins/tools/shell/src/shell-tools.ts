@@ -14,8 +14,21 @@ import {
   timeoutSecOr,
 } from "@natalia/tools";
 import type { RuntimeTool, ToolFamily } from "@natalia/tools";
+import type { ConfinementMode } from "@natalia/confinement";
+import {
+  ESCALATION_TARGETS,
+  WIDER_MODES,
+  approveEscalation,
+  escalationHintMarker,
+  sandboxDenialMarker,
+  validateEscalationArgs,
+} from "@natalia/confinement";
 
 export { runShell };
+
+/** How a kernel file denial reads in captured output, across locales. */
+const DENIAL_PATTERN =
+  /permission denied|operation not permitted|\u6743\u9650\u4e0d\u591f/iu;
 
 export const SHELL_PLUGIN_ID = "natalia-tool-shell";
 export const RUN_SHELL_DEFAULT_TIMEOUT_SEC = 120;
@@ -37,6 +50,17 @@ function runShellTool(): RuntimeTool {
           type: "number",
           description:
             "Optional timeout in seconds for this command. Defaults to 120; values above 1800 are clamped to 1800.",
+        },
+        sandbox_permissions: {
+          type: "string",
+          enum: [...ESCALATION_TARGETS],
+          description:
+            "Optional. Run this one call under a sandbox mode strictly wider than the current one — applied only to this call and only after the user approves. Must travel with justification.",
+        },
+        justification: {
+          type: "string",
+          description:
+            "Optional. One sentence explaining why the wider mode is needed. Travels with sandbox_permissions: both or neither.",
         },
       },
       required: ["command"],
@@ -89,11 +113,56 @@ function runShellTool(): RuntimeTool {
           RUN_SHELL_DEFAULT_TIMEOUT_SEC,
           RUN_SHELL_MAX_TIMEOUT_SEC,
         );
-      return await runShell(
-        requireString(args.command, "command"),
-        context,
-        timeoutSec,
-      );
+      const requested =
+        args.sandbox_permissions === undefined
+          ? undefined
+          : requireString(args.sandbox_permissions, "sandbox_permissions");
+      const justification =
+        args.justification === undefined
+          ? undefined
+          : requireString(args.justification, "justification");
+      validateEscalationArgs(requested, justification);
+      // A hand-built context with no resolved mode behaves unconfined — the
+      // same rule runShell applies — so escalation judges against danger.
+      const effectiveMode: ConfinementMode =
+        context.confinement ?? "danger-full-access";
+      const confinement =
+        requested === undefined
+          ? effectiveMode
+          : await approveEscalation(
+              {
+                requestedMode: requested as ConfinementMode,
+                justification: justification ?? "",
+                effectiveMode,
+                subject: "command",
+              },
+              { approver: context.sandboxApprover, toolName: "run_shell" },
+            );
+      try {
+        return await runShell(
+          requireString(args.command, "command"),
+          { ...context, confinement },
+          timeoutSec,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          confinement !== "danger-full-access" &&
+          DENIAL_PATTERN.test(message)
+        ) {
+          // The kernel refused a write inside a confined call: name the mode
+          // the way every sandbox-enforcing family names it, and offer the
+          // sanctioned retry only while a wider mode actually exists.
+          const hint =
+            WIDER_MODES[confinement].length > 0
+              ? `\n${escalationHintMarker("command")}`
+              : "";
+          throw new Error(
+            `${message}\n${sandboxDenialMarker(confinement)}${hint}`,
+          );
+        }
+        throw error;
+      }
     },
   };
 }

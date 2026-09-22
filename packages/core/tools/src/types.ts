@@ -10,7 +10,7 @@
  * implementation so a caller can reason about what a tool is allowed to do without
  * holding the code that does it.
  */
-import type { ConfinementMode } from "@natalia/confinement";
+import type { ConfinementMode, EscalationApprover } from "@natalia/confinement";
 import type {
   ExecutionTarget,
   RuntimeEvent,
@@ -457,6 +457,14 @@ export type ToolExecutionContext = {
    * (session override ?? composition default) before handing the call down.
    */
   confinement?: ConfinementMode;
+  /**
+   * The sandbox escalation channel for this call, closed over the runtime's
+   * tool/call/turn identity (askQuestion's shape: the tool asks, the runtime
+   * owns the ids). Present when the runtime resolved one; a tool that
+   * receives a `sandbox_permissions` argument without it escalations fail
+   * closed as `unavailable`.
+   */
+  sandboxApprover?: EscalationApprover;
   /**
    * Effective timeout the runtime is enforcing for this call. Tools that also
    * run their own child-process timer use this so the two layers cannot drift.
