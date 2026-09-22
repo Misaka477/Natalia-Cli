@@ -28,6 +28,7 @@ import {
   createCollaborationService,
   createInteractiveWaiter,
 } from "@natalia/collaboration";
+import type { ServiceToken } from "@natalia/runtime-services";
 import { findWorkspaceFiles, searchWorkspaceFiles } from "@natalia/platform";
 import { createSessionHistoryTool } from "../session-history-tool";
 import {
@@ -62,17 +63,17 @@ import {
   CHECKPOINT_FACTORY_SERVICE,
   COMPACTION_SERVICE,
   CONTEXT_LEDGER_FACTORY_SERVICE,
-  LOCAL_TOOLS_INPUT_SERVICE,
-  MCP_INPUT_SERVICE,
   RETRY_SERVICE,
   SANDBOX_SERVICE,
-  SKILLS_INPUT_SERVICE,
   SUBAGENTS_SERVICE,
-  TERMINAL_INPUT_SERVICE,
   TOOL_POLICY_SERVICE,
   WORKSPACE_FILES_SERVICE,
   WORKSPACE_MUTATIONS_SERVICE,
   WORKSPACE_WRITE_LOCK_SERVICE,
+  localToolsInput,
+  mcpInput,
+  skillsInput,
+  terminalInput,
   type AttachmentService,
   type CompactionService,
   type ContextLedgerFactory,
@@ -338,34 +339,27 @@ export async function wireFrameworkServices(
   }
   refreshRuntimeConfig();
 
-  const pluginInputOwner = registry.registerOwner({
-    id: "natalia-plugin-inputs",
-    name: "Plugin Inputs",
-    version: "1.0.0",
-    scope: "workspace",
-    grants: ["services"],
-  });
   let pluginInputDisposers: Array<() => void> = [];
   function refreshPluginInputs() {
     for (const disposeInput of pluginInputDisposers.splice(0).reverse())
       disposeInput();
     const config = ctx.ports.getTsRuntimeConfig();
     if (!config) return;
-    const contribute = (name: string, value: unknown) => {
+    // Host inputs bind through the service directory: one owner per binding
+    // with the same dispose-then-provide reload semantics the owner channel
+    // had, and the wire name is the token's id on both sides of the boundary.
+    const provide = <T>(token: ServiceToken<T>, value: T | undefined) => {
       if (value !== undefined)
         pluginInputDisposers.push(
-          pluginInputOwner.contribute("services", name, value),
+          ctx.state.serviceDirectory.provide(token, value),
         );
     };
-    contribute(
-      LOCAL_TOOLS_INPUT_SERVICE,
+    provide(
+      localToolsInput,
       ctx.state.initialize.localToolsPluginInput(config),
     );
-    contribute(MCP_INPUT_SERVICE, ctx.state.initialize.mcpPluginInput(config));
-    contribute(
-      SKILLS_INPUT_SERVICE,
-      ctx.state.initialize.skillsPluginInput(config),
-    );
+    provide(mcpInput, ctx.state.initialize.mcpPluginInput(config));
+    provide(skillsInput, ctx.state.initialize.skillsPluginInput(config));
     const terminal: TerminalInput = {
       workspaceRoot,
       publish: (event) =>
@@ -390,7 +384,7 @@ export async function wireFrameworkServices(
           : "pty",
       ...(options.nativeTerminal ? { external: options.nativeTerminal } : {}),
     };
-    contribute(TERMINAL_INPUT_SERVICE, terminal);
+    provide(terminalInput, terminal);
   }
   refreshPluginInputs();
 

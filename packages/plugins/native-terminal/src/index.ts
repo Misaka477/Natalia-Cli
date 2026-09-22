@@ -44,13 +44,13 @@ export {
   TERMINAL_PLUGIN_MANIFEST,
 } from "./terminal-plugin";
 import type { Plugin, PluginAPI } from "@natalia/plugin";
+import { terminalInput } from "@natalia/runtime-services";
 import type { TerminalControllerInput } from "@natalia/runtime-services";
 import {
   createTerminalPlugin,
   TERMINAL_PLUGIN_MANIFEST,
 } from "./terminal-plugin";
 
-export const TERMINAL_INPUT_SERVICE = "terminal.input";
 export type TerminalRuntimeInput = TerminalControllerInput;
 
 export default function terminalPlugin(): Plugin {
@@ -59,14 +59,12 @@ export default function terminalPlugin(): Plugin {
     manifest: {
       ...TERMINAL_PLUGIN_MANIFEST,
       entry: "index.js",
-      requires: [TERMINAL_INPUT_SERVICE],
+      requires: [terminalInput.id],
     },
     async setup(api: PluginAPI) {
-      const input = api.services.get<TerminalRuntimeInput>(
-        TERMINAL_INPUT_SERVICE,
-      );
+      const input = api.services.get<TerminalRuntimeInput>(terminalInput.id);
       if (!input)
-        throw new Error(`missing runtime service: ${TERMINAL_INPUT_SERVICE}`);
+        throw new Error(`missing runtime service: ${terminalInput.id}`);
       instance = createTerminalPlugin(input);
       await instance.setup(api);
     },

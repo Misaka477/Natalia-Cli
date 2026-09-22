@@ -16,9 +16,9 @@ import type { SessionID } from "@natalia/contracts";
 import type { Plugin, PluginAPI } from "@natalia/plugin";
 import type { ToolExecutionContext } from "@natalia/tools";
 import { createSkillsPlugin, SKILLS_PLUGIN_MANIFEST } from "./skills-plugin";
+import { skillsInput } from "@natalia/runtime-services";
 import type { Skill } from "./skills";
 
-export const SKILLS_INPUT_SERVICE = "skills.input";
 export type SkillsRuntimeInput = {
   workspaceRoot: string;
   userRoot?: string;
@@ -40,12 +40,11 @@ export default function skillsPlugin(): Plugin {
     manifest: {
       ...SKILLS_PLUGIN_MANIFEST,
       entry: "index.js",
-      requires: [SKILLS_INPUT_SERVICE],
+      requires: [skillsInput.id],
     },
     async setup(api: PluginAPI) {
-      const input = api.services.get<SkillsRuntimeInput>(SKILLS_INPUT_SERVICE);
-      if (!input)
-        throw new Error(`missing runtime service: ${SKILLS_INPUT_SERVICE}`);
+      const input = api.services.get<SkillsRuntimeInput>(skillsInput.id);
+      if (!input) throw new Error(`missing runtime service: ${skillsInput.id}`);
       instance = createSkillsPlugin(input);
       await instance.setup(api);
     },

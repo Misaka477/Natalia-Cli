@@ -9,20 +9,20 @@ import {
 } from "@natalia/plugin";
 import type { ToolRegistry } from "@natalia/tools";
 import {
-  LOCAL_TOOLS_INPUT_SERVICE,
-  MCP_INPUT_SERVICE,
-  SKILLS_INPUT_SERVICE,
-  TERMINAL_INPUT_SERVICE,
+  localToolsInput,
+  mcpInput,
+  skillsInput,
+  terminalInput,
 } from "@natalia/runtime-services";
 import { discoverDesiredPluginEntries } from "./plugin-discovery";
 import { registerPluginOwner } from "./plugin-owner";
 import { snapshotProjectionContributions } from "./projection-contributions";
 
 const HOST_INPUT_SERVICES = new Set([
-  LOCAL_TOOLS_INPUT_SERVICE,
-  MCP_INPUT_SERVICE,
-  SKILLS_INPUT_SERVICE,
-  TERMINAL_INPUT_SERVICE,
+  localToolsInput.id,
+  mcpInput.id,
+  skillsInput.id,
+  terminalInput.id,
 ]);
 
 export type PluginConfigSnapshot = {

@@ -18,8 +18,8 @@ import {
   LOCAL_TOOLS_PLUGIN_MANIFEST,
 } from "./local-tools-plugin";
 import type { LocalToolFamilyOptions } from "./local-tool-families";
+import { localToolsInput } from "@natalia/runtime-services";
 
-export const LOCAL_TOOLS_INPUT_SERVICE = "localTools.input";
 export type LocalToolsRuntimeInput = {
   roots: string[];
   trust?: LocalToolFamilyOptions["trust"];
@@ -33,16 +33,14 @@ export default function localToolsPlugin(): Plugin {
     manifest: {
       ...LOCAL_TOOLS_PLUGIN_MANIFEST,
       entry: "index.js",
-      requires: [LOCAL_TOOLS_INPUT_SERVICE],
+      requires: [localToolsInput.id],
     },
     async setup(api: PluginAPI) {
       const input = api.services.get<LocalToolsRuntimeInput>(
-        LOCAL_TOOLS_INPUT_SERVICE,
+        localToolsInput.id,
       );
       if (!input)
-        throw new Error(
-          `missing runtime service: ${LOCAL_TOOLS_INPUT_SERVICE}`,
-        );
+        throw new Error(`missing runtime service: ${localToolsInput.id}`);
       instance = createLocalToolsPlugin(input);
       await instance.setup(api);
     },

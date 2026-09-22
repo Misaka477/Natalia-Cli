@@ -16,10 +16,14 @@
  */
 import type { ToolFamily } from "@natalia/tools";
 import type {
+  LocalToolsInput,
+  McpInput,
   McpService,
   SkillService,
+  SkillsInput,
   TeamBehaviorService,
   TerminalController,
+  TerminalInput,
 } from "./services";
 import { defineService } from "./service-token";
 
@@ -55,3 +59,38 @@ export const terminalController = defineService<TerminalController>(
   "terminal.controller",
   { scope: "workspace", capability: "services" },
 );
+
+/**
+ * The four host inputs official plugins receive at setup. Each plugin package
+ * used to re-declare the wire name and a duplicate of the input type; the
+ * token plus the contract type above are now the single home, so manifest
+ * `requires`, `api.services.get`, and the framework's provide site all speak
+ * one spelling.
+ */
+
+/** Roots and trust callbacks the local-tools plugin discovers families from. */
+export const localToolsInput = defineService<LocalToolsInput>(
+  "localTools.input",
+  {
+    scope: "workspace",
+    capability: "services",
+  },
+);
+
+/** MCP server registry view for the MCP plugin. */
+export const mcpInput = defineService<McpInput>("mcp.input", {
+  scope: "workspace",
+  capability: "services",
+});
+
+/** Discovery roots and hooks for the skills plugin. */
+export const skillsInput = defineService<SkillsInput>("skills.input", {
+  scope: "workspace",
+  capability: "services",
+});
+
+/** Controller construction input for the native-terminal plugin. */
+export const terminalInput = defineService<TerminalInput>("terminal.input", {
+  scope: "workspace",
+  capability: "services",
+});

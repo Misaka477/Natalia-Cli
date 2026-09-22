@@ -4,16 +4,12 @@ export const COMPACTION_SERVICE = "compaction.service";
 export const CONTEXT_LEDGER_FACTORY_SERVICE = "context-ledger.factory";
 export const GOVERNANCE_LEDGER_CONTROLLER_SERVICE =
   "governance-ledger.controller";
-export const LOCAL_TOOLS_INPUT_SERVICE = "localTools.input";
-export const MCP_INPUT_SERVICE = "mcp.input";
 export const PROVIDER_MODEL_CONTROLLER_SERVICE = "provider-model.controller";
 export const RETRY_SERVICE = "retry.service";
 export const SANDBOX_SERVICE = "sandbox.service";
-export const SKILLS_INPUT_SERVICE = "skills.input";
 export const SESSION_STORE_CONTROLLER_SERVICE = "session-store.controller";
 export const STATUS_SNAPSHOT_CONTROLLER_SERVICE = "status.snapshot.controller";
 export const SUBAGENTS_SERVICE = "subagents.service";
-export const TERMINAL_INPUT_SERVICE = "terminal.input";
 export const TOOL_POLICY_SERVICE = "tool.policy";
 export const TURN_CONTROLLER_SERVICE = "turn.controller";
 export const WORK_LEDGER_CONTROLLER_SERVICE = "work-ledger.controller";
