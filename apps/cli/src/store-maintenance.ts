@@ -1,0 +1,272 @@
+/**
+ * The exit-phase data plane (install study §5, phase D4): program removal,
+ * the one true data deletion, and the store export that precedes it.
+ *
+ * The iron law this module exists to keep: **uninstall ≠ data deletion**.
+ * The life-preserving store (`~/.natalia/stores/`) is the user's rescue
+ * ring — uninstall removes the program and nothing else; `purge` is the
+ * only command that deletes data, behind a double confirmation, and the
+ * format question is settled here: an export is a directory archive of
+ * stores/ plus a SHA256 manifest (the store's own manifests already make
+ * it self-describing; the manifest adds tamper-evidence, the same
+ * discipline build-standalone uses for release artifacts).
+ */
+import { createHash } from "node:crypto";
+import { homedir } from "node:os";
+import { join, relative, resolve } from "node:path";
+import { cp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+
+/** The install root: `NATALIA_HOME` overrides (D2 unattended + tests). */
+export function nataliaHome(env: NodeJS.ProcessEnv = process.env): string {
+  return env.NATALIA_HOME
+    ? resolve(env.NATALIA_HOME)
+    : join(homedir(), ".natalia");
+}
+
+export type StoreSummary = {
+  workspaceID: string;
+  bytes: number;
+  sessions: number;
+};
+
+export type PurgeTargets = {
+  stores: StoreSummary[];
+  storesBytes: number;
+  logsBytes: number;
+  hasConfig: boolean;
+  configBytes: number;
+};
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function treeFiles(dir: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const files: string[] = [];
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...(await treeFiles(full)));
+    else if (entry.isFile()) files.push(full);
+  }
+  return files;
+}
+
+async function treeBytes(dir: string): Promise<number> {
+  let total = 0;
+  for (const file of await treeFiles(dir)) total += (await statSize(file)) ?? 0;
+  return total;
+}
+
+async function statSize(path: string): Promise<number | undefined> {
+  try {
+    return (await stat(path)).size;
+  } catch {
+    return undefined;
+  }
+}
+
+/** What purge would delete — listed BEFORE any confirmation (火化要明确). */
+export async function listPurgeTargets(home: string): Promise<PurgeTargets> {
+  const storesDir = join(home, "stores");
+  const stores: StoreSummary[] = [];
+  let storesBytes = 0;
+  for (const entry of await entries(storesDir)) {
+    const dir = join(storesDir, entry);
+    if (!entry.startsWith(".")) {
+      const bytes = await treeBytes(dir);
+      const sessionsDir = join(dir, "sessions");
+      const sessions = (await entries(sessionsDir)).length;
+      stores.push({ workspaceID: entry, bytes, sessions });
+      storesBytes += bytes;
+    }
+  }
+  const logsBytes = await treeBytes(join(home, "logs"));
+  const configPath = join(home, "config.json");
+  const configBytes = (await statSize(configPath)) ?? 0;
+  return {
+    stores,
+    storesBytes,
+    logsBytes,
+    hasConfig: configBytes > 0,
+    configBytes,
+  };
+}
+
+async function entries(dir: string): Promise<string[]> {
+  try {
+    return await readdir(dir);
+  } catch {
+    return [];
+  }
+}
+
+export type UninstallReport = {
+  home: string;
+  programPresent: boolean;
+  removed: string[];
+  preserved: { stores: string; workspaces: number; bytes: number };
+  /** The study's verbatim promise, ready to print. */
+  message: string;
+};
+
+/**
+ * Remove the PROGRAM (bin/ and versions/) and prove nothing else moved:
+ * stores/, logs/ and config.json are never opened for deletion here — the
+ * message carries the rescue ring's location and the reinstall promise.
+ */
+export async function uninstallProgram(home: string): Promise<UninstallReport> {
+  const removed: string[] = [];
+  for (const entry of ["bin", "versions"]) {
+    const path = join(home, entry);
+    if (await isDirectory(path)) {
+      await rm(path, { recursive: true, force: true });
+      removed.push(entry);
+    }
+  }
+  const storesDir = join(home, "stores");
+  const targets = await listPurgeTargets(home);
+  const message =
+    targets.stores.length > 0
+      ? `your checkpoints and journal are preserved at ${storesDir} ` +
+        `(${targets.stores.length} workspace store(s), ${targets.storesBytes} bytes) — reinstall to recover them`
+      : `no store data at ${storesDir} to preserve (nothing to recover, nothing lost)`;
+  return {
+    home,
+    programPresent: removed.length > 0,
+    removed,
+    preserved: {
+      stores: storesDir,
+      workspaces: targets.stores.length,
+      bytes: targets.storesBytes,
+    },
+    message,
+  };
+}
+
+/** The double confirmation's phrase (unit-tested; CLI prompts for it). */
+export function purgeConfirmation(answer: string): boolean {
+  return answer.trim().toLowerCase() === "purge";
+}
+
+/**
+ * The confirmation gate: `--yes` proceeds on automation; a TTY asks; a
+ * non-TTY without `--yes` REFUSES (fail-closed: nobody "confirmed" a
+ * nuclear deletion by being a pipe).
+ */
+export function resolvePurgeGate(input: { yes: boolean; isTTY: boolean }): {
+  proceed: boolean;
+  ask: boolean;
+  reason?: string;
+} {
+  if (input.yes) return { proceed: true, ask: false };
+  if (input.isTTY) return { proceed: false, ask: true };
+  return {
+    proceed: false,
+    ask: false,
+    reason:
+      "purge needs an interactive confirmation — re-run on a TTY or pass --yes (consider: natalia store export <dest>)",
+  };
+}
+
+/**
+ * The ONLY data deletion: stores/, logs/ and config.json. The program
+ * (bin/, versions/) is deliberately NOT this command's business — that is
+ * uninstall's, and mixing them would put data deletion behind the wrong
+ * door.
+ */
+export async function purgeData(home: string): Promise<{ removed: string[] }> {
+  const removed: string[] = [];
+  for (const entry of ["stores", "logs", "config.json"]) {
+    const path = join(home, entry);
+    if (await exists(path)) {
+      await rm(path, { recursive: true, force: true });
+      removed.push(entry);
+    }
+  }
+  return { removed };
+}
+
+export type ExportReport = {
+  dest: string;
+  files: number;
+  bytes: number;
+  manifest: string;
+};
+
+async function sha256(path: string): Promise<string> {
+  return createHash("sha256")
+    .update(await import("node:fs/promises").then((fs) => fs.readFile(path)))
+    .digest("hex");
+}
+
+/**
+ * `natalia store export <dest>` — the format the study left open (未决 #4),
+ * decided as: a directory archive of stores/ plus a SHA256 manifest over
+ * every archived file. No new serialization: the store's own manifests make
+ * the archive self-describing, the file manifest makes it tamper-evident.
+ * The original store is only read.
+ */
+export async function exportStores(
+  home: string,
+  dest: string,
+): Promise<ExportReport> {
+  const storesDir = join(home, "stores");
+  if (!(await isDirectory(storesDir)))
+    throw new Error(`no stores to export at ${storesDir}`);
+  const target = resolve(dest);
+  const archive = join(target, "stores");
+  await mkdir(target, { recursive: true });
+  await cp(storesDir, archive, { recursive: true });
+  const files = await treeFiles(archive);
+  let bytes = 0;
+  const manifestFiles: Array<{ file: string; sha256: string; bytes: number }> =
+    [];
+  for (const file of files) {
+    const size = (await statSize(file)) ?? 0;
+    bytes += size;
+    manifestFiles.push({
+      file: relative(target, file),
+      sha256: await sha256(file),
+      bytes: size,
+    });
+  }
+  const manifestPath = join(target, "manifest.json");
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        name: "natalia-stores",
+        exportedAt: new Date().toISOString(),
+        files: manifestFiles,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  return {
+    dest: target,
+    files: manifestFiles.length,
+    bytes,
+    manifest: manifestPath,
+  };
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}

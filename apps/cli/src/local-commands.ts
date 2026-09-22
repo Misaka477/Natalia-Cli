@@ -20,6 +20,16 @@ import {
   workGraphLines,
 } from "./index";
 import { valueAfter } from "./command-helpers";
+import { createInterface } from "node:readline/promises";
+import {
+  exportStores,
+  listPurgeTargets,
+  nataliaHome,
+  purgeConfirmation,
+  purgeData,
+  resolvePurgeGate,
+  uninstallProgram,
+} from "./store-maintenance";
 
 export async function handleLocalCommands(argv: string[]) {
   const subcommand = argv[0];
@@ -34,12 +44,83 @@ export async function handleLocalCommands(argv: string[]) {
       "fs",
       "trust",
       "replay",
+      "uninstall",
+      "purge",
+      "store",
     ]).has(subcommand ?? "")
   )
     return false;
   const configPath =
     process.env.NATALIA_CONFIG ?? `${process.cwd()}/.natalia/config.json`;
   switch (subcommand) {
+    case "uninstall": {
+      // The app-level uninstall takes NO arguments — and the dead
+      // `uninstall <tool> --workspace` form must fail before anything
+      // touches the filesystem (a CLI test asserts that exit, and an
+      // argument-bearing call here would otherwise operate on the real
+      // home while "succeeding").
+      if (argv.slice(1).filter((arg) => !arg.startsWith("-")).length > 0) {
+        console.error(
+          "usage: natalia uninstall (the old top-level `uninstall <tool>` form is gone)",
+        );
+        process.exit(1);
+      }
+      // Study §5: uninstall removes the PROGRAM and states where the
+      // rescue ring stays. Nothing under stores/ is opened for deletion.
+      const home = nataliaHome();
+      const report = await uninstallProgram(home);
+      for (const entry of report.removed) console.log(`removed ${entry}/`);
+      if (!report.programPresent)
+        console.log(`no program files under ${home} (bin/, versions/)`);
+      console.log(report.message);
+      break;
+    }
+    case "purge": {
+      // 火化要明确: the full list prints BEFORE any confirmation.
+      const home = nataliaHome();
+      const targets = await listPurgeTargets(home);
+      console.log(JSON.stringify({ willDelete: targets }, null, 2));
+      const gate = resolvePurgeGate({
+        yes: argv.includes("--yes"),
+        isTTY: Boolean(process.stdin.isTTY),
+      });
+      if (gate.ask) {
+        const rl = createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        const answer = await rl.question('type "purge" to confirm: ');
+        rl.close();
+        if (!purgeConfirmation(answer)) {
+          console.error("purge cancelled — nothing was deleted");
+          process.exit(1);
+        }
+      } else if (!gate.proceed) {
+        console.error(gate.reason);
+        process.exit(1);
+      }
+      const { removed } = await purgeData(home);
+      console.log(`purged: ${removed.join(", ") || "(nothing present)"}`);
+      console.log(
+        "the program is not this command's business — run natalia uninstall for bin/ and versions/",
+      );
+      break;
+    }
+    case "store": {
+      const action = argv[1];
+      if (action === "export" && argv[2]) {
+        try {
+          const report = await exportStores(nataliaHome(), argv[2]);
+          console.log(JSON.stringify(report, null, 2));
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error));
+          process.exit(1);
+        }
+        break;
+      }
+      console.error("usage: natalia store export <dest-dir>");
+      process.exit(1);
+    }
     case "diagnose":
     case "--diagnostics": {
       console.log(
