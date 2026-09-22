@@ -8,6 +8,7 @@ import type {
 import { collaborationWaiter } from "@natalia/collaboration";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@natalia/runtime-services";
+import { toolPolicy } from "@natalia/tool-policy";
 
 export async function configureRuntime(
   ctx: RuntimeContext,
@@ -32,11 +33,8 @@ export async function configureRuntime(
   );
   if (!resolvedSessionStore)
     throw new Error("session store unavailable (natalia-session-store)");
-  const toolPolicy = scope.resolveService<ToolPolicyService>(
-    scope.TOOL_POLICY_SERVICE,
-  );
-  if (!toolPolicy)
-    throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
+  // Resolution is fail-fast by construction (see the checks above).
+  scope.serviceDirectory.get(toolPolicy);
   // Resolution is fail-fast by construction: a missing binding throws with the
   // service id instead of being re-worded at every call site.
   scope.serviceDirectory.get(collaborationWaiter);

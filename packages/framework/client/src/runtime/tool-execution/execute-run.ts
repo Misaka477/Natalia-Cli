@@ -17,11 +17,11 @@ import {
 } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
-  TOOL_POLICY_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type ToolPolicyService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
+import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
 import { workspaceMutations, workspaceWriteLock } from "@natalia/workspace";
 import { buildToolExecutionContext } from "./execute-context";
 import type { SessionExecutionState } from "../context";
@@ -68,8 +68,7 @@ export async function runExecuteStage(
     scheduleRuntimeStatusSnapshot,
   } = ctx.ports;
   const toolLayer = ctx.ports.createToolPolicyLayer(exec);
-  const toolPolicy =
-    ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+  const toolPolicy = ctx.state.serviceDirectory.get(toolPolicyToken);
   if (!toolPolicy)
     throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
   const writeLock = ctx.state.serviceDirectory.get(workspaceWriteLock);

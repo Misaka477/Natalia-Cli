@@ -15,10 +15,8 @@ import type { AgentDefinition } from "@natalia/agent";
 import type { ConfigV3 } from "@natalia/contracts";
 import type { PermissionProfileCommandRules } from "@natalia/tools";
 import type { ToolPolicyHookLayer } from "@natalia/runtime-services";
-import {
-  TOOL_POLICY_SERVICE,
-  type ToolPolicyService,
-} from "@natalia/runtime-services";
+import { toolPolicy } from "@natalia/tool-policy";
+import { type ToolPolicyService } from "@natalia/runtime-services";
 import type { SessionExecutionState } from "./context";
 import type { RuntimeContext } from "./context";
 import type { RealRuntimeClientOptions } from "./options";
@@ -48,22 +46,21 @@ export function createPermissions(
     const mode =
       tsRuntimeConfig?.agentModes?.[tsRuntimeConfig.defaultAgentMode] ??
       tsRuntimeConfig?.agentModes[tsRuntimeConfig.defaultAgentMode];
-    return resolveService<ToolPolicyService>(
-      TOOL_POLICY_SERVICE,
-    )!.createHookLayer(deriveAgentToolPolicy({ agent, mode }));
+    return resolveService<ToolPolicyService>(toolPolicy.id)!.createHookLayer(
+      deriveAgentToolPolicy({ agent, mode }),
+    );
   }
 
   function permissionProfileLayer(profile: PermissionProfile | undefined) {
     return ctx.ports
-      .resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE)!
+      .resolveService<ToolPolicyService>(toolPolicy.id)!
       .createHookLayer(deriveProfileToolPolicy({ profile }));
   }
 
   function createToolPolicyLayer(
     exec: SessionExecutionState | undefined,
   ): ToolPolicyHookLayer {
-    const policy =
-      ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+    const policy = ctx.state.serviceDirectory.get(toolPolicy);
     if (!policy)
       throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
     const agent = exec?.selectedAgent ?? ctx.ports.getSelectedAgent();

@@ -3,8 +3,8 @@ import type {
   RuntimeWorkspaceDiffChange,
 } from "@natalia/contracts";
 import {
-  SANDBOX_SERVICE,
-  SUBAGENTS_SERVICE,
+  sandboxService,
+  subagentsService,
   type SandboxService,
   type SubagentsService,
 } from "@natalia/runtime-services";
@@ -18,9 +18,8 @@ export function createTeamRuntime(ctx: RuntimeContext) {
 
   async function teamPRList(sessionID?: string): Promise<RuntimeTeamPR[]> {
     await ctx.ports.getReady();
-    const subagents =
-      ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
-    const sandboxes = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
+    const subagents = ctx.state.serviceDirectory.getOptional(subagentsService);
+    const sandboxes = ctx.state.serviceDirectory.getOptional(sandboxService);
     const ownerSessionID = sessionID ?? ctx.ports.getActiveExec()?.session.id;
     if (!subagents?.enabled()) return [];
     const prs: RuntimeTeamPR[] = [];

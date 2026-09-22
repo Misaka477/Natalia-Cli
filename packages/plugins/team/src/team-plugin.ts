@@ -9,8 +9,8 @@
  */
 import type { Plugin, PluginManifest } from "@natalia/plugin";
 import {
-  SANDBOX_SERVICE,
-  SUBAGENTS_SERVICE,
+  sandboxService,
+  subagentsService,
   teamBehavior,
   type SandboxService,
   type SubagentsService,
@@ -33,7 +33,7 @@ export const TEAM_PLUGIN_MANIFEST: PluginManifest = {
   entry: "index.js",
   scope: "workspace",
   provides: [teamBehavior.id],
-  requires: [SUBAGENTS_SERVICE, SANDBOX_SERVICE],
+  requires: [subagentsService.id, sandboxService.id],
   optionalRequires: [],
   conflicts: [],
   dependencies: [],
@@ -52,16 +52,17 @@ export function createTeamPlugin(): Plugin {
       api.tools.register(
         createTeamFanoutTool({
           subagents: () => {
-            const service =
-              api.services.get<SubagentsService>(SUBAGENTS_SERVICE);
+            const service = api.services.get<SubagentsService>(
+              subagentsService.id,
+            );
             return service?.enabled() ? service : undefined;
           },
-          sandboxes: () => api.services.get<SandboxService>(SANDBOX_SERVICE),
+          sandboxes: () => api.services.get<SandboxService>(sandboxService.id),
         }),
       );
       api.tools.register(
         createTeamReviewTool({
-          sandboxes: () => api.services.get<SandboxService>(SANDBOX_SERVICE),
+          sandboxes: () => api.services.get<SandboxService>(sandboxService.id),
         }),
       );
     },

@@ -8,9 +8,9 @@
  * state through `RuntimeContext` at call time.
  */
 import { readOnlyToolMessage } from "@natalia/runtime-services";
+import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
 import {
   terminalController,
-  TOOL_POLICY_SERVICE,
   type TerminalController,
   type ToolPolicyService,
 } from "@natalia/runtime-services";
@@ -59,8 +59,7 @@ export function createExecuteOne(
     const exec = executionBySession.get(turnSession.get(turnID) ?? sessionID);
     if (!exec) throw new Error(`no execution state for turn ${turnID}`);
     const toolLayer = createToolPolicyLayer(exec);
-    const toolPolicy =
-      ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+    const toolPolicy = ctx.state.serviceDirectory.get(toolPolicyToken);
     if (!toolPolicy)
       throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
     const terminal = ctx.state.serviceDirectory.getOptional(terminalController);

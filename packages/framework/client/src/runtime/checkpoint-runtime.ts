@@ -6,13 +6,13 @@
  * concrete plugin controller.
  */
 import {
-  SUBAGENTS_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
+  subagentsService,
   type CheckpointController,
   type CheckpointFactory,
-  type SubagentsService,
   type RuntimeServiceClient,
   type StatusSnapshotController,
+  type SubagentsService,
   type WorkLedgerController,
 } from "@natalia/runtime-services";
 import { statusSnapshotController } from "@natalia/runtime-status";
@@ -282,7 +282,7 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
       context: () => exec.context,
       subagents: () => {
         const subagents =
-          ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
+          ctx.state.serviceDirectory.getOptional(subagentsService);
         return subagents?.enabled() ? subagents : undefined;
       },
       activeAbort: () => exec.activeAbort,

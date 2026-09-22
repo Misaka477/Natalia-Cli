@@ -18,8 +18,8 @@ import {
   sessionFactConstitutionRules,
 } from "@natalia/session";
 import { readOnlyToolMessage } from "@natalia/runtime-services";
+import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
 import {
-  TOOL_POLICY_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
   type ToolPolicyService,
   type WorkLedgerController,
@@ -273,8 +273,7 @@ export function createExecuteCalls(
     const sessionID = getSessionID();
     const workspaceRoot = getWorkspaceRoot();
     const runtimeContext = getRuntimeContext();
-    const policy =
-      ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+    const policy = ctx.state.serviceDirectory.get(toolPolicyToken);
     if (!policy)
       throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
     // B: the model can attach an image (a screenshot it took) so the next

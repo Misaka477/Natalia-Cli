@@ -23,10 +23,7 @@ import {
 } from "@natalia/session";
 import {
   readOnlyToolMessage,
-  SANDBOX_SERVICE,
   SESSION_STORE_CONTROLLER_SERVICE,
-  SUBAGENTS_SERVICE,
-  TOOL_POLICY_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
 } from "@natalia/runtime-services";
 import { turnController } from "@natalia/turn-orchestration";
@@ -117,10 +114,7 @@ export function wireInitialize(
     ProviderConcurrencyLimiter,
     serviceNames: {
       workLedgerController: WORK_LEDGER_CONTROLLER_SERVICE,
-      sandbox: SANDBOX_SERVICE,
-      subagents: SUBAGENTS_SERVICE,
       sessionStoreController: SESSION_STORE_CONTROLLER_SERVICE,
-      toolPolicy: TOOL_POLICY_SERVICE,
     },
   };
   ports.initialize = createInitialize(ctx, options).initialize;

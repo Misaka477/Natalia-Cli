@@ -10,6 +10,8 @@ import { createStatusSnapshotController } from "@natalia/runtime-status";
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import {
+  sandboxService,
+  subagentsService,
   type SandboxService,
   type StatusSnapshotController,
   type SubagentsService,
@@ -83,11 +85,11 @@ export function wireRuntimeStatus(ctx: RuntimeContext): RuntimeStatusHandle {
     workspaceRoot: ctx.ports.getWorkspaceRoot(),
     permissionMode: ctx.ports.getPermissionMode,
     runningCount: async () =>
-      (ctx.ports
-        .resolveService<SubagentsService>(deps.serviceNames.subagents)
+      (ctx.state.serviceDirectory
+        .getOptional(subagentsService)
         ?.runningCount() ?? 0) +
-      (ctx.ports
-        .resolveService<SandboxService>(deps.serviceNames.sandbox)
+      (ctx.state.serviceDirectory
+        .getOptional(sandboxService)
         ?.runningResourceCount() ?? 0) +
       ((await deps.capabilityRegistry
         .service<{

@@ -23,7 +23,7 @@ import { checkpointFactory } from "@natalia/checkpoint";
 import { contextLedgerFactory as contextLedgerFactoryToken } from "@natalia/context-ledger";
 import { createSandboxController, sandboxTools } from "@natalia/sandbox";
 import { agentTools, createSubagentsController } from "@natalia/subagents";
-import { createToolPolicyService } from "@natalia/tool-policy";
+import { createToolPolicyService, toolPolicy } from "@natalia/tool-policy";
 import {
   COLLABORATION_SERVICE,
   collaborationTools,
@@ -66,12 +66,11 @@ import {
 import type { RuntimeEvent, SessionID } from "@natalia/contracts";
 import type { PluginCommandInvocation } from "@natalia/plugin";
 import {
-  SANDBOX_SERVICE,
-  SUBAGENTS_SERVICE,
-  TOOL_POLICY_SERVICE,
   localToolsInput,
   mcpInput,
+  sandboxService,
   skillsInput,
+  subagentsService,
   terminalInput,
   type AttachmentService,
   type CompactionService,
@@ -116,7 +115,9 @@ export async function wireFrameworkServices(
     workspaceRoot,
     backend: () => ctx.ports.getTsRuntimeConfig()?.sandbox.backend,
   });
-  sandboxOwner.contribute("services", SANDBOX_SERVICE, sandbox);
+  // The service binds through the directory; the owner stays for the tools
+  // contribution below.
+  ctx.state.serviceDirectory.provide(sandboxService, sandbox);
   for (const tool of sandboxTools()) {
     sandboxOwner.contribute("tools", tool.name, tool);
     if (ctx.state.tools.get(tool.name))
@@ -139,7 +140,7 @@ export async function wireFrameworkServices(
     wallClockBudgetMs:
       ctx.ports.getTsRuntimeConfig()?.runtime.subagentWallClockMs,
   });
-  subagentsOwner.contribute("services", SUBAGENTS_SERVICE, subagents);
+  ctx.state.serviceDirectory.provide(subagentsService, subagents);
   // The configured subagent-mode agents are the spawnable types. Advertising
   // them without saying what tools each one has leaves the model guessing, which
   // is the one distinction the choice turns on.
@@ -297,17 +298,16 @@ export async function wireFrameworkServices(
           );
         if (!controller.isEnabled())
           throw new Error("checkpoint store is not initialized");
-        const sandboxService =
-          ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
+        const sandboxes =
+          ctx.state.serviceDirectory.getOptional(sandboxService);
         const result = await runCheckpointCommand(
           controller.get(),
           exec.context,
           invocation.raw,
           controller.rollbackOptions(),
           async () => {
-            if (!sandboxService)
-              throw new Error("sandbox controller unavailable");
-            return (await sandboxService.referencedObjectIDs()) ?? new Set();
+            if (!sandboxes) throw new Error("sandbox controller unavailable");
+            return (await sandboxes.referencedObjectIDs()) ?? new Set();
           },
         );
         return result.output;
@@ -514,11 +514,7 @@ export async function wireFrameworkServices(
     scope: "workspace",
     grants: ["services"],
   });
-  toolPolicyOwner.contribute(
-    "services",
-    TOOL_POLICY_SERVICE,
-    createToolPolicyService(),
-  );
+  ctx.state.serviceDirectory.provide(toolPolicy, createToolPolicyService());
 
   // Compaction: depends on the retry and context-ledger subsystems wired above.
   const compactionOwner = registry.registerOwner({

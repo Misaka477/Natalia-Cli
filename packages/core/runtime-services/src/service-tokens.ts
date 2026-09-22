@@ -22,6 +22,8 @@ import type {
   SkillService,
   SkillsInput,
   TeamBehaviorService,
+  SandboxService,
+  SubagentsService,
   TerminalController,
   TerminalInput,
 } from "./services";
@@ -91,6 +93,25 @@ export const skillsInput = defineService<SkillsInput>("skills.input", {
 
 /** Controller construction input for the native-terminal plugin. */
 export const terminalInput = defineService<TerminalInput>("terminal.input", {
+  scope: "workspace",
+  capability: "services",
+});
+
+/**
+ * Engine-internal services that cross the plugin boundary: official plugins
+ * require them at setup (`manifest.requires`), so their tokens live here
+ * beside the contract types rather than in the mechanism packages — the same
+ * rule as the host inputs, applied in the provide direction.
+ */
+
+/** Subagent registry the team plugin fans work out through. */
+export const subagentsService = defineService<SubagentsService>(
+  "subagents.service",
+  { scope: "workspace", capability: "services" },
+);
+
+/** Sandbox controller the team plugin scopes its runs in. */
+export const sandboxService = defineService<SandboxService>("sandbox.service", {
   scope: "workspace",
   capability: "services",
 });

@@ -1,7 +1,7 @@
 import type { SessionID } from "@natalia/contracts";
 import {
   mcpService,
-  SANDBOX_SERVICE,
+  sandboxService,
   terminalController,
   type SandboxService,
   type TerminalController,
@@ -13,7 +13,7 @@ export function createPluginLifecycle(ctx: RuntimeContext) {
     selectedSkills: Map<SessionID, string> = new Map(),
   ) {
     const terminal = ctx.state.serviceDirectory.getOptional(terminalController);
-    const sandbox = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
+    const sandbox = ctx.state.serviceDirectory.getOptional(sandboxService);
     const mcp = ctx.state.serviceDirectory.getOptional(mcpService);
     await mcp?.reload();
     await terminal?.init();

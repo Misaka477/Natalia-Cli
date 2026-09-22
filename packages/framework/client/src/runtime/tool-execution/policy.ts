@@ -7,10 +7,8 @@
  */
 import { mergeContributedToolSettings } from "../../capability-settings";
 import type { ToolHookEvent } from "@natalia/runtime-services";
-import {
-  TOOL_POLICY_SERVICE,
-  type ToolPolicyService,
-} from "@natalia/runtime-services";
+import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
+import { type ToolPolicyService } from "@natalia/runtime-services";
 import type { RuntimeContext } from "../context";
 import type { SessionExecutionState } from "../context";
 
@@ -89,8 +87,7 @@ export function createToolPolicySurface(ctx: RuntimeContext) {
     exec: SessionExecutionState | undefined = ctx.ports.getActiveExec(),
   ) {
     const { getSelectedAgent, getWorkspaceRoot, publishForSession } = ctx.ports;
-    const policy =
-      ctx.ports.resolveService<ToolPolicyService>(TOOL_POLICY_SERVICE);
+    const policy = ctx.state.serviceDirectory.get(toolPolicyToken);
     if (!policy)
       throw new Error("tool pipeline unavailable (natalia-tool-pipeline)");
     const selectedAgent = getSelectedAgent();

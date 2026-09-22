@@ -21,7 +21,7 @@ import { createToolRegistry } from "@natalia/tools";
 import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
 import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
-  SANDBOX_SERVICE,
+  sandboxService,
   terminalController,
   type ProviderModelController,
   type SandboxService,
@@ -1371,7 +1371,7 @@ test("sandbox subsystem composes directly and releases on dispose", async () => 
   await client.submitAndWait!("create sandbox");
   await client.runtimeStatus?.();
 
-  expect(kernel.service(SANDBOX_SERVICE)).toBeDefined();
+  expect(kernel.service(sandboxService.id)).toBeDefined();
   expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
   await waitForAsync(
     async () =>
@@ -1379,7 +1379,7 @@ test("sandbox subsystem composes directly and releases on dispose", async () => 
         tool.name.startsWith("team_"),
       ) === true,
   );
-  const first = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  const first = kernel.service<SandboxService>(sandboxService.id)!;
   const resource = await first.startResource(
     "reload_box",
     "sleep 30",
@@ -1393,7 +1393,7 @@ test("sandbox subsystem composes directly and releases on dispose", async () => 
 
   await writeFile(configPath, JSON.stringify({ version: 3 }));
   await expect(client.reloadConfig?.()).resolves.toEqual({ applied: true });
-  expect(kernel.service<SandboxService>(SANDBOX_SERVICE)).toBe(first);
+  expect(kernel.service<SandboxService>(sandboxService.id)).toBe(first);
   expect(kernel.has(TEAM_PLUGIN_ID)).toBe(true);
   expect(await client.sandboxList?.()).toMatchObject([{ id: "reload_box" }]);
 
@@ -7632,7 +7632,7 @@ test("promoting framework sources emits restart_required", async () => {
   client.start((event) => events.push(event));
   await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
-  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  const sandboxes = kernel.service<SandboxService>(sandboxService.id)!;
   await sandboxes.write("box", "packages/framework/restart.ts", "export {}\n");
   await client.sandboxMerge!("box");
   expect(events).toContainEqual(
@@ -7666,7 +7666,7 @@ test("promote records evidence when validation passes", async () => {
   client.start((event) => events.push(event));
   await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
-  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  const sandboxes = kernel.service<SandboxService>(sandboxService.id)!;
   await sandboxes.write("box", "promoted.txt", "landed");
   const changes = await client.sandboxMerge!("box");
   expect(changes).toContainEqual(
@@ -7722,7 +7722,7 @@ test("a high-risk promotion requires a multi-stage user confirmation (E5 R3/R4)"
   });
   await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
-  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  const sandboxes = kernel.service<SandboxService>(sandboxService.id)!;
   // A change to the tool contract is high risk.
   await sandboxes.write(
     "box",
@@ -7769,7 +7769,7 @@ test("a rejected high-risk promotion leaves the host unchanged and records faile
   });
   await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
-  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  const sandboxes = kernel.service<SandboxService>(sandboxService.id)!;
   await sandboxes.write(
     "box",
     "packages/core/tools/src/types.ts",
@@ -7825,7 +7825,7 @@ test("a low-risk promotion skips the multi-stage confirmation (E5)", async () =>
   client.start((event) => events.push(event));
   await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
-  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  const sandboxes = kernel.service<SandboxService>(sandboxService.id)!;
   // A docs change is low risk.
   await sandboxes.write("box", "docs/note.md", "hello");
   const changes = await client.sandboxMerge!("box");
@@ -7864,7 +7864,7 @@ test("failed validation records failed evidence and does not promote", async () 
   client.start(() => undefined);
   await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
-  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  const sandboxes = kernel.service<SandboxService>(sandboxService.id)!;
   await sandboxes.write("box", "blocked.txt", "should-not-land");
   await expect(client.sandboxMerge!("box")).rejects.toThrow(
     /failed validation/u,
@@ -7909,7 +7909,7 @@ test("evidence summary is secret-safe", async () => {
   client.start(() => undefined);
   await client.submitAndWait!("create sandbox");
   await pollHistoryForFinished(client);
-  const sandboxes = kernel.service<SandboxService>(SANDBOX_SERVICE)!;
+  const sandboxes = kernel.service<SandboxService>(sandboxService.id)!;
   await sandboxes.write("box", "ok.txt", "ok");
   await client.sandboxMerge!("box");
   const records = await client.evidenceRecords!();

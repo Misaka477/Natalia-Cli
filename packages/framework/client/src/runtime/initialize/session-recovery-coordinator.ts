@@ -17,7 +17,11 @@ import {
   type RecoveryContextPlan,
 } from "../session-project-client";
 import type { InitializeScope } from "./runtime";
-import { mcpService, terminalController } from "@natalia/runtime-services";
+import {
+  mcpService,
+  sandboxService,
+  terminalController,
+} from "@natalia/runtime-services";
 import { attachmentService as attachmentServiceToken } from "@natalia/attachments";
 import { perfLog } from "@natalia/runtime-services";
 import { today } from "@natalia/runtime";
@@ -110,7 +114,7 @@ export class SessionRecoveryCoordinator {
     await terminal?.init();
     terminal?.setActiveSession(scope.sessionID);
 
-    await scope.resolveService<SandboxService>(scope.SANDBOX_SERVICE)?.init();
+    await scope.serviceDirectory.getOptional(sandboxService)?.init();
 
     const fastPathEnabled = process.env.NATALIA_FAST_EXECUTION_LOAD === "1";
     memoryTrace("recovery.load.start", { sessionID: scope.sessionID });

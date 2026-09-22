@@ -1,3 +1,4 @@
+export { toolPolicy } from "./service-token";
 export {
   commandHasPrefix,
   ensureBashCommandParser,

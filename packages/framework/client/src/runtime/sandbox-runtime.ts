@@ -3,8 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { EpisodeID, SandboxDiffKind, SessionID } from "@natalia/contracts";
 import {
-  SANDBOX_SERVICE,
   WORK_LEDGER_CONTROLLER_SERVICE,
+  sandboxService,
   type GovernanceLedgerController,
   type RuntimeServiceClient,
   type SandboxService,
@@ -77,7 +77,7 @@ export function createSandboxRuntime(
   episodeID?: EpisodeID,
 ): SandboxRuntime {
   function requireSandboxes() {
-    const sandboxes = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
+    const sandboxes = ctx.state.serviceDirectory.get(sandboxService);
     if (!sandboxes) throw new Error("sandbox controller unavailable");
     return sandboxes;
   }

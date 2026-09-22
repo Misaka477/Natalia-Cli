@@ -13,7 +13,7 @@ import type {
 } from "@natalia/contracts";
 import type { SubagentRecordView } from "@natalia/tools";
 import {
-  SUBAGENTS_SERVICE,
+  subagentsService,
   type SubagentsService,
 } from "@natalia/runtime-services";
 import type { RuntimeContext } from "./context";
@@ -39,7 +39,7 @@ export function createSubagentRuntime(
       await ctx.ports.getReady();
       const start = performance.now();
       const subagents =
-        ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
+        ctx.state.serviceDirectory.getOptional(subagentsService);
       if (!subagents?.enabled()) return [];
       const ownerSessionID = sessionID ?? ctx.ports.getActiveExec()?.session.id;
       const records = subagents

@@ -11,10 +11,10 @@ import type { ProviderToolCall } from "@natalia/runtime";
 import type { RuntimeTool } from "@natalia/tools";
 import type { RuntimeEvent } from "@natalia/contracts";
 import {
-  SANDBOX_SERVICE,
-  SUBAGENTS_SERVICE,
-  terminalController,
   WORK_LEDGER_CONTROLLER_SERVICE,
+  sandboxService,
+  subagentsService,
+  terminalController,
   type SandboxService,
   type SubagentsService,
   type TerminalController,
@@ -65,10 +65,9 @@ export function buildToolExecutionContext(input: BuildContextInput) {
     scheduleRuntimeStatusSnapshot,
   } = ctx.ports;
   const { sandboxResourcesByID } = ctx.state;
-  const subagents =
-    ctx.ports.resolveService<SubagentsService>(SUBAGENTS_SERVICE);
+  const subagents = ctx.state.serviceDirectory.getOptional(subagentsService);
   const terminal = ctx.state.serviceDirectory.getOptional(terminalController);
-  const sandboxes = ctx.ports.resolveService<SandboxService>(SANDBOX_SERVICE);
+  const sandboxes = ctx.state.serviceDirectory.getOptional(sandboxService);
   return {
     workspaceRoot,
     signal,

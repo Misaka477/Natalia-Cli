@@ -10,7 +10,11 @@ import type {
   SubagentsService,
   ToolHookEvent,
 } from "../context";
-import { terminalController } from "@natalia/runtime-services";
+import {
+  sandboxService,
+  subagentsService,
+  terminalController,
+} from "@natalia/runtime-services";
 import { createInitializeRuntime } from "./runtime";
 import {
   clearRepeat,
@@ -26,11 +30,9 @@ export async function createSubagentTools(
   support: SubagentSupport,
 ) {
   const scope = createInitializeRuntime(ctx);
-  const subagents = scope.resolveService<SubagentsService>(
-    scope.SUBAGENTS_SERVICE,
-  );
+  const subagents = scope.serviceDirectory.getOptional(subagentsService);
   const terminal = scope.serviceDirectory.getOptional(terminalController);
-  const sandbox = scope.resolveService<SandboxService>(scope.SANDBOX_SERVICE);
+  const sandbox = scope.serviceDirectory.getOptional(sandboxService);
   const { publishSubagentEvent, subagentTurnID } = support;
   async function executeSubagentToolCall(input: {
     call: ProviderToolCall;

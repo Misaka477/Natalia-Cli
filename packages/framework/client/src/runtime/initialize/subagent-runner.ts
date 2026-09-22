@@ -22,6 +22,7 @@ import {
   subagentSettledNoticeContent,
 } from "./subagent-settled-notice";
 import { activePlanForExec } from "../collaboration/plan-doc-runtime";
+import { sandboxService, subagentsService } from "@natalia/runtime-services";
 
 /**
  * The active plan pointer for a subagent (ADR D4/B2): planID + documentPath +
@@ -74,13 +75,9 @@ export async function installSubagents(
   },
 ) {
   const scope = createInitializeRuntime(ctx);
-  const subagents = scope.resolveService<SubagentsService>(
-    scope.SUBAGENTS_SERVICE,
-  );
-  if (!subagents)
-    throw new Error("subagents controller unavailable (natalia-subagents)");
+  const subagents = scope.serviceDirectory.get(subagentsService);
   const subagentsController = subagents;
-  const sandbox = scope.resolveService<SandboxService>(scope.SANDBOX_SERVICE);
+  const sandbox = scope.serviceDirectory.getOptional(sandboxService);
   const {
     acquireSandboxedSubagentSlot,
     releaseSandboxedSubagentSlot,

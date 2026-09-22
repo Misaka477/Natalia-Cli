@@ -25,15 +25,14 @@ import { createInitializeRuntime } from "./runtime";
 import { retryService } from "@natalia/retry";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import { compactionService } from "@natalia/compaction";
+import { subagentsService } from "@natalia/runtime-services";
 
 export async function createSubagentSupport(
   ctx: RuntimeContext,
   _options: InitializeOptions,
 ): Promise<SubagentSupport> {
   const scope = createInitializeRuntime(ctx);
-  const subagents = scope.resolveService<SubagentsService>(
-    scope.SUBAGENTS_SERVICE,
-  );
+  const subagents = scope.serviceDirectory.getOptional(subagentsService);
   const ledgerFactory = scope.serviceDirectory.get(contextLedgerFactory);
   const resolvedContextLedgerFactory = ledgerFactory;
   const resolvedCompactionService =
