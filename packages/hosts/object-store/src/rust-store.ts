@@ -98,6 +98,13 @@ type RustCasLib = {
     ) => number;
     zlib_deflate_bound: (dataLen: number) => number;
     zlib_inflate_max: (zLen: number) => number;
+    pack_frame: (
+      input: unknown,
+      inputLen: number,
+      out: unknown,
+      outCap: number,
+    ) => number;
+    pack_frame_bound: (inputLen: number) => number;
     cas_put_chunked: (
       root: unknown,
       rootLen: number,
@@ -192,6 +199,11 @@ function load(): RustCasLib {
     },
     zlib_deflate_bound: { args: [FFIType.u64], returns: FFIType.i64 },
     zlib_inflate_max: { args: [FFIType.u64], returns: FFIType.i64 },
+    pack_frame: {
+      args: [FFIType.pointer, FFIType.u64, FFIType.pointer, FFIType.u64],
+      returns: FFIType.i64,
+    },
+    pack_frame_bound: { args: [FFIType.u64], returns: FFIType.i64 },
     cas_put_chunked: {
       args: [
         FFIType.pointer,
@@ -334,6 +346,46 @@ export const rustCas = {
     );
     if (written < 0) throw new Error(`deflate refused (${written})`);
     return out.subarray(0, written);
+  },
+
+  /**
+   * Slice 4b-α: the pack + NDX1 index BYTES for an ordered entry list
+   * (the TS side owns fs and order — listLoose's readdir order passes
+   * through). One call, closed-form capacity (the slice-4a sizing
+   * lesson): {packLen, pack, idxLen, idx} concatenated out.
+   */
+  compactFrame(entries: ReadonlyArray<{ id: string; data: Buffer }>): {
+    pack: Buffer;
+    idx: Buffer;
+  } {
+    const chunks: Buffer[] = [Buffer.alloc(4)];
+    chunks[0]!.writeUInt32LE(entries.length, 0);
+    for (const entry of entries) {
+      const idBuf = Buffer.from(entry.id, "utf8");
+      const idLen = Buffer.alloc(4);
+      idLen.writeUInt32LE(idBuf.byteLength, 0);
+      const dataLen = Buffer.alloc(4);
+      dataLen.writeUInt32LE(entry.data.byteLength, 0);
+      chunks.push(idLen, idBuf, dataLen, entry.data);
+    }
+    const input = Buffer.concat(chunks);
+    const bound = Number(load().symbols.pack_frame_bound(input.byteLength));
+    const out = Buffer.alloc(bound);
+    const written = Number(
+      load().symbols.pack_frame(
+        bptr(input),
+        input.byteLength,
+        bptr(out),
+        out.byteLength,
+      ),
+    );
+    if (written < 0) throw new Error(`pack_frame refused (${written})`);
+    const view = out.subarray(0, written);
+    const packLen = view.readUInt32LE(0);
+    const pack = view.subarray(4, 4 + packLen);
+    const idxLen = view.readUInt32LE(4 + packLen);
+    const idx = view.subarray(8 + packLen, 8 + packLen + idxLen);
+    return { pack: Buffer.from(pack), idx: Buffer.from(idx) };
   },
 
   has(root: string, id: string): boolean {

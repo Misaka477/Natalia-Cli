@@ -8,6 +8,7 @@
 //! CAS, working end-to-end against the TS implementation.
 
 mod compress;
+mod pack;
 
 use std::fs;
 use std::io::Write;
@@ -394,6 +395,89 @@ pub extern "C" fn zlib_inflate_max(z_len: usize) -> i64 {
     // expansion is bounded too — callers that KNOW the original length
     // (the .idx records it) should pass it instead of trusting this.
     (z_len + z_len / 65_535 * 5 + 64) as i64
+}
+
+/// Slice 4b-α: the pack frame as ONE call (the slice-4a sizing lesson
+/// — no work done twice). Input is flat: u32 count, then per entry
+/// {idLen:u32, id, dataLen:u32, data}. Output: {packLen:u32, pack,
+/// idxLen:u32, idx}. Returns bytes written; -1 = capacity, -2 = bad
+/// input, -3 = panic belt (our own bytes, not untrusted input).
+#[no_mangle]
+pub extern "C" fn pack_frame(
+    input: *const u8,
+    input_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> i64 {
+    let bytes = slice(input, input_len);
+    let result = std::panic::catch_unwind(|| {
+        let mut cursor = 0usize;
+        let need = |cursor: &mut usize, n: usize| -> Result<(), ()> {
+            if *cursor + n > bytes.len() {
+                return Err(());
+            }
+            Ok(())
+        };
+        need(&mut cursor, 4)?;
+        let count = u32::from_le_bytes(
+            bytes[cursor..cursor + 4].try_into().unwrap(),
+        ) as usize;
+        cursor += 4;
+        let mut entries: Vec<(String, Vec<u8>)> = Vec::with_capacity(count);
+        for _ in 0..count {
+            need(&mut cursor, 4)?;
+            let id_len =
+                u32::from_le_bytes(bytes[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            need(&mut cursor, id_len)?;
+            let id = String::from_utf8(bytes[cursor..cursor + id_len].to_vec()).map_err(|_| ())?;
+            cursor += id_len;
+            need(&mut cursor, 4)?;
+            let data_len =
+                u32::from_le_bytes(bytes[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            need(&mut cursor, data_len)?;
+            entries.push((id, bytes[cursor..cursor + data_len].to_vec()));
+            cursor += data_len;
+        }
+        let borrowed: Vec<pack::PackEntry> = entries
+            .iter()
+            .map(|(id, data)| pack::PackEntry { id, data })
+            .collect();
+        Ok(pack::pack_frame(&borrowed))
+    });
+    match result {
+        Ok(Ok((pack, idx))) => {
+            let needed = 4 + pack.len() + 4 + idx.len();
+            if out.is_null() || out_cap < needed {
+                return -1;
+            }
+            // Lengths as locals: no address-of-a-pointer, no temporary
+            // array outliving its use.
+            let pack_len = (pack.len() as u32).to_le_bytes();
+            let idx_len = (idx.len() as u32).to_le_bytes();
+            unsafe {
+                let mut at = out;
+                std::ptr::copy_nonoverlapping(pack_len.as_ptr(), at, 4);
+                at = at.add(4);
+                std::ptr::copy_nonoverlapping(pack.as_ptr(), at, pack.len());
+                at = at.add(pack.len());
+                std::ptr::copy_nonoverlapping(idx_len.as_ptr(), at, 4);
+                at = at.add(4);
+                std::ptr::copy_nonoverlapping(idx.as_ptr(), at, idx.len());
+            }
+            needed as i64
+        }
+        Ok(Err(())) => -2,
+        Err(_) => -3,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pack_frame_bound(input_len: usize) -> i64 {
+    // input + the per-entry framing worst case + the index records: a
+    // closed form from what the caller already knows.
+    (input_len + 4096 + (input_len / 64 + 64) * 64 + input_len / 4) as i64
 }
 
 #[no_mangle]
