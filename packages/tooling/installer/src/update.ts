@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { compareVersions } from "./channel";
 import {
   chmodSync,
   existsSync,
@@ -53,7 +54,8 @@ export type UpdateOutcome =
   | "rolled_back"
   | "refused"
   | "concurrent"
-  | "not-installed";
+  | "not-installed"
+  | "up-to-date";
 
 export type UpdateStep = { name: string; ok: boolean; detail?: string };
 
@@ -286,6 +288,15 @@ export type UpdateProgramInput = {
   restartUnit?: string;
   /** The restart executor, injected for tests; default = systemctl. */
   exec?: (argv: string[]) => { code: number; output: string };
+  /**
+   * The resolved CHANNEL's latest version. Checked right beside the
+   * locate probe (one probe, one truth): equal = up-to-date (nothing
+   * fetched, nothing staged — the plan's step1 检查版本); older than
+   * the installed version = a REFUSED downgrade (an explicit --from is
+   * how an operator installs an exact source; a channel is an upgrade
+   * path and must never silently roll back).
+   */
+  channelLatest?: string;
 };
 
 /**
@@ -419,6 +430,24 @@ export async function updateProgram(
         ? `runtime at ${input.runtime.url}`
         : "none (next launch picks up the new version)",
     });
+    if (input.channelLatest !== undefined && current.code === 0) {
+      const ordering = compareVersions(
+        input.channelLatest,
+        fromVersion ?? "0.0.0",
+      );
+      if (ordering === 0)
+        return finish("up-to-date", 0, undefined, {
+          fromVersion,
+          toVersion: fromVersion,
+        });
+      if (ordering < 0)
+        return finish(
+          "refused",
+          1,
+          `channel latest ${input.channelLatest} is OLDER than the installed ${fromVersion} — a channel never rolls you back; pass --from to install an exact source`,
+          { fromVersion },
+        );
+    }
 
     // Load + verify AT THE SOURCE before anything is written (the
     // destination must never see an unverified byte).

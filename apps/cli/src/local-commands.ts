@@ -5,7 +5,12 @@ import {
   runtimeDaemonStatus,
 } from "@natalia/transport/host";
 import { daemonDir } from "./command-helpers";
-import { resolveUpdateHome, updateProgram } from "@natalia/installer";
+import {
+  DEFAULT_UPDATE_CHANNEL_URL,
+  resolveChannel,
+  resolveUpdateHome,
+  updateProgram,
+} from "@natalia/installer";
 import {
   groupRunsByPrompt,
   scoreRun,
@@ -155,17 +160,24 @@ export async function handleLocalCommands(argv: string[]) {
       // swap is a symlink rename; install.ps1 parity is the plan's own
       // Windows follow-up). The default channel lands in D5 — until
       // then a source is an explicit --from (the plan's own staging).
-      const valueFlags = new Set(["--from", "--home", "--restart-unit"]);
+      const valueFlags = new Set([
+        "--from",
+        "--home",
+        "--restart-unit",
+        "--channel",
+      ]);
       const positionals: string[] = [];
       let from: string | undefined;
       let home: string | undefined;
       let restartUnit: string | undefined;
+      let channelFlag: string | undefined;
       for (let index = 1; index < argv.length; index += 1) {
         const arg = argv[index]!;
         if (valueFlags.has(arg)) {
           if (arg === "--from") from = argv[index + 1];
           if (arg === "--home") home = argv[index + 1];
           if (arg === "--restart-unit") restartUnit = argv[index + 1];
+          if (arg === "--channel") channelFlag = argv[index + 1];
           index += 1;
           continue;
         }
@@ -178,11 +190,28 @@ export async function handleLocalCommands(argv: string[]) {
         );
         process.exit(1);
       }
+      // D5's resolution order: an explicit --from wins (any exact
+      // source, downgrade allowed = an operator's deliberate install);
+      // otherwise the channel — --channel, then NATALIA_UPDATE_CHANNEL,
+      // then the plan's contracted default URL (it activates when ops
+      // serves natalia.dev; until then the failure is bounded and
+      // honest, naming both overrides).
+      let channelLatest: string | undefined;
       if (!from) {
-        console.error(
-          "update: no source — pass --from <dir|https-url> (the default channel arrives with D5)",
-        );
-        process.exit(1);
+        const descriptor =
+          channelFlag ??
+          process.env.NATALIA_UPDATE_CHANNEL ??
+          DEFAULT_UPDATE_CHANNEL_URL;
+        try {
+          const resolved = await resolveChannel(descriptor);
+          from = resolved.source;
+          channelLatest = resolved.channel.latest;
+        } catch (error) {
+          console.error(
+            `update: ${error instanceof Error ? error.message : String(error)} — set NATALIA_UPDATE_CHANNEL or pass --from <dir|url>`,
+          );
+          process.exit(1);
+        }
       }
       const installHome = resolveUpdateHome(process.env, home);
       // The daemon store IS the detection (its own status is the
@@ -206,7 +235,8 @@ export async function handleLocalCommands(argv: string[]) {
           : undefined;
       const result = await updateProgram({
         home: installHome,
-        from,
+        from: from!,
+        ...(channelLatest !== undefined ? { channelLatest } : {}),
         ...(runtime ? { runtime } : {}),
         ...(restartUnit ? { restartUnit } : {}),
       });

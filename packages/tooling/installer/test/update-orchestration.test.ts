@@ -190,3 +190,59 @@ test("no runtime = no drain step (the interactive path is unchanged)", async () 
     "none",
   );
 });
+
+test("channelLatest: equal = up-to-date with nothing staged; older = a refused downgrade; newer proceeds", async () => {
+  // equal: the channel's latest IS the installed version
+  const equalHome = makeHome(); // installed 1.0.0
+  const equal = await updateProgram({
+    home: equalHome,
+    from: makeRelease("2.0.0"),
+    channelLatest: "1.0.0",
+  });
+  expect(equal.outcome).toBe("up-to-date");
+  expect(equal.exitCode).toBe(0);
+  expect(equal.steps.map((s) => s.name)).toEqual(["locate", "detect"]);
+  expect(existsSync(join(equalHome, "versions", "2.0.0"))).toBe(false);
+
+  // older: the channel would ROLL US BACK — a channel is upgrade-only,
+  // an explicit --from is the deliberate exact install
+  const olderHome = makeHome(); // installed 1.0.0... downgrade needs an
+  // installed version NEWER than the channel: make the install 2.0.0
+  rmSync(join(olderHome, "versions", "1.0.0"), {
+    recursive: true,
+    force: true,
+  });
+  const two = join(olderHome, "versions", "2.0.0");
+  mkdirSync(two, { recursive: true });
+  const bin = join(two, "natalia");
+  writeFileSync(bin, "#!/bin/sh\nprintf '%s\\n' \"2.0.0\"\n");
+  chmodSync(bin, 0o755);
+  rmSync(join(olderHome, "bin", "natalia"));
+  symlinkSync("../versions/2.0.0/natalia", join(olderHome, "bin", "natalia"));
+  const down = await updateProgram({
+    home: olderHome,
+    from: makeRelease("1.0.0"),
+    channelLatest: "1.0.0",
+  });
+  expect(down.outcome).toBe("refused");
+  expect(down.reason).toContain("OLDER than the installed 2.0.0");
+  expect(down.reason).toContain("--from");
+  expect(existsSync(join(olderHome, "versions", "1.0.0"))).toBe(false);
+
+  // newer: the upgrade proceeds through the whole path
+  const newer = await updateProgram({
+    home: makeHome(),
+    from: makeRelease("3.0.0"),
+    channelLatest: "3.0.0",
+  });
+  expect(newer.outcome).toBe("switched");
+  expect(newer.steps.map((s) => s.name)).toEqual([
+    "locate",
+    "detect",
+    "verify",
+    "version",
+    "stage",
+    "swap",
+    "probe",
+  ]);
+});

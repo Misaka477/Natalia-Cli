@@ -22,3 +22,4 @@ export {
   type PluginDoctorFinding,
 } from "./maintenance";
 export * from "./update";
+export * from "./channel";
