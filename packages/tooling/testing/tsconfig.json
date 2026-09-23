@@ -17,6 +17,9 @@
     },
     {
       "path": "../../framework/session"
+    },
+    {
+      "path": "../../domains/engineering-intelligence"
     }
   ]
 }
