@@ -12,6 +12,19 @@
  * returned handle.
  */
 import { createAttachmentService } from "@anthelia/attachments";
+import {
+  compositionProfile,
+  createCompositionRowRegistry,
+  findBaseProfileFile,
+  loadCompositionProfile,
+  profileSearchCandidates,
+  requireBaseProfileFile,
+} from "@natalia/composition";
+import {
+  CONFINEMENT_COMPOSITION_ROW_ID,
+  CONFINEMENT_MODES,
+  confinementConfigSchema,
+} from "@natalia/contracts";
 import type { ProductRuntimeContext } from "@natalia/collab";
 import { createCheckpointFactory } from "@anthelia/checkpoint";
 import { createCompactionService } from "@anthelia/compaction";
@@ -390,7 +403,7 @@ export async function wireFrameworkServices(
   refreshRuntimeConfig();
 
   let pluginInputDisposers: Array<() => void> = [];
-  function refreshPluginInputs() {
+  async function refreshPluginInputs() {
     for (const disposeInput of pluginInputDisposers.splice(0).reverse())
       disposeInput();
     const config = ctx.ports.getTsRuntimeConfig();
@@ -410,6 +423,44 @@ export async function wireFrameworkServices(
     );
     provide(mcpInput, ctx.state.initialize.mcpPluginInput(config));
     provide(skillsInput, ctx.state.initialize.skillsPluginInput(config));
+
+    // P3 "base profile 随包机制" (interface spec §6.3): the shipped
+    // read-only base, then user and workspace drop-ins (lexicographic
+    // within a layer, same-id whole-field override, per-row origin).
+    // Re-provided on every config wire above, so a drop-in edit lands on
+    // reload — and activation fails fast with the file and every legal
+    // value named (§6.4) rather than booting a composition nobody can
+    // read. The ONE registered row is the one with a consumer today
+    // (§6.7.2: no consumerless rows); its impl set is empty on purpose —
+    // the confinement backend is discovered at runtime, not selected.
+    const profileRegistry = createCompositionRowRegistry([
+      {
+        rowID: CONFINEMENT_COMPOSITION_ROW_ID,
+        implIDs: [],
+        legalSummary: `mode ∈ ${CONFINEMENT_MODES.join(" | ")}`,
+        configSchema: confinementConfigSchema,
+      },
+    ]);
+    const baseFile = requireBaseProfileFile(
+      profileSearchCandidates({
+        explicitFile: process.env.NATALIA_BASE_PROFILE,
+        sourceDir: import.meta.dir,
+        execPath: process.execPath,
+        argvScript: process.argv[1],
+      }),
+    );
+    const profileHome = ctx.ports.getUserRuntimeHome();
+    provide(
+      compositionProfile,
+      await loadCompositionProfile({
+        baseFile,
+        globalDir: profileHome
+          ? join(profileHome, ".natalia", "composition.d")
+          : undefined,
+        workspaceDir: join(workspaceRoot, ".natalia", "composition.d"),
+        registry: profileRegistry,
+      }),
+    );
     const terminal: TerminalInput = {
       workspaceRoot,
       publish: (event) =>
@@ -436,7 +487,7 @@ export async function wireFrameworkServices(
     };
     provide(terminalInput, terminal);
   }
-  refreshPluginInputs();
+  await refreshPluginInputs();
 
   const retry: RetryService = createRetryService({
     policy: () => ctx.ports.getRetryPolicy(),
@@ -653,9 +704,9 @@ export async function wireFrameworkServices(
   closeHandles.push(runtimeStatus.close);
 
   return {
-    refreshRuntimeConfig() {
+    async refreshRuntimeConfig() {
       refreshRuntimeConfig();
-      refreshPluginInputs();
+      await refreshPluginInputs();
     },
     close() {
       dispose();

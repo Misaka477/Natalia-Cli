@@ -77,6 +77,15 @@ export const confinementConfigSchema = z.object({
 });
 
 /**
+ * The composition-profile row that carries the confinement default
+ * (interface spec §6.8's `anthelia.sandbox` row). One name for the
+ * shipped `composition.base.json`, the registrar, and the
+ * tool-execution consumer — the profile freshness test keeps the file
+ * and the code in step.
+ */
+export const CONFINEMENT_COMPOSITION_ROW_ID = "anthelia.sandbox";
+
+/**
  * Wall-clock budget for one subagent run, in milliseconds.
  *
  * Bounds a run that is stuck rather than merely slow: a provider call that

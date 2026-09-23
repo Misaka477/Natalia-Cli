@@ -119,6 +119,14 @@ for (const target of targets) {
         recursive: true,
       });
     }
+    // The shipped composition base (P3 "base profile 随包机制"): copied
+    // into the app root BEFORE the hash walk, so SHA256SUMS lists it and
+    // install.sh's files loop lands it next to the binary — where the
+    // runtime's executable-directory search finds it.
+    await Bun.write(
+      join(outDir, "composition.base.json"),
+      await Bun.file(join(root, "composition.base.json")).text(),
+    );
     // The shared checksum walk (platform) — same inventory the store
     // export and the debug bundle produce.
     const { files, bytes: totalBytes } = await hashTreeFiles(outDir);

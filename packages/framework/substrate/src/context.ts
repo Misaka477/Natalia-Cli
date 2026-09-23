@@ -104,7 +104,12 @@ type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
  * framework resources at dispose.
  */
 export type FrameworkServices = {
-  refreshRuntimeConfig(): void;
+  /**
+   * Re-applies config INCLUDING the composition profile's drop-in
+   * layers (the profile load is asynchronous) — callers await it so a
+   * reload never reports done before the composition it reloaded.
+   */
+  refreshRuntimeConfig(): Promise<void>;
   close(): void;
 };
 

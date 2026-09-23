@@ -74,6 +74,7 @@
       "dependencies": {
         "@natalia/contracts": "workspace:*",
         "@natalia/object-store": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
       },
     },
     "packages/core/contracts": {

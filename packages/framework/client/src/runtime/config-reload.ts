@@ -308,7 +308,7 @@ export function createConfigReload(
       // Permission changes (default profile switch, auto/ask flip, profile
       // edits) apply immediately, not on the next restart.
       ctx.ports.reloadPermissionSettings(tsConfig.config);
-      ctx.state.frameworkServices?.refreshRuntimeConfig();
+      await ctx.state.frameworkServices?.refreshRuntimeConfig();
       const permissionMode = getPermissionMode();
       const selectedPermissionProfile = getSelectedPermissionProfile();
       for (const exec of getExecutionBySession().values()) {
@@ -460,7 +460,7 @@ export function createConfigReload(
     ports.setSelectedPermissionProfile(previous.selectedPermissionProfile);
     ports.setDefaultPermissionMode(previous.defaultPermissionMode);
     ports.setDefaultPermissionProfile(previous.defaultPermissionProfile);
-    ctx.state.frameworkServices?.refreshRuntimeConfig();
+    await ctx.state.frameworkServices?.refreshRuntimeConfig();
     ports.setProvider(previous.provider);
     ports.setProviderSource(previous.providerSource);
     // Third rollback gap: the forward reload swaps the provider adapter

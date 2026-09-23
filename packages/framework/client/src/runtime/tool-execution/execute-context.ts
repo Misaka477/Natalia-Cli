@@ -8,6 +8,14 @@
  * `execute-run.ts` stays within the source line limit.
  */
 import type { ProviderToolCall } from "@natalia/runtime";
+import {
+  compositionProfile,
+  type CompositionProfile,
+} from "@natalia/composition";
+import {
+  CONFINEMENT_COMPOSITION_ROW_ID,
+  CONFINEMENT_MODES,
+} from "@natalia/contracts";
 import type { ConfinementMode } from "@natalia/confinement";
 import { rinaCache } from "@natalia/rina";
 import type { RuntimeTool } from "@anthelia/tools";
@@ -25,6 +33,34 @@ import { workspaceMutations } from "@anthelia/workspace";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import type { WorkLedgerController } from "@natalia/work-ledger";
+
+/**
+ * The composition-default file-effect mode (sandbox study: policy
+ * rides the call; this is the default it rides FROM). Precedence: the
+ * composition profile's `anthelia.sandbox` row — the plane the master
+ * plan P3 base profile ships — then the legacy config key as its
+ * fallback (retire the row with `disabled: true` in a drop-in to hand
+ * the key back), then the schema's default. Both sources are validated
+ * at their own boundary; this guard re-checks membership so a hand-built
+ * profile cannot smuggle a mode past either.
+ */
+export function effectiveConfinementMode(input: {
+  profile?: CompositionProfile | undefined;
+  configMode?: string | undefined;
+}): ConfinementMode {
+  const legal = (mode: string | undefined): mode is ConfinementMode =>
+    typeof mode === "string" &&
+    (CONFINEMENT_MODES as readonly string[]).includes(mode);
+  const row = input.profile?.rows.find(
+    (candidate) =>
+      candidate.id === CONFINEMENT_COMPOSITION_ROW_ID && !candidate.disabled,
+  );
+  const rowMode =
+    typeof row?.config?.mode === "string" ? row.config.mode : undefined;
+  if (legal(rowMode)) return rowMode;
+  if (legal(input.configMode)) return input.configMode;
+  return "workspace-write";
+}
 
 export type BuildContextInput = {
   exec: SessionExecutionState | undefined;
@@ -77,7 +113,10 @@ export function buildToolExecutionContext(input: BuildContextInput) {
     sessionID: exec?.session.id ?? sessionID,
     // The file-effect mode for this call: composition default, per-call
     // truth rides down to runShell (sandbox study: policy rides the call).
-    confinement: getTsRuntimeConfig()?.confinement?.mode ?? "workspace-write",
+    confinement: effectiveConfinementMode({
+      profile: ctx.state.serviceDirectory.getOptional(compositionProfile),
+      configMode: getTsRuntimeConfig()?.confinement?.mode,
+    }),
     // The escalation channel, closed over this call's identity — the same
     // approval seam tools already use, routed by turn so the permission
     // floors decide (read_only refuses, auto grants, ask prompts).

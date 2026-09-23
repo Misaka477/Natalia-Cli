@@ -11,6 +11,9 @@
     },
     {
       "path": "../../hosts/object-store"
+    },
+    {
+      "path": "../../core/runtime-services"
     }
   ]
 }
