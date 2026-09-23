@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthelia/attachments": "workspace:*",
+    "@anthelia/runtime": "workspace:*",
     "@anthelia/session": "workspace:*",
     "@anthelia/contracts": "workspace:*",
     "@anthelia/platform": "workspace:*",

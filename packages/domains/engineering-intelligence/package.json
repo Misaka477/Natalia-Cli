@@ -9,9 +9,11 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@anthelia/runtime": "workspace:*",
     "@anthelia/session": "workspace:*",
     "@anthelia/session-store": "workspace:*",
     "@anthelia/substrate": "workspace:*",
+    "@anthelia/workspace": "workspace:*",
     "@natalia/collab": "workspace:*",
     "@anthelia/contracts": "workspace:*",
     "@natalia/governance-ledger": "workspace:*",

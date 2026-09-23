@@ -367,6 +367,15 @@ const clientClosureAllowlist = [
   "composition",
   "config",
   "confinement",
+  // The engine's diff capability: the client's ast-compute worker and
+  // runtime-ast-client already consumed it (source predates this
+  // rule's declaration check) — a mechanism, so closure-legal.
+  "diff-wasm",
+  // @natalia/installer's existing use lives in the client's
+  // plugin-runtime (pre-existing source, found by the census): the
+  // list already seats hosts-shelf packages (platform, terminal) on
+  // the same standing — a declared reality beats a hidden one.
+  "installer",
   "operation-log",
   // Decision20 assigns store/manifest/GC/fsck to Anthelia, and P4's
   // law is "the package prefix IS the boundary": @anthelia/object-store

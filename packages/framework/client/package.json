@@ -14,6 +14,7 @@
     "@anthelia/attachments": "workspace:*",
     "@anthelia/checkpoint": "workspace:*",
     "@anthelia/compaction": "workspace:*",
+    "@anthelia/diff-wasm": "workspace:*",
     "@anthelia/provider-model": "workspace:*",
     "@anthelia/retry": "workspace:*",
     "@anthelia/sandbox": "workspace:*",
@@ -46,6 +47,7 @@
     "@anthelia/runtime-diagnostics": "workspace:*",
     "@anthelia/runtime-services": "workspace:*",
     "@anthelia/runtime-status": "workspace:*",
+    "@natalia/installer": "workspace:*",
     "@natalia/tool-policy": "workspace:*",
     "@natalia/work-ledger": "workspace:*",
     "@anthelia/object-store": "workspace:*"

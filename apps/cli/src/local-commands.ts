@@ -16,7 +16,7 @@ import {
   scoreRun,
   segmentTurns,
 } from "@natalia/engineering-intelligence";
-import { createLocalSessionService } from "@natalia/session-store";
+import { createLocalSessionService } from "@anthelia/session-store";
 import { createRecordedFetch, readCassette } from "@natalia/transport";
 import {
   deleteLocalSession,

@@ -25,6 +25,7 @@ import {
   findElectronDependency,
   findElectronResidueInText,
 } from "../src/electron-residue-rules";
+import { findUndeclaredWorkspaceImports } from "../src/manifest-dep-rules";
 
 const root = process.cwd();
 const dependencyGuarded = [
@@ -286,6 +287,15 @@ for (const manifest of await workspacePackageManifests("packages")) {
   for (const rootDir of ["packages", "apps"]) {
     for (const entry of await workspacePackageManifests(rootDir)) {
       const pkgDir = entry.path.slice(0, -"/package.json".length);
+      // Manifest<->src reconciliation (the census's finding): every
+      // workspace import in this package's src must be declared —
+      // hoisting can hide it from the chain, not from this rule.
+      for (const failure of await findUndeclaredWorkspaceImports({
+        ownName: entry.name ?? "",
+        packageDir: pkgDir,
+        deps: entry.dependencies ?? {},
+      }))
+        failures.push(`${failure} (manifest<->src reconciliation)`);
       await scan(join(pkgDir, "src"), codeOnly, (full, text) => {
         // The rule's own file must be able to NAME what it bans (its
         // patterns and prose contain the words) — an explicit,

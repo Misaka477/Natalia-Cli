@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@anthelia/contracts": "workspace:*",
-    "@anthelia/diff-wasm": "workspace:*"
+    "@anthelia/diff-wasm": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*"
   },
   "devDependencies": {
     "@natalia/client": "workspace:*"
