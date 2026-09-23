@@ -1423,13 +1423,6 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       if (index < 0) continue;
       cursor = index + 1;
       const user = messages[index]!;
-      console.warn("[attachment-lowering]", {
-        entryId: entry.id,
-        attachments: attachments.length,
-        imageInput: activeModelCapabilities.imageInput,
-        providerImageInput: activeProvider.imageInput,
-        mediaTypes: attachments.map((a) => a.mediaType),
-      });
       const textAttachments = attachments.filter(input.attachments.isText);
       const imageAttachments = attachments.filter(
         (attachment) =>

@@ -3,6 +3,7 @@ import {
   findCompositionKernelViolation,
   findPolicyHostDependencyViolation,
   findSubstratePurityViolation,
+  findWorkspaceManagerBoundaryViolation,
 } from "../src/migrated-plugin-rules";
 
 /**
@@ -92,6 +93,31 @@ test("substrate core carries no policy import — the boundary bites", () => {
     findSubstratePurityViolation(
       core,
       'import type { L } from "@natalia/context-ledger";',
+    ),
+  ).toBeUndefined();
+});
+
+test("workspace-manager consumes only the composition root", () => {
+  expect(
+    findWorkspaceManagerBoundaryViolation(
+      'import { createRealRuntimeClient } from "./runtime/main";',
+    ),
+  ).toBeUndefined();
+  expect(
+    findWorkspaceManagerBoundaryViolation(
+      'import { wireFoundation } from "./runtime/composition/foundation";',
+    ),
+  ).toContain("composition root");
+  expect(
+    findWorkspaceManagerBoundaryViolation(
+      'const x = await import("./runtime/ports");',
+    ),
+  ).toContain("composition root");
+  // Package imports (substrate, session-store, contracts) are the
+  // consumer's ordinary diet — only CLIENT-INTERNAL relatives are gated.
+  expect(
+    findWorkspaceManagerBoundaryViolation(
+      'import type { RealRuntimeClientOptions } from "@anthelia/substrate";',
     ),
   ).toBeUndefined();
 });

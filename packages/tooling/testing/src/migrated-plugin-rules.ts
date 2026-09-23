@@ -603,3 +603,28 @@ export function findSubstratePurityViolation(
       return `substrate core (${file}) imports policy package @natalia/${name} — policy belongs in product-context`;
   return undefined;
 }
+
+/**
+ * workspace-manager's consumption boundary (decisions §1.2's "产品对
+ * composition 的使用者" — audited 2026-09-23: the rewrite target was
+ * already met by the intervening rounds, so the clean state is made
+ * machine-checkable instead of left to review). The host facade runs
+ * pre-runtime and may reach the client ONLY through the composition
+ * root (`./runtime/main`); any other client-internal import is
+ * assembly sneaking back.
+ */
+export const WORKSPACE_MANAGER_ALLOWED_RELATIVE = ["./runtime/main"];
+
+export function findWorkspaceManagerBoundaryViolation(
+  text: string,
+): string | undefined {
+  const imports = [...text.matchAll(/(?:from |import\()"(\.\.?\/[^"]+)"/g)]
+    .map((match) => match[1]!)
+    .filter((spec) => !spec.startsWith("@"));
+  for (const spec of imports)
+    if (
+      !(WORKSPACE_MANAGER_ALLOWED_RELATIVE as readonly string[]).includes(spec)
+    )
+      return `workspace-manager may only import the composition root (./runtime/main); found ${spec}`;
+  return undefined;
+}

@@ -11,6 +11,7 @@ import {
   findCompositionKernelViolation,
   findForbiddenRepositoryPathViolation,
   findPolicyHostDependencyViolation,
+  findWorkspaceManagerBoundaryViolation,
   findSubstratePurityViolation,
   findMigratedPluginViolations,
   findTeamPluginDependencyViolation,
@@ -600,6 +601,19 @@ for (const entry of await workspacePackageEntries("packages")) {
     tsconfigBase.compilerOptions?.paths?.["@natalia/composition"],
   );
   if (violation) failures.push(`tsconfig.base.json: ${violation}`);
+}
+
+// workspace-manager's consumption boundary (decisions §1.2): the host
+// facade reaches the client ONLY through the composition root — the
+// "使用者" state audited this round is now enforced.
+{
+  const wmPath = join(
+    root,
+    "packages/framework/client/src/workspace-manager.ts",
+  );
+  const wmText = await readFile(wmPath, "utf8");
+  const violation = findWorkspaceManagerBoundaryViolation(wmText);
+  if (violation) failures.push(`workspace-manager.ts: ${violation}`);
 }
 
 // P3 substrate purity: the core context file carries no policy package
