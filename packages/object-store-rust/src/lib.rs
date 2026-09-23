@@ -7,6 +7,8 @@
 //! layout (chunk.rs/pack.rs/gc.rs) — this slice is the whole loose
 //! CAS, working end-to-end against the TS implementation.
 
+mod compress;
+
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -315,6 +317,83 @@ pub extern "C" fn cas_put_chunked(
         Ok(count) => count,
         Err(_) => -2,
     }
+}
+
+/// Inflates an RFC1950 stream into `out` (capacity from the caller's
+/// `.idx`-known origLen). Returns bytes written; -1 = malformed or
+/// capacity too small, -2 = adler mismatch (rotted record). The decode
+/// runs under catch_unwind: a panic across `extern "C"` aborts the
+/// host process, and this is the crate's only untrusted-input body.
+#[no_mangle]
+pub extern "C" fn zlib_inflate(
+    z: *const u8,
+    z_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> i64 {
+    let stream = slice(z, z_len);
+    let result = std::panic::catch_unwind(|| compress::inflate(stream));
+    match result {
+        Ok(Ok(bytes)) => {
+            // A zero-length output is a legal success: the caller's
+            // exact-cap buffer has no address (bun:ffi hands null for
+            // empty) — same lesson as the store's empty puts.
+            if bytes.is_empty() {
+                return 0;
+            }
+            if out.is_null() || out_cap < bytes.len() {
+                return -1;
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len());
+            }
+            bytes.len() as i64
+        }
+        Ok(Err(())) => -1,
+        Err(_) => -2,
+    }
+}
+
+/// Deflates into a zlib-wrapped stored-block stream (node's
+/// inflateSync is the oracle for its validity). Returns bytes written;
+/// -1 = capacity too small, -2 = panic (belt over a body that cannot
+/// currently fail — an encoder over our own bytes, not untrusted
+/// input).
+#[no_mangle]
+pub extern "C" fn zlib_deflate(
+    data: *const u8,
+    data_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> i64 {
+    let bytes = slice(data, data_len);
+    let result = std::panic::catch_unwind(|| compress::deflate_stored(bytes));
+    match result {
+        Ok(stream) => {
+            if out.is_null() || out_cap < stream.len() {
+                return -1;
+            }
+            unsafe {
+                std::ptr::copy_nonoverlapping(stream.as_ptr(), out, stream.len());
+            }
+            stream.len() as i64
+        }
+        Err(_) => -2,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn zlib_deflate_bound(data_len: usize) -> i64 {
+    compress::deflate_bound(data_len) as i64
+}
+
+#[no_mangle]
+pub extern "C" fn zlib_inflate_max(z_len: usize) -> i64 {
+    // A stored-block zlib stream can never expand past its input by
+    // more than the framing per 64 KiB; a dynamic stream's worst-case
+    // expansion is bounded too — callers that KNOW the original length
+    // (the .idx records it) should pass it instead of trusting this.
+    (z_len + z_len / 65_535 * 5 + 64) as i64
 }
 
 #[no_mangle]

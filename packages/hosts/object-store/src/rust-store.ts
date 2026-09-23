@@ -84,6 +84,20 @@ type RustCasLib = {
       id: unknown,
       idLen: number,
     ) => number;
+    zlib_inflate: (
+      z: unknown,
+      zLen: number,
+      out: unknown,
+      outCap: number,
+    ) => number;
+    zlib_deflate: (
+      data: unknown,
+      dataLen: number,
+      out: unknown,
+      outCap: number,
+    ) => number;
+    zlib_deflate_bound: (dataLen: number) => number;
+    zlib_inflate_max: (zLen: number) => number;
     cas_put_chunked: (
       root: unknown,
       rootLen: number,
@@ -168,6 +182,16 @@ function load(): RustCasLib {
       args: [FFIType.pointer, FFIType.u64, FFIType.pointer, FFIType.u64],
       returns: FFIType.i64,
     },
+    zlib_inflate: {
+      args: [FFIType.pointer, FFIType.u64, FFIType.pointer, FFIType.u64],
+      returns: FFIType.i64,
+    },
+    zlib_deflate: {
+      args: [FFIType.pointer, FFIType.u64, FFIType.pointer, FFIType.u64],
+      returns: FFIType.i64,
+    },
+    zlib_deflate_bound: { args: [FFIType.u64], returns: FFIType.i64 },
+    zlib_inflate_max: { args: [FFIType.u64], returns: FFIType.i64 },
     cas_put_chunked: {
       args: [
         FFIType.pointer,
@@ -198,7 +222,7 @@ function load(): RustCasLib {
 const enc = (text: string) => Buffer.from(text, "utf8");
 // An empty Buffer has no address ffiPtr can take: the Rust side treats
 // null+0 as an empty slice (the NIST empty-string vector travels here).
-const bptr = (bytes: Buffer): unknown =>
+const bptr = (bytes: Buffer | Uint8Array): unknown =>
   bytes.byteLength === 0 ? null : ffiPtr(bytes);
 const hex = (out: Buffer) => out.toString("utf8");
 
@@ -265,6 +289,53 @@ export const rustCas = {
     if (code !== 0) throw new Error(`cas_put failed: ${code}`);
     return hex(out);
   },
+  /**
+   * Slice 4a: RFC1950 inflate (all three block types), adler-verified
+   * — a rotted record is an error, never silently wrong bytes.
+   * `expectedLength` is what a `.idx` record already knows (origLen),
+   * so nothing ever decodes twice.
+   */
+  inflate(stream: Uint8Array, expectedLength: number): Buffer {
+    const out = Buffer.alloc(expectedLength);
+    const written = Number(
+      load().symbols.zlib_inflate(
+        bptr(stream),
+        stream.byteLength,
+        bptr(out),
+        out.byteLength,
+      ),
+    );
+    if (written < 0)
+      throw new Error(
+        `inflate refused (${written}) — malformed stream or adler mismatch`,
+      );
+    if (written !== expectedLength)
+      throw new Error(`inflate wrote ${written}, expected ${expectedLength}`);
+    return out;
+  },
+
+  /**
+   * Slice 4a: a zlib-wrapped STORED-block stream any reader accepts
+   * (node's inflateSync is the standing oracle). A dynamic-Huffman
+   * encoder is a later optimization the format needs no signature for
+   * — and the delta record choice is what carries most of a pack's
+   * size win anyway.
+   */
+  deflate(data: Uint8Array): Buffer {
+    const bound = Number(load().symbols.zlib_deflate_bound(data.byteLength));
+    const out = Buffer.alloc(bound);
+    const written = Number(
+      load().symbols.zlib_deflate(
+        bptr(data),
+        data.byteLength,
+        bptr(out),
+        out.byteLength,
+      ),
+    );
+    if (written < 0) throw new Error(`deflate refused (${written})`);
+    return out.subarray(0, written);
+  },
+
   has(root: string, id: string): boolean {
     const rootBuf = enc(root);
     const idBuf = enc(id);
