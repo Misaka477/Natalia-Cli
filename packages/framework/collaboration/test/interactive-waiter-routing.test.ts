@@ -12,7 +12,7 @@ import type {
   QuestionResponse,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { createInteractiveWaiter } from "../src/interactive-waiter";
 import { createWorkLedgerController } from "@natalia/work-ledger";
 

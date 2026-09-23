@@ -25,11 +25,11 @@ import { parseBashSimpleCommand } from "@anthelia/tools";
 import {
   terminalApprovalScope,
   terminalInputRisk,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { WorkspaceSandboxTestManager as WorkspaceSandboxManager } from "@natalia/testing";
 
 test("createToolPolicyHookLayer default allows all tools", () => {

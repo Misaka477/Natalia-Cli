@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { PluginPackageConfig } from "@natalia/contracts";
+import type { PluginPackageConfig } from "@anthelia/contracts";
 import {
   discoverPluginManifests,
   resolveInstalledPluginEntries,
@@ -8,7 +8,7 @@ import {
   type DesiredPluginEntry,
   type Plugin,
   type PluginManifestEntry,
-} from "@natalia/plugin";
+} from "@anthelia/plugin";
 
 export async function discoverDesiredPluginEntries(input: {
   pluginStoreRoot?: string;

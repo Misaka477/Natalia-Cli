@@ -6,7 +6,7 @@ import {
   onCleanup,
 } from "solid-js";
 import { render } from "solid-js/web";
-import type { ApprovalResponse, QuestionResponse } from "@natalia/contracts";
+import type { ApprovalResponse, QuestionResponse } from "@anthelia/contracts";
 import {
   defineUiPlugin,
   type UiPlugin,
@@ -65,7 +65,7 @@ function PendingInbox(props: { ctx: UiPluginContext }) {
       void props.ctx.runtime.respondInteractive?.({
         requestID: item.id,
         kind: item.kind,
-        response: response as import("@natalia/contracts").JsonValue,
+        response: response as import("@anthelia/contracts").JsonValue,
         ...(sessionID ? { sessionID } : {}),
       });
     props.ctx.pending.controller.dismiss(item.id);

@@ -1,4 +1,4 @@
-import type { TranscriptPage } from "@natalia/contracts";
+import type { TranscriptPage } from "@anthelia/contracts";
 
 /**
  * Shared cursor arithmetic for transcript-like read surfaces.

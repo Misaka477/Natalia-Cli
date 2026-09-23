@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { ObjectStore } from "@natalia/object-store";
+import { ObjectStore } from "@anthelia/object-store";
 import {
   GENERATION_SCHEMA,
   type Generation,
   type RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

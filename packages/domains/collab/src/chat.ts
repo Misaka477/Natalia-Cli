@@ -1,6 +1,6 @@
 import { attachmentService } from "@anthelia/attachments";
 import { providerModelController } from "@anthelia/provider-model";
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import type {
   ChatMessageRow,
   ChatModelProfile,
@@ -8,7 +8,7 @@ import type {
   RuntimeEvent,
   RuntimeReasoningEffort,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   projectedNaviChatMessages,
   projectedNiaChatMessages,
@@ -49,7 +49,7 @@ async function removedAfterMessage(
   return index === -1 ? undefined : history.length - index - 1;
 }
 import { streamEvent } from "./chat-turn-common";
-import type { AttachmentService } from "@natalia/runtime";
+import type { AttachmentService } from "@anthelia/runtime";
 import type { ProviderModelController } from "@anthelia/provider-model";
 
 type Surface = Pick<RuntimeServiceClient, "naviChat" | "niaChat">;

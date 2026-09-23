@@ -147,7 +147,7 @@ const forbiddenConsumerContractImports = kernelPackages.flatMap((name) => [
  */
 const declaredSubpathExports = [
   "@natalia/transport/host",
-  "@natalia/diff-wasm/ast",
+  "@anthelia/diff-wasm/ast",
   "@natalia/client/fixture",
 ];
 /**
@@ -233,10 +233,10 @@ for (const path of frameworkSubsystemFiles) {
 for (const manifest of await workspacePackageManifests("packages")) {
   if (
     manifest.name?.startsWith("@natalia/plugin-") &&
-    manifest.dependencies?.["@natalia/plugin"] === undefined
+    manifest.dependencies?.["@anthelia/plugin"] === undefined
   )
     failures.push(
-      `${manifest.path}: plugin package must depend on @natalia/plugin`,
+      `${manifest.path}: plugin package must depend on @anthelia/plugin`,
     );
   // §3.6.8: the testing tooling must never be a production dependency — it
   // belongs in devDependencies (audit A-04/A-05). Mechanized here so a package
@@ -599,7 +599,7 @@ for (const entry of await workspacePackageEntries("packages")) {
     compilerOptions?: { paths?: Record<string, readonly string[] | string> };
   };
   const violation = findCompositionKernelViolation(
-    tsconfigBase.compilerOptions?.paths?.["@natalia/composition"],
+    tsconfigBase.compilerOptions?.paths?.["@anthelia/composition"],
   );
   if (violation) failures.push(`tsconfig.base.json: ${violation}`);
 }

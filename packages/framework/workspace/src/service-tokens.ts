@@ -3,7 +3,7 @@ import type {
   WorkspaceFilesController,
   WorkspaceWriteLock,
 } from "./contracts";
-import { defineService } from "@natalia/runtime-services";
+import { defineService } from "@anthelia/runtime-services";
 
 /**
  * Workspace service tokens. Same shape as the engine's other mechanism

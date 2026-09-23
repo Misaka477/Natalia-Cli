@@ -32,7 +32,7 @@ function resolveExec(
   const exec = sessionID
     ? ctx.ports
         .getExecutionBySession()
-        .get(sessionID as import("@natalia/contracts").SessionID)
+        .get(sessionID as import("@anthelia/contracts").SessionID)
     : undefined;
   return exec ?? ctx.ports.getActiveExec();
 }

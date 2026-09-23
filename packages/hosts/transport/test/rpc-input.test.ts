@@ -4,7 +4,7 @@ import {
   type InputMutationResult,
   type RuntimeClient,
   type RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { handleRPCMessage } from "../src/host";
 
 function stubClient(overrides: Partial<RuntimeClient> = {}): RuntimeClient {

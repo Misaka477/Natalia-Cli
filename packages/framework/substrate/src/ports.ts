@@ -6,25 +6,25 @@
  * own file so `context.ts` stays within the source line limit.
  */
 import type { AgentDefinition, AgentRegistry } from "@anthelia/agent";
-import type { CapabilityRegistryHost } from "@natalia/capability";
+import type { CapabilityRegistryHost } from "@anthelia/capability";
 import type {
   CollaborationParticipant,
   ConfigV3,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type {
   ProviderRunnerInput,
   SkillMetadata,
   SkillService,
   TeamBehaviorService,
   ToolPolicyHookLayer,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import type {
   ContextWindowResolver,
   ProviderConcurrencyLimiter,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { SessionExecutionState } from "./context";
 import type { WorkspaceWriteLock } from "@anthelia/workspace";
@@ -44,7 +44,7 @@ export type RuntimePorts = {
     Extract<RuntimeEvent, { type: "status.snapshot" }>
   >;
   ensureExecution: (id: SessionID) => Promise<SessionExecutionState>;
-  commandCatalogEntries: () => import("@natalia/plugin").PluginCommand[];
+  commandCatalogEntries: () => import("@anthelia/plugin").PluginCommand[];
   skillService: () => SkillService | undefined;
   skillsList: () => SkillMetadata[];
   teamBehavior: () => TeamBehaviorService | undefined;
@@ -82,7 +82,7 @@ export type RuntimePorts = {
     exec?: SessionExecutionState,
   ) => ReturnType<
     NonNullable<
-      import("@natalia/contracts").RuntimeClient["confirmedWorkspaceChanges"]
+      import("@anthelia/contracts").RuntimeClient["confirmedWorkspaceChanges"]
     >
   >;
   toolEventTurnID: (event: { id: string; callID?: string }) => string;
@@ -131,7 +131,7 @@ export type RuntimePorts = {
   currentModelImageInput: (exec: SessionExecutionState | undefined) => boolean;
   modelCapabilitiesForExecution: (
     exec: SessionExecutionState | undefined,
-  ) => import("@natalia/contracts").ModelCapabilities;
+  ) => import("@anthelia/contracts").ModelCapabilities;
   mediaTypeForImage: (
     path: string,
   ) => "image/png" | "image/jpeg" | "image/webp" | "image/gif" | undefined;
@@ -143,16 +143,16 @@ export type RuntimePorts = {
   ) => void;
   executeOneTool: (
     turnID: string,
-    call: import("@natalia/runtime").ProviderToolCall,
+    call: import("@anthelia/runtime").ProviderToolCall,
     tool: import("@anthelia/tools").RuntimeTool,
     attachImage?: (path: string) => Promise<void>,
   ) => Promise<string>;
   executeToolCalls: (
     turnID: string,
-    calls: import("@natalia/runtime").ProviderToolCall[],
+    calls: import("@anthelia/runtime").ProviderToolCall[],
     assistant: string,
     materialized: import("@anthelia/tools").ToolMaterialization,
-  ) => Promise<import("@natalia/runtime").ProviderMessage[]>;
+  ) => Promise<import("@anthelia/runtime").ProviderMessage[]>;
   toolResultContent: (
     content: string,
     callID: string,
@@ -172,13 +172,13 @@ export type RuntimePorts = {
   ) => boolean;
   extensionToolPermission: (
     toolName: string,
-    profile?: import("@natalia/contracts").PermissionProfile,
+    profile?: import("@anthelia/contracts").PermissionProfile,
   ) => { allowed: boolean; diagnostics: string[] };
   getWorkspaceRoot: () => string;
   nextMailboxSequence: () => number;
   getWorkspaceWriteLock: () => WorkspaceWriteLock | undefined;
   getWorkspaceCapabilityView: () =>
-    | import("@natalia/capability").CapabilityRegistryView
+    | import("@anthelia/capability").CapabilityRegistryView
     | undefined;
   getTools: () => import("@anthelia/tools").ToolRegistry;
   getAgentRegistry: () => AgentRegistry | undefined;
@@ -196,9 +196,9 @@ export type RuntimePorts = {
     exec?: SessionExecutionState,
   ) => Promise<void>;
   submitInput: (
-    input: import("@natalia/contracts").SubmitInput & { internal?: boolean },
+    input: import("@anthelia/contracts").SubmitInput & { internal?: boolean },
     forSessionID?: SessionID,
-  ) => Promise<import("@natalia/contracts").SubmittedTurn>;
+  ) => Promise<import("@anthelia/contracts").SubmittedTurn>;
   /** Direct human goal control (status bar / RPC); bypasses the model. */
   goalControl?: (
     action: "pause" | "resume" | "clear",
@@ -206,7 +206,7 @@ export type RuntimePorts = {
   ) => Promise<{ ok: boolean; action: string; message?: string }>;
   /** Direct human goal edit (status bar inline editor); bypasses the model. */
   goalEdit?: (
-    input: import("@natalia/contracts").GoalEditInput,
+    input: import("@anthelia/contracts").GoalEditInput,
     sessionID?: SessionID,
   ) => Promise<{ ok: boolean; action: string; message?: string }>;
   /**
@@ -233,7 +233,7 @@ export type RuntimePorts = {
   wakeNia: (exec: SessionExecutionState) => Promise<void>;
   scheduleInternalWake: (
     exec: SessionExecutionState,
-    input: import("@natalia/contracts").SubmitInput,
+    input: import("@anthelia/contracts").SubmitInput,
   ) => void;
   /**
    * Navi's static system prompt (ADR D1): persona, policies and tool-usage
@@ -289,18 +289,18 @@ export type RuntimePorts = {
   getPermissionMode: () => "ask" | "auto" | "read_only";
   setPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
   getSelectedPermissionProfile: () =>
-    | import("@natalia/contracts").PermissionProfile
+    | import("@anthelia/contracts").PermissionProfile
     | undefined;
   setSelectedPermissionProfile: (
-    profile: import("@natalia/contracts").PermissionProfile | undefined,
+    profile: import("@anthelia/contracts").PermissionProfile | undefined,
   ) => void;
   getDefaultPermissionMode: () => "ask" | "auto" | "read_only";
   setDefaultPermissionMode: (mode: "ask" | "auto" | "read_only") => void;
   getDefaultPermissionProfile: () =>
-    | import("@natalia/contracts").PermissionProfile
+    | import("@anthelia/contracts").PermissionProfile
     | undefined;
   setDefaultPermissionProfile: (
-    profile: import("@natalia/contracts").PermissionProfile | undefined,
+    profile: import("@anthelia/contracts").PermissionProfile | undefined,
   ) => void;
   setActiveAbort: (controller: AbortController | undefined) => void;
   setActiveTurnID: (id: string | undefined) => void;

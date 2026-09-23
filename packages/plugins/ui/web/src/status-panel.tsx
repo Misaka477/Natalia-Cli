@@ -4,7 +4,7 @@ import type {
   RuntimeClient,
   RuntimeDiagnostic,
   RuntimeStatusSnapshot,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 type Tab = "status" | "diagnostics" | "tools";
 

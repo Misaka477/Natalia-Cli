@@ -1,4 +1,4 @@
-import type { Invariant } from "@natalia/contracts";
+import type { Invariant } from "@anthelia/contracts";
 
 type RuleRow = {
   priority: "critical" | "high" | "medium" | "low";

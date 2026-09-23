@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent, RuntimeProjectedMessage } from "@natalia/contracts";
+import type {
+  RuntimeEvent,
+  RuntimeProjectedMessage,
+} from "@anthelia/contracts";
 import { createUiPluginHost, defineUiPlugin } from "../src";
 
 function fakeRoot(): HTMLElement {
@@ -28,7 +31,7 @@ function runtimeFixture() {
       sink = next;
     },
     cancel() {},
-  } as unknown as import("@natalia/contracts").RuntimeClient;
+  } as unknown as import("@anthelia/contracts").RuntimeClient;
   return {
     runtime,
     emit(event: RuntimeEvent) {

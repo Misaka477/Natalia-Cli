@@ -3,7 +3,7 @@ import type {
   RuntimeClient,
   RuntimeEvent,
   RuntimeNativeTerminalSession,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { WebTerminal, type WebTerminalApi } from "./web-terminal";
 import "./styles.css";
 

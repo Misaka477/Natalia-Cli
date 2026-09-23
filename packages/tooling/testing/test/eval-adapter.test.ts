@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { scoreRun, segmentTurns } from "@natalia/engineering-intelligence";
 import {
   evalOutcomeFromScore,

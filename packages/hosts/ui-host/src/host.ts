@@ -1,4 +1,4 @@
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import * as viewStore from "@natalia/view-store";
 import {
   createPendingController,

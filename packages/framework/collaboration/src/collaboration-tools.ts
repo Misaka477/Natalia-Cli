@@ -1,4 +1,4 @@
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import {
   projectedCollabMessages,
   projectedMailboxMessages,
@@ -6,7 +6,7 @@ import {
 import {
   buildMailboxStatus,
   createMailboxAcknowledgeTool,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import type { RuntimeTool } from "@anthelia/tools";
 import type { CollaborationService } from "./collaboration-service";
 
@@ -28,10 +28,10 @@ export type CollaborationToolPorts = {
   requestWake(
     sessionID: SessionID,
     request?: {
-      recipient: import("@natalia/contracts").CollaborationParticipant;
+      recipient: import("@anthelia/contracts").CollaborationParticipant;
       messageID: string;
       kind?: string;
-      source?: import("@natalia/contracts").CollaborationParticipant;
+      source?: import("@anthelia/contracts").CollaborationParticipant;
     },
   ): void;
   maxAutoRounds(): number;

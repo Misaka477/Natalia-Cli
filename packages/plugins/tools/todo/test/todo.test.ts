@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   createPluginRegistry,
   pluginWorkspaceResourcePath,
-} from "@natalia/plugin";
+} from "@anthelia/plugin";
 import { createToolRegistry } from "@anthelia/tools";
 import { initialState, applyEvent } from "@natalia/view-store";
 import {

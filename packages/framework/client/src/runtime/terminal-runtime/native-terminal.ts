@@ -1,6 +1,6 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { terminalController } from "@natalia/runtime-services";
-import { RuntimeRefusal } from "@natalia/contracts";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
+import { terminalController } from "@anthelia/runtime-services";
+import { RuntimeRefusal } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import {
@@ -39,7 +39,7 @@ function sessionExec(ctx: RuntimeContext, sessionID?: string) {
   return sessionID
     ? ctx.ports
         .getExecutionBySession()
-        .get(sessionID as import("@natalia/contracts").SessionID)
+        .get(sessionID as import("@anthelia/contracts").SessionID)
     : ctx.ports.getActiveExec();
 }
 
@@ -123,7 +123,7 @@ export function createNativeTerminalSurface(
       // background session's terminal release does not fall back to active.
       void ctx.ports.maybeContinueAfterHumanInput(
         id,
-        sessionID as import("@natalia/contracts").SessionID | undefined,
+        sessionID as import("@anthelia/contracts").SessionID | undefined,
       );
       return sessionView;
     },
@@ -163,7 +163,7 @@ export function createNativeTerminalSurface(
         input.sessionID &&
         !ctx.ports
           .getExecutionBySession()
-          .get(input.sessionID as import("@natalia/contracts").SessionID)
+          .get(input.sessionID as import("@anthelia/contracts").SessionID)
       )
         throw new RuntimeRefusal(`session not found: ${input.sessionID}`);
       const terminal = ctx.state.serviceDirectory.get(terminalController);

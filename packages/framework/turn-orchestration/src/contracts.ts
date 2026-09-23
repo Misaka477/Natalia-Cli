@@ -3,7 +3,7 @@ import type {
   PromptAgentMention,
   PromptResourceMention,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { AdmittedSessionInput, SessionRecord } from "@anthelia/session";
 
 /** Turn orchestration contracts, moved from runtime-services with the token. */

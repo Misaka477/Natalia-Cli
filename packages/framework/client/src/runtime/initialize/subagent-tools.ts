@@ -14,7 +14,7 @@ import {
   sandboxService,
   subagentsService,
   terminalController,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { createInitializeRuntime } from "./runtime";
 import {
   clearRepeat,

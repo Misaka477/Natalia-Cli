@@ -23,7 +23,7 @@ import {
   sessionFactStateFromEvents,
   type SessionFactState,
 } from "@anthelia/session";
-import { runtimeEventSessionSeq, type RuntimeEvent } from "@natalia/contracts";
+import { runtimeEventSessionSeq, type RuntimeEvent } from "@anthelia/contracts";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController } from "@anthelia/session-store";
 import type { RuntimeContext } from "./context";

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import {
   officialPluginWorkspace,
   useWorkspaceCleanup,

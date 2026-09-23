@@ -1,10 +1,10 @@
-import type { InputMutationResult, SessionID } from "@natalia/contracts";
+import type { InputMutationResult, SessionID } from "@anthelia/contracts";
 import {
   buildInputUpdated,
   sessionRunCoordinator,
   type AdmittedSessionInput,
 } from "@anthelia/session";
-import { type RuntimeServiceClient } from "@natalia/runtime-services";
+import { type RuntimeServiceClient } from "@anthelia/runtime-services";
 import { turnController } from "@anthelia/turn-orchestration";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
@@ -53,7 +53,7 @@ function toResult(
 function publishInputEvent(
   ctx: RuntimeContext,
   sessionID: SessionID,
-  event: import("@natalia/contracts").RuntimeEvent,
+  event: import("@anthelia/contracts").RuntimeEvent,
 ): void {
   const exec = ctx.ports.getExecutionBySession().get(sessionID);
   if (exec) ctx.ports.publishForSession(exec, event);
@@ -79,7 +79,7 @@ export function createTurnControlSurface(
       const exec = sessionID
         ? ctx.ports
             .getExecutionBySession()
-            .get(sessionID as import("@natalia/contracts").SessionID)
+            .get(sessionID as import("@anthelia/contracts").SessionID)
         : ctx.ports.getActiveExec();
       const turnID = exec?.activeTurnID;
       if (!turnID) return { paused: false, reason: "no turn is running" };
@@ -102,7 +102,7 @@ export function createTurnControlSurface(
       const exec = sessionID
         ? ctx.ports
             .getExecutionBySession()
-            .get(sessionID as import("@natalia/contracts").SessionID)
+            .get(sessionID as import("@anthelia/contracts").SessionID)
         : ctx.ports.getActiveExec();
       const turnID = exec?.activeTurnID;
       if (!turnID) return { resumed: false, reason: "no turn is running" };

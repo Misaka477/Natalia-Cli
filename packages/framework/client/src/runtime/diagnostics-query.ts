@@ -1,5 +1,5 @@
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { OperationLevel, OperationRecord } from "@natalia/operation-log";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { OperationLevel, OperationRecord } from "@anthelia/operation-log";
 
 /**
  * The unified diagnostics query (decisions §5: journal + operation log,

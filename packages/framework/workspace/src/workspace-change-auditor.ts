@@ -40,8 +40,8 @@ import type {
   WorkspaceObservationHealth,
   WorkspaceObservationHealthReason,
   WorkspaceOperation,
-} from "@natalia/contracts";
-import { workspaceObservationSchema } from "@natalia/contracts";
+} from "@anthelia/contracts";
+import { workspaceObservationSchema } from "@anthelia/contracts";
 import {
   assertSecretSafeObservation,
   attributionFor,

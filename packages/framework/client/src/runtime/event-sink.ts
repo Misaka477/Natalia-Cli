@@ -14,7 +14,7 @@ import {
 import {
   markRuntimeEventSessionSeq,
   runtimeEventDurability,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   createCollabSnapshotScheduler,
   isCollabSnapshotRelevantEvent,
@@ -23,14 +23,14 @@ import { activePlanForExec } from "@natalia/collab";
 import { createGoalRuntime } from "@natalia/goal-runtime";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import { feedSessionEventWindow } from "@anthelia/substrate";
 import { feedSessionFactState } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
-import { perfLog } from "@natalia/runtime-services";
-import { logOf } from "@natalia/operation-log";
+import { perfLog } from "@anthelia/runtime-services";
+import { logOf } from "@anthelia/operation-log";
 
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
   at: string;

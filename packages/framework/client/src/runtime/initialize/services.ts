@@ -12,7 +12,7 @@ import type {
 } from "@natalia/collab";
 import { createInitializeRuntime } from "./runtime";
 
-import { statusSnapshotController } from "@natalia/runtime-status";
+import { statusSnapshotController } from "@anthelia/runtime-status";
 import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
 import { retryService } from "@anthelia/retry";
 import { governanceLedgerController } from "@natalia/governance-ledger";
@@ -25,7 +25,7 @@ import type {
   AttachmentService,
   CompactionService,
   RetryService,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 
 export async function resolveServices(
   ctx: RuntimeContext,

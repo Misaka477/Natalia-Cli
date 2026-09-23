@@ -19,18 +19,18 @@ import {
   loadCompositionProfile,
   profileSearchCandidates,
   requireBaseProfileFile,
-} from "@natalia/composition";
+} from "@anthelia/composition";
 import {
   CONFINEMENT_COMPOSITION_ROW_ID,
   CONFINEMENT_MODES,
   confinementConfigSchema,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { ProductRuntimeContext } from "@natalia/collab";
 import { createCheckpointFactory } from "@anthelia/checkpoint";
 import { createCompactionService } from "@anthelia/compaction";
 import { createContextLedgerFactory } from "@natalia/context-ledger";
-import { RUNTIME_CONFIG_SERVICE } from "@natalia/runtime-config";
-import { runCheckpointCommand } from "@natalia/runtime";
+import { RUNTIME_CONFIG_SERVICE } from "@anthelia/runtime-config";
+import { runCheckpointCommand } from "@anthelia/runtime";
 import { createRetryService, retryService } from "@anthelia/retry";
 import { compactionService } from "@anthelia/compaction";
 import { checkpointFactory } from "@anthelia/checkpoint";
@@ -45,12 +45,12 @@ import {
   createCollaborationService,
   createInteractiveWaiter,
 } from "@natalia/collaboration";
-import type { ServiceToken } from "@natalia/runtime-services";
-import { createCacheFabric, L1_CACHE_KINDS, rinaCache } from "@natalia/rina";
+import type { ServiceToken } from "@anthelia/runtime-services";
+import { createCacheFabric, L1_CACHE_KINDS, rinaCache } from "@anthelia/rina";
 import { join } from "node:path";
-import { createOperationLog, operationLog } from "@natalia/operation-log";
-import { createRuntimeDiagnostics } from "@natalia/runtime-diagnostics";
-import { runtimeDiagnostics } from "@natalia/runtime-services";
+import { createOperationLog, operationLog } from "@anthelia/operation-log";
+import { createRuntimeDiagnostics } from "@anthelia/runtime-diagnostics";
+import { runtimeDiagnostics } from "@anthelia/runtime-services";
 import { sessionInvariants } from "@anthelia/session";
 import { constitutionInvariants } from "@natalia/governance-ledger";
 import { workLedgerInvariants } from "@natalia/work-ledger";
@@ -59,7 +59,7 @@ import {
   migrateLegacyWorkspaceStore,
   operationLogsDir,
   searchWorkspaceFiles,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 import { createSessionHistoryTool } from "../session-history-tool";
 import {
   createPlanDocListTool,
@@ -95,8 +95,8 @@ import {
   workspaceWriteLock,
   type WorkspaceMutationIdentity,
 } from "@anthelia/workspace";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import type { PluginCommandInvocation } from "@natalia/plugin";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
+import type { PluginCommandInvocation } from "@anthelia/plugin";
 import {
   localToolsInput,
   mcpInput,
@@ -106,7 +106,7 @@ import {
   terminalInput,
   type SandboxService,
   type TerminalInput,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import type {
   FrameworkServices,
   InitializeOptions,
@@ -122,7 +122,7 @@ import type {
   AttachmentService,
   CompactionService,
   RetryService,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 
 export type { FrameworkServices } from "@anthelia/substrate";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";

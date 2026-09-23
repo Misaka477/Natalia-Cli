@@ -5,8 +5,8 @@ import { resolve } from "node:path";
 import type {
   RuntimeEvent,
   RuntimeNativeTerminalSession,
-} from "@natalia/contracts";
-import type { TerminalController } from "@natalia/runtime-services";
+} from "@anthelia/contracts";
+import type { TerminalController } from "@anthelia/runtime-services";
 import { nativeTerminalPaneCommand } from "./native-terminal";
 
 const DEFAULT_ROWS = 24;

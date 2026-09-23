@@ -8,7 +8,7 @@ import type {
   ChatModelProfile,
   ConfigV3,
   WorkspaceSummary,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { type AppState, cloneState } from "@natalia/view-store";
 import { cloneStateInWorker } from "./clone-state-worker-client";
 import {
@@ -2926,7 +2926,7 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
   }
 
   function panelVisible(panel: {
-    requires?: import("@natalia/contracts").UiPanelRequirement[];
+    requires?: import("@anthelia/contracts").UiPanelRequirement[];
   }) {
     const context = panelRequirementContext();
     if (!context) return true;

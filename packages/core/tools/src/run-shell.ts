@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
-import { profileShellCommand } from "@natalia/platform";
-import { wrapConfinedCommand } from "@natalia/confinement";
+import { profileShellCommand } from "@anthelia/platform";
+import { wrapConfinedCommand } from "@anthelia/confinement";
 import type { ToolExecutionContext } from "./types";
 import { safeToolEnv, terminateChildProcessTree } from "./child-process";
 

@@ -3,7 +3,7 @@ import type {
   ConfigV3,
   ConstitutionRule,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   GUARD_SCRIPTS,
   buildGeneration,

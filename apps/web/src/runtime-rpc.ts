@@ -1,4 +1,4 @@
-import { markRuntimeEventSessionSeq } from "@natalia/contracts";
+import { markRuntimeEventSessionSeq } from "@anthelia/contracts";
 import { perfLog } from "./perf-log";
 import type {
   ApprovalResponse,
@@ -16,7 +16,7 @@ import type {
   WorkspaceSummary,
   WorkspacePermissionSettings,
   WorkspaceToolSettings,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { callRuntimeRPC } from "@natalia/transport";
 
 export const RPC_METHOD_ROUTES: Record<string, string> = {

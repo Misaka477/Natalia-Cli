@@ -6,12 +6,12 @@
  * inputs. Reads host state through `RuntimeContext` at call time.
  */
 import { resolve } from "node:path";
-import { verifyTrust } from "@natalia/config";
+import { verifyTrust } from "@anthelia/config";
 import { toolFamilyCapabilityID } from "../capabilities/tool-family-capabilities";
-import type { ConfigV3, SessionID } from "@natalia/contracts";
+import type { ConfigV3, SessionID } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
-import type { SkillMetadata } from "@natalia/runtime-services";
+import type { SkillMetadata } from "@anthelia/runtime-services";
 
 export function createPluginAssembly(
   ctx: RuntimeContext,

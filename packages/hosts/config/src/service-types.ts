@@ -1,4 +1,4 @@
-import type { ConfigV3 } from "@natalia/contracts";
+import type { ConfigV3 } from "@anthelia/contracts";
 
 export type ConfigScope =
   | "defaults"

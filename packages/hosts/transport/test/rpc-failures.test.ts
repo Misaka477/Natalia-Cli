@@ -3,8 +3,8 @@ import {
   RuntimeRefusal,
   RUNTIME_RPC_ERROR_CODES,
   failureKindOfCode,
-} from "@natalia/contracts";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+} from "@anthelia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import { handleRPCMessage } from "../src/host";
 
 /**

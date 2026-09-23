@@ -8,7 +8,7 @@ export {
   type WorkspaceGrepInput,
   type WorkspaceGrepMatch,
   type WorkspaceGrepResult,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 export { assertNetworkURL } from "./network";
 export {
   requiresForcedGitApproval,

@@ -3,14 +3,14 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import {
   discoverPluginManifests,
   validatePluginPath,
   type DesiredPluginEntry,
   type Plugin,
   type PluginManifest,
-} from "@natalia/plugin";
+} from "@anthelia/plugin";
 import { createUiAdapterHost } from "../src/ui-host";
 import {
   installPluginSdkLinks,

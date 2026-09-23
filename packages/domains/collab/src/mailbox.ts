@@ -1,10 +1,10 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import {
   projectedMailboxMessages,
   sessionFactMailboxMessages,
   type ProjectedMailboxMessage,
 } from "@anthelia/session";
-import { buildMailboxStatus } from "@natalia/runtime-services";
+import { buildMailboxStatus } from "@anthelia/runtime-services";
 import type {
   RuntimeContext,
   SessionExecutionState,
@@ -34,15 +34,15 @@ async function mailboxExec(ctx: RuntimeContext, sessionID?: string) {
     return (
       ctx.ports
         .getExecutionBySession()
-        .get(sessionID as import("@natalia/contracts").SessionID) ??
+        .get(sessionID as import("@anthelia/contracts").SessionID) ??
       (await ctx.ports.ensureExecution(
-        sessionID as import("@natalia/contracts").SessionID,
+        sessionID as import("@anthelia/contracts").SessionID,
       ))
     );
   return ctx.ports.getActiveExec();
 }
 async function mailboxesWithWorkerFallback(
-  events: import("@natalia/contracts").RuntimeEvent[],
+  events: import("@anthelia/contracts").RuntimeEvent[],
 ) {
   try {
     const { runSessionProjectionInWorker } = await import(

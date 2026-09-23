@@ -21,13 +21,13 @@ import { resolve } from "node:path";
  * degradation).
  */
 
-import type { ConfinementMode } from "@natalia/contracts";
+import type { ConfinementMode } from "@anthelia/contracts";
 
 // The mode vocabulary has one home (the config schema in contracts); this
 // package re-exports it so callers take both the policy words and the
 // enforcement primitive from one import.
 export type { ConfinementMode };
-export { CONFINEMENT_MODES } from "@natalia/contracts";
+export { CONFINEMENT_MODES } from "@anthelia/contracts";
 
 /** Resource ceilings the wrapper applies before exec (the study's family). */
 export type ConfinementRlimits = {

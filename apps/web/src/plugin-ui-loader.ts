@@ -1,5 +1,5 @@
 import { perfLog } from "./perf-log";
-import type { PluginCatalogEntry, RuntimeClient } from "@natalia/contracts";
+import type { PluginCatalogEntry, RuntimeClient } from "@anthelia/contracts";
 import type { UiPlugin, UiPluginHost } from "@natalia/ui-host";
 
 type UiPluginFactory = () => UiPlugin;

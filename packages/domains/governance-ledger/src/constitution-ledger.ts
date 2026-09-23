@@ -19,7 +19,7 @@
  * rule must not be silently loosened (不可回退规则: critical/high 规则不能由 Main
  * Agent 或 Live Work Chat 静默修改).
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 /**
  * Minimal constitution-rule path matching (EI §8.1 a/p/c wiring; the static

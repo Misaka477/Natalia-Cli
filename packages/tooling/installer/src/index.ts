@@ -1,5 +1,5 @@
-export { nataliaLockSchema } from "@natalia/contracts";
-export type { NataliaLock } from "@natalia/contracts";
+export { nataliaLockSchema } from "@anthelia/contracts";
+export type { NataliaLock } from "@anthelia/contracts";
 export {
   loadNataliaLock,
   packageDirectory,

@@ -10,7 +10,7 @@
 import { createSessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController } from "@anthelia/session-store";
 import type { InitializeOptions, RuntimeContext } from "@anthelia/substrate";
-import type { AttachmentService } from "@natalia/runtime";
+import type { AttachmentService } from "@anthelia/runtime";
 
 export type SessionStoreHandle = { close(): void };
 

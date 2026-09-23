@@ -1,18 +1,18 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { ObjectStore } from "@natalia/object-store";
-import { resolveConfig, updateConfigAtScope } from "@natalia/config";
+import { ObjectStore } from "@anthelia/object-store";
+import { resolveConfig, updateConfigAtScope } from "@anthelia/config";
 import {
   configV3Schema,
   type ConstitutionRule,
   type RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   buildGeneration,
   guardsFace,
   storeGeneration,
   switchGeneration,
-} from "@natalia/composition";
+} from "@anthelia/composition";
 import {
   officialPluginWorkspace,
   useWorkspaceCleanup,

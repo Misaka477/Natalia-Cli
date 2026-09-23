@@ -7,19 +7,19 @@
  * settings, and the sandbox/workspace event hooks. Split into its own file so
  * `execute-run.ts` stays within the source line limit.
  */
-import type { ProviderToolCall } from "@natalia/runtime";
+import type { ProviderToolCall } from "@anthelia/runtime";
 import {
   compositionProfile,
   type CompositionProfile,
-} from "@natalia/composition";
+} from "@anthelia/composition";
 import {
   CONFINEMENT_COMPOSITION_ROW_ID,
   CONFINEMENT_MODES,
-} from "@natalia/contracts";
-import type { ConfinementMode } from "@natalia/confinement";
-import { rinaCache } from "@natalia/rina";
+} from "@anthelia/contracts";
+import type { ConfinementMode } from "@anthelia/confinement";
+import { rinaCache } from "@anthelia/rina";
 import type { RuntimeTool } from "@anthelia/tools";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import {
   sandboxService,
   subagentsService,
@@ -27,7 +27,7 @@ import {
   type SandboxService,
   type SubagentsService,
   type TerminalController,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { workspaceMutations } from "@anthelia/workspace";
 import type { RuntimeContext } from "@anthelia/substrate";
@@ -71,7 +71,7 @@ export type BuildContextInput = {
   turnID: string;
   attachImage?: (path: string) => Promise<void>;
   ctx: RuntimeContext;
-  sessionID: import("@natalia/contracts").SessionID;
+  sessionID: import("@anthelia/contracts").SessionID;
   workspaceRoot: string;
   signal: AbortSignal;
   timeoutSec?: number;
@@ -171,11 +171,11 @@ export function buildToolExecutionContext(input: BuildContextInput) {
         turnID,
         kind: input.kind,
         title: input.title,
-        payload: input.payload as import("@natalia/contracts").JsonValue,
+        payload: input.payload as import("@anthelia/contracts").JsonValue,
         ...(input.responseSchema
           ? {
               responseSchema:
-                input.responseSchema as import("@natalia/contracts").JsonSchema,
+                input.responseSchema as import("@anthelia/contracts").JsonSchema,
             }
           : {}),
         ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),

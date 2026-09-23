@@ -1,5 +1,5 @@
-import type { CompactionService } from "@natalia/runtime";
-import { defineService } from "@natalia/runtime-services";
+import type { CompactionService } from "@anthelia/runtime";
+import { defineService } from "@anthelia/runtime-services";
 
 /** The compaction service token; lives with the mechanism that implements it. */
 export const compactionService = defineService<CompactionService>(

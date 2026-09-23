@@ -1,6 +1,6 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import type { ProductRuntimeContext } from "@natalia/collab";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import { createChatSurface } from "@natalia/collab";
 import { createMailboxSurface } from "@natalia/collab";
 import { createPlanDocRuntime } from "@natalia/collab";

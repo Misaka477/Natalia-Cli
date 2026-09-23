@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { SessionID } from "@natalia/contracts";
-import type { ProviderStreamRequest } from "@natalia/runtime";
+import type { SessionID } from "@anthelia/contracts";
+import type { ProviderStreamRequest } from "@anthelia/runtime";
 import { createRealRuntimeClient } from "../src";
 import {
   officialPluginWorkspace,

@@ -1,5 +1,5 @@
-import type { ProjectionContribution } from "@natalia/contracts";
-import type { CapabilityRegistryHost } from "@natalia/capability";
+import type { ProjectionContribution } from "@anthelia/contracts";
+import type { CapabilityRegistryHost } from "@anthelia/capability";
 
 const placements = new Set(["tool-card", "sidebar"]);
 

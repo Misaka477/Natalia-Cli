@@ -1,4 +1,4 @@
-import { READ_CACHE_TOOL_KINDS, type CacheFabric } from "@natalia/rina";
+import { READ_CACHE_TOOL_KINDS, type CacheFabric } from "@anthelia/rina";
 
 /**
  * The L1 read-cache wrap (RINA study: the insertion point is "after the

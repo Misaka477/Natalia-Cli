@@ -17,9 +17,9 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { ObjectStore } from "@natalia/object-store";
-import { mergeConfig, updateConfigAtScope } from "@natalia/config";
-import type { ConfigV3, RuntimeEvent } from "@natalia/contracts";
+import { ObjectStore } from "@anthelia/object-store";
+import { mergeConfig, updateConfigAtScope } from "@anthelia/config";
+import type { ConfigV3, RuntimeEvent } from "@anthelia/contracts";
 import {
   buildGeneration,
   deriveCompositionPointer,
@@ -28,8 +28,8 @@ import {
   storeGeneration,
   switchGeneration,
   type VerificationFace,
-} from "@natalia/composition";
-import { resolveWorkspaceObjectsRoot } from "@natalia/platform";
+} from "@anthelia/composition";
+import { resolveWorkspaceObjectsRoot } from "@anthelia/platform";
 import { createNiaChatSurface } from "@natalia/collab";
 import { activeConstitutionRows } from "./config-reload";
 import type {

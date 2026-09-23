@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { agentsFromConfig } from "@anthelia/agent";
-import { resolveConfig } from "@natalia/config";
+import { resolveConfig } from "@anthelia/config";
 import {
   contextEntriesToProviderMessages,
   contextStatusEvent,
@@ -12,7 +12,7 @@ import {
   providerForModel,
   requireNativeToolCallProtocol,
   withProviderConcurrency,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import {
   modelVisibleEvents,
   projectInteractiveRequests,
@@ -21,7 +21,7 @@ import {
   settleInterruptedTurnIDs,
   settleInterruptedTurns,
 } from "@anthelia/session";
-import { readOnlyToolMessage } from "@natalia/runtime-services";
+import { readOnlyToolMessage } from "@anthelia/runtime-services";
 import { turnController } from "@anthelia/turn-orchestration";
 import {
   cleanupToolOutput,

@@ -12,7 +12,7 @@ import type {
   RuntimeMessagePage,
   RuntimeSessionSummary,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   JsonSessionStore,
   SqliteSessionStore,
@@ -25,18 +25,18 @@ import {
   type SessionRow,
   type StoredContextEpoch,
 } from "@anthelia/session";
-import type {} from "@natalia/runtime-services";
+import type {} from "@anthelia/runtime-services";
 import {
   ensureMessageIndexInWorker,
   loadMessagePageInWorker,
   loadSessionEventsInWorker,
 } from "./session-load-worker-client";
-import { perfLog } from "@natalia/runtime-services";
-import type { AttachmentService } from "@natalia/runtime";
+import { perfLog } from "@anthelia/runtime-services";
+import type { AttachmentService } from "@anthelia/runtime";
 import {
   resolveWorkspaceJsonSessionsDir,
   resolveWorkspaceJournalDatabasePath,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 
 /**
  * Shared SQLite handles are refcounted by database path: several runtimes in

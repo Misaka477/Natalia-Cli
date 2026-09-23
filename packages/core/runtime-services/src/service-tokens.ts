@@ -123,5 +123,5 @@ export const sandboxService = defineService<SandboxService>("sandbox.service", {
  * through here — a token declared there would close a reference cycle).
  */
 export const runtimeDiagnostics = defineService<
-  import("@natalia/runtime-diagnostics").RuntimeDiagnostics
+  import("@anthelia/runtime-diagnostics").RuntimeDiagnostics
 >("runtime.diagnostics", { scope: "process", capability: "services" });

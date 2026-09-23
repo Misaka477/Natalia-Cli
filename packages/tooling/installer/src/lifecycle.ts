@@ -1,7 +1,7 @@
 import { mkdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { updateConfig } from "@natalia/config";
-import type { NataliaLock } from "@natalia/contracts";
+import { updateConfig } from "@anthelia/config";
+import type { NataliaLock } from "@anthelia/contracts";
 import {
   closureDependencies,
   loadNataliaLock,

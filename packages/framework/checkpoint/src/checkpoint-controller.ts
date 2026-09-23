@@ -3,11 +3,11 @@ import type {
   ConfigV3,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   CheckpointStore,
   type DurableContextCheckpoint,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type { CheckpointWorkLedger } from "./contracts";
 import type { CheckpointSubagents } from "./contracts";
 import type { CheckpointController } from "./contracts";
@@ -20,7 +20,7 @@ export function createCheckpointController(input: {
   checkpoint(): ConfigV3["checkpoint"] | undefined;
   workspace(): ConfigV3["workspace"] | undefined;
   publish(event: RuntimeEvent): void;
-  context(): import("@natalia/runtime").ContextLedger;
+  context(): import("@anthelia/runtime").ContextLedger;
   subagents(): CheckpointSubagents | undefined;
   activeAbort(): AbortController | undefined;
   workLedger(): CheckpointWorkLedger;
@@ -101,7 +101,7 @@ export function createCheckpointController(input: {
   }
 
   async function createCheckpoint(
-    checkpoint: import("@natalia/runtime").CreateCheckpointInput,
+    checkpoint: import("@anthelia/runtime").CreateCheckpointInput,
   ) {
     return await get().createCheckpoint(checkpoint);
   }
@@ -115,7 +115,7 @@ export function createCheckpointController(input: {
   }
 
   async function listCheckpointsByKind(
-    kind?: import("@natalia/contracts").CheckpointKind,
+    kind?: import("@anthelia/contracts").CheckpointKind,
   ) {
     return await get().listCheckpointsByKind(kind);
   }
@@ -131,9 +131,9 @@ export function createCheckpointController(input: {
   }
 
   async function diffCheckpoints(
-    from: import("@natalia/contracts").CheckpointRef,
-    to: import("@natalia/contracts").CheckpointRef,
-    options?: import("@natalia/contracts").DiffCheckpointsOptions,
+    from: import("@anthelia/contracts").CheckpointRef,
+    to: import("@anthelia/contracts").CheckpointRef,
+    options?: import("@anthelia/contracts").DiffCheckpointsOptions,
   ) {
     return await get().diffCheckpoints(from, to, options);
   }

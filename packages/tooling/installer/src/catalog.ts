@@ -1,6 +1,9 @@
-import { resolveConfig } from "@natalia/config";
-import type { PluginPackageSource, PluginUiManifest } from "@natalia/contracts";
-import { discoverPluginManifests } from "@natalia/plugin";
+import { resolveConfig } from "@anthelia/config";
+import type {
+  PluginPackageSource,
+  PluginUiManifest,
+} from "@anthelia/contracts";
+import { discoverPluginManifests } from "@anthelia/plugin";
 import {
   loadNataliaLock,
   packageDirectory,

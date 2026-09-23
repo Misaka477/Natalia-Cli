@@ -1,5 +1,5 @@
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { RetryRunnerOptions } from "@natalia/runtime";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { RetryRunnerOptions } from "@anthelia/runtime";
 import {
   compactContext,
   decideCompaction,
@@ -14,7 +14,7 @@ import {
   type TokenMeasurement,
   type TokenMeter,
   type ToolResultPruneOptions,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 
 /**
  * Identity-free preflight pipeline shared by the main, subagent, Navi and Nia

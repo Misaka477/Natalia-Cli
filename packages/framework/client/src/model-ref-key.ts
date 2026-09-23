@@ -6,7 +6,7 @@
  * model. This is pure config/selection → key, so the precedence rules are
  * testable without the runtime state they read.
  */
-import { modelRefKey, type ModelRef } from "@natalia/contracts";
+import { modelRefKey, type ModelRef } from "@anthelia/contracts";
 
 export function deriveModelRefKey(input: {
   agent: { model?: string | ModelRef } | undefined;

@@ -166,7 +166,7 @@ The package declares every Natalia package it imports as a dependency:
   "files": ["src", "natalia.plugin.json"],
   "exports": { ".": "./src/index.js" },
   "dependencies": {
-    "@natalia/plugin": "<compatible-version>"
+    "@anthelia/plugin": "<compatible-version>"
   }
 }
 ```
@@ -175,7 +175,7 @@ Use versions compatible with the Natalia distribution you target. The package
 manager installs the complete package closure once in the Natalia instance's
 `plugin-store`; every workspace uses that same installation. Do not ask users
 to create SDK symlinks or copy an entry file separately.
-Add `@natalia/contracts`, `@anthelia/tools`, or another Natalia package only when
+Add `@anthelia/contracts`, `@anthelia/tools`, or another Natalia package only when
 the implementation imports it. `@natalia/sdk` is the RPC client SDK and is not
 the plugin authoring API.
 
@@ -222,7 +222,7 @@ are rolled back and the plugin is audited as `failed`.
 ## 5. Implement a plugin
 
 ```js
-import { definePlugin } from "@natalia/plugin";
+import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest: {
@@ -425,7 +425,7 @@ be synchronous:
 
 ```js
 import { z } from "zod";
-import { definePlugin } from "@natalia/plugin";
+import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest,
@@ -637,14 +637,14 @@ This section is the host contract: mount, dispose, checkpoints, and testing.
 
 Use the UI template. It writes `scope: "process"`,
 `integrationPoints: ["adapters"]`, a unique adapter `kind`, and the
-`@natalia/contracts` dependency:
+`@anthelia/contracts` dependency:
 
 ```bash
 natalia-ts plugin create ./my-ui --id yourco.web --package @yourco/natalia-ui-web --template ui
 ```
 
-The published package needs `@natalia/plugin` to register the adapter
-and `@natalia/contracts` when it imports `RuntimeClient`, `RuntimeEvent`,
+The published package needs `@anthelia/plugin` to register the adapter
+and `@anthelia/contracts` when it imports `RuntimeClient`, `RuntimeEvent`,
 or other public types:
 
 ```json
@@ -655,8 +655,8 @@ or other public types:
   "files": ["src", "natalia.plugin.json"],
   "exports": { ".": "./src/index.js" },
   "dependencies": {
-    "@natalia/plugin": "<compatible-version>",
-    "@natalia/contracts": "<compatible-version>"
+    "@anthelia/plugin": "<compatible-version>",
+    "@anthelia/contracts": "<compatible-version>"
   }
 }
 ```
@@ -673,7 +673,7 @@ UI host selects the adapter kind, and `dispose` must release every listener,
 timer, renderer, socket, or other resource created by `mount`.
 
 ```js
-import { definePlugin } from "@natalia/plugin";
+import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest: {
@@ -720,7 +720,7 @@ The host injects three public ports:
 
 The UI package does not import an internal UI host, checkpoint controller,
 registry, or transport implementation. It only uses these public ports and
-public `@natalia/contracts` types. This lets a web or custom
+public `@anthelia/contracts` types. This lets a web or custom
 renderer use the same runtime without sharing current UI state or components.
 
 ### Checkpoints and message-level restore
@@ -835,10 +835,10 @@ have a plugin lifecycle switch.
    install a TypeScript source loader for third-party plugins.
 2. Keep `package.json.version`, `natalia.plugin.json`, and the exported manifest
    version and content aligned.
-3. Declare `@natalia/plugin` and every directly imported Natalia package in
+3. Declare `@anthelia/plugin` and every directly imported Natalia package in
    `dependencies`. Do not use `@natalia/sdk` for authoring an in-process plugin.
 4. Pin versions compatible with the target Natalia release. The generated
-   scaffold uses the CLI distribution's current `@natalia/plugin` version.
+   scaffold uses the CLI distribution's current `@anthelia/plugin` version.
 5. Include only runtime files and exactly one manifest. Bundling is allowed if
    the resulting ESM entry and all runtime dependencies remain importable.
 6. Do not depend on `preinstall`, `postinstall`, uninstall scripts, or manifest
@@ -1015,7 +1015,7 @@ natalia-ts plugin create ./my-ts --id yourco.ts --language ts
   "files": ["src", "natalia.plugin.json"],
   "exports": { ".": "./src/index.js" },
   "dependencies": {
-    "@natalia/plugin": "<compatible-version>"
+    "@anthelia/plugin": "<compatible-version>"
   }
 }
 ```
@@ -1023,7 +1023,7 @@ natalia-ts plugin create ./my-ts --id yourco.ts --language ts
 版本应与目标 Natalia 发行版兼容。包管理器只会把完整 package closure 安装一次，位置是
 Natalia 实例唯一的 `plugin-store`；所有 workspace 共用这份安装。不要要求用户另建 SDK
 软链接或单独复制入口文件。
-只有实现确实导入时才添加 `@natalia/contracts`、`@anthelia/tools` 或其他 Natalia 包。
+只有实现确实导入时才添加 `@anthelia/contracts`、`@anthelia/tools` 或其他 Natalia 包。
 `@natalia/sdk` 是 RPC client SDK，不是插件 authoring API。
 
 ## 4. Manifest v2
@@ -1065,7 +1065,7 @@ manifest、依赖和配置校验在激活前完成。`setup` 失败时，本次�
 ## 5. 实现插件
 
 ```js
-import { definePlugin } from "@natalia/plugin";
+import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest: {
@@ -1254,7 +1254,7 @@ Zod schema 实现了 Standard Schema，可直接使用。配置校验必须同�
 
 ```js
 import { z } from "zod";
-import { definePlugin } from "@natalia/plugin";
+import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest,
@@ -1439,14 +1439,14 @@ UI 是使用现有 `adapters` integration point 的普通 v2 插件。
 ### 创建外部 UI package
 
 直接使用 UI 模板。它会写入 `scope: "process"`、`integrationPoints: ["adapters"]`、
-唯一 adapter `kind`，以及 `@natalia/contracts` 依赖：
+唯一 adapter `kind`，以及 `@anthelia/contracts` 依赖：
 
 ```bash
 natalia-ts plugin create ./my-ui --id yourco.web --package @yourco/natalia-ui-web --template ui
 ```
 
-发布包需要 `@natalia/plugin` 注册 adapter；导入 `RuntimeClient`、`RuntimeEvent`
-或其他公共类型时使用 `@natalia/contracts`：
+发布包需要 `@anthelia/plugin` 注册 adapter；导入 `RuntimeClient`、`RuntimeEvent`
+或其他公共类型时使用 `@anthelia/contracts`：
 
 ```json
 {
@@ -1456,8 +1456,8 @@ natalia-ts plugin create ./my-ui --id yourco.web --package @yourco/natalia-ui-we
   "files": ["src", "natalia.plugin.json"],
   "exports": { ".": "./src/index.js" },
   "dependencies": {
-    "@natalia/plugin": "<compatible-version>",
-    "@natalia/contracts": "<compatible-version>"
+    "@anthelia/plugin": "<compatible-version>",
+    "@anthelia/contracts": "<compatible-version>"
   }
 }
 ```
@@ -1472,7 +1472,7 @@ UI 插件本身很小。注册是惰性的：只有 UI host 选择对应 adapter
 `dispose` 必须释放 `mount` 创建的所有 listener、timer、renderer、socket 或其他资源。
 
 ```js
-import { definePlugin } from "@natalia/plugin";
+import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest: {
@@ -1518,7 +1518,7 @@ host 注入三个公共端口：
 | `input.commands.list()` / `execute()` | 列出并执行 host 的权威 command catalog。通过 command `name` 定位，向 `execute` 传入原始命令与已解析参数。                                                               |
 
 UI package 不应导入内部 UI host、checkpoint controller、registry 或 transport 实现，只能
-使用这些公共 port 与公开的 `@natalia/contracts` type。因此 web 或自定义
+使用这些公共 port 与公开的 `@anthelia/contracts` type。因此 web 或自定义
 renderer 都可使用同一 runtime，而不依赖当前 UI 的 state 或组件。
 
 ### Checkpoint 与消息级 restore
@@ -1623,10 +1623,10 @@ runtime、transport、session、sandbox、checkpoint、provider/model、SDK 等�
    TypeScript source loader。
 2. 保持 `package.json.version`、`natalia.plugin.json`、入口导出 manifest 的版本和
    内容一致。
-3. 在 `dependencies` 中声明 `@natalia/plugin` 和所有直接导入的 Natalia package。
+3. 在 `dependencies` 中声明 `@anthelia/plugin` 和所有直接导入的 Natalia package。
    进程内插件开发不要使用 `@natalia/sdk`。
 4. 固定与目标 Natalia 发行版兼容的版本。脚手架会使用当前 CLI 发行版的
-   `@natalia/plugin` 版本。
+   `@anthelia/plugin` 版本。
 5. 只包含 runtime 文件和恰好一个 manifest。允许 bundle，但生成的 ESM 入口和所有
    runtime dependency 必须仍可导入。
 6. 不依赖 `preinstall`、`postinstall`、uninstall script 或 manifest hook；npm script

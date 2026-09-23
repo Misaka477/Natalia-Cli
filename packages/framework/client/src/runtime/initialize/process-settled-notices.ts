@@ -16,7 +16,7 @@ import {
   PROCESS_OBSERVER_SERVICE,
   type ProcessObserverService,
 } from "@anthelia/tools";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import type {
   RuntimeContext,
   SessionExecutionState,

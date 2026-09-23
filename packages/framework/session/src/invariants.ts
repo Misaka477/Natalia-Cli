@@ -1,4 +1,4 @@
-import type { Invariant } from "@natalia/contracts";
+import type { Invariant } from "@anthelia/contracts";
 
 /**
  * The session domain's declared data relations (Discovery D1: the owner

@@ -1,4 +1,4 @@
-import { providerFromEnvironment } from "@natalia/runtime";
+import { providerFromEnvironment } from "@anthelia/runtime";
 import { createTerminalRuntime } from "../terminal-runtime";
 import { createPermissions } from "../permissions";
 import { createCollaborationBoundary } from "@natalia/collab";
@@ -83,9 +83,9 @@ export function wireFeatures(
     const exec = sessionID
       ? (ctx.ports
           .getExecutionBySession()
-          .get(sessionID as import("@natalia/contracts").SessionID) ??
+          .get(sessionID as import("@anthelia/contracts").SessionID) ??
         (await ctx.ports.ensureExecution(
-          sessionID as import("@natalia/contracts").SessionID,
+          sessionID as import("@anthelia/contracts").SessionID,
         )))
       : undefined;
     return mailboxPlans.enqueueMailboxMessage(input, exec);

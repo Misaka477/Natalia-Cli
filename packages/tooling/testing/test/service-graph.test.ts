@@ -32,11 +32,11 @@ test("a sound declaration set produces no problems", () => {
     ),
     file(
       "packages/framework/client/src/runtime/initialize/framework-services.ts",
-      `import { alphaService, betaService } from "@natalia/runtime-services";\nctx.state.serviceDirectory.provide(alphaService, {});\nctx.state.serviceDirectory.provide(betaService, {});`,
+      `import { alphaService, betaService } from "@anthelia/runtime-services";\nctx.state.serviceDirectory.provide(alphaService, {});\nctx.state.serviceDirectory.provide(betaService, {});`,
     ),
     file(
       "packages/plugins/team/src/team-plugin.ts",
-      `import { alphaService, betaService, gammaService } from "@natalia/runtime-services";\nexport const manifest = {\n  provides: [gammaService.id],\n  requires: [alphaService.id, betaService.id],\n};\nexport function setup(api) {\n  api.services.provide(gammaService.id, {});\n  const a = api.services.get<object>(alphaService.id);\n}`,
+      `import { alphaService, betaService, gammaService } from "@anthelia/runtime-services";\nexport const manifest = {\n  provides: [gammaService.id],\n  requires: [alphaService.id, betaService.id],\n};\nexport function setup(api) {\n  api.services.provide(gammaService.id, {});\n  const a = api.services.get<object>(alphaService.id);\n}`,
     ),
   ]);
   expect(report.problems).toEqual([]);
@@ -89,11 +89,11 @@ test("a service provided by two packages fails with Chord's wording", () => {
     ),
     file(
       "packages/framework/client/src/runtime/initialize/framework-services.ts",
-      `import { sandboxService } from "@natalia/runtime-services";\nctx.state.serviceDirectory.provide(sandboxService, {});`,
+      `import { sandboxService } from "@anthelia/runtime-services";\nctx.state.serviceDirectory.provide(sandboxService, {});`,
     ),
     file(
       "packages/plugins/team/src/team-plugin.ts",
-      `import { sandboxService } from "@natalia/runtime-services";\nexport const manifest = { provides: [sandboxService.id], requires: [] };`,
+      `import { sandboxService } from "@anthelia/runtime-services";\nexport const manifest = { provides: [sandboxService.id], requires: [] };`,
     ),
   ]);
   expect(
@@ -111,11 +111,11 @@ test("two plugins requiring each other's services are a cycle", () => {
     ),
     file(
       "packages/plugins/team/src/team-plugin.ts",
-      `import { leftService, rightService } from "@natalia/runtime-services";\nexport const manifest = { provides: [leftService.id], requires: [rightService.id] };`,
+      `import { leftService, rightService } from "@anthelia/runtime-services";\nexport const manifest = { provides: [leftService.id], requires: [rightService.id] };`,
     ),
     file(
       "packages/plugins/skills/src/skills-plugin.ts",
-      `import { leftService, rightService } from "@natalia/runtime-services";\nexport const manifest = { provides: [rightService.id], requires: [leftService.id] };`,
+      `import { leftService, rightService } from "@anthelia/runtime-services";\nexport const manifest = { provides: [rightService.id], requires: [leftService.id] };`,
     ),
   ]);
   expect(report.problems.some((p) => p.startsWith("dependency cycle:"))).toBe(

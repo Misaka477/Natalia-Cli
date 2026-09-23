@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { nataliaLockSchema, type NataliaLock } from "@natalia/contracts";
+import { nataliaLockSchema, type NataliaLock } from "@anthelia/contracts";
 
 export function pluginClosurePaths(pluginStoreRoot: string) {
   const storeRoot = resolve(pluginStoreRoot);

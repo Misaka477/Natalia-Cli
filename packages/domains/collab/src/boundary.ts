@@ -12,7 +12,7 @@ import {
   projectedMailboxMessages,
   sessionFactMailboxMessages,
 } from "@anthelia/session";
-import { buildMailboxStatus } from "@natalia/runtime-services";
+import { buildMailboxStatus } from "@anthelia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { workspaceFiles } from "@anthelia/workspace";
 import type { RuntimeContext } from "@anthelia/substrate";
@@ -43,7 +43,7 @@ import type { WorkLedgerController } from "@natalia/work-ledger";
  * journaled. Returns the trimmed text, or undefined when the turn was silent.
  */
 export function lastAssistantNarration(
-  events: readonly import("@natalia/contracts").RuntimeEvent[],
+  events: readonly import("@anthelia/contracts").RuntimeEvent[],
 ): string | undefined {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]!;
@@ -85,7 +85,7 @@ export function deliveredMailboxConstraints(
  * opens a hit, its `invariant.resolved` closes it — so drift sees exactly
  * what the projection sees, with no second opinion about state.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 export function openInvariantHits(
   events: readonly RuntimeEvent[],
@@ -437,7 +437,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
       // 漏问=自查, 代价不对称). The question compares the goal objective with
       // the agent's own narration; a plan contract silences it (the plan judge
       // channel owns that case).
-      let goal: import("@natalia/contracts").GoalSnapshot | undefined;
+      let goal: import("@anthelia/contracts").GoalSnapshot | undefined;
       try {
         goal = foldGoal(target.session.events);
       } catch {

@@ -1,7 +1,7 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
-import { type ConstitutionDocRule } from "@natalia/runtime-services";
+import { type ConstitutionDocRule } from "@anthelia/runtime-services";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { loadProjectDocuments } from "./project-docs";
 import { applyConstitutionDocEdit } from "./constitution-doc";
@@ -28,9 +28,9 @@ import {
   sessionFactDriftFindings,
   sessionFactEvidenceRecords,
 } from "@anthelia/session";
-import type { PlanLifecycleState } from "@natalia/runtime-services";
-import { isHardProtectedConstitutionRule } from "@natalia/contracts";
-import type { EpisodeID } from "@natalia/contracts";
+import type { PlanLifecycleState } from "@anthelia/runtime-services";
+import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
+import type { EpisodeID } from "@anthelia/contracts";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
@@ -102,7 +102,7 @@ type Surface = Pick<
   | "notices"
 >;
 async function projectedCanonicalToolsWithFallback(
-  events: import("@natalia/contracts").RuntimeEvent[],
+  events: import("@anthelia/contracts").RuntimeEvent[],
 ) {
   try {
     const { projectedCanonicalToolsInWorker } = await import(
@@ -133,7 +133,7 @@ async function runSessionProjectionWithFallback(
     | "mailboxMessages"
     | "collabMessages"
     | "notices",
-  events: import("@natalia/contracts").RuntimeEvent[],
+  events: import("@anthelia/contracts").RuntimeEvent[],
 ) {
   try {
     const { runSessionProjectionInWorker } = await import(
@@ -178,11 +178,11 @@ async function runSessionProjectionWithFallback(
 async function readCompleteFacts<T>(
   ctx: RuntimeContext,
   exec: SessionExecutionState,
-  project: (events: import("@natalia/contracts").RuntimeEvent[]) => T[],
+  project: (events: import("@anthelia/contracts").RuntimeEvent[]) => T[],
 ): Promise<T[]> {
   const store = ctx.state.serviceDirectory.getOptional(sessionStoreController);
   if (!store) return project(exec.session.events);
-  const events: import("@natalia/contracts").RuntimeEvent[] = [];
+  const events: import("@anthelia/contracts").RuntimeEvent[] = [];
   let offset = 0;
   for (;;) {
     const page = await store.history(exec.session.id, exec.session.events, {
@@ -219,7 +219,7 @@ function paginate<T>(
   items: T[],
   limit?: number,
   cursor?: string,
-): import("@natalia/contracts").GovernancePage<T> {
+): import("@anthelia/contracts").GovernancePage<T> {
   const total = items.length;
   const parsed = cursor ? Number(cursor) : 0;
   const offset =
@@ -264,7 +264,7 @@ function decisionView(
  * EI §3.8 P-1.c, per the user's decision (硬保护不能删，其余用户可删改): only the
  * rules backed by the tool-execution `SELF_PROTECTION_PATTERNS` are locked from
  * UI edits; release-scope runtime-policy rules (C-REL-*) and user rules are
- * editable/disableable/deletable. The shared set lives in @natalia/contracts so
+ * editable/disableable/deletable. The shared set lives in @anthelia/contracts so
  * the runtime and the governance UI agree on exactly which rules are protected.
  */
 function isHardProtectedRule(ruleID: string): boolean {
@@ -297,9 +297,9 @@ export function createIntelligenceSurface(
     const exec = sessionID
       ? (ctx.ports
           .getExecutionBySession()
-          .get(sessionID as import("@natalia/contracts").SessionID) ??
+          .get(sessionID as import("@anthelia/contracts").SessionID) ??
         (await ctx.ports.ensureExecution(
-          sessionID as import("@natalia/contracts").SessionID,
+          sessionID as import("@anthelia/contracts").SessionID,
         )))
       : ctx.ports.getActiveExec();
     return exec;
@@ -1427,7 +1427,7 @@ export function createIntelligenceSurface(
       return (await runSessionProjectionWithFallback(
         "notices",
         exec.session.events,
-      )) as import("@natalia/contracts").RuntimeProjectedNotice[];
+      )) as import("@anthelia/contracts").RuntimeProjectedNotice[];
     },
   };
 }

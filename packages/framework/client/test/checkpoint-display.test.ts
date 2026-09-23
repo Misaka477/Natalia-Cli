@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { checkpointDisplayLine } from "../src";
 import { checkpointProgressView } from "@natalia/ui-model";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 test("checkpoint progress and result events project for TUI and plain output", () => {
   const created: RuntimeEvent = {

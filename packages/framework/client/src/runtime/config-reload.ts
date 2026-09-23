@@ -8,26 +8,29 @@
  */
 import { agentsFromConfig } from "@anthelia/agent";
 import { renderSubagentTypes } from "@anthelia/subagents";
-import { resolveConfig } from "@natalia/config";
+import { resolveConfig } from "@anthelia/config";
 import { ensureBashCommandParser } from "@anthelia/tools";
-import { ProviderConcurrencyLimiter, providerForModel } from "@natalia/runtime";
+import {
+  ProviderConcurrencyLimiter,
+  providerForModel,
+} from "@anthelia/runtime";
 import { nextContextInstructionsRevision } from "@anthelia/session";
 import { projectedConstitutionRules } from "@anthelia/session";
 import {
   checkpointFactory,
   type CheckpointFactory,
 } from "@anthelia/checkpoint";
-import { ObjectStore } from "@natalia/object-store";
-import { buildGeneration, storeGeneration } from "@natalia/composition";
+import { ObjectStore } from "@anthelia/object-store";
+import { buildGeneration, storeGeneration } from "@anthelia/composition";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
-import type { ConfigV3, ConstitutionRule } from "@natalia/contracts";
+import type { ConfigV3, ConstitutionRule } from "@anthelia/contracts";
 import { resolve } from "node:path";
-import { resolveWorkspaceObjectsRoot } from "@natalia/platform";
+import { resolveWorkspaceObjectsRoot } from "@anthelia/platform";
 import {
   providerAdapterModuleRequests,
   reloadProviderAdapterModules,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 
 /**
  * The checkpoint factory owns per-session controllers; a config reload must

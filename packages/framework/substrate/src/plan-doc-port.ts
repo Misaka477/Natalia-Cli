@@ -5,7 +5,7 @@
  * so its callers did not change — and the shape now lives where the
  * port lives, not under runtime/collaboration.
  */
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 
 export type PlanDocRuntime = {
   planDocList(sessionID?: string): Promise<

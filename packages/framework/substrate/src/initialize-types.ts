@@ -1,12 +1,12 @@
 import type { AgentDefinition, AgentRegistry } from "@anthelia/agent";
-import type { CapabilityRegistryHost } from "@natalia/capability";
-import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { CapabilityRegistryHost } from "@anthelia/capability";
+import type { ConfigV3, RuntimeEvent, SessionID } from "@anthelia/contracts";
 import type {
   ContextEntry,
   ProviderToolCall,
   StreamingProvider,
-} from "@natalia/runtime";
-import type { ServiceDirectory } from "@natalia/runtime-services";
+} from "@anthelia/runtime";
+import type { ServiceDirectory } from "@anthelia/runtime-services";
 import type {
   PermissionProfileCommandRules,
   RuntimeTool,
@@ -25,7 +25,7 @@ export type InitializeOptions = {
   checkpointDir?: string;
   operationLogsDir?: string;
   useSqliteStore?: boolean;
-  nativeTerminal?: import("@natalia/runtime-services").TerminalControllerInput["external"];
+  nativeTerminal?: import("@anthelia/runtime-services").TerminalControllerInput["external"];
   provider?: StreamingProvider;
   tools?: import("@anthelia/tools").ToolRegistry;
   permissionProfile?: string;
@@ -34,20 +34,20 @@ export type InitializeOptions = {
 };
 
 type ResolvedConfig = Awaited<
-  ReturnType<typeof import("@natalia/config").resolveConfig>
+  ReturnType<typeof import("@anthelia/config").resolveConfig>
 >;
 export type InitializeDependencies = {
-  resolveConfig: typeof import("@natalia/config").resolveConfig;
+  resolveConfig: typeof import("@anthelia/config").resolveConfig;
   reloadPermissionSettings: (config: ConfigV3) => void;
   skillsPluginInput: (
     config: ConfigV3,
-  ) => import("@natalia/runtime-services").SkillsInput | undefined;
+  ) => import("@anthelia/runtime-services").SkillsInput | undefined;
   localToolsPluginInput: (
     config: ConfigV3,
-  ) => import("@natalia/runtime-services").LocalToolsInput | undefined;
+  ) => import("@anthelia/runtime-services").LocalToolsInput | undefined;
   mcpPluginInput: (
     config: ConfigV3,
-  ) => import("@natalia/runtime-services").McpInput | undefined;
+  ) => import("@anthelia/runtime-services").McpInput | undefined;
   providerModelPluginInput: () => import("@anthelia/provider-model").ProviderModelControllerInput;
   wireFrameworkServices: (
     ctx: import("./context").RuntimeContext,
@@ -56,12 +56,12 @@ export type InitializeDependencies = {
   capabilityRegistry: CapabilityRegistryHost;
   /** Typed service resolution shared with `ctx.state.serviceDirectory`. */
   serviceDirectory: ServiceDirectory;
-  workspaceCapabilityView?: import("@natalia/capability").CapabilityRegistryView;
+  workspaceCapabilityView?: import("@anthelia/capability").CapabilityRegistryView;
   waiterDeps: InteractiveWaiterDeps;
   deliverQueuedMailboxAtBoundary: (exec?: SessionExecutionState) => void;
   createRealRuntimeClient: (
     options: import("./options").RealRuntimeClientOptions,
-  ) => import("@natalia/contracts").RuntimeClient;
+  ) => import("@anthelia/contracts").RuntimeClient;
   handleCommand: (
     id: string,
     text: string,
@@ -72,10 +72,10 @@ export type InitializeDependencies = {
   mountPlugins: typeof import("./plugin-mount").mountPlugins;
   agentPolicyLayer: (
     agent?: AgentDefinition,
-  ) => import("@natalia/runtime-services").ToolPolicyHookLayer;
+  ) => import("@anthelia/runtime-services").ToolPolicyHookLayer;
   permissionProfileLayer: (
-    profile?: import("@natalia/contracts").PermissionProfile,
-  ) => import("@natalia/runtime-services").ToolPolicyHookLayer;
+    profile?: import("@anthelia/contracts").PermissionProfile,
+  ) => import("@anthelia/runtime-services").ToolPolicyHookLayer;
   terminalCommandBuffer: TerminalCommandBuffer;
   evaluatePermissionProfileCommandRules: (
     rules: PermissionProfileCommandRules | undefined,
@@ -85,15 +85,15 @@ export type InitializeDependencies = {
   ) => Promise<{ allowed: boolean; diagnostics: string[] }>;
   ensureBashCommandParser: () => Promise<unknown>;
   agentsFromConfig: (config: ConfigV3) => AgentRegistry;
-  providerForModel: typeof import("@natalia/runtime").providerForModel;
+  providerForModel: typeof import("@anthelia/runtime").providerForModel;
   sessionSeed: (workspaceRoot: string) => string;
   createHash: typeof import("node:crypto").createHash;
   lineCount: (text: string) => number;
-  contextEntriesToProviderMessages: typeof import("@natalia/runtime").contextEntriesToProviderMessages;
-  withProviderConcurrency: typeof import("@natalia/runtime").withProviderConcurrency;
-  requireNativeToolCallProtocol: typeof import("@natalia/runtime").requireNativeToolCallProtocol;
-  normalizeRawToolCallProtocol: typeof import("@natalia/runtime").normalizeRawToolCallProtocol;
-  nativeToolCallCorrection: typeof import("@natalia/runtime").nativeToolCallCorrection;
+  contextEntriesToProviderMessages: typeof import("@anthelia/runtime").contextEntriesToProviderMessages;
+  withProviderConcurrency: typeof import("@anthelia/runtime").withProviderConcurrency;
+  requireNativeToolCallProtocol: typeof import("@anthelia/runtime").requireNativeToolCallProtocol;
+  normalizeRawToolCallProtocol: typeof import("@anthelia/runtime").normalizeRawToolCallProtocol;
+  nativeToolCallCorrection: typeof import("@anthelia/runtime").nativeToolCallCorrection;
   MAX_PROTOCOL_CORRECTIONS: number;
   WAITING_TOOLS: ReadonlySet<string>;
   readOnlyToolMessage: (toolName: string) => string;
@@ -107,12 +107,12 @@ export type InitializeDependencies = {
   >;
   drainSession: (signal: AbortSignal) => Promise<void>;
   projectInteractiveRequests: typeof import("@anthelia/session").projectInteractiveRequests;
-  contextStatusEvent: typeof import("@natalia/runtime").contextStatusEvent;
+  contextStatusEvent: typeof import("@anthelia/runtime").contextStatusEvent;
   publishRuntimeCapabilities: () => void;
   publishRegisteredTools: () => void;
   MAX_STEPS_PROMPT: string;
   MISSING_FINAL_RESPONSE_FALLBACK: string;
-  ProviderConcurrencyLimiter: typeof import("@natalia/runtime").ProviderConcurrencyLimiter;
+  ProviderConcurrencyLimiter: typeof import("@anthelia/runtime").ProviderConcurrencyLimiter;
 };
 
 export type InitializeCatalogResult = {

@@ -2,14 +2,14 @@ import {
   API_VERSION,
   RuntimeRPCError,
   RuntimeVersionMismatchError,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type {
   ApprovalResponse,
   QuestionResponse,
   RuntimeClient,
   RuntimeEvent,
   SubmittedTurn,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export type NataliaSDKOptions = {
   baseURL: string;
@@ -23,8 +23,8 @@ export type NataliaSDK = {
     options?: {
       delivery?: "next-turn" | "next-step";
       attachments?: string[];
-      resources?: import("@natalia/contracts").PromptResourceMention[];
-      agents?: import("@natalia/contracts").PromptAgentMention[];
+      resources?: import("@anthelia/contracts").PromptResourceMention[];
+      agents?: import("@anthelia/contracts").PromptAgentMention[];
     },
   ): Promise<SubmittedTurn>;
   cancel(reason?: string): Promise<void>;
@@ -37,23 +37,23 @@ export type NataliaSDK = {
   pause(
     reason?: string,
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").PauseOutcome>;
+  ): Promise<import("@anthelia/contracts").PauseOutcome>;
   resume(
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").ResumeOutcome>;
+  ): Promise<import("@anthelia/contracts").ResumeOutcome>;
   selectAgent(
     name?: string,
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").AgentSelectionOutcome>;
+  ): Promise<import("@anthelia/contracts").AgentSelectionOutcome>;
   agents(input?: {
     workspaceID?: string;
-  }): Promise<import("@natalia/contracts").RuntimeAgentCatalogEntry[]>;
+  }): Promise<import("@anthelia/contracts").RuntimeAgentCatalogEntry[]>;
   modelCatalog(input?: {
     workspaceID?: string;
-  }): Promise<import("@natalia/contracts").RuntimeModelCatalogEntry[]>;
+  }): Promise<import("@anthelia/contracts").RuntimeModelCatalogEntry[]>;
   modelSelection(
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").RuntimeModelSelection>;
+  ): Promise<import("@anthelia/contracts").RuntimeModelSelection>;
   setDefaultModel(
     modelID: string,
   ): Promise<{ saved: boolean; reason?: string }>;
@@ -64,44 +64,44 @@ export type NataliaSDK = {
   ): Promise<void>;
   reasoningEffort(
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").RuntimeReasoningEffort | undefined>;
+  ): Promise<import("@anthelia/contracts").RuntimeReasoningEffort | undefined>;
   setReasoningEffort(
-    effort?: import("@natalia/contracts").RuntimeReasoningEffort,
+    effort?: import("@anthelia/contracts").RuntimeReasoningEffort,
     sessionID?: string,
   ): Promise<void>;
   skills(input?: {
     workspaceID?: string;
-  }): Promise<import("@natalia/contracts").RuntimeSkillCatalogEntry[]>;
+  }): Promise<import("@anthelia/contracts").RuntimeSkillCatalogEntry[]>;
   workspaceFiles(input?: {
     workspaceID?: string;
     query?: string;
     type?: "file" | "directory";
     limit?: number;
-  }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
+  }): Promise<import("@anthelia/contracts").RuntimeWorkspaceFileEntry[]>;
   workspaceSearch(input: {
     workspaceID?: string;
     query: string;
     include?: string;
     limit?: number;
-  }): Promise<import("@natalia/contracts").RuntimeWorkspaceMatch[]>;
+  }): Promise<import("@anthelia/contracts").RuntimeWorkspaceMatch[]>;
   workspaceList(input?: {
     workspaceID?: string;
     path?: string;
     offset?: number;
     limit?: number;
-  }): Promise<import("@natalia/contracts").RuntimeWorkspaceListPage>;
+  }): Promise<import("@anthelia/contracts").RuntimeWorkspaceListPage>;
   workspaceRead(input: {
     workspaceID?: string;
     path: string;
     offset?: number;
     limit?: number;
-  }): Promise<import("@natalia/contracts").RuntimeWorkspaceContent>;
+  }): Promise<import("@anthelia/contracts").RuntimeWorkspaceContent>;
   resourceRead(input: {
     workspaceID?: string;
     resource: string;
     params?: Record<string, string>;
     reader?: string;
-  }): Promise<import("@natalia/contracts").RuntimeWorkspaceContent>;
+  }): Promise<import("@anthelia/contracts").RuntimeWorkspaceContent>;
   workspaceWriteConflicts(input?: {
     workspaceID?: string;
   }): Promise<
@@ -112,26 +112,26 @@ export type NataliaSDK = {
     pattern: string;
     path?: string;
     limit?: number;
-  }): Promise<import("@natalia/contracts").RuntimeWorkspaceFileEntry[]>;
-  sessions(): Promise<import("@natalia/contracts").RuntimeSessionSummary[]>;
+  }): Promise<import("@anthelia/contracts").RuntimeWorkspaceFileEntry[]>;
+  sessions(): Promise<import("@anthelia/contracts").RuntimeSessionSummary[]>;
   touchSession(id: string): Promise<void>;
   renameSession(
     id: string,
     title: string,
-  ): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  ): Promise<import("@anthelia/contracts").RuntimeSessionSummary>;
   pinSession(
     id: string,
     pinned: boolean,
-  ): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  ): Promise<import("@anthelia/contracts").RuntimeSessionSummary>;
   duplicateSession(
     id: string,
     title?: string,
-  ): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  ): Promise<import("@anthelia/contracts").RuntimeSessionSummary>;
   forkSession(
     id: string,
     turnID: string,
     title?: string,
-  ): Promise<import("@natalia/contracts").RuntimeSessionSummary>;
+  ): Promise<import("@anthelia/contracts").RuntimeSessionSummary>;
   deleteSession(
     id: string,
   ): Promise<{ id: string; removedAttachments: number }>;
@@ -222,14 +222,14 @@ export type NataliaSDK = {
    */
   respondApproval(
     response: ApprovalResponse,
-  ): Promise<import("@natalia/contracts").InteractiveResponseOutcome>;
+  ): Promise<import("@anthelia/contracts").InteractiveResponseOutcome>;
   respondQuestion(
     response: QuestionResponse,
-  ): Promise<import("@natalia/contracts").InteractiveResponseOutcome>;
+  ): Promise<import("@anthelia/contracts").InteractiveResponseOutcome>;
   /** Answers a generic interactive request; response stays opaque to the runtime. */
   respondInteractive(
-    response: import("@natalia/contracts").InteractiveResponse,
-  ): Promise<import("@natalia/contracts").InteractiveResponseOutcome>;
+    response: import("@anthelia/contracts").InteractiveResponse,
+  ): Promise<import("@anthelia/contracts").InteractiveResponseOutcome>;
   pendingInteractive(input?: {
     sessionID?: string;
     workspaceID?: string;
@@ -245,52 +245,52 @@ export type NataliaSDK = {
   ): Promise<SubmittedTurn>;
   checkpointList(
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
+  ): Promise<import("@anthelia/contracts").RuntimeCheckpoint[]>;
   checkpointListByKind(
-    kind?: import("@natalia/contracts").CheckpointKind,
+    kind?: import("@anthelia/contracts").CheckpointKind,
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").RuntimeCheckpoint[]>;
+  ): Promise<import("@anthelia/contracts").RuntimeCheckpoint[]>;
   auditRounds(
     planID?: string,
     workspaceID?: string,
-  ): Promise<import("@natalia/contracts").AuditRoundRecord[]>;
+  ): Promise<import("@anthelia/contracts").AuditRoundRecord[]>;
   roundDiff(input: {
     workspaceID?: string;
-    from: import("@natalia/contracts").CheckpointRef;
-    to: import("@natalia/contracts").CheckpointRef;
+    from: import("@anthelia/contracts").CheckpointRef;
+    to: import("@anthelia/contracts").CheckpointRef;
     paths?: string[];
     includePatch?: boolean;
     includeContent?: boolean;
     maxFiles?: number;
     maxPatchChars?: number;
-  }): Promise<import("@natalia/contracts").RuntimeWorkspaceDiffChange[]>;
+  }): Promise<import("@anthelia/contracts").RuntimeWorkspaceDiffChange[]>;
   checkpointPreview(
     id: string,
     sessionID?: string,
     options?: { includePatch?: boolean },
-  ): Promise<import("@natalia/contracts").CheckpointPreview>;
+  ): Promise<import("@anthelia/contracts").CheckpointPreview>;
   checkpointRollback(input: {
     id: string;
     dryRun?: boolean;
     sessionID?: string;
-  }): Promise<import("@natalia/contracts").CheckpointPreview>;
+  }): Promise<import("@anthelia/contracts").CheckpointPreview>;
   checkpointRename(input: {
     id: string;
     name: string;
     sessionID?: string;
-  }): Promise<import("@natalia/contracts").RuntimeCheckpoint>;
+  }): Promise<import("@anthelia/contracts").RuntimeCheckpoint>;
   sandboxList(
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").RuntimeSandbox[]>;
+  ): Promise<import("@anthelia/contracts").RuntimeSandbox[]>;
   sandboxDiff(
     id: string,
     sessionID?: string,
     options?: { includePatch?: boolean },
-  ): Promise<import("@natalia/contracts").RuntimeSandboxChange[]>;
+  ): Promise<import("@anthelia/contracts").RuntimeSandboxChange[]>;
   sandboxResources(
     id: string,
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").RuntimeSandboxResource[]>;
+  ): Promise<import("@anthelia/contracts").RuntimeSandboxResource[]>;
   sandboxResourceOutput(input: {
     id: string;
     resourceID: string;
@@ -300,19 +300,19 @@ export type NataliaSDK = {
   sandboxMerge(
     id: string,
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").RuntimeSandboxChange[]>;
+  ): Promise<import("@anthelia/contracts").RuntimeSandboxChange[]>;
   sandboxDelete(
     id: string,
     sessionID?: string,
   ): Promise<{
-    pendingChanges: import("@natalia/contracts").RuntimeSandboxChange[];
+    pendingChanges: import("@anthelia/contracts").RuntimeSandboxChange[];
     runningResources: string[];
   }>;
   sandboxResourceStop(input: {
     id: string;
     resourceID: string;
     sessionID?: string;
-  }): Promise<import("@natalia/contracts").RuntimeSandboxResource>;
+  }): Promise<import("@anthelia/contracts").RuntimeSandboxResource>;
   snapshot(input?: {
     sessionID?: string;
     workspaceID?: string;
@@ -331,10 +331,10 @@ export type NataliaSDK = {
     limit?: number;
     order?: "asc" | "desc";
     cursor?: string;
-  }): Promise<import("@natalia/contracts").RuntimeMessagePage>;
+  }): Promise<import("@anthelia/contracts").RuntimeMessagePage>;
   mcpCatalog(input?: {
     workspaceID?: string;
-  }): Promise<import("@natalia/contracts").MCPCatalogSnapshot>;
+  }): Promise<import("@anthelia/contracts").MCPCatalogSnapshot>;
   mcpPrompt(
     server: string,
     name: string,
@@ -346,7 +346,7 @@ export type NataliaSDK = {
     uri: string,
     workspaceID?: string,
   ): Promise<unknown>;
-  plugins(): Promise<import("@natalia/contracts").PluginStatus[]>;
+  plugins(): Promise<import("@anthelia/contracts").PluginStatus[]>;
   pluginInstall(input: {
     spec: string;
   }): Promise<Awaited<ReturnType<NonNullable<RuntimeClient["pluginInstall"]>>>>;
@@ -371,19 +371,19 @@ export type NataliaSDK = {
   /** Commands contributed by capabilities and plugins. */
   commandCatalog(input?: {
     workspaceID?: string;
-  }): Promise<import("@natalia/contracts").ContributedCommand[]>;
+  }): Promise<import("@anthelia/contracts").ContributedCommand[]>;
   commandExecute(
-    input: import("@natalia/contracts").ContributedCommandExecution,
+    input: import("@anthelia/contracts").ContributedCommandExecution,
   ): Promise<void>;
   /** Replayable causal facts, including the existing epi_* correlation id. */
   workGraphNodes(input?: {
     sessionID?: string;
     workspaceID?: string;
-  }): Promise<import("@natalia/contracts").WorkGraphNodeView[]>;
+  }): Promise<import("@anthelia/contracts").WorkGraphNodeView[]>;
   workGraphEdges(input?: {
     sessionID?: string;
     workspaceID?: string;
-  }): Promise<import("@natalia/contracts").WorkGraphEdgeView[]>;
+  }): Promise<import("@anthelia/contracts").WorkGraphEdgeView[]>;
   /** The native terminal host. P0-D scopes the secure-input members. */
   nativeTerminalList(
     sessionID?: string,
@@ -725,23 +725,23 @@ export type NataliaSDK = {
   >;
   /** Submits a turn with attachments, resources and agent mentions. */
   submitInput(
-    input: import("@natalia/contracts").SubmitInput,
-  ): Promise<import("@natalia/contracts").SubmittedTurn>;
+    input: import("@anthelia/contracts").SubmitInput,
+  ): Promise<import("@anthelia/contracts").SubmittedTurn>;
   /**
    * Cancels a queued inbox input that has not started. Refusal is a value:
    * removing something already claimed returns `ok: false`.
    */
   removeInput(
-    input: import("@natalia/contracts").InputTarget,
-  ): Promise<import("@natalia/contracts").InputMutationResult>;
+    input: import("@anthelia/contracts").InputTarget,
+  ): Promise<import("@anthelia/contracts").InputMutationResult>;
   /** Edits the text of a queued inbox input that has not started. */
   replaceInput(
-    input: import("@natalia/contracts").InputTarget & { text: string },
-  ): Promise<import("@natalia/contracts").InputMutationResult>;
+    input: import("@anthelia/contracts").InputTarget & { text: string },
+  ): Promise<import("@anthelia/contracts").InputMutationResult>;
   /** Promotes a queued `next-turn` input so the running turn claims it. */
   promoteInput(
-    input: import("@natalia/contracts").InputTarget,
-  ): Promise<import("@natalia/contracts").InputMutationResult>;
+    input: import("@anthelia/contracts").InputTarget,
+  ): Promise<import("@anthelia/contracts").InputMutationResult>;
   /** Writes a config patch (the TUI settings menu path) and applies it. */
   updateConfig(input: {
     patch: Record<string, unknown>;
@@ -777,14 +777,16 @@ export type NataliaSDK = {
    */
   reloadConfig(): Promise<{ applied: boolean; reason?: string }>;
   canReloadConfig(): Promise<{ allowed: boolean; reason?: string }>;
-  availability(): Promise<import("@natalia/contracts").RuntimeCapabilityReport>;
+  availability(): Promise<
+    import("@anthelia/contracts").RuntimeCapabilityReport
+  >;
   runtimeStatus(
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").RuntimeStatusSnapshot>;
+  ): Promise<import("@anthelia/contracts").RuntimeStatusSnapshot>;
   diagnostics(
     limit?: number,
     sessionID?: string,
-  ): Promise<import("@natalia/contracts").RuntimeDiagnostic[]>;
+  ): Promise<import("@anthelia/contracts").RuntimeDiagnostic[]>;
   health(): Promise<{ ok: boolean; apiVersion: number }>;
   events(options?: {
     since?: number;
@@ -842,7 +844,7 @@ export function createNataliaSDK(options: NataliaSDKOptions): NataliaSDK {
       error?: {
         code: number;
         message: string;
-        data?: import("@natalia/contracts").RuntimeFailureData;
+        data?: import("@anthelia/contracts").RuntimeFailureData;
       };
     };
     // A failure arrives as a `RuntimeRPCError` carrying the JSON-RPC code and its

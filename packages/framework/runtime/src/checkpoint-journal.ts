@@ -24,7 +24,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import {
   resolveWorkspaceChunksRoot,
   resolveWorkspaceCheckpointSessionsRoot,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 import {
   copyFile,
   open,

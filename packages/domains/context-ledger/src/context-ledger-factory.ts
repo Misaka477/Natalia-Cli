@@ -1,5 +1,5 @@
-import { ContextLedger } from "@natalia/runtime";
-import { perfLog } from "@natalia/runtime-services";
+import { ContextLedger } from "@anthelia/runtime";
+import { perfLog } from "@anthelia/runtime-services";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";
 
 export function createContextLedgerFactory(): ContextLedgerFactory {
@@ -21,13 +21,13 @@ export function createContextLedgerFactory(): ContextLedgerFactory {
           reasoningField?: string;
           reasoningSignature?: string;
           reasoningRedacted?: boolean;
-          reasoningBlocks?: import("@natalia/contracts").ProviderReasoningBlock[];
+          reasoningBlocks?: import("@anthelia/contracts").ProviderReasoningBlock[];
         }
       >();
       const textSignatureByTurnID = new Map<string, string>();
       const contentPartsByTurnID = new Map<
         string,
-        import("@natalia/contracts").ProviderContentPart[]
+        import("@anthelia/contracts").ProviderContentPart[]
       >();
       const providerMetadataByTurnID = new Map<
         string,

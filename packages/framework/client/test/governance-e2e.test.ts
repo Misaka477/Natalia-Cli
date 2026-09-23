@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import {
   projectedCompletions,
   projectedDecisionRecords,

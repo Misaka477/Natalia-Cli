@@ -1,5 +1,5 @@
 import type { CheckpointFactory } from "./contracts";
-import { defineService } from "@natalia/runtime-services";
+import { defineService } from "@anthelia/runtime-services";
 
 /**
  * The checkpoint factory token; lives with the mechanism that implements it.

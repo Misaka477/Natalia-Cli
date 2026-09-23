@@ -1,4 +1,4 @@
-import type { ErrorKind } from "@natalia/contracts";
+import type { ErrorKind } from "@anthelia/contracts";
 
 type CompactionInput = {
   instruction?: string;

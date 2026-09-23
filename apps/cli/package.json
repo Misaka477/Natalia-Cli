@@ -17,18 +17,18 @@
   "dependencies": {
     "@anthelia/session-store": "workspace:*",
     "@natalia/client": "workspace:*",
-    "@natalia/config": "workspace:*",
-    "@natalia/contracts": "workspace:*",
+    "@anthelia/config": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
     "@natalia/engineering-intelligence": "workspace:*",
     "@natalia/installer": "workspace:*",
-    "@natalia/operation-log": "workspace:*",
-    "@natalia/platform": "workspace:*",
-    "@natalia/plugin": "workspace:*",
-    "@natalia/runtime": "workspace:*",
+    "@anthelia/operation-log": "workspace:*",
+    "@anthelia/platform": "workspace:*",
+    "@anthelia/plugin": "workspace:*",
+    "@anthelia/runtime": "workspace:*",
     "@natalia/transport": "workspace:*"
   },
   "devDependencies": {
     "@anthelia/session": "workspace:*",
-    "@natalia/capability": "workspace:*"
+    "@anthelia/capability": "workspace:*"
   }
 }

@@ -1,4 +1,4 @@
-import type { TokenMeter } from "@natalia/runtime";
+import type { TokenMeter } from "@anthelia/runtime";
 import type { AgentDefinition, AgentRegistry } from "@anthelia/agent";
 import type {
   ApprovalResponse,
@@ -21,7 +21,7 @@ import type {
   RuntimeSessionSummary,
   SessionID,
   WorkspaceOperation,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type {
   AttachmentService,
   CheckpointStore,
@@ -37,7 +37,7 @@ import type {
   RetryRunnerOptions,
   RetryService,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type {
   SessionMetadata,
   SessionRecord,
@@ -74,7 +74,7 @@ export type LocalToolsInput = {
 };
 
 export type McpInput = {
-  servers(): Record<string, import("@natalia/contracts").MCPServerConfig>;
+  servers(): Record<string, import("@anthelia/contracts").MCPServerConfig>;
   workspaceRoot: string;
   enabled(): boolean;
   publish(event: RuntimeEvent): void;
@@ -172,15 +172,15 @@ export type ProviderRunnerInput = {
   pendingAgent(): AgentDefinition | undefined;
   setPendingAgent(agent: AgentDefinition | undefined): void;
   selectedModel(): { modelID?: string; variant?: string } | undefined;
-  modelCapabilities(): import("@natalia/contracts").ModelCapabilities;
+  modelCapabilities(): import("@anthelia/contracts").ModelCapabilities;
   setActiveModelCapabilities(
-    capabilities: import("@natalia/contracts").ModelCapabilities | undefined,
+    capabilities: import("@anthelia/contracts").ModelCapabilities | undefined,
   ): void;
   refreshContextConfig?(): Promise<void>;
   permissionMode(): "ask" | "auto" | "read_only";
   workspaceRoot(): string;
   tsRuntimeConfig(): ConfigV3 | undefined;
-  runtimeContextConfig(): import("@natalia/runtime").ContextBudget;
+  runtimeContextConfig(): import("@anthelia/runtime").ContextBudget;
   activeSkill(): SkillMetadata | undefined;
   skillsList(): SkillMetadata[];
   skillService?(): SkillService | undefined;
@@ -201,8 +201,8 @@ export type ProviderRunnerInput = {
   naviChats?(): Array<{
     id: string;
     threadID: string;
-    from: import("@natalia/contracts").CollaborationParticipant;
-    to: import("@natalia/contracts").CollaborationParticipant;
+    from: import("@anthelia/contracts").CollaborationParticipant;
+    to: import("@anthelia/contracts").CollaborationParticipant;
     text: string;
     round: number;
     expectsReply: boolean;
@@ -212,8 +212,8 @@ export type ProviderRunnerInput = {
   niaChats?(): Array<{
     id: string;
     threadID: string;
-    from: import("@natalia/contracts").CollaborationParticipant;
-    to: import("@natalia/contracts").CollaborationParticipant;
+    from: import("@anthelia/contracts").CollaborationParticipant;
+    to: import("@anthelia/contracts").CollaborationParticipant;
     text: string;
     round: number;
     expectsReply: boolean;
@@ -259,12 +259,12 @@ export type ProviderRunnerInput = {
       field?: string;
       signature?: string;
       redacted?: boolean;
-      blocks?: import("@natalia/contracts").ProviderReasoningBlock[];
-      parts?: import("@natalia/contracts").ProviderContentPart[];
+      blocks?: import("@anthelia/contracts").ProviderReasoningBlock[];
+      parts?: import("@anthelia/contracts").ProviderContentPart[];
       providerMetadata?: Record<string, unknown>;
       textSignature?: string;
     },
-  ): Promise<import("@natalia/runtime").ProviderMessage[]>;
+  ): Promise<import("@anthelia/runtime").ProviderMessage[]>;
   takeLiveUserMessages?(): Array<{ source: "user" | "navi"; text: string }>;
   /** Claims un-promoted `next-step` inputs for one provider step. */
   takeStepInputs?(step: number): Array<{ id: string; text: string }>;

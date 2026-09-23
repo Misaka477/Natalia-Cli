@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import { ensureSessionFullEvents } from "@anthelia/substrate";
 import { sessionStoreController } from "@anthelia/session-store";
-import { createTestContext } from "@natalia/runtime-services";
+import { createTestContext } from "@anthelia/runtime-services";
 import type { SessionStoreController } from "@anthelia/session-store";
 
 test("ensureSessionFullEvents loads the full log when the fast path seeded only a tail", async () => {

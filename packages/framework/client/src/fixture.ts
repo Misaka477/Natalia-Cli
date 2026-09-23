@@ -6,7 +6,7 @@ import type {
   RuntimeEvent,
   SessionID,
   SubmittedTurn,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export function createFakeBackend(): FakeBackend {
   const sessionID: SessionID = "ses_m0_spike";

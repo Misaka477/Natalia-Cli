@@ -17,7 +17,7 @@ export type {
   GoalOperation,
   GoalPhase,
   GoalSnapshot,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 export { assertGoalSnapshot, foldGoal, foldGoalStep } from "./fold";
 export {
   buildGoalChanged,

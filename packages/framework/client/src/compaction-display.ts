@@ -1,4 +1,4 @@
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 export function compactionDisplayLine(event: RuntimeEvent) {
   if (event.type === "context.status") {

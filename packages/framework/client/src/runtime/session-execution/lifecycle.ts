@@ -1,4 +1,4 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { checkpointFactory } from "@anthelia/checkpoint";
 import {
@@ -6,15 +6,15 @@ import {
   terminalController,
   type SandboxService,
   type TerminalController,
-} from "@natalia/runtime-services";
-import { updateConfigAtScope } from "@natalia/config";
+} from "@anthelia/runtime-services";
+import { updateConfigAtScope } from "@anthelia/config";
 import { cloneConfigInWorker } from "../secondary-worker-client";
 import { sessionRunCoordinator } from "@anthelia/session";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
 import type { CheckpointFactory } from "@anthelia/checkpoint";
 import type { SessionStoreController } from "@anthelia/session-store";
-import { logOf, type OperationLog } from "@natalia/operation-log";
+import { logOf, type OperationLog } from "@anthelia/operation-log";
 type Surface = Pick<
   RuntimeServiceClient,
   "dispose" | "canReloadConfig" | "reloadConfig" | "updateConfig" | "configGet"
@@ -230,7 +230,7 @@ export function createLifecycleSurface(
 
 function normalizeProviderRenamePatch(
   patch: Record<string, unknown>,
-  currentConfig: import("@natalia/contracts").ConfigV3 | undefined,
+  currentConfig: import("@anthelia/contracts").ConfigV3 | undefined,
   log: OperationLog,
 ): Record<string, unknown> {
   const providersPatch = patch.providers as Record<string, unknown> | undefined;

@@ -1,5 +1,5 @@
 import type { PluginIntegrationPoint } from "./manifest";
-import type { UiAdapterMountInput } from "@natalia/contracts";
+import type { UiAdapterMountInput } from "@anthelia/contracts";
 import type { MountedPlugin, RegistryState } from "./registry-state";
 import type {
   PluginAPI,

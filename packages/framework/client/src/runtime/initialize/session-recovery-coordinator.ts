@@ -1,5 +1,5 @@
-import type { RuntimeEvent } from "@natalia/contracts";
-import { ContextLedger, TokenMeter, memoryTrace } from "@natalia/runtime";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import { ContextLedger, TokenMeter, memoryTrace } from "@anthelia/runtime";
 import type { SessionProjection } from "@anthelia/session";
 import { announcedTurnIDsFrom } from "@anthelia/substrate";
 import { reseedSessionFactState } from "@anthelia/substrate";
@@ -18,16 +18,16 @@ import {
   mcpService,
   sandboxService,
   terminalController,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
-import { perfLog } from "@natalia/runtime-services";
-import { today } from "@natalia/runtime";
+import { perfLog } from "@anthelia/runtime-services";
+import { today } from "@anthelia/runtime";
 import { contextLedgerFactory } from "@natalia/context-ledger";
-import type { AttachmentService } from "@natalia/runtime";
+import type { AttachmentService } from "@anthelia/runtime";
 import type { SessionStoreController } from "@anthelia/session-store";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 type LoadedSession = Awaited<ReturnType<SessionStoreController["load"]>>;
 type RecoveryView = NonNullable<LoadedSession["recovery"]>;
@@ -236,7 +236,7 @@ export class SessionRecoveryCoordinator {
           for (const session of sessions) {
             void this.sessionStore
               .prewarmMessagePage(
-                session.id as import("@natalia/contracts").SessionID,
+                session.id as import("@anthelia/contracts").SessionID,
               )
               .catch((error) => {
                 logOf(scope.serviceDirectory).warn(

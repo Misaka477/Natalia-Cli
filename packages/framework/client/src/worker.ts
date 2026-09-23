@@ -1,4 +1,4 @@
-import { describeRuntimeCapabilities } from "@natalia/contracts";
+import { describeRuntimeCapabilities } from "@anthelia/contracts";
 import type {
   ApprovalResponse,
   QuestionResponse,
@@ -7,7 +7,7 @@ import type {
   RuntimeReasoningEffort,
   SubmitInput,
   SubmittedTurn,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 /**
  * The worker channel's route table, mirroring `handleWorkerRequest` below.
@@ -334,7 +334,9 @@ export type RuntimeWorkerPort = {
 };
 
 export type WorkerRuntimeClient = RuntimeClient & {
-  availability(): Promise<import("@natalia/contracts").RuntimeCapabilityReport>;
+  availability(): Promise<
+    import("@anthelia/contracts").RuntimeCapabilityReport
+  >;
 };
 
 export function createWorkerRuntimeClient(
@@ -1221,14 +1223,14 @@ export async function handleWorkerRequest(
     if (!client.removeInput)
       throw new Error("RuntimeClient does not support input.remove");
     return await client.removeInput(
-      request.value as import("@natalia/contracts").InputTarget,
+      request.value as import("@anthelia/contracts").InputTarget,
     );
   }
   if (request.method === "input.replace") {
     if (!client.replaceInput)
       throw new Error("RuntimeClient does not support input.replace");
     return await client.replaceInput(
-      request.value as import("@natalia/contracts").InputTarget & {
+      request.value as import("@anthelia/contracts").InputTarget & {
         text: string;
       },
     );
@@ -1237,7 +1239,7 @@ export async function handleWorkerRequest(
     if (!client.promoteInput)
       throw new Error("RuntimeClient does not support input.promote");
     return await client.promoteInput(
-      request.value as import("@natalia/contracts").InputTarget,
+      request.value as import("@anthelia/contracts").InputTarget,
     );
   }
   if (request.method === "interactive.pending") {
@@ -1249,7 +1251,7 @@ export async function handleWorkerRequest(
     if (!client.respondInteractive)
       throw new Error("RuntimeClient does not support interactive.respond");
     return await client.respondInteractive(
-      request.value as import("@natalia/contracts").InteractiveResponse,
+      request.value as import("@anthelia/contracts").InteractiveResponse,
     );
   }
   if (request.method === "runtime.status")
@@ -1740,7 +1742,7 @@ export async function handleWorkerRequest(
         ? client.naviChat
         : client.niaChat;
     const value = request.value as {
-      profile: import("@natalia/contracts").ChatModelProfile;
+      profile: import("@anthelia/contracts").ChatModelProfile;
       sessionID?: string;
     };
     return await surface?.setModelProfile?.(value.profile, value.sessionID);

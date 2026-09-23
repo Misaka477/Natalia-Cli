@@ -1,15 +1,15 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { ObjectStore } from "@natalia/object-store";
-import { resolveConfig } from "@natalia/config";
-import { configV3Schema } from "@natalia/contracts";
-import type { RuntimeEvent } from "@natalia/contracts";
+import { ObjectStore } from "@anthelia/object-store";
+import { resolveConfig } from "@anthelia/config";
+import { configV3Schema } from "@anthelia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import {
   buildGeneration,
   loadGeneration,
   storeGeneration,
-} from "@natalia/composition";
-import { resolveWorkspaceObjectsRoot } from "@natalia/platform";
+} from "@anthelia/composition";
+import { resolveWorkspaceObjectsRoot } from "@anthelia/platform";
 import {
   officialPluginWorkspace,
   useWorkspaceCleanup,

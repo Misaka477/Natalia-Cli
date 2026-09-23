@@ -9,13 +9,13 @@ import {
 } from "./plugin-test-helpers";
 
 useWorkspaceCleanup();
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { ProviderStreamRequest } from "@natalia/runtime";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { ProviderStreamRequest } from "@anthelia/runtime";
 import {
   projectedWorkGraphEdges,
   projectedWorkGraphNodes,
 } from "@anthelia/session";
-import { workGraphEdgeSchema, workGraphNodeSchema } from "@natalia/contracts";
+import { workGraphEdgeSchema, workGraphNodeSchema } from "@anthelia/contracts";
 import {
   agentActionNodeID,
   approvalNodeID,

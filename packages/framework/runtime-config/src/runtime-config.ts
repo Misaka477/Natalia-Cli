@@ -6,7 +6,7 @@
  * subscribers observe the replacement. This package owns only the service key
  * and the value contract; the host owns the lifecycle.
  */
-import type { ConfigV3 } from "@natalia/contracts";
+import type { ConfigV3 } from "@anthelia/contracts";
 
 export const RUNTIME_CONFIG_SERVICE = "runtime.config";
 

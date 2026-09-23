@@ -1,5 +1,5 @@
 import type { SessionStoreController } from "./contracts";
-import { defineService } from "@natalia/runtime-services";
+import { defineService } from "@anthelia/runtime-services";
 
 /**
  * The session store controller token; lives with the mechanism. With this one

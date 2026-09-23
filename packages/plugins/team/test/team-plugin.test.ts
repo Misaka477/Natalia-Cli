@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { createPluginRegistry, type Plugin } from "@natalia/plugin";
+import { createPluginRegistry, type Plugin } from "@anthelia/plugin";
 import {
   sandboxService,
   subagentsService,
   teamBehavior,
   type TeamBehaviorService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { createToolRegistry } from "@anthelia/tools";
 import { createTeamPlugin, TEAM_PLUGIN_ID } from "../src/index";
 

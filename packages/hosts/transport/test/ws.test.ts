@@ -3,7 +3,7 @@ import type {
   RuntimeClient,
   RuntimeEvent,
   SubmittedTurn,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { createRuntimeWsServer } from "../src/host";
 
 function collectMessages(ws: WebSocket): {

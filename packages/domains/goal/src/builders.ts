@@ -2,7 +2,7 @@ import type {
   GoalOperation,
   GoalSnapshot,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 /** Durable goal mutation event (`goal.changed`). */
 export type GoalChangedEvent = Extract<RuntimeEvent, { type: "goal.changed" }>;

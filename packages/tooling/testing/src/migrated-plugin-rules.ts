@@ -225,7 +225,7 @@ export function findClientServiceContractViolation(
     path.startsWith("packages/framework/client/src/") &&
     migratedServiceImport.test(text)
   )
-    return "client must import migrated service types and keys from @natalia/runtime-services";
+    return "client must import migrated service types and keys from @anthelia/runtime-services";
   return undefined;
 }
 
@@ -522,11 +522,11 @@ export function findMigratedPluginViolations(
  * Keep the list in step with packages/hosts/.
  */
 export const HOST_LAYER_PACKAGES = [
-  "@natalia/config",
-  "@natalia/confinement",
+  "@anthelia/config",
+  "@anthelia/confinement",
   "@natalia/installer",
-  "@natalia/object-store",
-  "@natalia/platform",
+  "@anthelia/object-store",
+  "@anthelia/platform",
   "@natalia/transport",
   "@natalia/ui-host",
   "@natalia/view-store",
@@ -549,7 +549,7 @@ export function findPolicyHostDependencyViolation(
 /**
  * master plan P3 row (composition 归内核) + interface spec's substrate list:
  * the generation-switch/composition machinery is ENGINE substrate, so
- * `@natalia/composition` must resolve into the kernel layer
+ * `@anthelia/composition` must resolve into the kernel layer
  * (packages/core/...) — checked against the paths map, which is the one
  * place the placement is declared.
  */
@@ -557,7 +557,7 @@ export function findCompositionKernelViolation(
   pathsEntry: readonly string[] | string | undefined,
 ): string | undefined {
   if (!pathsEntry)
-    return "@natalia/composition is missing from tsconfig.base paths";
+    return "@anthelia/composition is missing from tsconfig.base paths";
   const first = Array.isArray(pathsEntry) ? pathsEntry[0] : pathsEntry;
   if (!first?.startsWith("packages/core/"))
     return `composition must live in the kernel layer (packages/core/...), paths says ${first}`;

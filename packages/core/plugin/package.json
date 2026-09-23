@@ -1,5 +1,5 @@
 {
-  "name": "@natalia/plugin",
+  "name": "@anthelia/plugin",
   "version": "0.0.0-m13",
   "private": true,
   "type": "module",
@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "@anthelia/tools": "workspace:*",
-    "@natalia/contracts": "workspace:*"
+    "@anthelia/contracts": "workspace:*"
   }
 }

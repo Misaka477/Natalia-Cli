@@ -13,9 +13,9 @@ import {
 import {
   buildMailboxQueued,
   buildMailboxStatus,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import type { RuntimeTool } from "@anthelia/tools";
-import type { CollaborationParticipant, SessionID } from "@natalia/contracts";
+import type { CollaborationParticipant, SessionID } from "@anthelia/contracts";
 import {
   COLLABORATION_SERVICE,
   type CollaborationService,
@@ -24,7 +24,7 @@ import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import { ensureSessionFullEvents } from "@anthelia/substrate";
 import { findMailboxMessage } from "./mailbox";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 export function createMailboxPlans(ctx: RuntimeContext) {
   return {

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { modelSelectionStatus, evaluatePolicy } from "../src/policy";
-import { configV3Schema } from "@natalia/contracts";
+import { configV3Schema } from "@anthelia/contracts";
 import { resolveConfig } from "../src/service";
 
 test("provider policy defaults to the caller fallback", () => {

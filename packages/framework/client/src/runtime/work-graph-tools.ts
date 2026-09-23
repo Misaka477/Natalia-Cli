@@ -11,7 +11,7 @@ import {
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
 } from "@anthelia/session";
-import type { WorkGraphEdge, WorkGraphNode } from "@natalia/contracts";
+import type { WorkGraphEdge, WorkGraphNode } from "@anthelia/contracts";
 import { activePlanForExec } from "@natalia/collab";
 import type { RuntimeContext } from "@anthelia/substrate";
 
@@ -24,7 +24,7 @@ function resolveExec(
   const exec = sessionID
     ? ctx.ports
         .getExecutionBySession()
-        .get(sessionID as import("@natalia/contracts").SessionID)
+        .get(sessionID as import("@anthelia/contracts").SessionID)
     : undefined;
   return exec ?? ctx.ports.getActiveExec();
 }

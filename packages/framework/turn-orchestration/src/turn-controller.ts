@@ -2,7 +2,7 @@ import type {
   LocalAttachment,
   PromptAgentMention,
   PromptResourceMention,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   admissionCutoff,
   admittedInputs,
@@ -16,7 +16,7 @@ import type {
   TurnController,
   TurnControllerInput,
 } from "@anthelia/turn-orchestration";
-import type {} from "@natalia/runtime-services";
+import type {} from "@anthelia/runtime-services";
 
 export function createTurnController(
   input: TurnControllerInput,

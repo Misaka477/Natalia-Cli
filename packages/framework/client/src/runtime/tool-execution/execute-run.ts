@@ -8,15 +8,15 @@
  * facts, and settles the in-flight audit. Split into its own file so
  * `execute-one.ts` stays within the source line limit.
  */
-import type { ProviderToolCall } from "@natalia/runtime";
+import type { ProviderToolCall } from "@anthelia/runtime";
 import {
   requiresForcedGitApprovalAst,
   timeoutSecOr,
   validateToolOutput,
   type RuntimeTool,
 } from "@anthelia/tools";
-import type { RuntimeEvent } from "@natalia/contracts";
-import { type ToolPolicyService } from "@natalia/runtime-services";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import { type ToolPolicyService } from "@anthelia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
 import { workspaceMutations, workspaceWriteLock } from "@anthelia/workspace";
@@ -26,7 +26,7 @@ import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import { activePlanForExec } from "@natalia/collab";
 import type { WorkLedgerController } from "@natalia/work-ledger";
-import { OPAQUE_WORKSPACE_WRITERS, rinaCache } from "@natalia/rina";
+import { OPAQUE_WORKSPACE_WRITERS, rinaCache } from "@anthelia/rina";
 import { executeWithReadCache } from "./read-cache";
 
 export type ExecuteStageInput = {
@@ -39,7 +39,7 @@ export type ExecuteStageInput = {
   attachImage?: (path: string) => Promise<void>;
   ctx: RuntimeContext;
   options: RealRuntimeClientOptions;
-  sessionID: import("@natalia/contracts").SessionID;
+  sessionID: import("@anthelia/contracts").SessionID;
   workspaceRoot: string;
 };
 

@@ -13,22 +13,22 @@ import {
   type ProviderMessage,
   type StreamingProvider,
   type TokenMeter,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { resolveEffectiveModel } from "@anthelia/provider-model";
 import {
   modelRefKey,
   type LocalAttachment,
   type ModelCapabilities,
   type ProviderContentPart,
-} from "@natalia/contracts";
-import type { AttachmentService } from "@natalia/runtime";
+} from "@anthelia/contracts";
+import type { AttachmentService } from "@anthelia/runtime";
 import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
 import { compactionService } from "@anthelia/compaction";
 import type {
   RuntimeContext,
   SessionExecutionState,
 } from "@anthelia/substrate";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 const ledgerHistories = new WeakMap<ContextLedger, ProviderMessage[]>();
 
@@ -343,7 +343,7 @@ export async function compactChatBeforeProviderStep(
     prune: boolean;
     publishCompacted(summary: string, compactedThroughMessageID: string): void;
     publishCompactionEvent(
-      event: import("@natalia/contracts").RuntimeEvent,
+      event: import("@anthelia/contracts").RuntimeEvent,
     ): void;
   },
 ) {
@@ -516,7 +516,7 @@ function reasoningLedgerFields(message: ProviderMessage): {
   reasoningField?: string;
   reasoningSignature?: string;
   reasoningRedacted?: boolean;
-  reasoningBlocks?: import("@natalia/contracts").ProviderReasoningBlock[];
+  reasoningBlocks?: import("@anthelia/contracts").ProviderReasoningBlock[];
   contentParts?: ProviderContentPart[];
   providerMetadata?: Record<string, unknown>;
   textSignature?: string;
@@ -568,7 +568,7 @@ type ExpandEventTypes<Event> = Event extends {
   : never;
 
 export type ConcreteRuntimeEvent = ExpandEventTypes<
-  import("@natalia/contracts").RuntimeEvent
+  import("@anthelia/contracts").RuntimeEvent
 >;
 
 export function streamEvent<Event extends ConcreteRuntimeEvent>(

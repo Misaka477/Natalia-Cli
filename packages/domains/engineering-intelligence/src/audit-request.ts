@@ -1,5 +1,5 @@
 import { workLedgerController } from "@natalia/work-ledger";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import type {
   RuntimeContext,
   SessionExecutionState,

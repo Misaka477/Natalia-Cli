@@ -5,12 +5,12 @@
  * `RuntimeContext.ports` type through an intersection in `context.ts`.
  */
 import type { AgentRegistry } from "@anthelia/agent";
-import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { ConfigV3, RuntimeEvent, SessionID } from "@anthelia/contracts";
 import type {
   ContextWindowResolver,
   ProviderConcurrencyLimiter,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { SessionExecutionState } from "./context";
 
@@ -22,7 +22,7 @@ export type RuntimePortsExtra = {
   ) => boolean;
   scheduleCollabSnapshot?: (exec: SessionExecutionState) => void;
   setLastSubmitted: (
-    turn: import("@natalia/contracts").SubmittedTurn | undefined,
+    turn: import("@anthelia/contracts").SubmittedTurn | undefined,
   ) => void;
   rememberTitleInput: (id: SessionID, text: string) => void;
   drainSessionFor: (
@@ -35,12 +35,12 @@ export type RuntimePortsExtra = {
   ) => void;
   setActiveExec: (exec: SessionExecutionState | undefined) => void;
   setAttachmentReferences: (
-    refs: Map<string, import("@natalia/contracts").LocalAttachment[]>,
+    refs: Map<string, import("@anthelia/contracts").LocalAttachment[]>,
   ) => void;
   setToolCalls: (calls: Map<string, number[]>) => void;
   setPauseWaiters: (waiters: Array<() => void>) => void;
   setActiveSkill: (
-    skill: import("@natalia/runtime-services").SkillMetadata | undefined,
+    skill: import("@anthelia/runtime-services").SkillMetadata | undefined,
   ) => void;
   setLastProviderUsage: (
     usage: { inputTokens: number; outputTokens: number } | undefined,
@@ -59,14 +59,14 @@ export type RuntimePortsExtra = {
   getUserSkillRoot: () => string | undefined;
   extensionEnabled: (
     extension: "skills" | "mcp",
-    profile?: import("@natalia/contracts").PermissionProfile,
+    profile?: import("@anthelia/contracts").PermissionProfile,
   ) => boolean;
   hotReloadToolFamily: (familyID: string) => Promise<{ reloaded: boolean }>;
   setProviderSource: (
     source: "explicit" | "environment" | "ts_config" | "unconfigured",
   ) => void;
   providerFromEnvironment: () =>
-    | import("@natalia/runtime").StreamingProvider
+    | import("@anthelia/runtime").StreamingProvider
     | undefined;
   runNaviChatTurn: (
     input: {
@@ -75,8 +75,8 @@ export type RuntimePortsExtra = {
       exec: SessionExecutionState;
       internal?: boolean;
       model?: { modelID?: string; variant?: string };
-      reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
-      attachments?: import("@natalia/contracts").LocalAttachment[];
+      reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
+      attachments?: import("@anthelia/contracts").LocalAttachment[];
     },
     signal: AbortSignal,
   ) => Promise<{ text: string }>;
@@ -87,8 +87,8 @@ export type RuntimePortsExtra = {
       exec: SessionExecutionState;
       internal?: boolean;
       model?: { modelID?: string; variant?: string };
-      reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
-      attachments?: import("@natalia/contracts").LocalAttachment[];
+      reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
+      attachments?: import("@anthelia/contracts").LocalAttachment[];
     },
     signal: AbortSignal,
   ) => Promise<{ text: string }>;
@@ -97,7 +97,7 @@ export type RuntimePortsExtra = {
   setTsRuntimeConfig: (config: ConfigV3 | undefined) => void;
   setMaxSteps: (steps: number | undefined) => void;
   setRetryPolicy: (
-    policy: import("@natalia/runtime").RetryRunnerOptions["policy"],
+    policy: import("@anthelia/runtime").RetryRunnerOptions["policy"],
   ) => void;
   setProviderConcurrencyLimiter: (limiter: ProviderConcurrencyLimiter) => void;
   setAgentRegistry: (registry: AgentRegistry) => void;
@@ -123,7 +123,7 @@ export type RuntimePortsExtra = {
   setReady: (ready: Promise<void> | undefined) => void;
   initialize: () => Promise<void>;
   getCheckpointRuntime: () => Pick<
-    import("@natalia/runtime-services").RuntimeServiceClient,
+    import("@anthelia/runtime-services").RuntimeServiceClient,
     | "checkpointList"
     | "checkpointListByKind"
     | "auditRounds"

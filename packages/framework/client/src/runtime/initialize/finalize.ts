@@ -5,12 +5,12 @@ import {
 } from "@natalia/governance-ledger";
 import type { InitializeOptions, RuntimeContext } from "@anthelia/substrate";
 import { createInitializeRuntime } from "./runtime";
-import { perfLog } from "@natalia/runtime-services";
+import { perfLog } from "@anthelia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { governanceLedgerController as governanceLedgerControllerToken } from "@natalia/governance-ledger";
 import type { GovernanceLedgerController } from "@natalia/governance-ledger";
 import type { WorkLedgerController } from "@natalia/work-ledger";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 export async function finalizeInitialize(
   ctx: RuntimeContext,

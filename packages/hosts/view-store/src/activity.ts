@@ -3,7 +3,7 @@
  * localization, timing, and animation belong to each consuming UI.
  */
 import { classifyTool } from "@natalia/ui-model";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { toolStateID, turnIDForTool } from "./conversation";
 import type { ActivityKind, ActivityView, AppState } from "./state";
 

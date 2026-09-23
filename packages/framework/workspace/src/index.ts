@@ -29,7 +29,7 @@ export {
   searchWorkspaceFiles,
   watchWorkspaceFiles,
   writeWorkspaceFile,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 export {
   assertSecretSafeObservation,
   attributionFor,

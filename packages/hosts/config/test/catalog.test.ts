@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configV3Schema, modelRefKey } from "@natalia/contracts";
+import { configV3Schema, modelRefKey } from "@anthelia/contracts";
 import {
   buildModelCatalog,
   configureProviderModels,

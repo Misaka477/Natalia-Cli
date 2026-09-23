@@ -3,19 +3,19 @@ import {
   foregroundProcessForTTY,
   globalConfigHome,
   userRuntimeHome,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 import { TerminalCommandBuffer } from "@anthelia/tools";
 import {
   skillService,
   teamBehavior,
   terminalController,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
-import { statusSnapshotController } from "@natalia/runtime-status";
+import { statusSnapshotController } from "@anthelia/runtime-status";
 import { createPluginsController } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { ProductRuntimeContext } from "@natalia/collab";
-import type { StatusSnapshotController } from "@natalia/runtime-status";
+import type { StatusSnapshotController } from "@anthelia/runtime-status";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
 function userSkillRoot() {

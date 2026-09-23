@@ -1,4 +1,4 @@
-import type { LocalAttachment } from "@natalia/contracts";
+import type { LocalAttachment } from "@anthelia/contracts";
 import type { SessionRecord } from "@anthelia/session";
 import type {
   RetryAttemptContext,

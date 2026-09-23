@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { userStateHome } from "@natalia/platform";
+import { userStateHome } from "@anthelia/platform";
 
 export function valueAfter(argv: string[], flag: string, offset = 0) {
   const index = argv.indexOf(flag);

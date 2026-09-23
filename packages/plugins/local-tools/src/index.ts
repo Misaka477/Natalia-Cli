@@ -12,13 +12,13 @@ export {
   type LocalToolFamilyManifest,
   type LocalToolFamilyOptions,
 } from "./local-tool-families";
-import type { Plugin, PluginAPI } from "@natalia/plugin";
+import type { Plugin, PluginAPI } from "@anthelia/plugin";
 import {
   createLocalToolsPlugin,
   LOCAL_TOOLS_PLUGIN_MANIFEST,
 } from "./local-tools-plugin";
 import type { LocalToolFamilyOptions } from "./local-tool-families";
-import { localToolsInput } from "@natalia/runtime-services";
+import { localToolsInput } from "@anthelia/runtime-services";
 
 export type LocalToolsRuntimeInput = {
   roots: string[];

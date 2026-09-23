@@ -3,11 +3,11 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { JsonSessionStore, createSessionRecord } from "@anthelia/session";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { createRealRuntimeClient } from "../src/runtime/main";
 
 const provider: StreamingProvider = {

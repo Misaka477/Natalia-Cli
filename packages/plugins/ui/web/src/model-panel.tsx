@@ -11,7 +11,7 @@ import type {
   ConfigV3,
   RuntimeModelCatalogEntry,
   RuntimeModelSelection,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { NeuSelect } from "./components/NeuSelect";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 

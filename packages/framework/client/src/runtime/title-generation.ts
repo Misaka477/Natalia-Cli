@@ -6,9 +6,9 @@
  * `RuntimeContext` at call time.
  */
 import { sessionRunCoordinator } from "@anthelia/session";
-import { withProviderConcurrency } from "@natalia/runtime";
+import { withProviderConcurrency } from "@anthelia/runtime";
 import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import {
   fallbackSessionTitle,
   generateSessionTitle,

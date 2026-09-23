@@ -4,14 +4,14 @@ import type {
   ModelCapabilities,
   RuntimeReasoningEffort,
   SubmittedTurn,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   ContextLedger,
   TokenMeter,
   type StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type { SessionFactState, SessionRecord } from "@anthelia/session";
-import type { SkillMetadata } from "@natalia/runtime-services";
+import type { SkillMetadata } from "@anthelia/runtime-services";
 import type { RuntimeContextStatusConfig } from "./status-config";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
@@ -23,7 +23,7 @@ export type CollabSnapshot = {
   eventCount: number;
 };
 
-type PermissionProfile = import("@natalia/contracts").PermissionProfile;
+type PermissionProfile = import("@anthelia/contracts").PermissionProfile;
 
 export type SessionExecutionState = {
   session: SessionRecord;
@@ -65,8 +65,8 @@ export type SessionExecutionState = {
   tokenMeter: TokenMeter;
   naviTokenMeter: TokenMeter;
   niaTokenMeter: TokenMeter;
-  naviChatModelProfile?: import("@natalia/contracts").ChatModelProfile;
-  niaChatModelProfile?: import("@natalia/contracts").ChatModelProfile;
+  naviChatModelProfile?: import("@anthelia/contracts").ChatModelProfile;
+  niaChatModelProfile?: import("@anthelia/contracts").ChatModelProfile;
   advisorPending?: boolean;
   collabSnapshot?: CollabSnapshot;
   /** Total durable event count; may be larger than session.events.length when full events are still loading in background. */
@@ -104,7 +104,7 @@ export type SessionExecutionState = {
   /** Lazily opened shared event window for secondary projections. */
   eventWindow?: import("./session-window").SessionWindow<
     import("./session-window").SessionWindowEntry<
-      import("@natalia/contracts").RuntimeEvent
+      import("@anthelia/contracts").RuntimeEvent
     >
   >;
   /**

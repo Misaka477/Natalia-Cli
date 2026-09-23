@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import { createUiPluginHost, defineUiPlugin } from "../src";
 
 function fakeRoot(): HTMLElement {

@@ -1,4 +1,4 @@
-import { configV3Schema, type ConfigV3 } from "@natalia/contracts";
+import { configV3Schema, type ConfigV3 } from "@anthelia/contracts";
 
 export type MigrationSummary = {
   fromVersion: number;

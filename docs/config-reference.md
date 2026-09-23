@@ -294,7 +294,7 @@ written atomically with mode 0600:
   `%APPDATA%\natalia-cli\tui.json` (Windows)
 
 Resolution is defaults → global → project (project wins). The full schema is
-`tuiConfigSchema` in `@natalia/config`; the fields are:
+`tuiConfigSchema` in `@anthelia/config`; the fields are:
 
 | Field                     | Type                                | Default        |
 | ------------------------- | ----------------------------------- | -------------- |
@@ -586,7 +586,7 @@ atomically, and announces the change with a `settings.updated` event
   `%APPDATA%\natalia-cli\tui.json`（Windows）
 
 解析顺序为 defaults → global → project（project 优先）。完整 schema 见
-`@natalia/config` 的 `tuiConfigSchema`；字段如下：
+`@anthelia/config` 的 `tuiConfigSchema`；字段如下：
 
 | 字段                      | 类型                                | 默认           |
 | ------------------------- | ----------------------------------- | -------------- |

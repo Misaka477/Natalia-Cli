@@ -5,7 +5,7 @@ import type {
   PromptResourceMention,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { SessionRecord } from "./index";
 
 /**

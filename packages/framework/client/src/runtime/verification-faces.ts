@@ -1,11 +1,14 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Generation, RuntimeEvent, SessionID } from "@natalia/contracts";
-import type { VerificationCheck, VerificationFace } from "@natalia/composition";
-import type { StreamingProvider } from "@natalia/runtime";
-import { configV3Schema } from "@natalia/contracts";
-import { resolveConfig } from "@natalia/config";
+import type { Generation, RuntimeEvent, SessionID } from "@anthelia/contracts";
+import type {
+  VerificationCheck,
+  VerificationFace,
+} from "@anthelia/composition";
+import type { StreamingProvider } from "@anthelia/runtime";
+import { configV3Schema } from "@anthelia/contracts";
+import { resolveConfig } from "@anthelia/config";
 import { createRealRuntimeClient } from "./main";
 
 /**

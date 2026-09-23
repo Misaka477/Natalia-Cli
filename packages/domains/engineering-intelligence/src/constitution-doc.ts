@@ -21,7 +21,7 @@ import type {
   ConstitutionDocAppliesTo,
   ConstitutionDocEnforcement,
   ConstitutionDocRule,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 
 export type {
   ConstitutionDocAppliesTo,

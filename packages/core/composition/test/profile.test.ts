@@ -286,7 +286,7 @@ test("the shipped base parses with the real confinement registration — and its
     CONFINEMENT_COMPOSITION_ROW_ID,
     CONFINEMENT_MODES,
     confinementConfigSchema,
-  } = await import("@natalia/contracts");
+  } = await import("@anthelia/contracts");
   const profile = await loadCompositionProfile({
     baseFile: requireBaseProfileFile(
       profileSearchCandidates({

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { configV3Schema } from "@natalia/contracts";
+import { configV3Schema } from "@anthelia/contracts";
 import {
   mkdir,
   mkdtemp,

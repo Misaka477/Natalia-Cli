@@ -1,6 +1,6 @@
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { nataliaLockSchema, type NataliaLock } from "@natalia/contracts";
+import { nataliaLockSchema, type NataliaLock } from "@anthelia/contracts";
 import { pluginManifestSchema, type PluginManifest } from "./manifest";
 
 export type PluginManifestEntry = { manifest: PluginManifest; path: string };

@@ -15,13 +15,13 @@ import type {
   RuntimeEvent,
   SandboxDiffKind,
   SandboxStatus,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   forceRemove,
   profileShellCommand,
   shellQuote,
   startDetachedProcess,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 
 export type IsolationLevel = "workspace" | "container" | "vm";
 

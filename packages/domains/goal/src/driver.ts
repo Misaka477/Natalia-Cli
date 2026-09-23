@@ -11,14 +11,14 @@
  * completion, cancellation, error, a provider budget stop or the round cap.
  */
 import { buildGoalRound, type GoalRoundEvent } from "./builders";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 /** One durable round-cost event, booked when a round settles. */
 export type GoalRoundCostEvent = Extract<
   RuntimeEvent,
   { type: "goal.round.cost" }
 >;
-import type { GoalBlockReason } from "@natalia/contracts";
+import type { GoalBlockReason } from "@anthelia/contracts";
 import type { GoalService } from "./service";
 import type { GoalView } from "./types";
 

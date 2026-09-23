@@ -10,21 +10,21 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, expect, test } from "bun:test";
 import { createRealRuntimeClient as createRuntimeClient } from "../src";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
-} from "@natalia/runtime";
-import { providerError } from "@natalia/runtime";
-import { CapabilityRegistry } from "@natalia/capability";
+} from "@anthelia/runtime";
+import { providerError } from "@anthelia/runtime";
+import { CapabilityRegistry } from "@anthelia/capability";
 import { createToolRegistry } from "@anthelia/tools";
-import { fingerprintFile, recordTrust, resolveConfig } from "@natalia/config";
+import { fingerprintFile, recordTrust, resolveConfig } from "@anthelia/config";
 import { SessionStoreTestDatabase } from "@natalia/testing";
 import {
   sandboxService,
   terminalController,
   type SandboxService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { checkpointFactory } from "@anthelia/checkpoint";
 import { retryService } from "@anthelia/retry";
 import { turnController } from "@anthelia/turn-orchestration";
@@ -344,7 +344,7 @@ test("runtime correlates durable events with an episode without changing session
   const root = await mkdtemp(join(tmpdir(), "natalia-episode-runtime-"));
   const sessionID = "ses_episode_runtime" as SessionID;
   const episodeID =
-    "epi_episode_runtime" as import("@natalia/contracts").EpisodeID;
+    "epi_episode_runtime" as import("@anthelia/contracts").EpisodeID;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID,

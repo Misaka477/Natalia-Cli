@@ -11,7 +11,7 @@ import {
   resolveEndpointProtocol,
   type ProviderFormat,
 } from "./provider-adapters";
-import { modelSelectionStatus, resolveEffectiveModel } from "@natalia/config";
+import { modelSelectionStatus, resolveEffectiveModel } from "@anthelia/config";
 import {
   parseModelRef,
   type ConfigV3,
@@ -20,7 +20,7 @@ import {
   type ModelRef,
   type ProviderContentPart,
   type ProviderReasoningBlock,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   asProviderError,
   providerError,

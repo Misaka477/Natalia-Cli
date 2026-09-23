@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { RuntimeStructuredDiff } from "@natalia/contracts";
+import type { RuntimeStructuredDiff } from "@anthelia/contracts";
 import type { ObjectStore } from "./object-store";
 
 type StructuredDiffCacheEntry = {

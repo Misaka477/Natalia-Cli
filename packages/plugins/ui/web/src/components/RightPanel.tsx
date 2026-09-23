@@ -17,8 +17,8 @@ import type {
   RuntimeSandbox,
   RuntimeStructuredDiff,
   RuntimeTeamPR,
-} from "@natalia/contracts";
-import type { StructuredDiffResult } from "@natalia/diff-wasm";
+} from "@anthelia/contracts";
+import type { StructuredDiffResult } from "@anthelia/diff-wasm";
 import { NeuSelect } from "./NeuSelect";
 import {
   UnifiedDiffView,
@@ -27,12 +27,9 @@ import {
   diffLines,
   structuredRows,
   languageFromPath,
-} from "@natalia/framework-diff";
-import {
-  computeDiffInWorker,
-  computeDiffInWorkerStream,
-} from "@natalia/framework-diff";
-import type { DiffItem } from "@natalia/framework-diff";
+} from "@anthelia/diff";
+import { computeDiffInWorker, computeDiffInWorkerStream } from "@anthelia/diff";
+import type { DiffItem } from "@anthelia/diff";
 
 const perfLog = (...args: unknown[]) => {
   if (

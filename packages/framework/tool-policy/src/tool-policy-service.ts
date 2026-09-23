@@ -19,7 +19,7 @@ import {
   workspaceWritePathForTool,
   workspaceWritePathsForTool,
 } from "@anthelia/tools";
-import type { ToolPolicyService } from "@natalia/runtime-services";
+import type { ToolPolicyService } from "@anthelia/runtime-services";
 
 export function createToolPolicyService(): ToolPolicyService {
   return {

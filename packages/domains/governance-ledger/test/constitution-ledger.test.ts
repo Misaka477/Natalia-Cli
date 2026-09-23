@@ -9,7 +9,7 @@ import {
   seedConstitutionRules,
   validateConstitutionRuleProposal,
 } from "../src/constitution-ledger";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 test("the self-protection rules are the runtime's real rule metadata", () => {
   expect(SELF_PROTECTION_RULES.map((rule) => rule.ruleID)).toEqual([

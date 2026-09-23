@@ -1,4 +1,4 @@
-import type { StructuredDiffResult } from "@natalia/diff-wasm";
+import type { StructuredDiffResult } from "@anthelia/diff-wasm";
 
 export function patchToStructured(patch: string): {
   hunks: Array<{

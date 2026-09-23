@@ -18,7 +18,7 @@ import type {
   RuntimeClient,
   RuntimeEvent,
   RuntimeEventWindow,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export type SessionWindowOpenState = "cold" | "loading" | "open" | "error";
 

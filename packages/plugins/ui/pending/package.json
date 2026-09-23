@@ -10,8 +10,8 @@
     "./ui": "./src/ui/plugin.tsx"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*",
-    "@natalia/plugin": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/plugin": "workspace:*",
     "@natalia/ui-host": "workspace:*",
     "@natalia/ui-kit": "workspace:*",
     "@natalia/ui-model": "workspace:*",

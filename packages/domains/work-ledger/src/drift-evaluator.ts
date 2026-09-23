@@ -40,8 +40,8 @@
  * and owns publishing. The writer-owner constant is enforced by convention:
  * no other module constructs a `drift.finding_opened` event.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { WorkspaceChangeOrigin } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { WorkspaceChangeOrigin } from "@anthelia/contracts";
 
 export const DRIFT_FINDING_WRITER_OWNER = "DriftEvaluator" as const;
 

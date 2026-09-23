@@ -13,7 +13,7 @@ import type {
   CollaborationMessage,
   CollaborationParticipant,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   appendWithRetrySkip,
   splitMarkdownAtSafeBoundary,
@@ -154,7 +154,7 @@ function projectWorkGraphFromTool(
   state: import("./state").AppState,
   turnID: string,
   event: Extract<
-    import("@natalia/contracts").RuntimeEvent,
+    import("@anthelia/contracts").RuntimeEvent,
     { type: "tool.update" }
   >,
 ) {
@@ -518,7 +518,7 @@ export function applyConversationEvent(
 
 function acceptsSession(
   state: AppState,
-  sessionID: import("@natalia/contracts").SessionID | undefined,
+  sessionID: import("@anthelia/contracts").SessionID | undefined,
 ): boolean {
   if (state.sessionID && sessionID && state.sessionID !== sessionID)
     return false;

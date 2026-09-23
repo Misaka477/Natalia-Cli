@@ -4,8 +4,8 @@ import {
   REQUIRED_RUNTIME_MEMBERS,
   RUNTIME_CAPABILITY_GROUPS,
   describeRuntimeCapabilities,
-} from "@natalia/contracts";
-import type { RuntimeClient } from "@natalia/contracts";
+} from "@anthelia/contracts";
+import type { RuntimeClient } from "@anthelia/contracts";
 import {
   RPC_INTENTIONALLY_LOCAL,
   RPC_ROUTE_MEMBERS,

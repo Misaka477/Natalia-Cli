@@ -6,7 +6,7 @@
  * happening. They are derived, never durable truth — clearing one changes
  * nothing about the runtime.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { resetStreamsForRetry, upsertInto } from "./conversation";
 import {
   appendBounded,

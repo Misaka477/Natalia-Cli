@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import { createLocalSessionService } from "@anthelia/session-store";
 import {
   RuntimeRefusal,
@@ -17,7 +17,7 @@ import {
   type WorkspaceSummary,
   type WorkspacePermissionSettings,
   type WorkspaceToolSettings,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { createRealRuntimeClient } from "./runtime/main";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
@@ -635,12 +635,12 @@ export function createWorkspaceRuntimeClient(
   manager: WorkspaceManager,
 ): RuntimeServiceClient & WorkspaceManager {
   const listeners = new Set<
-    (event: import("@natalia/contracts").RuntimeEvent) => void
+    (event: import("@anthelia/contracts").RuntimeEvent) => void
   >();
   const startedClients = new Set<string>();
   let started = false;
 
-  function emit(event: import("@natalia/contracts").RuntimeEvent) {
+  function emit(event: import("@anthelia/contracts").RuntimeEvent) {
     for (const listener of listeners) listener(event);
   }
 
@@ -727,7 +727,7 @@ export function createWorkspaceRuntimeClient(
     await manager.workspaceSessionSet(owner.workspaceID, created.sessionID);
   }
 
-  function emitWorkspace(event: import("@natalia/contracts").RuntimeEvent) {
+  function emitWorkspace(event: import("@anthelia/contracts").RuntimeEvent) {
     emit(event);
   }
 
@@ -958,7 +958,7 @@ export function createWorkspaceRuntimeClient(
     get(_target, prop, _receiver) {
       if (prop === "start") {
         return (
-          onEvent?: (event: import("@natalia/contracts").RuntimeEvent) => void,
+          onEvent?: (event: import("@anthelia/contracts").RuntimeEvent) => void,
         ) => {
           if (onEvent) listeners.add(onEvent);
           started = true;

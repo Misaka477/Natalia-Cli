@@ -1,5 +1,5 @@
-import { API_VERSION } from "@natalia/contracts";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import { API_VERSION } from "@anthelia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import type { ServerWebSocket } from "bun";
 import { handleRPCMessage } from "./rpc";
 import type { RuntimeAuthorizationContext } from "./rpc";

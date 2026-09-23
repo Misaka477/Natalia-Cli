@@ -14,7 +14,7 @@ import type {
   GoalLastStop,
   GoalSnapshot,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { buildGoalChanged, type GoalChangedEvent } from "./builders";
 import { foldGoal } from "./fold";
 import type { GoalView } from "./types";

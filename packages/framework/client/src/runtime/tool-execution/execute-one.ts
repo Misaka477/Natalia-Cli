@@ -7,16 +7,16 @@
  * `execute-run.ts`), then the postExecute-on-success post stage. Reads host
  * state through `RuntimeContext` at call time.
  */
-import { readOnlyToolMessage } from "@natalia/runtime-services";
+import { readOnlyToolMessage } from "@anthelia/runtime-services";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
 import {
   terminalController,
   type TerminalController,
   type ToolPolicyService,
-} from "@natalia/runtime-services";
-import type { ProviderToolCall } from "@natalia/runtime";
+} from "@anthelia/runtime-services";
+import type { ProviderToolCall } from "@anthelia/runtime";
 import type { RuntimeTool } from "@anthelia/tools";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { runExecuteStage } from "./execute-run";
 import {
   clearRepeat,

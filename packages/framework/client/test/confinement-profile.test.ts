@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   COMPOSITION_PROFILE_SCHEMA,
   type CompositionProfile,
-} from "@natalia/composition";
+} from "@anthelia/composition";
 import { effectiveConfinementMode } from "../src/runtime/tool-execution/execute-context";
 
 /**

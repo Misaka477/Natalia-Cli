@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import { projectedWorkContracts } from "@anthelia/session";
 import { createRealRuntimeClient } from "../src";
 import {

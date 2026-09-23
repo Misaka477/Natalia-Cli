@@ -6,7 +6,7 @@
  * create/edit/pause/resume require a human (non-internal) current turn, while
  * complete/blocked additionally accept the exact current goal round.
  */
-import type { GoalBlockReason, SessionID } from "@natalia/contracts";
+import type { GoalBlockReason, SessionID } from "@anthelia/contracts";
 import type { RuntimeTool } from "@anthelia/tools";
 import type {
   RuntimeContext,

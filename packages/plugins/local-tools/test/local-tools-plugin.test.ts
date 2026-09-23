@@ -2,10 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PluginAPI } from "@natalia/plugin";
+import type { PluginAPI } from "@anthelia/plugin";
 import type { RuntimeTool } from "@anthelia/tools";
 import { createLocalToolsPlugin, LOCAL_TOOLS_PLUGIN_ID } from "../src";
-import { localToolsReload } from "@natalia/runtime-services";
+import { localToolsReload } from "@anthelia/runtime-services";
 
 async function fixtureFamily(root: string, toolName: string) {
   const dir = join(root, "fixture.a");

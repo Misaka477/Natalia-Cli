@@ -5,7 +5,7 @@
  * hot-reloads one out-of-tree tool family through the local-tools plugin.
  * Reads host state through `RuntimeContext` at call time.
  */
-import { localToolsReload } from "@natalia/runtime-services";
+import { localToolsReload } from "@anthelia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import type { ToolFamily } from "@anthelia/tools";
 import type { RuntimeContext } from "@anthelia/substrate";

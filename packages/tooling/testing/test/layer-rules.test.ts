@@ -16,30 +16,33 @@ import {
 test("product policy never depends on the host layer — and only in shipped code", () => {
   const domainsFile = "packages/domains/work-ledger/src/controller.ts";
   expect(
-    findPolicyHostDependencyViolation("@natalia/platform", domainsFile),
+    findPolicyHostDependencyViolation("@anthelia/platform", domainsFile),
   ).toContain("host layer");
   expect(
     findPolicyHostDependencyViolation(
-      "@natalia/object-store/extra",
+      "@anthelia/object-store/extra",
       domainsFile,
     ),
-  ).toContain("@natalia/object-store");
+  ).toContain("@anthelia/object-store");
   // Public engine API and siblings stay legal (§1.2: only через API/token).
   expect(
-    findPolicyHostDependencyViolation("@natalia/contracts", domainsFile),
-  ).toBeUndefined();
-  expect(
-    findPolicyHostDependencyViolation("@natalia/runtime-services", domainsFile),
+    findPolicyHostDependencyViolation("@anthelia/contracts", domainsFile),
   ).toBeUndefined();
   expect(
     findPolicyHostDependencyViolation(
-      "@natalia/platform",
+      "@anthelia/runtime-services",
+      domainsFile,
+    ),
+  ).toBeUndefined();
+  expect(
+    findPolicyHostDependencyViolation(
+      "@anthelia/platform",
       "packages/framework/client/src/x.ts",
     ),
   ).toBeUndefined(); // scoped to domains
   expect(
     findPolicyHostDependencyViolation(
-      "@natalia/platform",
+      "@anthelia/platform",
       domainsFile.replace("/src/", "/test/"),
     ),
   ).toBeUndefined(); // tests may reach anywhere

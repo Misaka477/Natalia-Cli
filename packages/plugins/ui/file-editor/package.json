@@ -10,7 +10,7 @@
     "./ui": "./src/ui/plugin.tsx"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
     "@natalia/ui-host": "workspace:*",
     "solid-js": "1.9.12",
     "codemirror": "^6.0.1",
@@ -35,6 +35,6 @@
     "@codemirror/legacy-modes": "^6.4.0",
     "@lezer/highlight": "^1.2.0",
     "@natalia/ui-kit": "workspace:*",
-    "@natalia/plugin": "workspace:*"
+    "@anthelia/plugin": "workspace:*"
   }
 }

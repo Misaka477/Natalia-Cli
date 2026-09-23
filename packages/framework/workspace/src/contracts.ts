@@ -1,7 +1,7 @@
 import type {
   ConfirmedWorkspaceChange,
   WorkspaceOperation,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 /**
  * Workspace mechanism contracts. They moved here from runtime-services as the

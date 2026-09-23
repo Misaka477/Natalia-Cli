@@ -2,7 +2,7 @@ import {
   sessionStoreController,
   type SessionStoreController,
 } from "@anthelia/session-store";
-import { memoryTrace } from "@natalia/runtime";
+import { memoryTrace } from "@anthelia/runtime";
 import type { RuntimeContext } from "./context";
 import type { SessionExecutionState } from "./session-execution-state";
 import {
@@ -10,7 +10,7 @@ import {
   maxLiveSessionEvents,
   windowRuntimeEvents,
 } from "./session-event-retention";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 import {
   completeSessionFactState,
   reseedSessionFactState,

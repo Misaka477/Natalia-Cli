@@ -1,4 +1,4 @@
-import { defineService } from "@natalia/runtime-services";
+import { defineService } from "@anthelia/runtime-services";
 import type { TurnController } from "@anthelia/turn-orchestration";
 
 /** The turn orchestration controller token; lives with the mechanism. */

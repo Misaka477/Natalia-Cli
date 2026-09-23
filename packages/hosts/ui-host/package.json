@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@natalia/ui-model": "workspace:*",
-    "@natalia/contracts": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
     "@natalia/view-store": "workspace:*"
   }
 }

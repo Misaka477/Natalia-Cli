@@ -5,7 +5,7 @@ import type {
   RuntimeMessagePage,
   RuntimeProjectedMessage,
   RuntimeProjectedMessageRowKind,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { foldGoal, foldGoalStep, type GoalView } from "@natalia/goal";
 import { admittedInputs, type AdmittedSessionInput } from "./inbox";
 import type { SessionRecord } from "./index";
@@ -19,10 +19,10 @@ export type SessionProjection = {
   goal?: GoalView;
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
-  reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+  reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
   chatModelProfile?: Record<
     string,
-    import("@natalia/contracts").ChatModelProfile
+    import("@anthelia/contracts").ChatModelProfile
   >;
   permissionMode?: "ask" | "auto" | "read_only";
   permissionProfile?: string;
@@ -265,7 +265,7 @@ export function selectedModelFromEvents(events: RuntimeEvent[]) {
 
 export function reasoningEffortFromEvents(
   events: RuntimeEvent[],
-): import("@natalia/contracts").RuntimeReasoningEffort | undefined {
+): import("@anthelia/contracts").RuntimeReasoningEffort | undefined {
   for (const event of [...events].reverse())
     if (event.type === "model.reasoning.set") return event.reasoningEffort;
   return undefined;
@@ -273,9 +273,9 @@ export function reasoningEffortFromEvents(
 
 export function chatModelProfileFromEvents(
   events: RuntimeEvent[],
-): Record<string, import("@natalia/contracts").ChatModelProfile> | undefined {
+): Record<string, import("@anthelia/contracts").ChatModelProfile> | undefined {
   let profile:
-    | Record<string, import("@natalia/contracts").ChatModelProfile>
+    | Record<string, import("@anthelia/contracts").ChatModelProfile>
     | undefined;
   for (const event of events) {
     if (event.type === "navi.chat.model.profile") {
@@ -704,10 +704,10 @@ export function nextContextInstructionsRevision(
  */
 export function projectedRuntimeNotices(
   events: RuntimeEvent[],
-): import("@natalia/contracts").RuntimeProjectedNotice[] {
+): import("@anthelia/contracts").RuntimeProjectedNotice[] {
   const latest = new Map<
     string,
-    import("@natalia/contracts").RuntimeProjectedNotice
+    import("@anthelia/contracts").RuntimeProjectedNotice
   >();
   for (const event of events) {
     if (event.type !== "context.instructions") continue;
@@ -947,7 +947,7 @@ export type ProjectedChatMessage = {
   text: string;
   at: string;
   kind?: "message" | "thinking" | "tool" | "compaction" | "collab";
-  attachments?: import("@natalia/contracts").LocalAttachment[];
+  attachments?: import("@anthelia/contracts").LocalAttachment[];
   tool?: {
     /** Durable event id, stable across replay and live hydration. */
     eventID?: string;

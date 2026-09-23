@@ -17,12 +17,12 @@ import {
   loadNataliaIgnore,
   NATALIA_IGNORE_FILE,
   type SnapshotIgnoreRule,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 import {
   WorkspaceSandboxManager,
   type SandboxChange,
 } from "./workspace-manager";
-import { ObjectStore } from "@natalia/object-store";
+import { ObjectStore } from "@anthelia/object-store";
 import { SnapshotStore, type SnapshotIndex } from "./snapshot-store";
 
 /**

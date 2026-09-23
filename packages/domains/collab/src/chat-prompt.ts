@@ -20,7 +20,7 @@ import {
   sessionFactDriftFindings,
   sessionFactMailboxMessages,
 } from "@anthelia/session";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import { agentSystemPrompt } from "@natalia/agent-prompts";
 import type { SessionExecutionState } from "@anthelia/substrate";
@@ -421,7 +421,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
             (
               event,
             ): event is Extract<
-              import("@natalia/contracts").RuntimeEvent,
+              import("@anthelia/contracts").RuntimeEvent,
               { type: "constitution.check" }
             > => event.type === "constitution.check" && event.conflict,
           )

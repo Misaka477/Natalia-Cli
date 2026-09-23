@@ -14,14 +14,14 @@ import {
 } from "@anthelia/turn-orchestration";
 import { providerModelController } from "@anthelia/provider-model";
 import { sessionStoreController } from "@anthelia/session-store";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import type { SessionStoreController } from "@anthelia/session-store";
 import type {
   RuntimeContext,
   SessionExecutionState,
 } from "@anthelia/substrate";
 import type { ProviderModelController } from "@anthelia/provider-model";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 export type TurnOrchestrationHandle = { close(): void };
 

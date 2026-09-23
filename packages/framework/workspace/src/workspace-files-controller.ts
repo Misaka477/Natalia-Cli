@@ -1,4 +1,4 @@
-import { watchWorkspaceFiles } from "@natalia/platform";
+import { watchWorkspaceFiles } from "@anthelia/platform";
 import { createWorkspaceChangeAuditor } from "./workspace-change-auditor";
 import type { WorkspaceFilesController } from "./contracts";
 

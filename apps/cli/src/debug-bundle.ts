@@ -9,13 +9,13 @@ import {
 } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { hashTreeFiles } from "@natalia/platform";
+import { hashTreeFiles } from "@anthelia/platform";
 import {
   resolveWorkspaceJsonSessionsDir,
   resolveWorkspaceJournalDatabasePath,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 import { queryDiagnostics } from "@natalia/client";
-import { readOperationRecords } from "@natalia/operation-log";
+import { readOperationRecords } from "@anthelia/operation-log";
 import { doctorReport } from "./index";
 
 /**

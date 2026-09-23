@@ -6,7 +6,7 @@
  * the derivation separate from the hook-layer construction makes the
  * agent/mode/profile precedence rules testable without the policy service.
  */
-import type { ConfigV3, PermissionProfile } from "@natalia/contracts";
+import type { ConfigV3, PermissionProfile } from "@anthelia/contracts";
 import type { AgentDefinition } from "@anthelia/agent";
 
 type RuntimeMode = ConfigV3["agentModes"][string];

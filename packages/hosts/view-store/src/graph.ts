@@ -5,8 +5,8 @@ import type {
   WorkGraphEdgeView,
   WorkGraphNodeView,
 } from "./state";
-import type { WorkGraphEdgeKind } from "@natalia/contracts";
-import { cacheHitRate, totalInputTokens } from "@natalia/contracts";
+import type { WorkGraphEdgeKind } from "@anthelia/contracts";
+import { cacheHitRate, totalInputTokens } from "@anthelia/contracts";
 
 export type WorkGraphSlice = {
   focusID: string;
@@ -322,7 +322,7 @@ export function selectUnattributedWorkGraphNodes(
  * first-token latency, and decode throughput. Pure — never mutates the state,
  * so any UI (or a future TUI) computes the same figures from the same sums.
  *
- * The two cache figures come from the shared `@natalia/contracts` helpers so a
+ * The two cache figures come from the shared `@anthelia/contracts` helpers so a
  * session bar and the provider trace can never report different rates for the
  * same tokens.
  */

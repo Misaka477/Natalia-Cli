@@ -11,24 +11,24 @@ import {
   TokenMeter,
   memoryTrace,
   providerForModel,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { projectSession } from "@anthelia/session";
-import {} from "@natalia/runtime-services";
+import {} from "@anthelia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { turnController } from "@anthelia/turn-orchestration";
 import { contextLedgerFactory as contextLedgerFactoryToken } from "@natalia/context-ledger";
 import type { SessionRecord } from "@anthelia/session";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import { filterRuntimeRetainedEvents } from "@anthelia/substrate";
-import { perfLog } from "@natalia/runtime-services";
-import { today } from "@natalia/runtime";
+import { perfLog } from "@anthelia/runtime-services";
+import { today } from "@anthelia/runtime";
 import type { SessionStoreController } from "@anthelia/session-store";
 import type { TurnController } from "@anthelia/turn-orchestration";
 import type { ContextLedgerFactory } from "@natalia/context-ledger";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 const MAX_IDLE_SESSION_EXECUTIONS = Math.max(
   64,
@@ -141,9 +141,9 @@ export function createSessionExecution(
   async function runAdmittedInput(
     id: string,
     text: string,
-    attachments: import("@natalia/contracts").LocalAttachment[] = [],
-    resources: import("@natalia/contracts").PromptResourceMention[] = [],
-    agents: import("@natalia/contracts").PromptAgentMention[] = [],
+    attachments: import("@anthelia/contracts").LocalAttachment[] = [],
+    resources: import("@anthelia/contracts").PromptResourceMention[] = [],
+    agents: import("@anthelia/contracts").PromptAgentMention[] = [],
   ) {
     const controller = ctx.state.serviceDirectory.get(turnController);
     await controller.admit(

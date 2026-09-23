@@ -1,6 +1,6 @@
 import { parentPort } from "node:worker_threads";
 import { projectSessionMessages } from "@anthelia/session";
-import type { RuntimeMessagePage } from "@natalia/contracts";
+import type { RuntimeMessagePage } from "@anthelia/contracts";
 
 export type SessionMessagesWorkerRequest = {
   id: number;

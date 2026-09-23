@@ -18,7 +18,7 @@
  * tokens and MFA values must be redacted by the caller before the text is
  * handed to `buildMailboxQueued` — the runtime does this at `mailboxSend`.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 export type MailboxIntent =
   | "clarification"

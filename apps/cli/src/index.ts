@@ -19,9 +19,9 @@ import {
   removeTrust,
   resolveConfig,
   resolveEffectiveModel,
-} from "@natalia/config";
-import type { RuntimeEvent } from "@natalia/contracts";
-import { ContextWindowResolver } from "@natalia/runtime";
+} from "@anthelia/config";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import { ContextWindowResolver } from "@anthelia/runtime";
 import {
   createLocalSessionService,
   type LocalSessionRow,

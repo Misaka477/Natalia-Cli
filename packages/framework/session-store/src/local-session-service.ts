@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createAttachmentService } from "@anthelia/attachments";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import {
   resolveWorkspaceJsonSessionsDir,
   resolveWorkspaceJournalDatabasePath,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 import {
   JsonSessionStore,
   SqliteSessionStore,
@@ -155,7 +155,7 @@ export function createLocalSessionService(workspaceRoot = process.cwd()) {
      */
     async events(
       id: string,
-    ): Promise<import("@natalia/contracts").RuntimeEvent[]> {
+    ): Promise<import("@anthelia/contracts").RuntimeEvent[]> {
       const database = sqlite();
       if (database) {
         const session = database.get(id as SessionID);

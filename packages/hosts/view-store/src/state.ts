@@ -12,7 +12,7 @@ import type {
   SessionID,
   SubmittedTurn,
   WorkspaceSummary,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 /**
  * Character budget for forced segmentation. Semantic boundaries (tools,
  * thinking phases, durable content.done) still split; a long contiguous answer
@@ -60,7 +60,7 @@ export type MessageBlock = {
   role: "user" | "assistant" | "thinking" | "system" | "tool";
   /** Text the runtime has confirmed. Safe to keep in a transcript. */
   text: string;
-  attachments?: import("@natalia/contracts").LocalAttachment[];
+  attachments?: import("@anthelia/contracts").LocalAttachment[];
   /**
    * Text streamed but not yet confirmed. A UI renders `text + pendingText`; a
    * transcript keeps only `text`. Cancelling a turn drops the pending part,
@@ -448,7 +448,7 @@ export type AppState = {
    * contract (dual ingestion) AND the `context.instructions` event stream, so
    * a live session and a replayed session converge on the same view.
    */
-  runtimeNotices: Array<import("@natalia/contracts").RuntimeProjectedNotice>;
+  runtimeNotices: Array<import("@anthelia/contracts").RuntimeProjectedNotice>;
   /**
    * Accumulated per-session token / latency usage (folded from
    * `runtime.step_usage` events). Session-scoped like the Work Graph: each

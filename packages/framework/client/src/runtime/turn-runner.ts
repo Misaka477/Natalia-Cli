@@ -8,18 +8,18 @@
  * checkpoint, tool execution). Reads host state through `RuntimeContext` at
  * call time.
  */
-import { providerForModel } from "@natalia/runtime";
+import { providerForModel } from "@anthelia/runtime";
 import {
   claimNextSteps,
   projectedCollabMessages,
   sessionFactCollabMessages,
 } from "@anthelia/session";
-import type { ProviderRunnerInput } from "@natalia/runtime-services";
-import { statusSnapshotController } from "@natalia/runtime-status";
+import type { ProviderRunnerInput } from "@anthelia/runtime-services";
+import { statusSnapshotController } from "@anthelia/runtime-status";
 import { attachmentService as attachmentServiceToken } from "@anthelia/attachments";
 import { retryService } from "@anthelia/retry";
 import { compactionService } from "@anthelia/compaction";
-import { mcpService } from "@natalia/runtime-services";
+import { mcpService } from "@anthelia/runtime-services";
 import type {
   RuntimeContext,
   SessionExecutionState,
@@ -27,8 +27,8 @@ import type {
 import { activePlanForExec } from "@natalia/collab";
 import { loadProjectDocumentsSync } from "@natalia/engineering-intelligence";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
-import type { StatusSnapshotController } from "@natalia/runtime-status";
-import type { AttachmentService } from "@natalia/runtime";
+import type { StatusSnapshotController } from "@anthelia/runtime-status";
+import type { AttachmentService } from "@anthelia/runtime";
 
 function collabMessagesForExec(
   exec: SessionExecutionState,
@@ -52,7 +52,7 @@ export function createTurnRunner(
   };
 
   function providerRunnerInput(
-    sessionID: import("@natalia/contracts").SessionID,
+    sessionID: import("@anthelia/contracts").SessionID,
   ): ProviderRunnerInput {
     const {
       getAgentRegistry,

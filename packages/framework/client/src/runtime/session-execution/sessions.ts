@@ -1,12 +1,12 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import type { ProductRuntimeContext } from "@natalia/collab";
 import { sessionStoreController } from "@anthelia/session-store";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import {
   terminalController,
   type TerminalController,
-} from "@natalia/runtime-services";
-import type { SessionID } from "@natalia/contracts";
+} from "@anthelia/runtime-services";
+import type { SessionID } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
 import type { SessionStoreController } from "@anthelia/session-store";

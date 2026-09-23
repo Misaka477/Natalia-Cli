@@ -1,6 +1,6 @@
-import type { ErrorKind } from "@natalia/contracts";
+import type { ErrorKind } from "@anthelia/contracts";
 
-export type { ErrorKind } from "@natalia/contracts";
+export type { ErrorKind } from "@anthelia/contracts";
 
 export type ProviderErrorInput = {
   kind: ErrorKind;

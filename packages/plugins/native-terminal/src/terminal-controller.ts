@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type {
   RuntimeEvent,
   RuntimeNativeTerminalSession,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   NativeTerminalRegistry,
   createWezTermHost,
@@ -13,9 +13,9 @@ import {
   writeWezTermNativeDomainConfig,
   type NativeInputBroker,
 } from "./native-terminal";
-import type { TerminalController } from "@natalia/runtime-services";
+import type { TerminalController } from "@anthelia/runtime-services";
 
-export type { TerminalControllerInput } from "@natalia/runtime-services";
+export type { TerminalControllerInput } from "@anthelia/runtime-services";
 
 /**
  * The native terminal resource controller — cut of the resource controllers

@@ -15,7 +15,7 @@ import {
   type RuntimeTool,
   type ToolFamily,
 } from "@anthelia/tools";
-import type { Plugin, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { relative } from "node:path";

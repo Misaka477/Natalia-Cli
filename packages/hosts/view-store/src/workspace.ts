@@ -1,5 +1,5 @@
 import type { AppState } from "./state";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 /**
  * Multi-workspace navigation projection.

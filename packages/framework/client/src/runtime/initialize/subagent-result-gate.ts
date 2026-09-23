@@ -8,8 +8,8 @@
  * sentence at greater length.
  */
 
-import type { ContextLedger } from "@natalia/runtime";
-import type { ProviderToolCall } from "@natalia/runtime";
+import type { ContextLedger } from "@anthelia/runtime";
+import type { ProviderToolCall } from "@anthelia/runtime";
 
 /** What the gate needs to run one more provider step. */
 export type ResultStepRunner = (step: number) => Promise<{

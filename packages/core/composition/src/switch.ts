@@ -3,7 +3,7 @@ import type {
   ConstitutionRule,
   Generation,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   runVerificationGate,
   type VerificationFace,

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { WorkspaceChangeOrigin } from "@natalia/contracts";
+import type { WorkspaceChangeOrigin } from "@anthelia/contracts";
 import { createMutationRegistry } from "../src/mutation-registry";
 import {
   createWorkspaceChangeAuditor,

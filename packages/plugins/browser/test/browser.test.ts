@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPluginRegistry } from "@natalia/plugin";
+import { createPluginRegistry } from "@anthelia/plugin";
 import { createToolRegistry } from "@anthelia/tools";
 import {
   BROWSER_BRIDGE_EXTENSION_MISSING_ERROR,

@@ -15,7 +15,7 @@ import type {
   ProviderStreamChunk,
   ProviderStreamRequest,
 } from "../src/provider";
-import { defaultConfigV3 } from "@natalia/config";
+import { defaultConfigV3 } from "@anthelia/config";
 import { ContextWindowResolver } from "../src/modelmeta";
 
 test("raw XML-like tool protocol becomes structured calls while preserving prose", async () => {

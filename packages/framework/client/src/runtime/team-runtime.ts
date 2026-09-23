@@ -1,13 +1,13 @@
 import type {
   RuntimeTeamPR,
   RuntimeWorkspaceDiffChange,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   sandboxService,
   subagentsService,
   type SandboxService,
   type SubagentsService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SandboxChangeView } from "@anthelia/tools";
 

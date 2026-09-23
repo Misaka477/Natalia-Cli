@@ -6,20 +6,20 @@
  * plugin: this module constructs the status snapshot controller directly and
  * contributes it as the `status.snapshot.controller` service.
  */
-import { createStatusSnapshotController } from "@natalia/runtime-status";
-import type { PluginCommandInvocation } from "@natalia/plugin";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import { createStatusSnapshotController } from "@anthelia/runtime-status";
+import type { PluginCommandInvocation } from "@anthelia/plugin";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import {
   sandboxService,
   subagentsService,
   type SandboxService,
   type SubagentsService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { EGRESS_ADVISORY } from "../../egress-advisory";
 import type { RuntimeContext } from "@anthelia/substrate";
 import { wireProcessSettledNotices } from "./process-settled-notices";
-import { statusSnapshotController } from "@natalia/runtime-status";
-import type { StatusSnapshotController } from "@natalia/runtime-status";
+import { statusSnapshotController } from "@anthelia/runtime-status";
+import type { StatusSnapshotController } from "@anthelia/runtime-status";
 
 export type RuntimeStatusHandle = { close(): void };
 

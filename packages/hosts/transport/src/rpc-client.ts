@@ -4,8 +4,8 @@
  * that answers these calls lives in `rpc.ts` behind the `./host` entry point,
  * so importing the protocol does not pull in a server.
  */
-import { RuntimeRPCError } from "@natalia/contracts";
-import type { RuntimeFailureData } from "@natalia/contracts";
+import { RuntimeRPCError } from "@anthelia/contracts";
+import type { RuntimeFailureData } from "@anthelia/contracts";
 
 export type RPCRequest = {
   id?: string | number | null;
@@ -19,7 +19,7 @@ export type RPCResponse = {
   result?: unknown;
   /**
    * `code` and `data` are the part a program acts on; `message` is for humans and
-   * is redacted for internal failures. See `failures.ts` in `@natalia/contracts`.
+   * is redacted for internal failures. See `failures.ts` in `@anthelia/contracts`.
    */
   error?: { code: number; message: string; data?: RuntimeFailureData };
 };

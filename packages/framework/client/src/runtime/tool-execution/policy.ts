@@ -6,9 +6,9 @@
  * reads. Reads host state through `RuntimeContext` at call time.
  */
 import { mergeContributedToolSettings } from "../../capability-settings";
-import type { ToolHookEvent } from "@natalia/runtime-services";
+import type { ToolHookEvent } from "@anthelia/runtime-services";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
-import { type ToolPolicyService } from "@natalia/runtime-services";
+import { type ToolPolicyService } from "@anthelia/runtime-services";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 

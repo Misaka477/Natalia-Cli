@@ -7,8 +7,8 @@
  * everything it needs from `RuntimeContext` at call time.
  */
 import { projectInteractiveRequests } from "@anthelia/session";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import type { PluginCommand } from "@natalia/plugin";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
+import type { PluginCommand } from "@anthelia/plugin";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import { tryActionSlashCommand } from "./slash-action";

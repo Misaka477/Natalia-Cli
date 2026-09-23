@@ -15,7 +15,7 @@
 ## 1. What a provider is
 
 A provider adapter is an object implementing `StreamingProvider`
-(`@natalia/runtime`):
+(`@anthelia/runtime`):
 
 ```ts
 export type StreamingProvider = {
@@ -150,7 +150,7 @@ web UI's "add provider" flow to list your models.
 
 ## 1. Provider 是什么
 
-Provider 适配器是实现 `StreamingProvider` 的对象（`@natalia/runtime`）：
+Provider 适配器是实现 `StreamingProvider` 的对象（`@anthelia/runtime`）：
 
 ```ts
 export type StreamingProvider = {

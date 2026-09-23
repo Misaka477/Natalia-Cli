@@ -1,4 +1,4 @@
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import type { RuntimeTool, ToolExecutionContext, ToolRegistry } from "./index";
 import { validateToolParameters } from "./validate";
 

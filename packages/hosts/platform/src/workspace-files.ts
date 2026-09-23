@@ -10,13 +10,13 @@ import {
 import { watch, type FSWatcher } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import fuzzysort from "fuzzysort";
-import { RuntimeInvalidParams, RuntimeRefusal } from "@natalia/contracts";
+import { RuntimeInvalidParams, RuntimeRefusal } from "@anthelia/contracts";
 import { NATALIA_IGNORE_FILE } from "./natalia-ignore";
 import type {
   RuntimeWorkspaceContent,
   RuntimeWorkspaceFileEntry,
   RuntimeWorkspaceListPage,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 const ignoredDirectories = new Set([
   ".git",

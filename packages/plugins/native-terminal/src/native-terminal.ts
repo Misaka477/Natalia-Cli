@@ -15,7 +15,7 @@ import {
   executableName,
   isWindows,
   profileShellCommand,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 
 export {
   NATIVE_INPUT_BROKER_VERSION,

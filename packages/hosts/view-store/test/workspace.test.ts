@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { applyEvent, cloneState, initialState } from "../src";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 test("workspace.added and workspace.activated drive navigation state", () => {
   const state = initialState();

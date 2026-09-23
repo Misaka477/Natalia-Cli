@@ -3,8 +3,8 @@ import type {
   ApprovalResponse,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
-import type { ProviderToolCall } from "@natalia/runtime";
+} from "@anthelia/contracts";
+import type { ProviderToolCall } from "@anthelia/runtime";
 import type { RuntimeTool } from "@anthelia/tools";
 import { createInteractiveWaiter } from "../src/interactive-waiter";
 import { createWorkLedgerController } from "@natalia/work-ledger";

@@ -11,8 +11,8 @@
   "dependencies": {
     "@anthelia/attachments": "workspace:*",
     "@anthelia/session": "workspace:*",
-    "@natalia/contracts": "workspace:*",
-    "@natalia/platform": "workspace:*",
-    "@natalia/runtime-services": "workspace:*"
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/platform": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*"
   }
 }

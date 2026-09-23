@@ -1,5 +1,5 @@
 import type { AgentDefinition } from "@anthelia/agent";
-import type { ConfigV3, RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { ConfigV3, RuntimeEvent, SessionID } from "@anthelia/contracts";
 import type { SessionRecord } from "@anthelia/session";
 import type { SessionExecutionState } from "./session-execution-state";
 
@@ -43,9 +43,9 @@ export type RuntimeClientSurfacePorts = {
   getInternalWakeTasks: () => Set<Promise<unknown>>;
   enqueueMailboxForClient: (
     input: Parameters<
-      NonNullable<import("@natalia/contracts").RuntimeClient["mailboxSend"]>
+      NonNullable<import("@anthelia/contracts").RuntimeClient["mailboxSend"]>
     >[0],
   ) => ReturnType<
-    NonNullable<import("@natalia/contracts").RuntimeClient["mailboxSend"]>
+    NonNullable<import("@anthelia/contracts").RuntimeClient["mailboxSend"]>
   >;
 };

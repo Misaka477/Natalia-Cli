@@ -2,10 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CapabilityRegistry } from "@natalia/capability";
+import { CapabilityRegistry } from "@anthelia/capability";
 import { createToolRegistry } from "@anthelia/tools";
 import { createPluginsController } from "@anthelia/substrate";
-import type { Plugin } from "@natalia/plugin";
+import type { Plugin } from "@anthelia/plugin";
 
 function host(workspaceRoot: string) {
   const capabilityRegistry = new CapabilityRegistry();

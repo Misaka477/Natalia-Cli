@@ -32,28 +32,28 @@
         "natalia-ts": "./src/main.ts",
       },
       "dependencies": {
+        "@anthelia/config": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/operation-log": "workspace:*",
+        "@anthelia/platform": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
         "@anthelia/session-store": "workspace:*",
         "@natalia/client": "workspace:*",
-        "@natalia/config": "workspace:*",
-        "@natalia/contracts": "workspace:*",
         "@natalia/engineering-intelligence": "workspace:*",
         "@natalia/installer": "workspace:*",
-        "@natalia/operation-log": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime": "workspace:*",
         "@natalia/transport": "workspace:*",
       },
       "devDependencies": {
+        "@anthelia/capability": "workspace:*",
         "@anthelia/session": "workspace:*",
-        "@natalia/capability": "workspace:*",
       },
     },
     "apps/web": {
       "name": "@natalia/web-shell",
       "version": "1.0.0",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
         "@natalia/plugin-web-ui": "workspace:*",
         "@natalia/transport": "workspace:*",
         "@natalia/ui-host": "workspace:*",
@@ -65,52 +65,52 @@
       },
     },
     "packages/core/capability": {
-      "name": "@natalia/capability",
+      "name": "@anthelia/capability",
       "version": "0.0.0-m13",
     },
     "packages/core/composition": {
-      "name": "@natalia/composition",
+      "name": "@anthelia/composition",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/object-store": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/object-store": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
     },
     "packages/core/contracts": {
-      "name": "@natalia/contracts",
+      "name": "@anthelia/contracts",
       "version": "0.0.0-m13",
       "dependencies": {
         "zod": "3.25.76",
       },
     },
     "packages/core/plugin": {
-      "name": "@natalia/plugin",
+      "name": "@anthelia/plugin",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/contracts": "workspace:*",
       },
     },
     "packages/core/runtime-services": {
-      "name": "@natalia/runtime-services",
+      "name": "@anthelia/runtime-services",
       "version": "0.0.0-m13",
       "dependencies": {
         "@anthelia/agent": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-diagnostics": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-diagnostics": "workspace:*",
       },
     },
     "packages/core/tools": {
       "name": "@anthelia/tools",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/confinement": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/platform": "workspace:*",
+        "@anthelia/confinement": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/platform": "workspace:*",
         "@vscode/tree-sitter-wasm": "0.3.1",
         "web-tree-sitter": "0.25.10",
       },
@@ -121,7 +121,12 @@
       "dependencies": {
         "@anthelia/attachments": "workspace:*",
         "@anthelia/compaction": "workspace:*",
+        "@anthelia/config": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/operation-log": "workspace:*",
         "@anthelia/provider-model": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@anthelia/session-store": "workspace:*",
         "@anthelia/substrate": "workspace:*",
@@ -129,14 +134,9 @@
         "@anthelia/workspace": "workspace:*",
         "@natalia/agent-prompts": "workspace:*",
         "@natalia/collaboration": "workspace:*",
-        "@natalia/config": "workspace:*",
         "@natalia/context-ledger": "workspace:*",
-        "@natalia/contracts": "workspace:*",
         "@natalia/goal": "workspace:*",
         "@natalia/governance-ledger": "workspace:*",
-        "@natalia/operation-log": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
         "@natalia/work-ledger": "workspace:*",
       },
     },
@@ -144,23 +144,23 @@
       "name": "@natalia/context-ledger",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
     },
     "packages/domains/engineering-intelligence": {
       "name": "@natalia/engineering-intelligence",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/platform": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@anthelia/session-store": "workspace:*",
         "@anthelia/substrate": "workspace:*",
         "@natalia/collab": "workspace:*",
-        "@natalia/contracts": "workspace:*",
         "@natalia/governance-ledger": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
         "@natalia/work-ledger": "workspace:*",
       },
     },
@@ -168,35 +168,35 @@
       "name": "@natalia/goal",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
       },
     },
     "packages/domains/goal-runtime": {
       "name": "@natalia/goal-runtime",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/operation-log": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@anthelia/session-store": "workspace:*",
         "@anthelia/substrate": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/operation-log": "workspace:*",
       },
     },
     "packages/domains/governance-ledger": {
       "name": "@natalia/governance-ledger",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
     },
     "packages/domains/work-ledger": {
       "name": "@natalia/work-ledger",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
     },
     "packages/examples/ui-plugin": {
@@ -207,7 +207,7 @@
       "name": "@anthelia/agent",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
       },
     },
     "packages/framework/agent-prompts": {
@@ -218,23 +218,23 @@
       "name": "@anthelia/attachments",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@jsquash/jpeg": "1.6.0",
         "@jsquash/png": "3.1.1",
         "@jsquash/resize": "2.1.1",
         "@jsquash/webp": "1.5.0",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
       },
     },
     "packages/framework/checkpoint": {
       "name": "@anthelia/checkpoint",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@natalia/work-ledger": "workspace:*",
       },
     },
@@ -244,10 +244,24 @@
       "dependencies": {
         "@anthelia/agent": "workspace:*",
         "@anthelia/attachments": "workspace:*",
+        "@anthelia/capability": "workspace:*",
         "@anthelia/checkpoint": "workspace:*",
         "@anthelia/compaction": "workspace:*",
+        "@anthelia/composition": "workspace:*",
+        "@anthelia/config": "workspace:*",
+        "@anthelia/confinement": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/operation-log": "workspace:*",
+        "@anthelia/platform": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/provider-model": "workspace:*",
         "@anthelia/retry": "workspace:*",
+        "@anthelia/rina": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-config": "workspace:*",
+        "@anthelia/runtime-diagnostics": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
+        "@anthelia/runtime-status": "workspace:*",
         "@anthelia/sandbox": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@anthelia/session-store": "workspace:*",
@@ -257,27 +271,13 @@
         "@anthelia/turn-orchestration": "workspace:*",
         "@anthelia/workspace": "workspace:*",
         "@natalia/agent-prompts": "workspace:*",
-        "@natalia/capability": "workspace:*",
         "@natalia/collab": "workspace:*",
         "@natalia/collaboration": "workspace:*",
-        "@natalia/composition": "workspace:*",
-        "@natalia/config": "workspace:*",
-        "@natalia/confinement": "workspace:*",
         "@natalia/context-ledger": "workspace:*",
-        "@natalia/contracts": "workspace:*",
         "@natalia/engineering-intelligence": "workspace:*",
         "@natalia/goal": "workspace:*",
         "@natalia/goal-runtime": "workspace:*",
         "@natalia/governance-ledger": "workspace:*",
-        "@natalia/operation-log": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/rina": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-config": "workspace:*",
-        "@natalia/runtime-diagnostics": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/runtime-status": "workspace:*",
         "@natalia/tool-policy": "workspace:*",
         "@natalia/work-ledger": "workspace:*",
       },
@@ -292,11 +292,11 @@
       "name": "@natalia/collaboration",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
         "@natalia/work-ledger": "workspace:*",
       },
       "devDependencies": {
@@ -307,9 +307,9 @@
       "name": "@anthelia/compaction",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
       "devDependencies": {
         "@anthelia/retry": "workspace:*",
@@ -317,37 +317,37 @@
       },
     },
     "packages/framework/diff": {
-      "name": "@natalia/framework-diff",
+      "name": "@anthelia/diff",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/diff-wasm": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/diff-wasm": "workspace:*",
         "lowlight": "^3.3.0",
         "solid-js": "1.9.12",
       },
     },
     "packages/framework/diff-wasm": {
-      "name": "@natalia/diff-wasm",
+      "name": "@anthelia/diff-wasm",
       "version": "1.0.0",
     },
     "packages/framework/operation-log": {
-      "name": "@natalia/operation-log",
+      "name": "@anthelia/operation-log",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
     },
     "packages/framework/provider-model": {
       "name": "@anthelia/provider-model",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/config": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@anthelia/tools": "workspace:*",
         "@natalia/agent-prompts": "workspace:*",
-        "@natalia/config": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
       },
       "devDependencies": {
         "@anthelia/attachments": "workspace:*",
@@ -359,29 +359,29 @@
       "name": "@anthelia/retry",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
     },
     "packages/framework/rina": {
-      "name": "@natalia/rina",
+      "name": "@anthelia/rina",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
     },
     "packages/framework/runtime": {
-      "name": "@natalia/runtime",
+      "name": "@anthelia/runtime",
       "version": "0.0.0-m13",
       "dependencies": {
         "@anthelia/agent": "workspace:*",
+        "@anthelia/config": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/diff-wasm": "workspace:*",
+        "@anthelia/object-store": "workspace:*",
+        "@anthelia/platform": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/config": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/diff-wasm": "workspace:*",
-        "@natalia/object-store": "workspace:*",
-        "@natalia/platform": "workspace:*",
       },
       "devDependencies": {
         "@anthelia/session": "workspace:*",
@@ -389,43 +389,43 @@
       },
     },
     "packages/framework/runtime-config": {
-      "name": "@natalia/runtime-config",
+      "name": "@anthelia/runtime-config",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
       },
     },
     "packages/framework/runtime-diagnostics": {
-      "name": "@natalia/runtime-diagnostics",
+      "name": "@anthelia/runtime-diagnostics",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
       },
     },
     "packages/framework/runtime-status": {
-      "name": "@natalia/runtime-status",
+      "name": "@anthelia/runtime-status",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
     },
     "packages/framework/sandbox": {
       "name": "@anthelia/sandbox",
       "version": "0.0.0-m11",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/diff-wasm": "workspace:*",
+        "@anthelia/object-store": "workspace:*",
+        "@anthelia/platform": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/diff-wasm": "workspace:*",
-        "@natalia/object-store": "workspace:*",
-        "@natalia/platform": "workspace:*",
       },
     },
     "packages/framework/session": {
       "name": "@anthelia/session",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
         "@natalia/goal": "workspace:*",
       },
     },
@@ -434,18 +434,18 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@anthelia/attachments": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/platform": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/session": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
       },
     },
     "packages/framework/subagents": {
       "name": "@anthelia/subagents",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
       },
     },
     "packages/framework/substrate": {
@@ -453,79 +453,79 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@anthelia/agent": "workspace:*",
+        "@anthelia/capability": "workspace:*",
         "@anthelia/checkpoint": "workspace:*",
+        "@anthelia/config": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/operation-log": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/provider-model": "workspace:*",
+        "@anthelia/runtime": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
+        "@anthelia/runtime-status": "workspace:*",
         "@anthelia/session": "workspace:*",
         "@anthelia/session-store": "workspace:*",
         "@anthelia/tools": "workspace:*",
         "@anthelia/turn-orchestration": "workspace:*",
         "@anthelia/workspace": "workspace:*",
-        "@natalia/capability": "workspace:*",
         "@natalia/collaboration": "workspace:*",
-        "@natalia/config": "workspace:*",
         "@natalia/context-ledger": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/operation-log": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
-        "@natalia/runtime-status": "workspace:*",
       },
     },
     "packages/framework/tool-policy": {
       "name": "@natalia/tool-policy",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
       },
     },
     "packages/framework/turn-orchestration": {
       "name": "@anthelia/turn-orchestration",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/session": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
       },
     },
     "packages/framework/workspace": {
       "name": "@anthelia/workspace",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/platform": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
       },
     },
     "packages/hosts/config": {
-      "name": "@natalia/config",
+      "name": "@anthelia/config",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/platform": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/platform": "workspace:*",
         "zod": "3.25.76",
       },
     },
     "packages/hosts/confinement": {
-      "name": "@natalia/confinement",
+      "name": "@anthelia/confinement",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
       },
     },
     "packages/hosts/object-store": {
-      "name": "@natalia/object-store",
+      "name": "@anthelia/object-store",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
       },
     },
     "packages/hosts/platform": {
-      "name": "@natalia/platform",
+      "name": "@anthelia/platform",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
         "fuzzysort": "3.1.0",
       },
     },
@@ -533,8 +533,8 @@
       "name": "@natalia/transport",
       "version": "0.0.0-ts7",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/diff-wasm": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/diff-wasm": "workspace:*",
       },
       "devDependencies": {
         "@natalia/client": "workspace:*",
@@ -544,7 +544,7 @@
       "name": "@natalia/ui-host",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
         "@natalia/ui-model": "workspace:*",
         "@natalia/view-store": "workspace:*",
       },
@@ -553,14 +553,14 @@
       "name": "@natalia/ui-model",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
       },
     },
     "packages/hosts/view-store": {
       "name": "@natalia/view-store",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
         "@natalia/ui-model": "workspace:*",
       },
     },
@@ -568,30 +568,30 @@
       "name": "@natalia/plugin-browser",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/plugin": "workspace:*",
       },
     },
     "packages/plugins/local-tools": {
       "name": "@natalia/plugin-local-tools",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/plugin": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
       },
       "devDependencies": {
-        "@natalia/config": "workspace:*",
+        "@anthelia/config": "workspace:*",
       },
     },
     "packages/plugins/mcp": {
       "name": "@natalia/plugin-mcp",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
         "@natalia/ui-host": "workspace:*",
         "solid-js": "1.9.12",
       },
@@ -600,11 +600,11 @@
       "name": "@natalia/plugin-native-terminal",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/platform": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
         "@natalia/ui-host": "workspace:*",
         "@natalia/ui-kit": "workspace:*",
         "@xterm/addon-canvas": "^0.7.0",
@@ -622,10 +622,10 @@
       "name": "@natalia/plugin-skills",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/platform": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
         "@natalia/ui-host": "workspace:*",
         "solid-js": "1.9.12",
       },
@@ -634,10 +634,10 @@
       "name": "@natalia/plugin-team",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
+        "@anthelia/runtime-services": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
-        "@natalia/runtime-services": "workspace:*",
       },
       "devDependencies": {
         "@anthelia/subagents": "workspace:*",
@@ -648,58 +648,58 @@
       "name": "@natalia/plugin-tool-ask",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/plugin": "workspace:*",
       },
     },
     "packages/plugins/tools/fs-read": {
       "name": "@natalia/plugin-tool-fs-read",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/plugin": "workspace:*",
       },
     },
     "packages/plugins/tools/fs-write": {
       "name": "@natalia/plugin-tool-fs-write",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/plugin": "workspace:*",
       },
     },
     "packages/plugins/tools/process": {
       "name": "@natalia/plugin-tool-process",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/platform": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/platform": "workspace:*",
-        "@natalia/plugin": "workspace:*",
       },
     },
     "packages/plugins/tools/search": {
       "name": "@natalia/plugin-tool-search",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/plugin": "workspace:*",
       },
     },
     "packages/plugins/tools/shell": {
       "name": "@natalia/plugin-tool-shell",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/confinement": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/confinement": "workspace:*",
-        "@natalia/plugin": "workspace:*",
       },
     },
     "packages/plugins/tools/todo": {
       "name": "@natalia/plugin-tool-todo",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/plugin": "workspace:*",
         "@natalia/ui-host": "workspace:*",
         "@natalia/view-store": "workspace:*",
         "solid-js": "1.9.12",
@@ -709,22 +709,24 @@
       "name": "@natalia/plugin-tool-web",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
-        "@natalia/plugin": "workspace:*",
       },
     },
     "packages/plugins/ui/adapter-example": {
       "name": "@natalia/plugin-ui-adapter-example",
       "version": "1.0.0",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
       },
     },
     "packages/plugins/ui/file-editor": {
       "name": "@natalia/plugin-file-editor",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
         "@codemirror/autocomplete": "^6.18.1",
         "@codemirror/commands": "^6.6.0",
         "@codemirror/lang-cpp": "^6.0.2",
@@ -745,8 +747,6 @@
         "@codemirror/state": "^6.4.1",
         "@codemirror/view": "^6.33.0",
         "@lezer/highlight": "^1.2.0",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
         "@natalia/ui-host": "workspace:*",
         "@natalia/ui-kit": "workspace:*",
         "codemirror": "^6.0.1",
@@ -767,8 +767,8 @@
       "name": "@natalia/plugin-pending-inbox",
       "version": "1.0.0",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
         "@natalia/ui-host": "workspace:*",
         "@natalia/ui-kit": "workspace:*",
         "@natalia/ui-model": "workspace:*",
@@ -779,10 +779,10 @@
       "name": "@natalia/plugin-web-ui",
       "version": "1.0.0",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
-        "@natalia/diff-wasm": "workspace:*",
-        "@natalia/framework-diff": "workspace:*",
-        "@natalia/plugin": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/diff": "workspace:*",
+        "@anthelia/diff-wasm": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
         "@natalia/ui-host": "workspace:*",
         "@natalia/ui-kit": "workspace:*",
         "@natalia/ui-model": "workspace:*",
@@ -807,16 +807,16 @@
       "name": "@natalia/installer",
       "version": "0.0.0-m13",
       "dependencies": {
-        "@natalia/config": "workspace:*",
-        "@natalia/contracts": "workspace:*",
-        "@natalia/plugin": "workspace:*",
+        "@anthelia/config": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
+        "@anthelia/plugin": "workspace:*",
       },
     },
     "packages/tooling/sdk": {
       "name": "@natalia/sdk",
       "version": "0.0.0-ts7",
       "dependencies": {
-        "@natalia/contracts": "workspace:*",
+        "@anthelia/contracts": "workspace:*",
       },
       "devDependencies": {
         "@natalia/client": "workspace:*",
@@ -842,13 +842,47 @@
 
     "@anthelia/attachments": ["@anthelia/attachments@workspace:packages/framework/attachments"],
 
+    "@anthelia/capability": ["@anthelia/capability@workspace:packages/core/capability"],
+
     "@anthelia/checkpoint": ["@anthelia/checkpoint@workspace:packages/framework/checkpoint"],
 
     "@anthelia/compaction": ["@anthelia/compaction@workspace:packages/framework/compaction"],
 
+    "@anthelia/composition": ["@anthelia/composition@workspace:packages/core/composition"],
+
+    "@anthelia/config": ["@anthelia/config@workspace:packages/hosts/config"],
+
+    "@anthelia/confinement": ["@anthelia/confinement@workspace:packages/hosts/confinement"],
+
+    "@anthelia/contracts": ["@anthelia/contracts@workspace:packages/core/contracts"],
+
+    "@anthelia/diff": ["@anthelia/diff@workspace:packages/framework/diff"],
+
+    "@anthelia/diff-wasm": ["@anthelia/diff-wasm@workspace:packages/framework/diff-wasm"],
+
+    "@anthelia/object-store": ["@anthelia/object-store@workspace:packages/hosts/object-store"],
+
+    "@anthelia/operation-log": ["@anthelia/operation-log@workspace:packages/framework/operation-log"],
+
+    "@anthelia/platform": ["@anthelia/platform@workspace:packages/hosts/platform"],
+
+    "@anthelia/plugin": ["@anthelia/plugin@workspace:packages/core/plugin"],
+
     "@anthelia/provider-model": ["@anthelia/provider-model@workspace:packages/framework/provider-model"],
 
     "@anthelia/retry": ["@anthelia/retry@workspace:packages/framework/retry"],
+
+    "@anthelia/rina": ["@anthelia/rina@workspace:packages/framework/rina"],
+
+    "@anthelia/runtime": ["@anthelia/runtime@workspace:packages/framework/runtime"],
+
+    "@anthelia/runtime-config": ["@anthelia/runtime-config@workspace:packages/framework/runtime-config"],
+
+    "@anthelia/runtime-diagnostics": ["@anthelia/runtime-diagnostics@workspace:packages/framework/runtime-diagnostics"],
+
+    "@anthelia/runtime-services": ["@anthelia/runtime-services@workspace:packages/core/runtime-services"],
+
+    "@anthelia/runtime-status": ["@anthelia/runtime-status@workspace:packages/framework/runtime-status"],
 
     "@anthelia/sandbox": ["@anthelia/sandbox@workspace:packages/framework/sandbox"],
 
@@ -1040,8 +1074,6 @@
 
     "@natalia/agent-prompts": ["@natalia/agent-prompts@workspace:packages/framework/agent-prompts"],
 
-    "@natalia/capability": ["@natalia/capability@workspace:packages/core/capability"],
-
     "@natalia/cef-desktop": ["@natalia/cef-desktop@workspace:apps/cef-desktop"],
 
     "@natalia/cli": ["@natalia/cli@workspace:apps/cli"],
@@ -1052,23 +1084,11 @@
 
     "@natalia/collaboration": ["@natalia/collaboration@workspace:packages/framework/collaboration"],
 
-    "@natalia/composition": ["@natalia/composition@workspace:packages/core/composition"],
-
-    "@natalia/config": ["@natalia/config@workspace:packages/hosts/config"],
-
-    "@natalia/confinement": ["@natalia/confinement@workspace:packages/hosts/confinement"],
-
     "@natalia/context-ledger": ["@natalia/context-ledger@workspace:packages/domains/context-ledger"],
-
-    "@natalia/contracts": ["@natalia/contracts@workspace:packages/core/contracts"],
-
-    "@natalia/diff-wasm": ["@natalia/diff-wasm@workspace:packages/framework/diff-wasm"],
 
     "@natalia/engineering-intelligence": ["@natalia/engineering-intelligence@workspace:packages/domains/engineering-intelligence"],
 
     "@natalia/example-ui-plugin": ["@natalia/example-ui-plugin@workspace:packages/examples/ui-plugin"],
-
-    "@natalia/framework-diff": ["@natalia/framework-diff@workspace:packages/framework/diff"],
 
     "@natalia/goal": ["@natalia/goal@workspace:packages/domains/goal"],
 
@@ -1077,14 +1097,6 @@
     "@natalia/governance-ledger": ["@natalia/governance-ledger@workspace:packages/domains/governance-ledger"],
 
     "@natalia/installer": ["@natalia/installer@workspace:packages/tooling/installer"],
-
-    "@natalia/object-store": ["@natalia/object-store@workspace:packages/hosts/object-store"],
-
-    "@natalia/operation-log": ["@natalia/operation-log@workspace:packages/framework/operation-log"],
-
-    "@natalia/platform": ["@natalia/platform@workspace:packages/hosts/platform"],
-
-    "@natalia/plugin": ["@natalia/plugin@workspace:packages/core/plugin"],
 
     "@natalia/plugin-browser": ["@natalia/plugin-browser@workspace:packages/plugins/browser"],
 
@@ -1121,18 +1133,6 @@
     "@natalia/plugin-ui-adapter-example": ["@natalia/plugin-ui-adapter-example@workspace:packages/plugins/ui/adapter-example"],
 
     "@natalia/plugin-web-ui": ["@natalia/plugin-web-ui@workspace:packages/plugins/ui/web"],
-
-    "@natalia/rina": ["@natalia/rina@workspace:packages/framework/rina"],
-
-    "@natalia/runtime": ["@natalia/runtime@workspace:packages/framework/runtime"],
-
-    "@natalia/runtime-config": ["@natalia/runtime-config@workspace:packages/framework/runtime-config"],
-
-    "@natalia/runtime-diagnostics": ["@natalia/runtime-diagnostics@workspace:packages/framework/runtime-diagnostics"],
-
-    "@natalia/runtime-services": ["@natalia/runtime-services@workspace:packages/core/runtime-services"],
-
-    "@natalia/runtime-status": ["@natalia/runtime-status@workspace:packages/framework/runtime-status"],
 
     "@natalia/sdk": ["@natalia/sdk@workspace:packages/tooling/sdk"],
 

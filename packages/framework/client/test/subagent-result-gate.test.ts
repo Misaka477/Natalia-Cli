@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ContextLedger } from "@natalia/runtime";
+import { ContextLedger } from "@anthelia/runtime";
 import {
   ensureUsableResult,
   resultNeedsExpansion,

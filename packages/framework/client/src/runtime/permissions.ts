@@ -12,16 +12,16 @@ import {
 } from "../tool-policy-derivation";
 import { derivePermissionSettings } from "../permission-settings";
 import type { AgentDefinition } from "@anthelia/agent";
-import type { ConfigV3 } from "@natalia/contracts";
+import type { ConfigV3 } from "@anthelia/contracts";
 import type { PermissionProfileCommandRules } from "@anthelia/tools";
-import type { ToolPolicyHookLayer } from "@natalia/runtime-services";
+import type { ToolPolicyHookLayer } from "@anthelia/runtime-services";
 import { toolPolicy } from "@natalia/tool-policy";
-import { type ToolPolicyService } from "@natalia/runtime-services";
+import { type ToolPolicyService } from "@anthelia/runtime-services";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
-type PermissionProfile = import("@natalia/contracts").PermissionProfile;
+type PermissionProfile = import("@anthelia/contracts").PermissionProfile;
 
 export function createPermissions(
   ctx: RuntimeContext,

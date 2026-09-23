@@ -16,14 +16,14 @@ This section is the host contract: mount, dispose, checkpoints, and testing.
 
 Use the UI template. It writes `scope: "process"`,
 `integrationPoints: ["adapters"]`, a unique adapter `kind`, and the
-`@natalia/contracts` dependency:
+`@anthelia/contracts` dependency:
 
 ```bash
 natalia-ts plugin create ./my-ui --id yourco.web --package @yourco/natalia-ui-web --template ui
 ```
 
-The published package needs `@natalia/plugin` to register the adapter
-and `@natalia/contracts` when it imports `RuntimeClient`, `RuntimeEvent`,
+The published package needs `@anthelia/plugin` to register the adapter
+and `@anthelia/contracts` when it imports `RuntimeClient`, `RuntimeEvent`,
 or other public types:
 
 ```json
@@ -34,8 +34,8 @@ or other public types:
   "files": ["src", "natalia.plugin.json"],
   "exports": { ".": "./src/index.js" },
   "dependencies": {
-    "@natalia/plugin": "<compatible-version>",
-    "@natalia/contracts": "<compatible-version>"
+    "@anthelia/plugin": "<compatible-version>",
+    "@anthelia/contracts": "<compatible-version>"
   }
 }
 ```
@@ -52,7 +52,7 @@ UI host selects the adapter kind, and `dispose` must release every listener,
 timer, renderer, socket, or other resource created by `mount`.
 
 ```js
-import { definePlugin } from "@natalia/plugin";
+import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest: {
@@ -99,7 +99,7 @@ The host injects three public ports:
 
 The UI package does not import an internal UI host, checkpoint controller,
 registry, or transport implementation. It only uses these public ports and
-public `@natalia/contracts` types. This lets a web or custom
+public `@anthelia/contracts` types. This lets a web or custom
 renderer use the same runtime without sharing current UI state or components.
 
 ### Dynamic panel registration
@@ -255,14 +255,14 @@ UI 是使用现有 `adapters` integration point 的普通 v2 插件。
 ### 创建外部 UI package
 
 直接使用 UI 模板。它会写入 `scope: "process"`、`integrationPoints: ["adapters"]`、
-唯一 adapter `kind`，以及 `@natalia/contracts` 依赖：
+唯一 adapter `kind`，以及 `@anthelia/contracts` 依赖：
 
 ```bash
 natalia-ts plugin create ./my-ui --id yourco.web --package @yourco/natalia-ui-web --template ui
 ```
 
-发布包需要 `@natalia/plugin` 注册 adapter；导入 `RuntimeClient`、`RuntimeEvent`
-或其他公共类型时使用 `@natalia/contracts`：
+发布包需要 `@anthelia/plugin` 注册 adapter；导入 `RuntimeClient`、`RuntimeEvent`
+或其他公共类型时使用 `@anthelia/contracts`：
 
 ```json
 {
@@ -272,8 +272,8 @@ natalia-ts plugin create ./my-ui --id yourco.web --package @yourco/natalia-ui-we
   "files": ["src", "natalia.plugin.json"],
   "exports": { ".": "./src/index.js" },
   "dependencies": {
-    "@natalia/plugin": "<compatible-version>",
-    "@natalia/contracts": "<compatible-version>"
+    "@anthelia/plugin": "<compatible-version>",
+    "@anthelia/contracts": "<compatible-version>"
   }
 }
 ```
@@ -288,7 +288,7 @@ UI 插件本身很小。注册是惰性的：只有 UI host 选择对应 adapter
 `dispose` 必须释放 `mount` 创建的所有 listener、timer、renderer、socket 或其他资源。
 
 ```js
-import { definePlugin } from "@natalia/plugin";
+import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest: {
@@ -334,7 +334,7 @@ host 注入三个公共端口：
 | `input.commands.list()` / `execute()` | 列出并执行 host 的权威 command catalog。通过 command `name` 定位，向 `execute` 传入原始命令与已解析参数。                                                               |
 
 UI package 不应导入内部 UI host、checkpoint controller、registry 或 transport 实现，只能
-使用这些公共 port 与公开的 `@natalia/contracts` type。因此 web 或自定义
+使用这些公共 port 与公开的 `@anthelia/contracts` type。因此 web 或自定义
 renderer 都可使用同一 runtime，而不依赖当前 UI 的 state 或组件。
 
 ### 动态面板注册

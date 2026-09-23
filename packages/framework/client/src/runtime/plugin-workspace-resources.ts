@@ -6,13 +6,13 @@
  * turns a requested workspace path, or a named resource declaration, into an
  * exact path that the platform may allow through its ignore policy.
  */
-import type { CapabilityRegistryView } from "@natalia/capability";
+import type { CapabilityRegistryView } from "@anthelia/capability";
 import {
   isPluginWorkspaceResource,
   normalizePluginWorkspacePath,
   pluginWorkspaceResourcePath,
   type PluginWorkspaceResourceParams,
-} from "@natalia/plugin";
+} from "@anthelia/plugin";
 
 export type ResolvedWorkspaceResource = {
   pluginID: string;

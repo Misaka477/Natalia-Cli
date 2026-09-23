@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@anthelia/session": "workspace:*",
-    "@natalia/contracts": "workspace:*",
-    "@natalia/runtime-services": "workspace:*"
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*"
   }
 }

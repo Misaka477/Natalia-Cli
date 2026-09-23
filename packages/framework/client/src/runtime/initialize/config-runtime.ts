@@ -6,7 +6,7 @@ import type {
 } from "@anthelia/substrate";
 import { collaborationWaiter } from "@natalia/collaboration";
 import { createInitializeRuntime } from "./runtime";
-import { perfLog } from "@natalia/runtime-services";
+import { perfLog } from "@anthelia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { toolPolicy } from "@natalia/tool-policy";
 import type { SessionStoreController } from "@anthelia/session-store";

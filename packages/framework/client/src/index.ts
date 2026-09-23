@@ -23,15 +23,15 @@ export {
   type SessionWindowPage,
   type SessionWindowSnapshot,
 } from "@anthelia/substrate";
-export type { RuntimeServiceClient } from "@natalia/runtime-services";
+export type { RuntimeServiceClient } from "@anthelia/runtime-services";
 export {
   classifyPermissionFamily,
   PERMISSION_FAMILIES,
   type PermissionFamily,
-} from "@natalia/contracts";
-export { assertConfigApplied } from "@natalia/config";
+} from "@anthelia/contracts";
+export { assertConfigApplied } from "@anthelia/config";
 export type { RealRuntimeClientOptions } from "@anthelia/substrate";
-export { CapabilityHost } from "@natalia/capability";
+export { CapabilityHost } from "@anthelia/capability";
 export {
   toolFamilyCapabilityID,
   type ToolFamilyLoadOutcome,
@@ -45,7 +45,7 @@ export {
   readWorkspaceFile,
   searchWorkspaceFiles,
   watchWorkspaceFiles,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 export {
   attachRuntimeClientWorker,
   createWorkerRuntimeClient,
@@ -66,7 +66,7 @@ export type {
   RuntimeClient,
   RuntimeEvent,
   SubmittedTurn,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export {
   createWorkspaceManager,

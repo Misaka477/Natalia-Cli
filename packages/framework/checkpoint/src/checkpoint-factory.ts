@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import type { CheckpointFactory } from "./contracts";
 import type { CheckpointControllerAccessors } from "./contracts";
 import type { CheckpointController } from "./contracts";

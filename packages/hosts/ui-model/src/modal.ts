@@ -6,7 +6,7 @@ import type {
   QuestionOption,
   QuestionRequest,
   QuestionResponse,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export type {
   ApprovalDecision,

@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent } from "@natalia/contracts";
-import { defaultConfigV3 } from "@natalia/config";
-import { ContextLedger, TokenMeter } from "@natalia/runtime";
-import type { ProviderMessage } from "@natalia/runtime";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import { defaultConfigV3 } from "@anthelia/config";
+import { ContextLedger, TokenMeter } from "@anthelia/runtime";
+import type { ProviderMessage } from "@anthelia/runtime";
 import { compactionService } from "@anthelia/compaction";
 import { providerModelController } from "@anthelia/provider-model";
-import { createTestContext } from "@natalia/runtime-services";
+import { createTestContext } from "@anthelia/runtime-services";
 import type {
   RuntimeContext,
   SessionExecutionState,

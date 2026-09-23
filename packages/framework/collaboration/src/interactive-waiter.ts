@@ -29,15 +29,15 @@ import type {
   QuestionResponse,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   classifyPermissionFamily,
   PERMISSION_FAMILIES,
-} from "@natalia/contracts";
-import type { ProviderToolCall } from "@natalia/runtime";
+} from "@anthelia/contracts";
+import type { ProviderToolCall } from "@anthelia/runtime";
 import { parseToolArguments, type RuntimeTool } from "@anthelia/tools";
 import { projectInteractiveRequests } from "@anthelia/session";
-import type {} from "@natalia/runtime-services";
+import type {} from "@anthelia/runtime-services";
 import type {
   InteractiveWaiter,
   InteractiveWaiterDeps,
@@ -46,7 +46,7 @@ import {
   defineService,
   readOnlyToolMessage,
   terminalApprovalScope,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 
 /**
  * The waiter's service token. The id is the wire name the runtime has always
@@ -271,7 +271,7 @@ export function createInteractiveWaiter(
     kind: string;
     title: string;
     payload: JsonValue;
-    responseSchema?: import("@natalia/contracts").JsonSchema;
+    responseSchema?: import("@anthelia/contracts").JsonSchema;
     expiresAt?: string;
     priority?: number;
     validate?(response: JsonValue): string[] | void;
@@ -630,7 +630,7 @@ export function createInteractiveWaiter(
     sessionID?: SessionID;
     permissionMode?: "ask" | "auto" | "read_only";
     signal?: AbortSignal;
-    permissionFamily?: import("@natalia/contracts").PermissionFamily;
+    permissionFamily?: import("@anthelia/contracts").PermissionFamily;
     /**
      * EI §3.7.1/3.7.2: a rule-class (or other user-tier) change must be
      * confirmed per item by the human. When true, the gate is NOT auto-granted

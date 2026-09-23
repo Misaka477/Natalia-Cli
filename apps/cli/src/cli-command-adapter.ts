@@ -1,4 +1,4 @@
-import type { PluginAdapterInstance } from "@natalia/plugin";
+import type { PluginAdapterInstance } from "@anthelia/plugin";
 
 type CliCommandAdapterInstance = PluginAdapterInstance & {
   done: Promise<void>;

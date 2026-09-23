@@ -1,6 +1,6 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { PLUGIN_API_VERSION } from "@natalia/plugin";
+import { PLUGIN_API_VERSION } from "@anthelia/plugin";
 import cliPackage from "../package.json" with { type: "json" };
 
 const pluginIDPattern = /^[a-z0-9][a-z0-9._-]*$/u;
@@ -48,10 +48,10 @@ export async function createPluginScaffold(input: {
           ? (["tools"] as const)
           : (["commands"] as const);
   const dependencies: Record<string, string> = {
-    "@natalia/plugin": cliPackage.version,
+    "@anthelia/plugin": cliPackage.version,
   };
   if (template === "ui" || template === "ui-panel")
-    dependencies["@natalia/contracts"] = cliPackage.version;
+    dependencies["@anthelia/contracts"] = cliPackage.version;
   if (template === "ui-panel")
     dependencies["@natalia/ui-host"] = cliPackage.version;
   const manifest = {
@@ -278,7 +278,7 @@ function pluginSource(
 ) {
   const manifest = JSON.stringify(input.manifest, null, 2);
   if (input.template === "ui-panel") {
-    return `import { definePlugin } from "@natalia/plugin";
+    return `import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest: ${manifest},
@@ -291,10 +291,10 @@ export default definePlugin({
   if (input.template === "ui") {
     const header =
       language === "ts"
-        ? `import type { RuntimeEvent } from "@natalia/contracts";
-import { definePlugin } from "@natalia/plugin";
+        ? `import type { RuntimeEvent } from "@anthelia/contracts";
+import { definePlugin } from "@anthelia/plugin";
 `
-        : `import { definePlugin } from "@natalia/plugin";
+        : `import { definePlugin } from "@anthelia/plugin";
 `;
     const unsubscribe =
       language === "ts"
@@ -325,7 +325,7 @@ export default definePlugin({
 `;
   }
   if (input.template === "tool") {
-    const header = `import { definePlugin } from "@natalia/plugin";
+    const header = `import { definePlugin } from "@anthelia/plugin";
 `;
     const executeArg = language === "ts" ? "input: { text: string }" : "input";
     return `${header}
@@ -350,7 +350,7 @@ export default definePlugin({
 });
 `;
   }
-  return `import { definePlugin } from "@natalia/plugin";
+  return `import { definePlugin } from "@anthelia/plugin";
 
 export default definePlugin({
   manifest: ${manifest},

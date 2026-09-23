@@ -8,7 +8,7 @@
  * applied). Keeping it separate makes the load/reload path testable without the
  * runtime state it writes.
  */
-import type { ConfigV3, PermissionProfile } from "@natalia/contracts";
+import type { ConfigV3, PermissionProfile } from "@anthelia/contracts";
 
 export type PermissionMode = PermissionProfile["approval"];
 

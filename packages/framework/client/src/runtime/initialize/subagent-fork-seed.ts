@@ -13,7 +13,7 @@
  * request the parent has not answered yet.
  */
 
-import type { ContextEntry } from "@natalia/runtime";
+import type { ContextEntry } from "@anthelia/runtime";
 
 /**
  * Roles that carry into a fork.

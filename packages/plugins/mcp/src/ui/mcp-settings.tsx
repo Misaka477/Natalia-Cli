@@ -1,5 +1,5 @@
 import { createSignal, For, Show, onCleanup, onMount } from "solid-js";
-import type { MCPServerConfig, RuntimeClient } from "@natalia/contracts";
+import type { MCPServerConfig, RuntimeClient } from "@anthelia/contracts";
 import type { UiProjection } from "@natalia/ui-host";
 
 type MCPType = "stdio" | "http";

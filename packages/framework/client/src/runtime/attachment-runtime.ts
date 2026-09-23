@@ -6,12 +6,12 @@
  * durable LocalAttachment path for later submit. This avoids writing pasted
  * files into the user workspace.
  */
-import type { LocalAttachment, SessionID } from "@natalia/contracts";
+import type { LocalAttachment, SessionID } from "@anthelia/contracts";
 import { sessionStoreController } from "@anthelia/session-store";
 import { attachmentService } from "@anthelia/attachments";
 import type { RuntimeContext } from "@anthelia/substrate";
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import type { AttachmentService } from "@natalia/runtime";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
+import type { AttachmentService } from "@anthelia/runtime";
 import type { SessionStoreController } from "@anthelia/session-store";
 
 export function createAttachmentRuntime(

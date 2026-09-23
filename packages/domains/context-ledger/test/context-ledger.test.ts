@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { LocalAttachment, RuntimeEvent } from "@natalia/contracts";
+import type { LocalAttachment, RuntimeEvent } from "@anthelia/contracts";
 import { contextLedgerFactory, createContextLedgerFactory } from "../src";
 
 test("context ledger restores completed turns and tool pairs once", () => {

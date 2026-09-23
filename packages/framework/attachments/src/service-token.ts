@@ -1,5 +1,5 @@
-import type { AttachmentService } from "@natalia/runtime";
-import { defineService } from "@natalia/runtime-services";
+import type { AttachmentService } from "@anthelia/runtime";
+import { defineService } from "@anthelia/runtime-services";
 
 /** The attachment service token; lives with the mechanism. */
 export const attachmentService = defineService<AttachmentService>(

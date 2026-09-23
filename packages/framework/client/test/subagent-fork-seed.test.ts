@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ContextEntry } from "@natalia/runtime";
+import type { ContextEntry } from "@anthelia/runtime";
 import {
   forkSeedEntries,
   isSeedRole,

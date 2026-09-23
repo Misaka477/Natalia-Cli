@@ -15,8 +15,8 @@
  * secrets and truncates before calling this builder, and the summary is prose,
  * not a paste of the tool result.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { PlanLifecycleState } from "@natalia/runtime-services";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { PlanLifecycleState } from "@anthelia/runtime-services";
 
 export type ValidationOutcome = {
   command: string;

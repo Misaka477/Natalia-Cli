@@ -25,10 +25,10 @@ export {
   type MailboxStatus,
   type MailboxStatusEvent,
   type MailboxStatusTransition,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 export {
   createMailboxAcknowledgeTool,
   readOnlyToolMessage,
   terminalApprovalScope,
   terminalInputRisk,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";

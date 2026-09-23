@@ -1,4 +1,4 @@
-import type { AgentConfig, ConfigV3 } from "@natalia/contracts";
+import type { AgentConfig, ConfigV3 } from "@anthelia/contracts";
 
 export type AgentDefinition = AgentConfig & {
   name: string;

@@ -5,7 +5,7 @@ import {
   askTools,
   createAskPlugin,
 } from "../src";
-import { createPluginRegistry } from "@natalia/plugin";
+import { createPluginRegistry } from "@anthelia/plugin";
 import { createToolRegistry } from "@anthelia/tools";
 
 test("the ask family describes the tool it ships", () => {

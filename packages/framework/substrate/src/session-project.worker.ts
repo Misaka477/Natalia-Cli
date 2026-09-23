@@ -1,5 +1,5 @@
 import { parentPort } from "node:worker_threads";
-import { buildModelCatalog } from "@natalia/config";
+import { buildModelCatalog } from "@anthelia/config";
 import {
   modelVisibleEvents,
   projectSession,
@@ -31,27 +31,27 @@ export type SessionProjectWorkerRequest =
   | {
       id: number;
       op: "canonicalTools";
-      events: import("@natalia/contracts").RuntimeEvent[];
+      events: import("@anthelia/contracts").RuntimeEvent[];
     }
   | {
       id: number;
       op: "recoveryPrepare";
-      events: import("@natalia/contracts").RuntimeEvent[];
+      events: import("@anthelia/contracts").RuntimeEvent[];
     }
   | {
       id: number;
       op: "collabSnapshot";
-      events: import("@natalia/contracts").RuntimeEvent[];
+      events: import("@anthelia/contracts").RuntimeEvent[];
     }
   | {
       id: number;
       op: "subagentHistory";
-      events: import("@natalia/contracts").RuntimeEvent[];
+      events: import("@anthelia/contracts").RuntimeEvent[];
     }
   | {
       id: number;
       op: "modelCatalog";
-      config: import("@natalia/contracts").ConfigV3;
+      config: import("@anthelia/contracts").ConfigV3;
     }
   | {
       id: number;
@@ -66,7 +66,7 @@ export type SessionProjectWorkerRequest =
         | "mailboxMessages"
         | "collabMessages"
         | "notices";
-      events: import("@natalia/contracts").RuntimeEvent[];
+      events: import("@anthelia/contracts").RuntimeEvent[];
     };
 
 export type SessionProjectWorkerResponse =
@@ -74,11 +74,11 @@ export type SessionProjectWorkerResponse =
   | { id: number; ok: false; error: string };
 
 function prepareRecoveryContext(
-  events: import("@natalia/contracts").RuntimeEvent[],
+  events: import("@anthelia/contracts").RuntimeEvent[],
 ) {
   let latestContextCheckpoint:
     | Extract<
-        import("@natalia/contracts").RuntimeEvent,
+        import("@anthelia/contracts").RuntimeEvent,
         { type: "context.checkpoint" }
       >
     | undefined;

@@ -12,9 +12,9 @@
  * desired entry), which is why extra desired entries are accepted. The host
  * stays minimal: no private control channel, no UI feature knowledge.
  */
-import { CapabilityRegistry } from "@natalia/capability";
-import { resolveConfig, type ResolvedConfig } from "@natalia/config";
-import type { RuntimeClient, UiAdapterMountInput } from "@natalia/contracts";
+import { CapabilityRegistry } from "@anthelia/capability";
+import { resolveConfig, type ResolvedConfig } from "@anthelia/config";
+import type { RuntimeClient, UiAdapterMountInput } from "@anthelia/contracts";
 import {
   createDesiredPluginController,
   createPluginAdapterMaterializer,
@@ -24,7 +24,7 @@ import {
   resolveDesiredPluginCatalog,
   type DesiredPluginEntry,
   type PluginAdapterInstance,
-} from "@natalia/plugin";
+} from "@anthelia/plugin";
 import { createToolRegistry } from "@anthelia/tools";
 import { discoverDesiredPluginEntries } from "@anthelia/substrate";
 import { registerPluginOwner } from "@anthelia/substrate";

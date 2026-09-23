@@ -12,7 +12,7 @@ import type {
   RuntimeNativeTerminalSession,
   RuntimeSubagentView,
   RuntimeTeamPR,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { type AppState, type SubagentView } from "@natalia/view-store";
 import {
   ContextMeter,

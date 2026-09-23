@@ -12,7 +12,7 @@
  * Pure: it reads event metadata (type, name, status, argumentsDelta) and never
  * content, diffs, results or reasoning.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import type { DriftActionKind } from "./drift-evaluator";
 
 /** How many recent events to scan for behaviour signals. */

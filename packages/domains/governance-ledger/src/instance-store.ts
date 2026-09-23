@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 export function resolveGovernanceRoot(workspaceRoot?: string) {
   if (process.env.NATALIA_TEST_GOVERNANCE_ROOT)

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { configV3Schema, type ConfigV3 } from "@natalia/contracts";
+import { configV3Schema, type ConfigV3 } from "@anthelia/contracts";
 import { parseConfigText, saveConfigOverlayFile } from "./file";
 import { mergeConfig, mergeOverlay } from "./service-merge";
 import {

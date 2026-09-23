@@ -1,4 +1,4 @@
-import type { GoalOperation, GoalSnapshot } from "@natalia/contracts";
+import type { GoalOperation, GoalSnapshot } from "@anthelia/contracts";
 
 /**
  * Live goal projection: the durable snapshot plus facts derived from the

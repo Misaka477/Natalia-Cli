@@ -3,7 +3,7 @@
  *
  * Every failure here used to collapse into `-32602` with a message, which told a
  * remote consumer nothing it could act on. Now each failure leaves as one of five
- * kinds (`@natalia/contracts` `failures.ts`), classified from typed errors rather
+ * kinds (`@anthelia/contracts` `failures.ts`), classified from typed errors rather
  * than from message text:
  *
  *   - a name with no route            -> `-32601`, with the method
@@ -28,8 +28,8 @@ import {
   capabilityGroupOf,
   describeRuntimeCapabilities,
   runtimeFailureData,
-} from "@natalia/contracts";
-import type { RuntimeClient, RuntimeFailureData } from "@natalia/contracts";
+} from "@anthelia/contracts";
+import type { RuntimeClient, RuntimeFailureData } from "@anthelia/contracts";
 import type { RPCRequest, RPCResponse } from "./rpc-client";
 
 /**
@@ -490,12 +490,12 @@ export function authorizationRefusalReason(
  * the same mistake G2 made, at a different layer.
  */
 export function cullAvailabilityReport(
-  report: import("@natalia/contracts").RuntimeCapabilityReport,
+  report: import("@anthelia/contracts").RuntimeCapabilityReport,
   authorization: RuntimeAuthorizationContext | undefined,
-): import("@natalia/contracts").RuntimeCapabilityReport {
+): import("@anthelia/contracts").RuntimeCapabilityReport {
   if (!authorization || !report.channel) return report;
   const cullMember = (
-    member: import("@natalia/contracts").ChannelCapabilityMember,
+    member: import("@anthelia/contracts").ChannelCapabilityMember,
   ) => {
     if (member.state !== "implemented_reachable") return member;
     const method = Object.keys(RPC_ROUTE_MEMBERS).find(
@@ -635,10 +635,10 @@ export async function handleRPCMessage(
               delivery,
               attachments: attachments as string[] | undefined,
               resources: resources as
-                | import("@natalia/contracts").PromptResourceMention[]
+                | import("@anthelia/contracts").PromptResourceMention[]
                 | undefined,
               agents: agents as
-                | import("@natalia/contracts").PromptAgentMention[]
+                | import("@anthelia/contracts").PromptAgentMention[]
                 | undefined,
               ...(sessionID ? { sessionID } : {}),
             })
@@ -3568,13 +3568,13 @@ export async function handleRPCMessage(
               : {}),
             ...(typeof (
               params as {
-                reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+                reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
               }
             ).reasoningEffort !== "undefined"
               ? {
                   reasoningEffort: (
                     params as {
-                      reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+                      reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
                     }
                   ).reasoningEffort,
                 }
@@ -3641,7 +3641,7 @@ export async function handleRPCMessage(
               `${body.method}.params.profile must be an object`,
             );
           result = await surface.setModelProfile?.(
-            profile as import("@natalia/contracts").ChatModelProfile,
+            profile as import("@anthelia/contracts").ChatModelProfile,
             (params as { sessionID?: string }).sessionID,
           );
           break;

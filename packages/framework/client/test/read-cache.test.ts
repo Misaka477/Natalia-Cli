@@ -7,7 +7,7 @@ import {
   L1_CACHE_KINDS,
   READ_CACHE_TOOL_KINDS,
   type CacheFabric,
-} from "@natalia/rina";
+} from "@anthelia/rina";
 import {
   executeWithReadCache,
   stableCacheKey,

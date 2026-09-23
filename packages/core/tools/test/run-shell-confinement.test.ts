@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { confinementAvailable } from "@natalia/confinement";
+import { confinementAvailable } from "@anthelia/confinement";
 import { runShell } from "../src/run-shell";
 
 /**

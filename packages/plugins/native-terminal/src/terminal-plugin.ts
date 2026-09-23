@@ -1,9 +1,9 @@
-import type { Plugin, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import {
   terminalController,
   type TerminalController,
   type TerminalControllerInput,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { createTerminalController } from "./terminal-controller";
 import { createPtyTerminalController } from "./pty-terminal-controller";
 import { terminalTools, terminalToolFamily } from "./terminal-tools";

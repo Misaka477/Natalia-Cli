@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "@anthelia/tools": "workspace:*",
-    "@natalia/plugin": "workspace:*"
+    "@anthelia/plugin": "workspace:*"
   }
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { workspaceCorrelationSchema } from "@natalia/contracts";
+import { workspaceCorrelationSchema } from "@anthelia/contracts";
 import {
   assertSecretSafeObservation,
   attributionFor,

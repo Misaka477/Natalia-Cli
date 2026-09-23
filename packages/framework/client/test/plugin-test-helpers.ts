@@ -22,7 +22,7 @@ import {
   createRealRuntimeClient as createRuntimeClient,
   type RealRuntimeClientOptions,
 } from "../src";
-import { pluginManifestSchema } from "@natalia/plugin";
+import { pluginManifestSchema } from "@anthelia/plugin";
 
 const officialPluginDistribution = resolve("dist", "ts", "plugins");
 const officialPluginTestWorkspaces = resolve(
@@ -362,7 +362,7 @@ export async function installPluginSdkLinks(root: string) {
       // hard failure here would mask the plugin-loading behaviour under test.
       // A copy resolves identically inside the test process. The packages'
       // own node_modules links (bun junctions) cannot be copied either, so
-      // they are excluded: `@natalia/contracts` resolves from the sibling
+      // they are excluded: `@anthelia/contracts` resolves from the sibling
       // copy, and anything else resolves up through the repository root.
       await cp(join(process.cwd(), "packages", pkg), target, {
         recursive: true,

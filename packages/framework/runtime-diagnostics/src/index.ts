@@ -4,7 +4,7 @@ import type {
   InvariantCheckInput,
   RuntimeEvent,
   Violation,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 /**
  * The domain-invariant layer (Discovery study D1, the deficiency study's
@@ -34,7 +34,7 @@ export type {
   InvariantCheckInput,
   InvariantSessionWindow,
   Violation,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export type InvariantSet = {
   /** The declaring domain package — violations attribute here. */
@@ -262,7 +262,7 @@ export function createRuntimeDiagnostics(
   };
 }
 
-// The SERVICE TOKEN lives in @natalia/runtime-services (the boundary-token
+// The SERVICE TOKEN lives in @anthelia/runtime-services (the boundary-token
 // rule from P1 — and structurally required: runtime-services already
 // depends on framework/session, so a token here would close a composite
 // reference cycle session -> this package -> runtime-services -> session).

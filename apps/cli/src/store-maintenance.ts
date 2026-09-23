@@ -14,7 +14,7 @@
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { cp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { hashTreeFiles } from "@natalia/platform";
+import { hashTreeFiles } from "@anthelia/platform";
 
 /** The install root: `NATALIA_HOME` overrides (D2 unattended + tests). */
 export function nataliaHome(env: NodeJS.ProcessEnv = process.env): string {

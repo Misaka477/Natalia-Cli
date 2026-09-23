@@ -11,7 +11,7 @@
 > method table), and this document gives the **complete field shapes** of every
 > result type — nested objects are expanded into paths
 > (`obj.field`, `arr[].field`, `?.field`), so no one has to open
-> `@natalia/contracts` source to know what a return value looks like.
+> `@anthelia/contracts` source to know what a return value looks like.
 >
 > The tables under the "Machine-derived" heading below are generated from the
 > source tables (`npm run docs:api-reference`) and are byte-identical with the
@@ -165,7 +165,7 @@ array element; `context.targetJournalOffset` is a field of the nested
 > 本文档是 `docs/api-reference.md` 的配套：api-reference 描述协议面（路由、
 > 鉴权、事件、失败分类、SDK 方法表），本文档给出所有结果类型的**完整字段
 > 形状**——嵌套对象以路径展开（`obj.field`、`arr[].field`、`?.field`），因此
-> 无需阅读 `@natalia/contracts` 源码即可知道每个返回值的形状。
+> 无需阅读 `@anthelia/contracts` 源码即可知道每个返回值的形状。
 >
 > 文末"机器派生"标题下的表格由源码表生成（`npm run docs:api-reference`），
 > 与英文版逐字节一致；防漂移守卫（`packages/hosts/transport/test/api-reference.test.ts`）

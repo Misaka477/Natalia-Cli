@@ -1,4 +1,4 @@
-import type { ConfigV3 } from "@natalia/contracts";
+import type { ConfigV3 } from "@anthelia/contracts";
 import type {
   SecondaryWorkerRequest,
   SecondaryWorkerResponse,
@@ -83,7 +83,7 @@ export function projectPluginsInWorker(plugins: unknown[]): Promise<
 
 export function projectSubagentsInWorker(
   records: Array<{ record: unknown; health: unknown }>,
-): Promise<import("@natalia/contracts").RuntimeSubagentView[]> {
+): Promise<import("@anthelia/contracts").RuntimeSubagentView[]> {
   return run({
     op: "subagentList",
     records,

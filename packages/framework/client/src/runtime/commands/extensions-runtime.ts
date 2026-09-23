@@ -1,5 +1,5 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { manifestIntegrationPoints } from "@natalia/plugin";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
+import { manifestIntegrationPoints } from "@anthelia/plugin";
 import { projectPluginsInWorker } from "../secondary-worker-client";
 import type { RuntimeContext } from "@anthelia/substrate";
 import { snapshotProjectionContributions } from "@anthelia/substrate";

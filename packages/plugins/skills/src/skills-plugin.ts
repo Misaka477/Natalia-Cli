@@ -1,4 +1,4 @@
-import type { Plugin, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import {
   createSkillLoadTool,
   discoverSkills,
@@ -6,8 +6,8 @@ import {
   type Skill,
 } from "./skills";
 import type { ToolExecutionContext } from "@anthelia/tools";
-import { skillService } from "@natalia/runtime-services";
-import type { SessionID } from "@natalia/contracts";
+import { skillService } from "@anthelia/runtime-services";
+import type { SessionID } from "@anthelia/contracts";
 import { join } from "node:path";
 
 export const SKILLS_PLUGIN_ID = "natalia-skills";

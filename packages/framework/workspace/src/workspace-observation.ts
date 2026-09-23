@@ -4,8 +4,8 @@ import type {
   WorkspaceCorrelation,
   WorkspaceObservationHealth,
   WorkspaceObservationHealthReason,
-} from "@natalia/contracts";
-import { workspaceCorrelationSchema } from "@natalia/contracts";
+} from "@anthelia/contracts";
+import { workspaceCorrelationSchema } from "@anthelia/contracts";
 
 /**
  * WG4 Phase 1: the secret-safe boundary around workspace observation facts.

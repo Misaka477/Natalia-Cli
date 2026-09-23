@@ -1,4 +1,4 @@
-import type { ContextEntry, ProviderUsageView } from "@natalia/runtime";
+import type { ContextEntry, ProviderUsageView } from "@anthelia/runtime";
 import type {
   InitializeOptions,
   ProviderToolCall,
@@ -16,13 +16,13 @@ import {
   contextEntriesToProviderMessages,
   requestHeaderKey,
   type ContextBudget,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { createInitializeRuntime } from "./runtime";
 import { retryService } from "@anthelia/retry";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import { compactionService } from "@anthelia/compaction";
-import { subagentsService } from "@natalia/runtime-services";
-import type { CompactionService, RetryService } from "@natalia/runtime";
+import { subagentsService } from "@anthelia/runtime-services";
+import type { CompactionService, RetryService } from "@anthelia/runtime";
 import type {
   ContextLedgerFactory,
   RuntimeContextLedger,

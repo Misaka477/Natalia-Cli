@@ -11,9 +11,9 @@
   "dependencies": {
     "@anthelia/session": "workspace:*",
     "@anthelia/tools": "workspace:*",
-    "@natalia/contracts": "workspace:*",
-    "@natalia/runtime": "workspace:*",
-    "@natalia/runtime-services": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/runtime": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*",
     "@natalia/work-ledger": "workspace:*"
   },
   "devDependencies": {

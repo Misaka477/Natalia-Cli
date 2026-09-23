@@ -2,7 +2,7 @@ import { z } from "zod";
 import type {
   PluginPackageConfig,
   PluginPackageSource,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export const PLUGIN_API_VERSION = 2;
 
@@ -99,7 +99,7 @@ export type PluginIntegrationPoint = z.infer<
 >;
 export type PluginUiManifestFromSchema = z.infer<typeof pluginUiManifestSchema>;
 
-export type { PluginPackageSource } from "@natalia/contracts";
+export type { PluginPackageSource } from "@anthelia/contracts";
 
 export type PluginInstallationMetadata = {
   id: string;

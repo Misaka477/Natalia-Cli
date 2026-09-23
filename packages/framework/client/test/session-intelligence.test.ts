@@ -7,7 +7,7 @@ import {
   hasLiveSandbox,
   latestConfirmedOutput,
 } from "../src/session-intelligence";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 test("changed files count only work-graph workspace_change nodes", () => {
   const events: RuntimeEvent[] = [

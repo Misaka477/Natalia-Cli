@@ -1,6 +1,6 @@
 import type { SessionProjection } from "@anthelia/session";
 import type { CollabSnapshot } from "./session-execution-state";
-import type { RuntimeEvent, RuntimeMessagePage } from "@natalia/contracts";
+import type { RuntimeEvent, RuntimeMessagePage } from "@anthelia/contracts";
 import type {
   SessionProjectWorkerRequest,
   SessionProjectWorkerResponse,
@@ -38,7 +38,7 @@ type SessionProjectTask =
     }
   | {
       op: "modelCatalog";
-      config: import("@natalia/contracts").ConfigV3;
+      config: import("@anthelia/contracts").ConfigV3;
     }
   | {
       op: "projection";
@@ -154,9 +154,9 @@ export function subagentHistoryInWorker(
 }
 
 export function modelCatalogInWorker(
-  config: import("@natalia/contracts").ConfigV3,
-): Promise<ReturnType<typeof import("@natalia/config").buildModelCatalog>> {
-  return run<ReturnType<typeof import("@natalia/config").buildModelCatalog>>({
+  config: import("@anthelia/contracts").ConfigV3,
+): Promise<ReturnType<typeof import("@anthelia/config").buildModelCatalog>> {
+  return run<ReturnType<typeof import("@anthelia/config").buildModelCatalog>>({
     op: "modelCatalog",
     config,
   });

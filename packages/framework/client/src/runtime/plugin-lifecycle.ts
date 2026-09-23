@@ -1,11 +1,11 @@
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import {
   mcpService,
   sandboxService,
   terminalController,
   type SandboxService,
   type TerminalController,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import type { RuntimeContext } from "@anthelia/substrate";
 
 export function createPluginLifecycle(ctx: RuntimeContext) {

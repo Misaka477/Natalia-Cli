@@ -12,7 +12,7 @@
  * the orchestrator's job and is driven separately; this is the mechanical
  * fan-out core.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import type {
   SandboxChangeView,
   SandboxToolService,

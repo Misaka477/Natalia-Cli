@@ -17,7 +17,7 @@ import type {
   GoalEditInput,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { RuntimeTool } from "@anthelia/tools";
 import type {
   RuntimeContext,
@@ -25,7 +25,7 @@ import type {
 } from "@anthelia/substrate";
 import { goalTools } from "./goal-tools";
 import { runCompletionCheck } from "./goal-completion-check";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 export type GoalRuntime = {
   service: GoalService;

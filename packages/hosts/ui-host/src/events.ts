@@ -1,4 +1,4 @@
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import type { UiEventBus, UiEventPattern } from "./protocol";
 
 export function eventMatches(

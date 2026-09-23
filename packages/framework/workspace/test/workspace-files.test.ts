@@ -12,7 +12,7 @@ import {
   readWorkspaceFile,
   searchWorkspaceFiles,
   watchWorkspaceFiles,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 
 /**
  * Symlink fixtures are skipped when the machine cannot create symlinks

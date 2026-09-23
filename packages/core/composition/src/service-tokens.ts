@@ -1,4 +1,4 @@
-import { defineService } from "@natalia/runtime-services";
+import { defineService } from "@anthelia/runtime-services";
 import type { CompositionProfile } from "./profile";
 
 /**

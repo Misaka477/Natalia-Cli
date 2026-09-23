@@ -1,11 +1,11 @@
-import type { CapabilityHost, CapabilityRegistry } from "@natalia/capability";
-import type { EpisodeID, SessionID } from "@natalia/contracts";
+import type { CapabilityHost, CapabilityRegistry } from "@anthelia/capability";
+import type { EpisodeID, SessionID } from "@anthelia/contracts";
 import type {
   TerminalControllerInput,
   ToolHooks,
   ToolPolicy,
-} from "@natalia/runtime-services";
-import type { StreamingProvider } from "@natalia/runtime";
+} from "@anthelia/runtime-services";
+import type { StreamingProvider } from "@anthelia/runtime";
 import type { ToolRegistry } from "@anthelia/tools";
 
 export type RealRuntimeClientOptions = {

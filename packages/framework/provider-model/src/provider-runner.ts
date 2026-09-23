@@ -3,7 +3,7 @@ import type {
   ModelCapabilities,
   ProviderContentPart,
   ProviderReasoningBlock,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   ContextLedger,
   contextEntriesToProviderMessages,
@@ -26,12 +26,12 @@ import {
   type StreamingProvider,
   appendDateRollover,
   today,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 
-import { resolveEffectiveModel } from "@natalia/config";
-import type { resolveConfig } from "@natalia/config";
-import { modelRefKey } from "@natalia/contracts";
-import { cacheHitRate, totalInputTokens } from "@natalia/contracts";
+import { resolveEffectiveModel } from "@anthelia/config";
+import type { resolveConfig } from "@anthelia/config";
+import { modelRefKey } from "@anthelia/contracts";
+import { cacheHitRate, totalInputTokens } from "@anthelia/contracts";
 import { buildSubmittedTurn } from "@anthelia/session";
 import { materializeTools } from "@anthelia/tools";
 import { agentSystemPrompt } from "@natalia/agent-prompts";
@@ -39,8 +39,8 @@ import type {
   ConstitutionDocRule,
   ProviderRunnerInput,
   SkillMetadata,
-} from "@natalia/runtime-services";
-import type { ProviderUsage } from "@natalia/runtime";
+} from "@anthelia/runtime-services";
+import type { ProviderUsage } from "@anthelia/runtime";
 
 type ProviderAttachment = NonNullable<ProviderMessage["images"]>[number];
 
@@ -153,8 +153,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     id: string;
     text: string;
     attachments: LocalAttachment[];
-    resources: import("@natalia/contracts").PromptResourceMention[];
-    agents: import("@natalia/contracts").PromptAgentMention[];
+    resources: import("@anthelia/contracts").PromptResourceMention[];
+    agents: import("@anthelia/contracts").PromptAgentMention[];
     internal?: boolean;
   }) {
     await runProviderTurn(
@@ -171,8 +171,8 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     id: string,
     text: string,
     attachments: LocalAttachment[] = [],
-    resources: import("@natalia/contracts").PromptResourceMention[] = [],
-    agents: import("@natalia/contracts").PromptAgentMention[] = [],
+    resources: import("@anthelia/contracts").PromptResourceMention[] = [],
+    agents: import("@anthelia/contracts").PromptAgentMention[] = [],
     internal = false,
   ) {
     const startedAt = Date.now();
@@ -1535,8 +1535,8 @@ type RuntimeContextBlockInput = {
   naviChats?: Array<{
     id: string;
     threadID: string;
-    from: import("@natalia/contracts").CollaborationParticipant;
-    to: import("@natalia/contracts").CollaborationParticipant;
+    from: import("@anthelia/contracts").CollaborationParticipant;
+    to: import("@anthelia/contracts").CollaborationParticipant;
     text: string;
     round: number;
     expectsReply: boolean;
@@ -1558,8 +1558,8 @@ type RuntimeContextBlockInput = {
   niaChats?: Array<{
     id: string;
     threadID: string;
-    from: import("@natalia/contracts").CollaborationParticipant;
-    to: import("@natalia/contracts").CollaborationParticipant;
+    from: import("@anthelia/contracts").CollaborationParticipant;
+    to: import("@anthelia/contracts").CollaborationParticipant;
     text: string;
     round: number;
     expectsReply: boolean;

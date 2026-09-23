@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPluginRegistry } from "@natalia/plugin";
+import { createPluginRegistry } from "@anthelia/plugin";
 import {
   NativeTerminalRegistry,
   createTerminalPlugin,
@@ -10,7 +10,7 @@ import {
   terminalToolFamily,
   terminalTools,
 } from "../src";
-import { terminalController } from "@natalia/runtime-services";
+import { terminalController } from "@anthelia/runtime-services";
 import {
   encodeTerminalKey,
   nativeTerminalReadPage,

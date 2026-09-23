@@ -16,7 +16,7 @@ import {
 } from "../session-intelligence";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import type { DurableInFlightOperation } from "@anthelia/session";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";

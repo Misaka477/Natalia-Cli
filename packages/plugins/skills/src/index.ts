@@ -12,11 +12,11 @@ export {
   type Skill,
   type SkillRegistry,
 } from "./skills";
-import type { SessionID } from "@natalia/contracts";
-import type { Plugin, PluginAPI } from "@natalia/plugin";
+import type { SessionID } from "@anthelia/contracts";
+import type { Plugin, PluginAPI } from "@anthelia/plugin";
 import type { ToolExecutionContext } from "@anthelia/tools";
 import { createSkillsPlugin, SKILLS_PLUGIN_MANIFEST } from "./skills-plugin";
-import { skillsInput } from "@natalia/runtime-services";
+import { skillsInput } from "@anthelia/runtime-services";
 import type { Skill } from "./skills";
 
 export type SkillsRuntimeInput = {

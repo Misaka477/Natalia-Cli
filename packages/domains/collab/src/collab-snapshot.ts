@@ -9,7 +9,7 @@
  * the projections in the background and replaces the snapshot atomically; the
  * synchronous consumers keep reading a plain object from `exec.collabSnapshot`.
  */
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import {
   isCollaborationStreamEvent,
   projectedCollabMessages,
@@ -20,7 +20,7 @@ import { computeCollabSnapshotInWorker } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import type { CollabSnapshot } from "@anthelia/substrate";
-import { perfLog } from "@natalia/runtime-services";
+import { perfLog } from "@anthelia/runtime-services";
 import { completeSessionFactState } from "@anthelia/substrate";
 
 const SNAPSHOT_DEBOUNCE_MS = 80;

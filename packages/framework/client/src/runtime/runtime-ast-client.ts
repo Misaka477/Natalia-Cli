@@ -1,4 +1,4 @@
-import type { AstDiffResult, AstIndexResult } from "@natalia/diff-wasm/ast";
+import type { AstDiffResult, AstIndexResult } from "@anthelia/diff-wasm/ast";
 import type {
   AstComputeRequest,
   AstComputeResponse,

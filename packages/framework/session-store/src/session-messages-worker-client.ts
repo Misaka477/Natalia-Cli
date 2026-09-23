@@ -1,4 +1,4 @@
-import type { RuntimeMessagePage } from "@natalia/contracts";
+import type { RuntimeMessagePage } from "@anthelia/contracts";
 import type {
   SessionMessagesWorkerRequest,
   SessionMessagesWorkerResponse,

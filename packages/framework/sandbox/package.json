@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@anthelia/tools": "workspace:*",
-    "@natalia/contracts": "workspace:*",
-    "@natalia/diff-wasm": "workspace:*",
-    "@natalia/object-store": "workspace:*",
-    "@natalia/platform": "workspace:*"
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/diff-wasm": "workspace:*",
+    "@anthelia/object-store": "workspace:*",
+    "@anthelia/platform": "workspace:*"
   }
 }

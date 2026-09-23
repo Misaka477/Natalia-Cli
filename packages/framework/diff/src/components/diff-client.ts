@@ -1,5 +1,5 @@
-import type { RuntimeStructuredDiffHunk } from "@natalia/contracts";
-import type { StructuredDiffResult } from "@natalia/diff-wasm";
+import type { RuntimeStructuredDiffHunk } from "@anthelia/contracts";
+import type { StructuredDiffResult } from "@anthelia/diff-wasm";
 import type { DiffWorkerRequest, DiffWorkerResponse } from "./diff-worker";
 import { createWebWorkerPool, defaultWorkerPoolSize } from "./worker-pool";
 
@@ -86,7 +86,7 @@ function ensureWorkers(): void {
 }
 
 /**
- * Runs a structured diff (`@natalia/diff-wasm` + parseDiffBinary) inside a
+ * Runs a structured diff (`@anthelia/diff-wasm` + parseDiffBinary) inside a
  * dedicated Web Worker. The main thread only receives the already-parsed
  * `StructuredDiffResult`.
  */

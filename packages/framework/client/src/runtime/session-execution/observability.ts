@@ -1,8 +1,8 @@
-import { statusSnapshotController } from "@natalia/runtime-status";
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { statusSnapshotController } from "@anthelia/runtime-status";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
-import type { StatusSnapshotController } from "@natalia/runtime-status";
+import type { StatusSnapshotController } from "@anthelia/runtime-status";
 type Surface = Pick<
   RuntimeServiceClient,
   "runtimeStatus" | "diagnostics" | "sessionSnapshot"
@@ -14,9 +14,9 @@ async function observabilityExec(ctx: RuntimeContext, sessionID?: string) {
     return (
       ctx.ports
         .getExecutionBySession()
-        .get(sessionID as import("@natalia/contracts").SessionID) ??
+        .get(sessionID as import("@anthelia/contracts").SessionID) ??
       (await ctx.ports.ensureExecution(
-        sessionID as import("@natalia/contracts").SessionID,
+        sessionID as import("@anthelia/contracts").SessionID,
       ))
     );
   return ctx.ports.getActiveExec();

@@ -9,7 +9,7 @@
  * Like the other ledger writers, these are pure event builders; the runtime
  * owns persistence and delivery timing. Plan content is not stored here.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 export type PlanAuthor = "user" | "live_chat" | "main_agent";
 

@@ -17,13 +17,13 @@ import {
   relative,
   resolve,
 } from "node:path";
-import { profileShellCommand } from "@natalia/platform";
+import { profileShellCommand } from "@anthelia/platform";
 import type { RuntimeTool, ToolExecutionContext } from "@anthelia/tools";
 import type {
   SkillMetadata,
   SkillPolicy,
   SkillService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 
 export type Skill = SkillMetadata;
 

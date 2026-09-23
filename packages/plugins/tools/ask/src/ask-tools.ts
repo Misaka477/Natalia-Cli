@@ -14,7 +14,7 @@ import {
   type RuntimeTool,
   type ToolFamily,
 } from "@anthelia/tools";
-import type { Plugin, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
 
 export const ASK_PLUGIN_ID = "natalia-tool-ask";
 

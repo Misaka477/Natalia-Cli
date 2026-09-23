@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LocalAttachment } from "@natalia/contracts";
+import type { LocalAttachment } from "@anthelia/contracts";
 import { attachmentService } from "../src";
 import {
   attachmentDataURL,

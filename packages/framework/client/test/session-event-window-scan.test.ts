@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { SessionWindow, type SessionWindowEntry } from "@anthelia/substrate";
 import { scanSessionWindowNewestFirst } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import { sessionStoreController } from "@anthelia/session-store";
 import type { SessionStoreController } from "@anthelia/session-store";
-import { createTestContext } from "@natalia/runtime-services";
+import { createTestContext } from "@anthelia/runtime-services";
 
 function entry(seq: number): SessionWindowEntry<RuntimeEvent> {
   return {

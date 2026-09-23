@@ -3,15 +3,15 @@ import type {
   ConfigV3,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type {
   CheckpointStore,
   ContextLedger,
   CreateCheckpointInput,
   DurableContextCheckpoint,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type { WorkLedgerController } from "@natalia/work-ledger";
-import type { SubagentsService } from "@natalia/runtime-services";
+import type { SubagentsService } from "@anthelia/runtime-services";
 
 /**
  * Checkpoint mechanism contracts, moved from runtime-services as the token
@@ -48,12 +48,12 @@ export interface CheckpointController {
     options: { dryRun?: boolean },
   ): ReturnType<CheckpointStore["rollbackTo"]>;
   createCheckpoint(
-    input: import("@natalia/runtime").CreateCheckpointInput,
+    input: import("@anthelia/runtime").CreateCheckpointInput,
   ): ReturnType<CheckpointStore["createCheckpoint"]>;
   rename(id: string, name: string): ReturnType<CheckpointStore["rename"]>;
   workspaceDiff(): ReturnType<CheckpointStore["workspaceDiff"]>;
   listCheckpointsByKind(
-    kind?: import("@natalia/contracts").CheckpointKind,
+    kind?: import("@anthelia/contracts").CheckpointKind,
   ): ReturnType<CheckpointStore["listCheckpointsByKind"]>;
   listAuditRounds(
     planID?: string,
@@ -62,9 +62,9 @@ export interface CheckpointController {
     input: Parameters<CheckpointStore["createAuditRoundCheckpoint"]>[0],
   ): ReturnType<CheckpointStore["createAuditRoundCheckpoint"]>;
   diffCheckpoints(
-    from: import("@natalia/contracts").CheckpointRef,
-    to: import("@natalia/contracts").CheckpointRef,
-    options?: import("@natalia/contracts").DiffCheckpointsOptions,
+    from: import("@anthelia/contracts").CheckpointRef,
+    to: import("@anthelia/contracts").CheckpointRef,
+    options?: import("@anthelia/contracts").DiffCheckpointsOptions,
   ): ReturnType<CheckpointStore["diffCheckpoints"]>;
   isEnabled(): boolean;
   resources(): Array<{

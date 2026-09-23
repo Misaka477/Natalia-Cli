@@ -11,10 +11,10 @@ import type {
   RuntimeTerminalObservationSession,
   RuntimeTerminalSession,
   TerminalAction,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 export function createTerminalRuntime(ctx: RuntimeContext) {
   return {

@@ -18,7 +18,7 @@ import {
   withoutOption,
 } from "./command-helpers";
 import { pluginStoreRoot } from "./official-plugins";
-import { perfLog } from "@natalia/runtime-services";
+import { perfLog } from "@anthelia/runtime-services";
 
 export async function handleRuntimeCommand(argv: string[]) {
   const command = argv[0];

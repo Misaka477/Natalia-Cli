@@ -1,5 +1,5 @@
-import type { CapabilityRegistryHost } from "@natalia/capability";
-import type { ServiceBindings, ServiceScope } from "@natalia/runtime-services";
+import type { CapabilityRegistryHost } from "@anthelia/capability";
+import type { ServiceBindings, ServiceScope } from "@anthelia/runtime-services";
 
 /**
  * Backs a service directory with the capability registry's service bindings.

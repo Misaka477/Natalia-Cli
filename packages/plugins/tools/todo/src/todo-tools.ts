@@ -13,7 +13,7 @@ import {
   type RuntimeTool,
   type ToolFamily,
 } from "@anthelia/tools";
-import type { Plugin, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {

@@ -1,4 +1,4 @@
-import type { RuntimeEvent, StepRetryOperation } from "@natalia/contracts";
+import type { RuntimeEvent, StepRetryOperation } from "@anthelia/contracts";
 import {
   asProviderError,
   providerError,

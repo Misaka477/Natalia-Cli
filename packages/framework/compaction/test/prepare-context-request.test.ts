@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import {
   ContextLedger,
   DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
@@ -8,7 +8,7 @@ import {
   type ContextEntry,
   type ProviderMessage,
   type StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { prepareContextRequest } from "../src";
 
 const TRUNCATION_MARKER = "tool result truncated for context";

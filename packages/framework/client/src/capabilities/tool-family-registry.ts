@@ -1,7 +1,7 @@
 import type {
   CapabilityRegistration,
   CapabilityRegistryHost,
-} from "@natalia/capability";
+} from "@anthelia/capability";
 import {
   createToolRegistry,
   type RuntimeTool,
@@ -39,7 +39,7 @@ export function registerToolFamilyCapabilities(
   const failed: ToolFamilyLoadOutcome["failed"] = [];
   for (const family of orderedFamilies(families)) {
     const registration = toolFamilyRegistration(family);
-    let owner: import("@natalia/capability").CapabilityOwnerHandle | undefined;
+    let owner: import("@anthelia/capability").CapabilityOwnerHandle | undefined;
     try {
       owner = registry.registerOwner(registration);
       for (const tool of family.tools)

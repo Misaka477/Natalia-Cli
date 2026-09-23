@@ -5,7 +5,7 @@
  * request stayed pending in its own journal and re-appeared.
  */
 import { expect, test } from "bun:test";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import { handleRPCMessage } from "../src/host";
 
 function stubClient(overrides: Partial<RuntimeClient> = {}): RuntimeClient {

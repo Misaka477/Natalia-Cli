@@ -1,9 +1,9 @@
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import type {
   ProviderMessage,
   ProviderStreamRequest,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { applyEvent, initialState, type AppState } from "@natalia/view-store";
 
 export type E2EAgent = "main" | "navi" | "nia";

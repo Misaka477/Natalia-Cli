@@ -1,6 +1,6 @@
 import { SubagentRegistry } from "./registry";
 import type { SubagentRunnerContext } from "@anthelia/tools";
-import type { SubagentsService } from "@natalia/runtime-services";
+import type { SubagentsService } from "@anthelia/runtime-services";
 
 type SubagentRunner = (
   task: string,

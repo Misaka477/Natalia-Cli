@@ -1,5 +1,5 @@
-import { runWithRetry, type RetryRunnerOptions } from "@natalia/runtime";
-import type { RetryService } from "@natalia/runtime";
+import { runWithRetry, type RetryRunnerOptions } from "@anthelia/runtime";
+import type { RetryService } from "@anthelia/runtime";
 
 export function createRetryService(input: {
   policy(): RetryRunnerOptions["policy"];

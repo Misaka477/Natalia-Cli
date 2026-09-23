@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   assertContextBudgetInvariants,
   contextThresholdTokens,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { defaultContextStatusConfig } from "../src/runtime/provider-selection";
 
 test("the default context config is a complete ContextBudget", () => {

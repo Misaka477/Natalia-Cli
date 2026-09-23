@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import type { EpisodeID, SandboxDiffKind, SessionID } from "@natalia/contracts";
+import type {
+  EpisodeID,
+  SandboxDiffKind,
+  SessionID,
+} from "@anthelia/contracts";
 import {
   sandboxService,
   type RuntimeServiceClient,
   type SandboxService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { workspaceMutations } from "@anthelia/workspace";

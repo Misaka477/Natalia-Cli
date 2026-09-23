@@ -4,7 +4,7 @@ import {
   type ConfigV3,
   type ModelRef,
   type PolicyStatement,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export type PolicyEffect = PolicyStatement["effect"];
 

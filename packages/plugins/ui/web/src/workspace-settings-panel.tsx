@@ -3,7 +3,7 @@ import type {
   RuntimeClient,
   WorkspacePermissionSettings,
   WorkspaceToolSettings,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { NeuSelect } from "./components/NeuSelect";
 
 export function WorkspaceSettingsPanel(props: {

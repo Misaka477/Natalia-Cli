@@ -2,18 +2,18 @@ export * from "./profile";
 export * from "./service-tokens";
 export * from "./switch";
 export * from "./verification";
-import { ObjectStore } from "@natalia/object-store";
+import { ObjectStore } from "@anthelia/object-store";
 import type {
   ConfigV3,
   ConstitutionRule,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   GENERATION_SCHEMA,
   type CompositionPointer,
   type Generation,
   type GenerationPluginRef,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 /**
  * The composition generation store (master plan P2 / NGM study G1).

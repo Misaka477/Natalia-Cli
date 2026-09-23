@@ -1,11 +1,11 @@
 import type {
   CapabilityGrant,
   CapabilityRegistryHost,
-} from "@natalia/capability";
+} from "@anthelia/capability";
 import {
   manifestIntegrationPoints,
   type PluginManifest,
-} from "@natalia/plugin";
+} from "@anthelia/plugin";
 
 export function registerPluginOwner(
   manifest: PluginManifest,

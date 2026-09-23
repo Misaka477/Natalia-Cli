@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPluginRegistry } from "@natalia/plugin";
+import { createPluginRegistry } from "@anthelia/plugin";
 import { createToolRegistry, validateToolParameters } from "@anthelia/tools";
 import {
   createFsReadPlugin,

@@ -9,8 +9,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*",
-    "@natalia/platform": "workspace:*",
-    "@natalia/runtime-services": "workspace:*"
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/platform": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*"
   }
 }

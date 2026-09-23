@@ -13,12 +13,12 @@ import {
 } from "@anthelia/session";
 import type { ProviderModelController } from "@anthelia/provider-model";
 import { providerModelController } from "@anthelia/provider-model";
-import type { SessionID, SubmitInput } from "@natalia/contracts";
+import type { SessionID, SubmitInput } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { ProductRuntimeContext } from "./product-context";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import { streamEvent } from "./chat-turn-common";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 export function createCollaborationWake(ctx: ProductRuntimeContext) {
   return {

@@ -1,5 +1,5 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { resolveTuiConfig, saveTuiConfig } from "@natalia/config";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
+import { resolveTuiConfig, saveTuiConfig } from "@anthelia/config";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
 type Surface = Pick<RuntimeServiceClient, "settingsGet" | "settingsSet">;

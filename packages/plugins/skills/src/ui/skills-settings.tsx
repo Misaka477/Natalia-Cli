@@ -2,7 +2,7 @@ import { createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import type {
   RuntimeClient,
   RuntimeSkillCatalogEntry,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { UiEventBus } from "@natalia/ui-host";
 
 export function SkillsSettings(props: {

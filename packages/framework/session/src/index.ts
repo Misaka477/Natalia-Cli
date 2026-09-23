@@ -1,5 +1,5 @@
 export * from "./invariants";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import { normalizeInbox } from "./inbox";
 import {
   mkdir,

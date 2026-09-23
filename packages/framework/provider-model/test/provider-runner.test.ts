@@ -6,16 +6,16 @@ import {
   TokenMeter,
   estimateTokens,
   providerError,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type {
   ContextBudget,
   ProviderStreamChunk,
   ProviderStreamRequest,
   ProviderToolCall,
   StreamingProvider,
-} from "@natalia/runtime";
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { ProjectDocumentSnapshot } from "@natalia/runtime-services";
+} from "@anthelia/runtime";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { ProjectDocumentSnapshot } from "@anthelia/runtime-services";
 import { ToolRegistry } from "@anthelia/tools";
 import {
   createProviderRunner,
@@ -119,11 +119,11 @@ function makeHarness(
       max: number;
       thresholdPercent: number;
       reserved: number;
-      reservedSource?: import("@natalia/runtime").ContextBudget["reservedSource"];
+      reservedSource?: import("@anthelia/runtime").ContextBudget["reservedSource"];
       preservedRecentMessages?: number;
       preservedRecentTokens?: number;
       maxOverflowRetries?: number;
-      prune?: import("@natalia/runtime").ToolResultPruneOptions;
+      prune?: import("@anthelia/runtime").ToolResultPruneOptions;
     };
     preservedRecentMessages?: number;
     tokenMeter?: TokenMeter;
@@ -190,7 +190,7 @@ function makeHarness(
             context: {
               preservedRecentMessages: options.preservedRecentMessages,
             },
-          } as unknown as import("@natalia/contracts").ConfigV3),
+          } as unknown as import("@anthelia/contracts").ConfigV3),
     runtimeContextConfig: () => {
       // The budget is the canonical source (plan §2.3) and is derived from the
       // ts config, so the harness option that models

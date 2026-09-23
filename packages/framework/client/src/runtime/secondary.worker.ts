@@ -1,11 +1,11 @@
 import { parentPort } from "node:worker_threads";
-import { manifestIntegrationPoints } from "@natalia/plugin";
+import { manifestIntegrationPoints } from "@anthelia/plugin";
 
 export type SecondaryWorkerRequest =
   | {
       id: number;
       op: "configClone";
-      config: import("@natalia/contracts").ConfigV3;
+      config: import("@anthelia/contracts").ConfigV3;
     }
   | {
       id: number;

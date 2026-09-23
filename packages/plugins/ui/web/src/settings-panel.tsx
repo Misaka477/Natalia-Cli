@@ -13,7 +13,7 @@ import {
   type ConfigV3,
   type RuntimeClient,
   type UiPanelRequirement,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { NeuSelect } from "./components/NeuSelect";
 import { useConfirmDialog } from "./components/ConfirmDialog";
 

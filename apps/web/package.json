@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
     "@natalia/transport": "workspace:*",
     "@natalia/ui-host": "workspace:*",
     "solid-js": "1.9.12",

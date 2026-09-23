@@ -15,12 +15,12 @@ import type {
   RuntimeEvent,
   RuntimeReasoningEffort,
   SubmittedTurn,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   attachRuntimeClientWorker,
   createWorkerRuntimeClient,
 } from "../src/worker";
-import { CapabilityHost } from "@natalia/capability";
+import { CapabilityHost } from "@anthelia/capability";
 
 async function waitForWorker(
   predicate: () => boolean,

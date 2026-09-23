@@ -23,7 +23,7 @@ import { join } from "node:path";
 import type {
   LoadedProjectDocument,
   ProjectDocumentSnapshot,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import {
   parseConstitutionDocument,
   type ConstitutionDocRule,

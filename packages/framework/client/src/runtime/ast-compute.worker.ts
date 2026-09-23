@@ -3,7 +3,7 @@ import {
   indexWasmAst,
   type AstDiffResult,
   type AstIndexResult,
-} from "@natalia/diff-wasm/ast";
+} from "@anthelia/diff-wasm/ast";
 
 export type AstComputeRequest =
   | {

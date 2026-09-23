@@ -17,7 +17,7 @@
  * instead of full-size bytes the provider then reduces lossily.
  */
 
-import { perfLog } from "@natalia/runtime-services";
+import { perfLog } from "@anthelia/runtime-services";
 
 /**
  * Pinned knobs. Nothing here may read runtime state: the same input bytes with

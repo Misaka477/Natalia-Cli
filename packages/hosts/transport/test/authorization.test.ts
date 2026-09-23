@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { RUNTIME_RPC_ERROR_CODES } from "@natalia/contracts";
+import { RUNTIME_RPC_ERROR_CODES } from "@anthelia/contracts";
 import type {
   RuntimeClient,
   RuntimeEvent,
   RuntimeCapabilityReport,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { createRuntimeHttpServer } from "../src/host";
 import { RPC_WRITE_METHODS } from "../src/rpc";
 

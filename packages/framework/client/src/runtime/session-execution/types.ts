@@ -4,7 +4,7 @@
  * stays self-contained; the shape is structurally identical to
  * the runtime client options consumed by this feature.
  */
-import type { EpisodeID } from "@natalia/contracts";
+import type { EpisodeID } from "@anthelia/contracts";
 
 export type ClientSurfaceOptions = {
   episodeID?: EpisodeID;

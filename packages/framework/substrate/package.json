@@ -17,15 +17,15 @@
     "@anthelia/tools": "workspace:*",
     "@anthelia/turn-orchestration": "workspace:*",
     "@anthelia/workspace": "workspace:*",
-    "@natalia/capability": "workspace:*",
+    "@anthelia/capability": "workspace:*",
     "@natalia/collaboration": "workspace:*",
-    "@natalia/config": "workspace:*",
+    "@anthelia/config": "workspace:*",
     "@natalia/context-ledger": "workspace:*",
-    "@natalia/contracts": "workspace:*",
-    "@natalia/operation-log": "workspace:*",
-    "@natalia/plugin": "workspace:*",
-    "@natalia/runtime": "workspace:*",
-    "@natalia/runtime-services": "workspace:*",
-    "@natalia/runtime-status": "workspace:*"
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/operation-log": "workspace:*",
+    "@anthelia/plugin": "workspace:*",
+    "@anthelia/runtime": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*",
+    "@anthelia/runtime-status": "workspace:*"
   }
 }

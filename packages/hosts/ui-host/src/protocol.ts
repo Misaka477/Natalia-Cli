@@ -6,7 +6,7 @@ import type {
   RuntimeSubagentView,
   RuntimeWorkspaceContent,
   UiPanelMeta,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type * as ViewStore from "@natalia/view-store";
 import type { AppState } from "@natalia/view-store";
 import type {
@@ -113,7 +113,7 @@ export type UiProjection = {
     options?: import("@natalia/view-store").HydrateAgentMessagesOptions,
   ): boolean;
   hydrateRuntimeNotices?(
-    notices: import("@natalia/contracts").RuntimeProjectedNotice[],
+    notices: import("@anthelia/contracts").RuntimeProjectedNotice[],
   ): boolean;
   beginNaviHydration?(): void;
   beginNiaHydration?(): void;

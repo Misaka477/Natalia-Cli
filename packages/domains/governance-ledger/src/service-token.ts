@@ -1,4 +1,4 @@
-import { defineService } from "@natalia/runtime-services";
+import { defineService } from "@anthelia/runtime-services";
 import type { GovernanceLedgerController } from "@natalia/governance-ledger";
 
 /** The governance ledger controller token; lives with the mechanism. */

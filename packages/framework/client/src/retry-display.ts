@@ -1,4 +1,4 @@
-import type { ErrorKind, RuntimeEvent } from "@natalia/contracts";
+import type { ErrorKind, RuntimeEvent } from "@anthelia/contracts";
 
 export function retryDisplayLine(event: RuntimeEvent) {
   if (event.type === "step.retry") {

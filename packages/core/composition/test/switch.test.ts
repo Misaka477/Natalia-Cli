@@ -3,8 +3,8 @@ import type {
   ConfigV3,
   ConstitutionRule,
   RuntimeEvent,
-} from "@natalia/contracts";
-import { configV3Schema } from "@natalia/contracts";
+} from "@anthelia/contracts";
+import { configV3Schema } from "@anthelia/contracts";
 import {
   buildGeneration,
   switchGeneration,

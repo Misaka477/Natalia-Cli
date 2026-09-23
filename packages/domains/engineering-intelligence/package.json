@@ -13,10 +13,10 @@
     "@anthelia/session-store": "workspace:*",
     "@anthelia/substrate": "workspace:*",
     "@natalia/collab": "workspace:*",
-    "@natalia/contracts": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
     "@natalia/governance-ledger": "workspace:*",
-    "@natalia/platform": "workspace:*",
-    "@natalia/runtime-services": "workspace:*",
+    "@anthelia/platform": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*",
     "@natalia/work-ledger": "workspace:*"
   }
 }

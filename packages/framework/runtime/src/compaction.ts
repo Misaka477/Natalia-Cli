@@ -1,4 +1,4 @@
-import type { CompactionTrigger, RuntimeEvent } from "@natalia/contracts";
+import type { CompactionTrigger, RuntimeEvent } from "@anthelia/contracts";
 import { providerError, type ProviderError } from "./errors";
 import {
   ContextLedger,

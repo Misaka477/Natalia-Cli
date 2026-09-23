@@ -10,14 +10,14 @@ import type {
   RuntimeEvent,
   RuntimeSubagentView,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { SubagentRecordView } from "@anthelia/tools";
 import {
   subagentsService,
   type SubagentsService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import type { RuntimeContext } from "@anthelia/substrate";
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import { subagentHistoryInWorker } from "@anthelia/substrate";
 import { ensureSessionFullEvents } from "@anthelia/substrate";
 import {
@@ -26,7 +26,7 @@ import {
 } from "@anthelia/substrate";
 import { projectSubagentsInWorker } from "./secondary-worker-client";
 import { paginateTranscript } from "@anthelia/substrate";
-import { perfLog } from "@natalia/runtime-services";
+import { perfLog } from "@anthelia/runtime-services";
 
 export function createSubagentRuntime(
   ctx: RuntimeContext,

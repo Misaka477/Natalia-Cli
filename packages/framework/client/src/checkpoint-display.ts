@@ -1,4 +1,4 @@
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 export function checkpointDisplayLine(event: RuntimeEvent) {
   switch (event.type) {

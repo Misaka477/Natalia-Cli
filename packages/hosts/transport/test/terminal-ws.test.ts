@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type {
   RuntimeClient,
   RuntimeNativeTerminalSession,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { createRuntimeHttpServer } from "../src/host";
 import {
   matchTerminalPath,

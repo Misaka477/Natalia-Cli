@@ -10,7 +10,7 @@ import {
   requireObject,
   requireString,
 } from "@anthelia/tools";
-import type { Plugin, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import type { RuntimeTool, ToolFamily } from "@anthelia/tools";
 
 export const WEB_PLUGIN_ID = "natalia-tool-web";

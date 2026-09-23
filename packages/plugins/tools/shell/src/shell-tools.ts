@@ -6,7 +6,7 @@
  * tool plugins (notably `@natalia/plugin-tool-web`) can run commands without depending
  * on this package. It knows nothing about the runtime or the capability kernel.
  */
-import type { Plugin, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import {
   requireObject,
   requireString,
@@ -14,7 +14,7 @@ import {
   timeoutSecOr,
 } from "@anthelia/tools";
 import type { RuntimeTool, ToolFamily } from "@anthelia/tools";
-import type { ConfinementMode } from "@natalia/confinement";
+import type { ConfinementMode } from "@anthelia/confinement";
 import {
   ESCALATION_TARGETS,
   WIDER_MODES,
@@ -22,7 +22,7 @@ import {
   escalationHintMarker,
   sandboxDenialMarker,
   validateEscalationArgs,
-} from "@natalia/confinement";
+} from "@anthelia/confinement";
 
 export { runShell };
 

@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@anthelia/tools": "workspace:*",
-    "@natalia/confinement": "workspace:*",
-    "@natalia/plugin": "workspace:*"
+    "@anthelia/confinement": "workspace:*",
+    "@anthelia/plugin": "workspace:*"
   }
 }

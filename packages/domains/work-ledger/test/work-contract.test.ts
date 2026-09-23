@@ -4,7 +4,7 @@ import {
   emptySessionWorkContractFactState,
   sessionWorkContractsFrom,
 } from "@anthelia/session";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import {
   buildDetourRequested,
   buildDetourReviewed,

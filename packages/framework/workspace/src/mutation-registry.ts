@@ -16,7 +16,7 @@
  * "who changed it": it correlates paths and operations only — no file content,
  * no command text, no tool arguments or results ever enter it.
  */
-import type { WorkspaceOperation } from "@natalia/contracts";
+import type { WorkspaceOperation } from "@anthelia/contracts";
 import type { ExpectedMutation, MutationRegistry } from "./contracts";
 
 export function createMutationRegistry(): MutationRegistry {

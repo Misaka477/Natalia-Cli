@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { SkillService, SkillMetadata } from "@natalia/runtime-services";
-import type { StreamingProvider } from "@natalia/runtime";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { SkillService, SkillMetadata } from "@anthelia/runtime-services";
+import type { StreamingProvider } from "@anthelia/runtime";
 import {
   buildSelfReviewDigest,
   buildSelfReviewPrompt,

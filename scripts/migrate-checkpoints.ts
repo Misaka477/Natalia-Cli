@@ -9,7 +9,10 @@
  * `<journal>.v2-backup` next to it; nothing is deleted.
  */
 import { resolve } from "node:path";
-import { migrateAllCheckpointJournals, pruneV2Backups } from "@natalia/runtime";
+import {
+  migrateAllCheckpointJournals,
+  pruneV2Backups,
+} from "@anthelia/runtime";
 
 const workspaceRoot = resolve(process.argv[2] ?? process.cwd());
 console.log(`[migrate-checkpoints] workspace=${workspaceRoot}`);

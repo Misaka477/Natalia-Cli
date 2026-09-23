@@ -1,7 +1,7 @@
 import {
   diffWasmStructured,
   type StructuredDiffResult,
-} from "@natalia/diff-wasm";
+} from "@anthelia/diff-wasm";
 
 export type DiffWorkerRequest = {
   id: number;

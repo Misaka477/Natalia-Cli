@@ -17,20 +17,20 @@ import {
   sessionFactConstitutionOverrides,
   sessionFactConstitutionRules,
 } from "@anthelia/session";
-import { readOnlyToolMessage } from "@natalia/runtime-services";
+import { readOnlyToolMessage } from "@anthelia/runtime-services";
 import { workLedgerController as workLedgerControllerToken } from "@natalia/work-ledger";
 import { toolPolicy as toolPolicyToken } from "@natalia/tool-policy";
-import { type ToolPolicyService } from "@natalia/runtime-services";
+import { type ToolPolicyService } from "@anthelia/runtime-services";
 import {
   uniqueProviderToolCallIds,
   type ProviderToolCall,
   type ProviderMessage,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type {
   ProviderContentPart,
   ProviderReasoningBlock,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { ToolMaterialization } from "@anthelia/tools";
 import type { RuntimeContext } from "@anthelia/substrate";
 import { ensureCompleteSessionFactState } from "@anthelia/substrate";

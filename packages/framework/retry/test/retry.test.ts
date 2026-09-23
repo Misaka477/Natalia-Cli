@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RetryService } from "@natalia/runtime";
+import type { RetryService } from "@anthelia/runtime";
 import { retryService } from "../src";
 import { createRetryService } from "../src";
 

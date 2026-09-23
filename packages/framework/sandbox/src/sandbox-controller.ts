@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { SandboxBackend } from "@natalia/contracts";
+import type { SandboxBackend } from "@anthelia/contracts";
 import type { SandboxToolService } from "@anthelia/tools";
 import { SnapshotSandboxManager } from "./snapshot-sandbox";
 import { WorktreeSandboxManager } from "./worktree-sandbox";

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { createIntelligenceSurface } from "@natalia/engineering-intelligence";
 import type { RuntimeContext } from "@anthelia/substrate";
-import { createTestContext } from "@natalia/runtime-services";
+import { createTestContext } from "@anthelia/runtime-services";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { workLedgerController } from "@natalia/work-ledger";
 import type { SessionExecutionState } from "@anthelia/substrate";

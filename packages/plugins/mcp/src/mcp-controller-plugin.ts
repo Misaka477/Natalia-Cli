@@ -6,10 +6,10 @@
  * `mcp.service` operational service, so a disabled or absent plugin opens no MCP
  * connections and loads no MCP tools.
  */
-import type { Plugin, PluginManifest } from "@natalia/plugin";
-import type { MCPServerConfig, RuntimeEvent } from "@natalia/contracts";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
+import type { MCPServerConfig, RuntimeEvent } from "@anthelia/contracts";
 import { createMcpController } from "./mcp-controller";
-import { mcpService } from "@natalia/runtime-services";
+import { mcpService } from "@anthelia/runtime-services";
 
 export const MCP_PLUGIN_ID = "natalia-mcp";
 

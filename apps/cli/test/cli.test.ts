@@ -14,7 +14,7 @@ import {
   defaultConfigV3,
   migrateProjectModelConfigToGlobal,
   saveConfigFile,
-} from "@natalia/config";
+} from "@anthelia/config";
 import {
   JsonSessionStore,
   SqliteSessionStore,
@@ -148,7 +148,7 @@ test("CLI session helpers list and delete local durable sessions", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-sessions-"));
   const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
   const record = createSessionRecord(
-    "ses_cli" as import("@natalia/contracts").SessionID,
+    "ses_cli" as import("@anthelia/contracts").SessionID,
     "CLI session",
   );
   record.events.push({ type: "diagnostic", level: "info", message: "saved" });
@@ -179,7 +179,8 @@ test("CLI session helpers list and show SQLite-backed unattended episodes", asyn
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-sqlite-sessions-"));
   await mkdir(join(root, ".natalia"), { recursive: true });
   const store = new SqliteSessionStore(join(root, ".natalia", "sessions.db"));
-  const id = "ses_unattended_episode" as import("@natalia/contracts").SessionID;
+  const id =
+    "ses_unattended_episode" as import("@anthelia/contracts").SessionID;
   store.create(id, "Natalia unattended episode epi_unattended_episode");
   store.appendEvents(id, [
     {
@@ -214,7 +215,7 @@ test("CLI session metadata export/import omits event and attachment contents", a
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-session-bundle-"));
   const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
   const record = createSessionRecord(
-    "ses_bundle" as import("@natalia/contracts").SessionID,
+    "ses_bundle" as import("@anthelia/contracts").SessionID,
     "Bundle source",
   );
   record.metadata = { pinned: true };
@@ -251,7 +252,7 @@ test("CLI session delete reclaims an attachment orphaned by the removed session"
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-delete-attachment-"));
   const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
   const record = createSessionRecord(
-    "ses_attachment" as import("@natalia/contracts").SessionID,
+    "ses_attachment" as import("@anthelia/contracts").SessionID,
     "Attachment session",
   );
   record.events.push({
@@ -356,7 +357,7 @@ test("CLI session helpers expose safe metadata and local mutations", async () =>
   const root = await mkdtemp(join(tmpdir(), "natalia-cli-session-actions-"));
   const store = new JsonSessionStore(join(root, ".natalia", "sessions"));
   const record = createSessionRecord(
-    "ses_actions" as import("@natalia/contracts").SessionID,
+    "ses_actions" as import("@anthelia/contracts").SessionID,
     "Initial title",
   );
   record.events.push({

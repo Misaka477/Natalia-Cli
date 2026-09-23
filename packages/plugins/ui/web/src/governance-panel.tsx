@@ -3,8 +3,8 @@ import type {
   RuntimeClient,
   WorkGraphEdgeView,
   WorkGraphNodeView,
-} from "@natalia/contracts";
-import { isHardProtectedConstitutionRule } from "@natalia/contracts";
+} from "@anthelia/contracts";
+import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
 import type { AppState, WorkGraphState } from "@natalia/view-store";
 import { WorkGraphTree } from "./components/WorkGraphTree";
 import { WorkGraphGraph } from "./components/WorkGraphGraph";
@@ -383,7 +383,7 @@ export async function removeConstitutionRuleViaRpc(
  * Which row affordance a constitution rule gets (EI §3.8 P-1.c, per the user's
  * decision 硬保护不能删/其余可删改). Only rules backed by the hard-coded
  * runtime `SELF_PROTECTION_PATTERNS` (C-TERM-*, the shared set in
- * @natalia/contracts) are protected: the RPC refuses their edits and the panel
+ * @anthelia/contracts) are protected: the RPC refuses their edits and the panel
  * shows a "系统保护" label instead of an empty action slot. Every other rule —
  * including the release-scope runtime-policy rules C-REL-* and user-owned
  * project/package rules — keeps 编辑/停用/删除. Pure so it is unit-testable

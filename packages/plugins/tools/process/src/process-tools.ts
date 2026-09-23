@@ -24,7 +24,7 @@ import {
   detachedShellPrefix,
   shellQuote,
   startDetachedProcess,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 import {
   processFingerprint,
   readOptionalFile,
@@ -40,7 +40,7 @@ import {
   requireObject,
   requireString,
 } from "@anthelia/tools";
-import type { Plugin, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import { PROCESS_OBSERVER_SERVICE } from "@anthelia/tools";
 import type {
   RuntimeTool,

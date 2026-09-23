@@ -1,17 +1,17 @@
 import { expect, test } from "bun:test";
-import { createTestContext } from "@natalia/runtime-services";
+import { createTestContext } from "@anthelia/runtime-services";
 import { providerModelController } from "@anthelia/provider-model";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimeEvent, LocalAttachment } from "@natalia/contracts";
-import { defaultConfigV3 } from "@natalia/config";
+import type { RuntimeEvent, LocalAttachment } from "@anthelia/contracts";
+import { defaultConfigV3 } from "@anthelia/config";
 import {
   ContextLedger,
   TokenMeter,
   type ProviderStreamRequest,
   type StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 
 import {
   attachmentService as attachmentServiceToken,

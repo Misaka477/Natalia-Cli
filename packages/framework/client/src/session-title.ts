@@ -2,7 +2,7 @@ import type {
   ProviderStreamRequest,
   ProviderStreamChunk,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 
 const INPUT_LIMIT = 600;
 const OUTPUT_LIMIT = 96;

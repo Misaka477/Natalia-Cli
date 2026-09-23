@@ -9,7 +9,7 @@ import {
 import type {
   RuntimeClient,
   RuntimeModelCatalogEntry,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { type AppState } from "@natalia/view-store";
 import {
   ContextMeter,

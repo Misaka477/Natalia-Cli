@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ObjectStore } from "@natalia/object-store";
+import { ObjectStore } from "@anthelia/object-store";
 import { CheckpointStore } from "../src/checkpoint";
 import { ContextLedger } from "../src/context";
 import { SnapshotSandboxManager } from "@anthelia/sandbox";

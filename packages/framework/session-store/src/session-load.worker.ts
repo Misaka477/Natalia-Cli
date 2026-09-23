@@ -29,14 +29,14 @@ export type SessionLoadWorkerResponse =
   | {
       id: number;
       ok: true;
-      events: import("@natalia/contracts").RuntimeEvent[];
+      events: import("@anthelia/contracts").RuntimeEvent[];
       lastSeq: number;
       hasMore: boolean;
     }
   | {
       id: number;
       ok: true;
-      page: import("@natalia/contracts").RuntimeMessagePage;
+      page: import("@anthelia/contracts").RuntimeMessagePage;
     }
   | { id: number; ok: false; error: string };
 
@@ -59,7 +59,7 @@ port.on("message", async (request: SessionLoadWorkerRequest) => {
     if (request.op === "messagePage") {
       const store = messageStore(request.dbPath);
       const page = store.loadMessagePage(
-        request.sessionID as import("@natalia/contracts").SessionID,
+        request.sessionID as import("@anthelia/contracts").SessionID,
         request.options,
       );
       const response: SessionLoadWorkerResponse = {
@@ -73,7 +73,7 @@ port.on("message", async (request: SessionLoadWorkerRequest) => {
     if (request.op === "ensureMessageIndex") {
       const store = messageStore(request.dbPath);
       store.ensureMessageIndex(
-        request.sessionID as import("@natalia/contracts").SessionID,
+        request.sessionID as import("@anthelia/contracts").SessionID,
       );
       const response: SessionLoadWorkerResponse = {
         id: request.id,
@@ -101,7 +101,7 @@ port.on("message", async (request: SessionLoadWorkerRequest) => {
       }>;
       const events = rows.map(
         (row) =>
-          JSON.parse(row.event) as import("@natalia/contracts").RuntimeEvent,
+          JSON.parse(row.event) as import("@anthelia/contracts").RuntimeEvent,
       );
       const response: SessionLoadWorkerResponse = {
         id: request.id,

@@ -1,5 +1,5 @@
-import type { SessionID } from "@natalia/contracts";
-import type { ServiceOperation } from "@natalia/runtime-services";
+import type { SessionID } from "@anthelia/contracts";
+import type { ServiceOperation } from "@anthelia/runtime-services";
 
 /** Governance ledger contracts, moved from runtime-services with the token. */
 

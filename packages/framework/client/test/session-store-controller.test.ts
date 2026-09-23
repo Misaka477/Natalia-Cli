@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSessionStoreController } from "@anthelia/session-store";
 import { createAttachmentService } from "@anthelia/attachments";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 
 test("session store: create is idempotent, archive marks, export dumps", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-session-store-"));

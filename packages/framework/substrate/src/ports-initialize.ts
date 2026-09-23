@@ -1,5 +1,5 @@
 import type { AgentRegistry } from "@anthelia/agent";
-import type { ProviderConcurrencyLimiter } from "@natalia/runtime";
+import type { ProviderConcurrencyLimiter } from "@anthelia/runtime";
 import type { SessionRecord } from "@anthelia/session";
 import type { InteractiveWaiter } from "@natalia/collaboration";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
@@ -10,17 +10,17 @@ export type RuntimeInitializePorts = {
   getInteractive: () => InteractiveWaiter;
   getAttachmentReferences: () => Map<
     string,
-    import("@natalia/contracts").LocalAttachment[]
+    import("@anthelia/contracts").LocalAttachment[]
   >;
   getToolCalls: () => Map<string, number[]>;
   getActiveSkill: () =>
-    | import("@natalia/runtime-services").SkillMetadata
+    | import("@anthelia/runtime-services").SkillMetadata
     | undefined;
   getRuntimeDiagnosticsBySession: () => Map<
-    import("@natalia/contracts").SessionID,
+    import("@anthelia/contracts").SessionID,
     Array<
       Extract<
-        import("@natalia/contracts").RuntimeEvent,
+        import("@anthelia/contracts").RuntimeEvent,
         { type: "diagnostic" }
       > & {
         at: string;
@@ -29,10 +29,10 @@ export type RuntimeInitializePorts = {
   >;
   getTurnAgent: () => Map<string, string>;
   getSelectedPermissionProfile: () =>
-    | import("@natalia/contracts").PermissionProfile
+    | import("@anthelia/contracts").PermissionProfile
     | undefined;
   getAgentRegistry: () => AgentRegistry | undefined;
   getRuntimeContext: () => RuntimeContextLedger;
   getProviderConcurrencyLimiter: () => ProviderConcurrencyLimiter;
-  getRetryPolicy: () => import("@natalia/runtime").RetryRunnerOptions["policy"];
+  getRetryPolicy: () => import("@anthelia/runtime").RetryRunnerOptions["policy"];
 };

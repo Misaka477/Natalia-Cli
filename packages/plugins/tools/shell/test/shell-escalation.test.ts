@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { confinementAvailable, ESCALATION_TARGETS } from "@natalia/confinement";
+import {
+  confinementAvailable,
+  ESCALATION_TARGETS,
+} from "@anthelia/confinement";
 import { shellToolFamily } from "../src";
 
 /**

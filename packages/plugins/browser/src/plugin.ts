@@ -1,4 +1,4 @@
-import type { Plugin, PluginAPI, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginAPI, PluginManifest } from "@anthelia/plugin";
 import { browserTools } from "./tools";
 import { getBrowserBridgeLifecycle } from "./browser-bridge-lifecycle";
 

@@ -1,9 +1,9 @@
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { SkillService, SkillMetadata } from "@natalia/runtime-services";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { SkillService, SkillMetadata } from "@anthelia/runtime-services";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 
 /**
  * Discovery D4 — the side-channel self-review loop (hermes'

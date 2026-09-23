@@ -298,7 +298,7 @@ test("plugin create writes tool and UI adapter templates", async () => {
   ).toContain("api.adapters.registerUi");
   expect(
     JSON.parse(await readFile(join(uiDirectory, "package.json"), "utf8"))
-      .dependencies["@natalia/contracts"],
+      .dependencies["@anthelia/contracts"],
   ).toBeDefined();
 });
 

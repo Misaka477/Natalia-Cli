@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { CapabilityRegistry } from "@natalia/capability";
-import type { PluginWorkspaceResource } from "@natalia/plugin";
+import { CapabilityRegistry } from "@anthelia/capability";
+import type { PluginWorkspaceResource } from "@anthelia/plugin";
 import {
   resolveNamedPluginWorkspaceResource,
   resolvePluginWorkspaceResource,

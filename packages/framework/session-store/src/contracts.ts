@@ -10,7 +10,7 @@ import type {
   RuntimeReasoningEffort,
   RuntimeSessionSummary,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type {
   AdmittedSessionInput,
   SessionMetadata,
@@ -80,7 +80,7 @@ export interface SessionStoreController {
   ): RuntimeEvent[] | undefined;
   writeContextEpoch(
     id: SessionID,
-    snapshot: import("@natalia/contracts").DurableContextCheckpointRecord,
+    snapshot: import("@anthelia/contracts").DurableContextCheckpointRecord,
   ): void;
   ensureMessageIndex(id: SessionID): void;
   ensureMessageIndexAsync(id: SessionID): Promise<void>;

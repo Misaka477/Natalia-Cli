@@ -10,8 +10,8 @@ import {
   buildModelCatalog,
   modelSelectionStatus,
   resolveEffectiveModel,
-} from "@natalia/config";
-import { modelRefKey, parseModelRef, type ModelRef } from "@natalia/contracts";
+} from "@anthelia/config";
+import { modelRefKey, parseModelRef, type ModelRef } from "@anthelia/contracts";
 import {
   assertContextBudgetInvariants,
   DEFAULT_TOOL_RESULT_PRUNE_OPTIONS,
@@ -20,17 +20,17 @@ import {
   providerForModel,
   resolveReservedOutputTokens,
   type StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { deriveModelRefKey } from "../model-ref-key";
 import { modelCatalogInWorker } from "@anthelia/substrate";
 import type { AgentDefinition } from "@anthelia/agent";
-import type { ConfigV3, ModelCapabilities } from "@natalia/contracts";
-import type { ContextWindowResolver } from "@natalia/runtime";
+import type { ConfigV3, ModelCapabilities } from "@anthelia/contracts";
+import type { ContextWindowResolver } from "@anthelia/runtime";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RuntimeContextStatusConfig } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
-import { perfLog } from "@natalia/runtime-services";
+import { perfLog } from "@anthelia/runtime-services";
 
 export function defaultContextStatusConfig(): RuntimeContextStatusConfig {
   const max = Math.max(

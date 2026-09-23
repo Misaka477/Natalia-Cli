@@ -1,4 +1,4 @@
-import type { RuntimeClient } from "@natalia/contracts";
+import type { RuntimeClient } from "@anthelia/contracts";
 
 type TerminalHostClient = RuntimeClient & {
   subscribeTerminalOutput?(

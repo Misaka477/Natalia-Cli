@@ -9,18 +9,18 @@ import {
   subagentsService,
   type RuntimeServiceClient,
   type SubagentsService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
-import { statusSnapshotController } from "@natalia/runtime-status";
+import { statusSnapshotController } from "@anthelia/runtime-status";
 import { checkpointFactory } from "@anthelia/checkpoint";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
-import type { StatusSnapshotController } from "@natalia/runtime-status";
+import type { StatusSnapshotController } from "@anthelia/runtime-status";
 import type { WorkLedgerController } from "@natalia/work-ledger";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 import type {
   CheckpointController,
   CheckpointFactory,
@@ -100,7 +100,7 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
   }
 
   async function checkpointListByKind(
-    kind?: import("@natalia/contracts").CheckpointKind,
+    kind?: import("@anthelia/contracts").CheckpointKind,
     sessionID?: string,
   ) {
     const { controller } = await requireInitializedController(sessionID);
@@ -115,8 +115,8 @@ export function createCheckpointRuntime(ctx: RuntimeContext) {
   }
 
   async function roundDiff(input: {
-    from: import("@natalia/contracts").CheckpointRef;
-    to: import("@natalia/contracts").CheckpointRef;
+    from: import("@anthelia/contracts").CheckpointRef;
+    to: import("@anthelia/contracts").CheckpointRef;
     paths?: string[];
     includePatch?: boolean;
     includeContent?: boolean;

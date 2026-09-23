@@ -1,4 +1,4 @@
-import { defaultGlobalConfigPath } from "@natalia/config";
+import { defaultGlobalConfigPath } from "@anthelia/config";
 import type {
   InitializeCatalogResult,
   InitializeOptions,

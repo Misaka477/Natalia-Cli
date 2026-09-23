@@ -1,4 +1,4 @@
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import { SqliteSessionStore } from "../../src";
 
 const [path, id] = process.argv.slice(2);

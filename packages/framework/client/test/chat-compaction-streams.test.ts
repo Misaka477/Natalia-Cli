@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { createTestContext } from "@natalia/runtime-services";
+import { createTestContext } from "@anthelia/runtime-services";
 import { compactionService } from "@anthelia/compaction";
-import { ContextLedger, TokenMeter } from "@natalia/runtime";
-import type { ContextEntry, ProviderMessage } from "@natalia/runtime";
-import type { RuntimeEvent } from "@natalia/contracts";
+import { ContextLedger, TokenMeter } from "@anthelia/runtime";
+import type { ContextEntry, ProviderMessage } from "@anthelia/runtime";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { compactChatBeforeProviderStep } from "@natalia/collab";
 import {
   projectedNaviChatMessages,

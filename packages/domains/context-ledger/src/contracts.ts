@@ -1,5 +1,5 @@
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { ContextLedger } from "@natalia/runtime";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { ContextLedger } from "@anthelia/runtime";
 
 /** Context ledger contracts, moved from runtime-services with the token. */
 

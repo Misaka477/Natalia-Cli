@@ -1,19 +1,19 @@
-import type { PluginPackageConfig, RuntimeEvent } from "@natalia/contracts";
-import type { CapabilityRegistryHost } from "@natalia/capability";
+import type { PluginPackageConfig, RuntimeEvent } from "@anthelia/contracts";
+import type { CapabilityRegistryHost } from "@anthelia/capability";
 import {
   createDesiredPluginController,
   createPluginRegistry,
   resolveDesiredPluginCatalog,
   type DesiredPluginEntry,
   type PluginManifest,
-} from "@natalia/plugin";
+} from "@anthelia/plugin";
 import type { ToolRegistry } from "@anthelia/tools";
 import {
   localToolsInput,
   mcpInput,
   skillsInput,
   terminalInput,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { discoverDesiredPluginEntries } from "./plugin-discovery";
 import { registerPluginOwner } from "./plugin-owner";
 import { snapshotProjectionContributions } from "./projection-contributions";

@@ -28,9 +28,9 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import type { SandboxDiffKind } from "@natalia/contracts";
+import type { SandboxDiffKind } from "@anthelia/contracts";
 import type { SandboxChange } from "./workspace-manager";
-import { DiffCache, ObjectStore } from "@natalia/object-store";
+import { DiffCache, ObjectStore } from "@anthelia/object-store";
 import { diffTextAsync, type TextDiffResult } from "./diff";
 
 export type IndexedFile = {

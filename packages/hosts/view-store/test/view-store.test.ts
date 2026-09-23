@@ -3,7 +3,7 @@ import {
   cacheHitRate,
   type RuntimeEvent,
   type SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   applyEvent,
   boundTranscript,

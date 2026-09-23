@@ -7,7 +7,7 @@ import {
   onMount,
 } from "solid-js";
 import { marked } from "marked";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import type { AppState } from "@natalia/view-store";
 
 type PlanRow = {

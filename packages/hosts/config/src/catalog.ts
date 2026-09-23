@@ -8,7 +8,7 @@ import {
   type ModelOverride,
   type ModelRef,
   type ProviderRequestDefaults,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { evaluateModelPolicy, evaluatePolicy } from "./policy";
 
 const DEFAULT_CAPABILITIES: ModelCapabilities = {

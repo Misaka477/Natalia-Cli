@@ -20,11 +20,11 @@ export type {
   InitializeOptions,
   SubagentSupport,
 } from "./initialize-types";
-export type { RuntimeEvent, SessionID } from "@natalia/contracts";
-export type { ProviderToolCall, StreamingProvider } from "@natalia/runtime";
+export type { RuntimeEvent, SessionID } from "@anthelia/contracts";
+export type { ProviderToolCall, StreamingProvider } from "@anthelia/runtime";
 
-import type { StatusSnapshotController } from "@natalia/runtime-status";
-export type { StatusSnapshotController } from "@natalia/runtime-status";
+import type { StatusSnapshotController } from "@anthelia/runtime-status";
+export type { StatusSnapshotController } from "@anthelia/runtime-status";
 export type {
   RuntimeTool,
   SubagentRunnerContext,
@@ -33,7 +33,7 @@ export type {
 import type {
   CapabilityHost,
   CapabilityRegistryHost,
-} from "@natalia/capability";
+} from "@anthelia/capability";
 import type { AgentDefinition, AgentRegistry } from "@anthelia/agent";
 import type {
   RuntimeEvent,
@@ -41,25 +41,25 @@ import type {
   SubmittedTurn,
   ConfigV3,
   LocalAttachment,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { SessionRecord } from "@anthelia/session";
 import type {
   ServiceDirectory,
   SkillMetadata,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 export type {
   McpService,
   SandboxService,
   SubagentsService,
   TerminalController,
   ToolPolicyService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 export type { PermissionProfileCommandRules } from "@anthelia/tools";
 import type {
   ContextWindowResolver,
   ProviderConcurrencyLimiter,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type {
   TerminalCommandBuffer,
   ToolRegistry as ToolRegistryType,
@@ -71,7 +71,7 @@ import type {
   CompactionService,
   ProviderUsage,
   RetryService,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type { ProviderModelController } from "@anthelia/provider-model";
 import type { CheckpointFactory } from "@anthelia/checkpoint";
 import type { SessionStoreController } from "@anthelia/session-store";
@@ -92,7 +92,7 @@ import type {
 } from "@natalia/collaboration";
 import type { TurnController } from "@anthelia/turn-orchestration";
 
-type PermissionProfile = import("@natalia/contracts").PermissionProfile;
+type PermissionProfile = import("@anthelia/contracts").PermissionProfile;
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {
   at: string;
 };
@@ -132,7 +132,7 @@ export type RuntimeState = {
   serviceDirectory: ServiceDirectory;
   capabilityHost?: CapabilityHost;
   workspaceCapabilityView?:
-    | import("@natalia/capability").CapabilityRegistryView
+    | import("@anthelia/capability").CapabilityRegistryView
     | undefined;
   tools: ToolRegistryType;
   terminalCommandBuffer: TerminalCommandBuffer;
@@ -180,7 +180,7 @@ export type RuntimeState = {
   frameworkServices?: FrameworkServices;
   contextWindowResolver: ContextWindowResolver;
   runtimeContextConfig: RuntimeContextStatusConfig;
-  retryPolicy: import("@natalia/runtime").RetryRunnerOptions["policy"];
+  retryPolicy: import("@anthelia/runtime").RetryRunnerOptions["policy"];
   providerConcurrencyLimiter: ProviderConcurrencyLimiter;
   terminalStatusByID: Map<string, string>;
   performanceTrace: RuntimePerformanceTrace;

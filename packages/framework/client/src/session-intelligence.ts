@@ -24,7 +24,7 @@
  *    running turn, the runtime may override `recentOutput` with a bounded,
  *    redacted in-memory stream; replay falls back to the last `content.done`.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import {
   sessionIntelligenceFactsFromEvents,
   type SessionIntelligenceFacts,

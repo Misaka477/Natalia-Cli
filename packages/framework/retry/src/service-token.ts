@@ -1,5 +1,5 @@
-import type { RetryService } from "@natalia/runtime";
-import { defineService } from "@natalia/runtime-services";
+import type { RetryService } from "@anthelia/runtime";
+import { defineService } from "@anthelia/runtime-services";
 
 /**
  * The retry service token. The id is the wire name the runtime has always

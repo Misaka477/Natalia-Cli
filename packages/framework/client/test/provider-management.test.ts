@@ -2,12 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configV3Schema } from "@natalia/contracts";
+import { configV3Schema } from "@anthelia/contracts";
 import {
   buildModelCatalog,
   resolveConfig,
   updateConfigAtScope,
-} from "@natalia/config";
+} from "@anthelia/config";
 import { createSelectionSurface } from "../src/runtime/provider-selection/selection";
 import type {
   RuntimeContext,

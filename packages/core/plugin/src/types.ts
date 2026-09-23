@@ -1,4 +1,4 @@
-import type { UiAdapterMountInput } from "@natalia/contracts";
+import type { UiAdapterMountInput } from "@anthelia/contracts";
 import type { RuntimeTool } from "@anthelia/tools";
 import type { PluginManifest } from "./manifest";
 

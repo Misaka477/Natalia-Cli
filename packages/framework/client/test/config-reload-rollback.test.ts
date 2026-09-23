@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { updateConfig } from "@natalia/config";
+import { updateConfig } from "@anthelia/config";
 import { createConfigReload } from "../src/runtime/config-reload";
-import { createTestContext } from "@natalia/runtime-services";
+import { createTestContext } from "@anthelia/runtime-services";
 import { createToolPublish } from "../src/runtime/tool-publish";
 import type { RuntimeContext } from "@anthelia/substrate";
 

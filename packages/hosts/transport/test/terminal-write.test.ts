@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
-import { RUNTIME_RPC_ERROR_CODES, failureKindOfCode } from "@natalia/contracts";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import {
+  RUNTIME_RPC_ERROR_CODES,
+  failureKindOfCode,
+} from "@anthelia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import { createRuntimeHttpServer } from "../src/host";
 
 /**

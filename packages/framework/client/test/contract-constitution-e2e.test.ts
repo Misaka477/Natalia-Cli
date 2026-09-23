@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import type { ProviderStreamRequest } from "@natalia/runtime";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
+import type { ProviderStreamRequest } from "@anthelia/runtime";
 import { projectedWorkContracts } from "@anthelia/session";
 import { createRealRuntimeClient } from "../src";
 import {

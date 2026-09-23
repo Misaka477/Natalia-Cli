@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent } from "@natalia/contracts";
-import type { OperationRecord } from "@natalia/operation-log";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import type { OperationRecord } from "@anthelia/operation-log";
 import { queryDiagnostics } from "../src/runtime/diagnostics-query";
 
 /**

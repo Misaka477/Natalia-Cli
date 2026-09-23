@@ -7,19 +7,19 @@ import {
   providerForModel,
   requestHeaderKey,
   requireNativeToolCallProtocol,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type {
   ProviderFinishReason,
   ProviderMessage,
   ProviderToolCall,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import type {
   RuntimeContext,
   SessionExecutionState,
 } from "@anthelia/substrate";
 import { ensureCompleteSessionFactState } from "@anthelia/substrate";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 import {
   type ConcreteRuntimeEvent,
   naviChatHistory,
@@ -44,8 +44,8 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
       exec: SessionExecutionState;
       internal?: boolean;
       model?: { modelID?: string; variant?: string };
-      reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
-      attachments?: import("@natalia/contracts").LocalAttachment[];
+      reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
+      attachments?: import("@anthelia/contracts").LocalAttachment[];
     },
     signal: AbortSignal,
   ) {
@@ -657,7 +657,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
   function naviProvider(input: {
     exec: SessionExecutionState;
     model?: { modelID?: string; variant?: string };
-    reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+    reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
   }): StreamingProvider | undefined {
     const profile = input.exec.naviChatModelProfile?.normal;
     const model = input.model?.modelID

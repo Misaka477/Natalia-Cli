@@ -3,9 +3,9 @@ export {
   MCP_PLUGIN_ID,
   MCP_PLUGIN_MANIFEST,
 } from "./mcp-controller-plugin";
-import type { MCPServerConfig, RuntimeEvent } from "@natalia/contracts";
-import type { Plugin, PluginAPI } from "@natalia/plugin";
-import { mcpInput } from "@natalia/runtime-services";
+import type { MCPServerConfig, RuntimeEvent } from "@anthelia/contracts";
+import type { Plugin, PluginAPI } from "@anthelia/plugin";
+import { mcpInput } from "@anthelia/runtime-services";
 import { createMcpPlugin, MCP_PLUGIN_MANIFEST } from "./mcp-controller-plugin";
 
 export type McpRuntimeInput = {

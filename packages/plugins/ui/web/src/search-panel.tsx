@@ -1,5 +1,5 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
-import type { RuntimeWorkspaceMatch } from "@natalia/contracts";
+import type { RuntimeWorkspaceMatch } from "@anthelia/contracts";
 
 type SearchResult = RuntimeWorkspaceMatch & {
   path: string;

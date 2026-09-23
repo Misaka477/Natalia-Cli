@@ -1,4 +1,4 @@
-import type { StructuredDiffResult } from "@natalia/diff-wasm";
+import type { StructuredDiffResult } from "@anthelia/diff-wasm";
 import type { DiffRow } from "./types";
 
 export function diffLines(patch?: string): DiffRow[] {

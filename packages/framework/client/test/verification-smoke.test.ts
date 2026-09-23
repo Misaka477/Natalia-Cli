@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { configV3Schema, type ConstitutionRule } from "@natalia/contracts";
-import { buildGeneration } from "@natalia/composition";
+import { configV3Schema, type ConstitutionRule } from "@anthelia/contracts";
+import { buildGeneration } from "@anthelia/composition";
 import { smokeFace } from "../src/runtime/verification-faces";
 
 /**

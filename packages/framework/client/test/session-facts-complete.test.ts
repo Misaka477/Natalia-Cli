@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import {
   applyProjection,
   initProjection,
@@ -13,7 +13,7 @@ import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import { sessionStoreController } from "@anthelia/session-store";
 import type { SessionStoreController } from "@anthelia/session-store";
-import { createTestContext } from "@natalia/runtime-services";
+import { createTestContext } from "@anthelia/runtime-services";
 
 const rule: RuntimeEvent = {
   type: "constitution.rule_added",

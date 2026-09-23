@@ -2,7 +2,7 @@ import type {
   RuntimeClient,
   RuntimeEvent,
   UiAdapterMountInput,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 /**
  * The command half of a UI adapter mount input. Kept pure — it never calls

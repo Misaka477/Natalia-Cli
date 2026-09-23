@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveConfig, updateConfig } from "@natalia/config";
+import { resolveConfig, updateConfig } from "@anthelia/config";
 import {
   doctorPlugins,
   initializeOfficialPlugins,

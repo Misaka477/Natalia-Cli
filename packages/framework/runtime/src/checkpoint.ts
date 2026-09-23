@@ -1,4 +1,4 @@
-import { DiffCache, ObjectStore } from "@natalia/object-store";
+import { DiffCache, ObjectStore } from "@anthelia/object-store";
 import { createHash } from "node:crypto";
 import { ChunkStore } from "./chunk-store";
 import {
@@ -33,7 +33,7 @@ import {
   resolveWorkspaceChunksRoot,
   resolveWorkspaceObjectsRoot,
   type SnapshotIgnoreRule,
-} from "@natalia/platform";
+} from "@anthelia/platform";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type {
   CheckpointChangeKind,
@@ -42,7 +42,7 @@ import type {
   RuntimeEvent,
   RuntimeWorkspaceDiffChange,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { ContextLedger, DurableContextCheckpoint } from "./context";
 
 export type CheckpointReason =
@@ -1479,10 +1479,10 @@ async function diffTextAsync(
   additions: number;
   deletions: number;
   patch?: string;
-  structured?: import("@natalia/contracts").RuntimeStructuredDiff;
+  structured?: import("@anthelia/contracts").RuntimeStructuredDiff;
 }> {
   try {
-    const { diffWasmStructured } = await import("@natalia/diff-wasm");
+    const { diffWasmStructured } = await import("@anthelia/diff-wasm");
     const wasm = await diffWasmStructured(oldText ?? "", newText ?? "");
     const patch = wasm.hunks.length
       ? `--- a/${path}

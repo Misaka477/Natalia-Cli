@@ -1,4 +1,4 @@
-import { defineService } from "@natalia/runtime-services";
+import { defineService } from "@anthelia/runtime-services";
 import type { StatusSnapshotController } from "./status-controller";
 
 /** The runtime status snapshot controller token; lives with the mechanism. */

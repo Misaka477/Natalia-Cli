@@ -3,7 +3,7 @@ import type {
   ConstitutionRule,
   Generation,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 /**
  * The verification gate (NGM study §4.3 — the shape borrowed from

@@ -1,7 +1,7 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { modelRefKey, parseModelRef } from "@natalia/contracts";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
+import { modelRefKey, parseModelRef } from "@anthelia/contracts";
 import { nextContextInstructionsRevision } from "@anthelia/session";
-import { discoverProviderModels, updateConfigAtScope } from "@natalia/config";
+import { discoverProviderModels, updateConfigAtScope } from "@anthelia/config";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 type ClientSurfaceOptions = Pick<RealRuntimeClientOptions, "globalConfigPath">;
@@ -28,9 +28,9 @@ async function selectionExec(ctx: RuntimeContext, sessionID?: string) {
     return (
       ctx.ports
         .getExecutionBySession()
-        .get(sessionID as import("@natalia/contracts").SessionID) ??
+        .get(sessionID as import("@anthelia/contracts").SessionID) ??
       (await ctx.ports.ensureExecution(
-        sessionID as import("@natalia/contracts").SessionID,
+        sessionID as import("@anthelia/contracts").SessionID,
       ))
     );
   return ctx.ports.getActiveExec();
@@ -60,7 +60,7 @@ export function createSelectionSurface(
       const activeExec = ctx.ports.getActiveExec();
       const isActive = exec === activeExec;
       const publishSessionEvent = (
-        event: import("@natalia/contracts").RuntimeEvent,
+        event: import("@anthelia/contracts").RuntimeEvent,
       ) => {
         if (exec) ctx.ports.publishForSession(exec, event);
         else ctx.ports.publish(event);
@@ -476,7 +476,7 @@ export function createSelectionSurface(
 
 function isRuntimeReasoningEffort(
   value: unknown,
-): value is import("@natalia/contracts").RuntimeReasoningEffort {
+): value is import("@anthelia/contracts").RuntimeReasoningEffort {
   return (
     value === "minimal" ||
     value === "low" ||

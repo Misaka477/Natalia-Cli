@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { CapabilityRegistry } from "@natalia/capability";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
-import { ServiceDirectory } from "@natalia/runtime-services";
+import { CapabilityRegistry } from "@anthelia/capability";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
+import { ServiceDirectory } from "@anthelia/runtime-services";
 import {
   ContextWindowResolver,
   ProviderConcurrencyLimiter,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { createToolRegistry } from "@anthelia/tools";
 import { RuntimePerformanceTrace } from "@anthelia/substrate";
 import { createCapabilityServiceBindings } from "@anthelia/substrate";
@@ -94,4 +94,4 @@ export function createCompositionContext(
 }
 
 export type CompositionState = RuntimeState & ProductRuntimeState;
-export type PermissionProfile = import("@natalia/contracts").PermissionProfile;
+export type PermissionProfile = import("@anthelia/contracts").PermissionProfile;

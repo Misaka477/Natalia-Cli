@@ -1,4 +1,4 @@
-import type { Invariant } from "@natalia/contracts";
+import type { Invariant } from "@anthelia/contracts";
 
 /**
  * The work-ledger domain's declared data relations (Discovery D1): the

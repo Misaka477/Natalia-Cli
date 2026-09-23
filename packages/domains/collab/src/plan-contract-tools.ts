@@ -22,7 +22,7 @@ import {
 import { ensureCompleteSessionFactState } from "@anthelia/substrate";
 import { targetDriftAbsorbedByScope } from "@natalia/work-ledger";
 import { checkContractAgainstConstitution } from "./contract-constitution-check";
-import {} from "@natalia/runtime-services";
+import {} from "@anthelia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import { providerModelController } from "@anthelia/provider-model";
@@ -42,7 +42,7 @@ function resolveExec(
   const exec = sessionID
     ? ctx.ports
         .getExecutionBySession()
-        .get(sessionID as import("@natalia/contracts").SessionID)
+        .get(sessionID as import("@anthelia/contracts").SessionID)
     : undefined;
   return exec ?? ctx.ports.getActiveExec();
 }

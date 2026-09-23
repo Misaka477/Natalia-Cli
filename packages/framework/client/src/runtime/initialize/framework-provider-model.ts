@@ -11,8 +11,8 @@ import {
   createProviderModelController,
   providerModelController,
 } from "@anthelia/provider-model";
-import type { PluginCommandInvocation } from "@natalia/plugin";
-import type { SessionID } from "@natalia/contracts";
+import type { PluginCommandInvocation } from "@anthelia/plugin";
+import type { SessionID } from "@anthelia/contracts";
 import type { ProviderModelController } from "@anthelia/provider-model";
 import type { RuntimeContext } from "@anthelia/substrate";
 

@@ -2,7 +2,7 @@ import {
   describeRuntimeCapabilities,
   type RuntimeClient,
   type UiPanelRequirement,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export type UiPanelRequirementContext = {
   runtime: RuntimeClient;

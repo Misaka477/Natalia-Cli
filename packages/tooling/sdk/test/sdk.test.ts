@@ -3,10 +3,10 @@ import type {
   RuntimeClient,
   RuntimeEvent,
   SubmittedTurn,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { createRuntimeHttpServer } from "@natalia/transport/host";
 import { createNataliaSDK } from "../src";
-import { RuntimeVersionMismatchError } from "@natalia/contracts";
+import { RuntimeVersionMismatchError } from "@anthelia/contracts";
 
 test("SDK uses the TS RPC transport rather than runtime internals", async () => {
   let sink: ((event: RuntimeEvent) => void) | undefined;

@@ -5,7 +5,7 @@ import type {
   RuntimeEvent,
   RuntimeMessagePage,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { GoalView } from "@natalia/goal";
 import type { SessionRecord } from "./index";
 import { normalizeDelivery, type AdmittedSessionInput } from "./inbox";
@@ -188,14 +188,14 @@ export type StoredRecoveryProjection = {
   goal?: GoalView;
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
-  reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
+  reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
   chatModelProfile?: Record<
     string,
-    import("@natalia/contracts").ChatModelProfile
+    import("@anthelia/contracts").ChatModelProfile
   >;
   permissionMode?: "ask" | "auto" | "read_only";
   permissionProfile?: string;
-  attachments: Map<string, import("@natalia/contracts").LocalAttachment[]>;
+  attachments: Map<string, import("@anthelia/contracts").LocalAttachment[]>;
   diagnostics: Array<Extract<RuntimeEvent, { type: "diagnostic" }>>;
 };
 
@@ -814,7 +814,7 @@ export class SqliteSessionStore {
       | undefined;
     const attachments = new Map<
       string,
-      import("@natalia/contracts").LocalAttachment[]
+      import("@anthelia/contracts").LocalAttachment[]
     >();
     const attachmentRows = this.db
       .query(
@@ -826,7 +826,7 @@ export class SqliteSessionStore {
         row.turn_id,
         JSON.parse(
           row.attachments,
-        ) as import("@natalia/contracts").LocalAttachment[],
+        ) as import("@anthelia/contracts").LocalAttachment[],
       );
     const diagnostics = this.db
       .query(
@@ -878,12 +878,12 @@ export class SqliteSessionStore {
           : undefined,
       reasoningEffort:
         (selection?.reasoning_effort as
-          | import("@natalia/contracts").RuntimeReasoningEffort
+          | import("@anthelia/contracts").RuntimeReasoningEffort
           | undefined) ?? undefined,
       chatModelProfile: selection?.chat_model_profile
         ? (JSON.parse(selection.chat_model_profile) as Record<
             string,
-            import("@natalia/contracts").ChatModelProfile
+            import("@anthelia/contracts").ChatModelProfile
           >)
         : undefined,
       permissionMode:
@@ -985,7 +985,7 @@ export class SqliteSessionStore {
       id: SessionID;
     }>;
     for (const session of sessions) this.ensureRecoveryProjection(session.id);
-    const attachments: import("@natalia/contracts").LocalAttachment[] = [];
+    const attachments: import("@anthelia/contracts").LocalAttachment[] = [];
     const eventRows = this.db
       .query(`SELECT attachments FROM recovery_attachments`)
       .all() as Array<{ attachments: string }>;
@@ -993,7 +993,7 @@ export class SqliteSessionStore {
       attachments.push(
         ...(JSON.parse(
           row.attachments,
-        ) as import("@natalia/contracts").LocalAttachment[]),
+        ) as import("@anthelia/contracts").LocalAttachment[]),
       );
     const inputRows = this.db
       .query(
@@ -1004,7 +1004,7 @@ export class SqliteSessionStore {
       const input = parseOptionalJSON(row.attachments);
       if (Array.isArray(input))
         attachments.push(
-          ...(input as import("@natalia/contracts").LocalAttachment[]),
+          ...(input as import("@anthelia/contracts").LocalAttachment[]),
         );
     }
     return attachments;
@@ -1241,7 +1241,7 @@ export class SqliteSessionStore {
 
   writeContextEpoch(
     sessionID: SessionID,
-    snapshot: import("@natalia/contracts").DurableContextCheckpointRecord,
+    snapshot: import("@anthelia/contracts").DurableContextCheckpointRecord,
   ) {
     const row = this.db
       .query(
@@ -1557,7 +1557,7 @@ export class SqliteSessionStore {
       const profiles = existing?.chat_model_profile
         ? (JSON.parse(existing.chat_model_profile) as Record<
             string,
-            import("@natalia/contracts").ChatModelProfile
+            import("@anthelia/contracts").ChatModelProfile
           >)
         : {};
       const chatProfileChannel =

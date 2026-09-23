@@ -1,16 +1,16 @@
 import { gzipSync } from "node:zlib";
-import { API_VERSION, runtimeEventSessionSeq } from "@natalia/contracts";
-import type { RuntimeClient, RuntimeEvent } from "@natalia/contracts";
+import { API_VERSION, runtimeEventSessionSeq } from "@anthelia/contracts";
+import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import { credentialSessions, handleRPCMessage } from "./rpc";
 import type { RuntimeAuthorizationContext } from "./rpc";
-import type { RuntimeCapabilityGroup } from "@natalia/contracts";
+import type { RuntimeCapabilityGroup } from "@anthelia/contracts";
 import {
   matchTerminalPath,
   terminalWebsocketHandlers,
   upgradeTerminalSocket,
   type TerminalSocketData,
 } from "./terminal-ws";
-import { perfLog } from "@natalia/runtime-services";
+import { perfLog } from "@anthelia/runtime-services";
 
 export type TaskDeliveryRequest = {
   taskPath?: string;
@@ -502,7 +502,7 @@ export function createRuntimeHttpServer(
           });
           return Response.json(result);
         }
-        const { diffWasmAst } = await import("@natalia/diff-wasm/ast");
+        const { diffWasmAst } = await import("@anthelia/diff-wasm/ast");
         const result = await diffWasmAst(
           payload.oldText,
           payload.newText,

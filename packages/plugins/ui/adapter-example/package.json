@@ -9,7 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*",
-    "@natalia/plugin": "workspace:*"
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/plugin": "workspace:*"
   }
 }

@@ -9,8 +9,8 @@ import {
   RUNTIME_RPC_ERROR_CODES,
   UNIMPLEMENTED_QUERIES,
   capabilityGroupOf,
-} from "@natalia/contracts";
-import type { RuntimeClient } from "@natalia/contracts";
+} from "@anthelia/contracts";
+import type { RuntimeClient } from "@anthelia/contracts";
 import {
   RPC_INTENTIONALLY_LOCAL,
   RPC_ROUTE_MEMBERS,

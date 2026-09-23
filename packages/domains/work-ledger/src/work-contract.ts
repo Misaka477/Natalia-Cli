@@ -20,7 +20,7 @@
  *    contract is the user's promise and stays current until a new one is
  *    approved — nothing replaces it silently.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 export type WorkContractDraftedEvent = Extract<
   RuntimeEvent,

@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { createRealRuntimeClient } from "../src";
 import {
   officialPluginWorkspace,

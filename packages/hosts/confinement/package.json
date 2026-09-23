@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/confinement",
+  "name": "@anthelia/confinement",
   "version": "0.0.0-m13",
   "private": true,
   "type": "module",
@@ -12,6 +12,6 @@
     "native:build": "cargo build --release --offline"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*"
+    "@anthelia/contracts": "workspace:*"
   }
 }

@@ -7,14 +7,14 @@
  * required services and the capability kernel holds it pending until they are
  * provided. A disabled team plugin registers no team tools at all.
  */
-import type { Plugin, PluginManifest } from "@natalia/plugin";
+import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import {
   sandboxService,
   subagentsService,
   teamBehavior,
   type SandboxService,
   type SubagentsService,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { createTeamFanoutTool, createTeamReviewTool } from "./team-tools";
 import {
   sandboxedSubagentSystemPrompt,

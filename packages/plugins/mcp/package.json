@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@anthelia/tools": "workspace:*",
-    "@natalia/contracts": "workspace:*",
-    "@natalia/plugin": "workspace:*",
-    "@natalia/runtime-services": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/plugin": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*",
     "@natalia/ui-host": "workspace:*",
     "solid-js": "1.9.12"
   }

@@ -18,7 +18,7 @@
  *    would be permanent. `workGraphSummary` is the only place a summary is
  *    constructed, so that rule has one enforcement point.
  */
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 
 export type WorkGraphNodeEvent = Extract<
   RuntimeEvent,
@@ -31,7 +31,7 @@ export type WorkGraphEdgeEvent = Extract<
 
 /**
  * The WG1 node vocabulary, taken from `workGraphNodeSchema` in
- * `@natalia/contracts` rather than invented here. The event type declares
+ * `@anthelia/contracts` rather than invented here. The event type declares
  * `kind: string`, so nothing would have stopped this writer from choosing its own
  * names — and a second vocabulary is the same failure as a second id system:
  * every consumer would have to know which spelling it is looking at.

@@ -15,7 +15,7 @@ import type {
   GoalPhase,
   GoalSnapshot,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { GoalView } from "./types";
 
 const PHASES: readonly GoalPhase[] = [

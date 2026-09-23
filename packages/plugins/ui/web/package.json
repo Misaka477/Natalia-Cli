@@ -9,10 +9,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/contracts": "workspace:*",
-    "@natalia/diff-wasm": "workspace:*",
-    "@natalia/framework-diff": "workspace:*",
-    "@natalia/plugin": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/diff-wasm": "workspace:*",
+    "@anthelia/diff": "workspace:*",
+    "@anthelia/plugin": "workspace:*",
     "@natalia/ui-host": "workspace:*",
     "@natalia/ui-kit": "workspace:*",
     "@natalia/ui-model": "workspace:*",

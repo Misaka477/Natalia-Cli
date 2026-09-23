@@ -4,14 +4,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createToolRegistry } from "@anthelia/tools";
-import { CapabilityRegistry } from "@natalia/capability";
+import { CapabilityRegistry } from "@anthelia/capability";
 import { createPluginsController } from "@anthelia/substrate";
 import {
   discoverPluginManifests,
   validatePluginPath,
   type Plugin,
   type DesiredPluginEntry,
-} from "@natalia/plugin";
+} from "@anthelia/plugin";
 import type { PluginConfigSnapshot } from "@anthelia/substrate";
 import {
   installPluginSdkLinks,

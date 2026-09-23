@@ -1,4 +1,4 @@
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 
 export type PendingApproval = Extract<
   RuntimeEvent,

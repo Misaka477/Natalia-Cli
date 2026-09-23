@@ -13,7 +13,7 @@
     "@anthelia/session-store": "workspace:*",
     "@anthelia/substrate": "workspace:*",
     "@anthelia/tools": "workspace:*",
-    "@natalia/contracts": "workspace:*",
-    "@natalia/operation-log": "workspace:*"
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/operation-log": "workspace:*"
   }
 }

@@ -21,7 +21,7 @@ import {
   subagentSettledNoticeContent,
 } from "./subagent-settled-notice";
 import { activePlanForExec } from "@natalia/collab";
-import { sandboxService, subagentsService } from "@natalia/runtime-services";
+import { sandboxService, subagentsService } from "@anthelia/runtime-services";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 /**

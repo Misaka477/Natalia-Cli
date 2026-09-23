@@ -2,7 +2,7 @@ import type {
   ContributedCommand,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export type StatusProvider = { provider: string; model: string };
 export type StatusContextLedger = {

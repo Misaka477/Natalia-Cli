@@ -31,7 +31,7 @@
  * that later matches a deny rule still opens the high `constitution_conflict`
  * finding (rules can be added between propose and execution).
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { constitutionPathMatch } from "@natalia/governance-ledger";
 
 /** A deny constitution rule as projected from the journal. */

@@ -4,9 +4,9 @@ import type {
   PromptResourceMention,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
-import type { ProviderRunnerInput } from "@natalia/runtime-services";
-import type { ProviderUsage } from "@natalia/runtime";
+} from "@anthelia/contracts";
+import type { ProviderRunnerInput } from "@anthelia/runtime-services";
+import type { ProviderUsage } from "@anthelia/runtime";
 
 export type ProviderModelControllerInput = {
   initialize(): void;
@@ -66,7 +66,7 @@ export type ProviderChatTurnInput = {
    */
   detourReview?: { detourID: string; planID: string; reason: string };
   model?: { modelID?: string; variant?: string };
-  provider?: import("@natalia/runtime").StreamingProvider;
-  reasoningEffort?: import("@natalia/contracts").RuntimeReasoningEffort;
-  attachments?: import("@natalia/contracts").LocalAttachment[];
+  provider?: import("@anthelia/runtime").StreamingProvider;
+  reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
+  attachments?: import("@anthelia/contracts").LocalAttachment[];
 };

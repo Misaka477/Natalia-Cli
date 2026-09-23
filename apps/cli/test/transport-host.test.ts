@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RuntimeClient } from "@natalia/contracts";
+import type { RuntimeClient } from "@anthelia/contracts";
 import { createHttpTransportHost } from "../src/transport-host";
 import { parseServePort } from "../src/runtime-commands";
 

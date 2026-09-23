@@ -23,8 +23,8 @@ import {
   loadNataliaIgnore,
   NATALIA_IGNORE_FILE,
   type SnapshotIgnoreRule,
-} from "@natalia/platform";
-import type { SandboxDiffKind } from "@natalia/contracts";
+} from "@anthelia/platform";
+import type { SandboxDiffKind } from "@anthelia/contracts";
 import {
   WorkspaceSandboxManager,
   type SandboxChange,

@@ -813,7 +813,7 @@ test("UI adapters receive host runtime ports and follow materializer lifecycle",
     }),
   });
   const input = {
-    runtime: {} as import("@natalia/contracts").RuntimeClient,
+    runtime: {} as import("@anthelia/contracts").RuntimeClient,
     events: { subscribe: () => () => undefined },
     commands: {
       list: async () => [],

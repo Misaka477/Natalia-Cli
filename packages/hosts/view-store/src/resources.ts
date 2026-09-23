@@ -6,7 +6,7 @@
  * bounded history. It never decides anything about them: starting, stopping,
  * merging and approving all stay with the runtime.
  */
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import {
   appendBounded,
   checkpointLimit,

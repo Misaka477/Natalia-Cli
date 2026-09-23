@@ -1,5 +1,5 @@
-import type { RuntimeStructuredDiff } from "@natalia/contracts";
-import type { StructuredDiffResult } from "@natalia/diff-wasm";
+import type { RuntimeStructuredDiff } from "@anthelia/contracts";
+import type { StructuredDiffResult } from "@anthelia/diff-wasm";
 
 export type DiffItem = {
   id: string;

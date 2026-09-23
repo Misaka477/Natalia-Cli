@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { ObjectStore } from "@natalia/object-store";
+import { ObjectStore } from "@anthelia/object-store";
 import {
   resolveWorkspaceObjectsRoot,
   createWorkspaceFile,
@@ -13,14 +13,14 @@ import {
   renameWorkspaceFile,
   searchWorkspaceFiles,
   writeWorkspaceFile,
-} from "@natalia/platform";
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+} from "@anthelia/platform";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import {
   RuntimeRefusal,
   type RuntimeAstNode,
   type RuntimeGitRef,
   type RuntimeWorkspaceDiffChange,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import { resolveNamedPluginWorkspaceResource } from "./plugin-workspace-resources";
 
@@ -97,7 +97,7 @@ async function astDiffWithWorkerFallback(
     const { astDiffInWorker } = await import("./runtime-ast-client");
     return await astDiffInWorker(oldText, newText, language);
   } catch {
-    const { diffWasmAst } = await import("@natalia/diff-wasm/ast");
+    const { diffWasmAst } = await import("@anthelia/diff-wasm/ast");
     return diffWasmAst(oldText, newText, language);
   }
 }
@@ -107,7 +107,7 @@ async function astIndexWithWorkerFallback(source: string, language: string) {
     const { astIndexInWorker } = await import("./runtime-ast-client");
     return await astIndexInWorker(source, language);
   } catch {
-    const { indexWasmAst } = await import("@natalia/diff-wasm/ast");
+    const { indexWasmAst } = await import("@anthelia/diff-wasm/ast");
     return indexWasmAst(source, language);
   }
 }
@@ -287,7 +287,7 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
       };
     }) {
       await ctx.ports.getReady();
-      const { diffWasmAst } = await import("@natalia/diff-wasm/ast");
+      const { diffWasmAst } = await import("@anthelia/diff-wasm/ast");
       const files = input.files.slice(0, 50);
       const results: Array<{
         path?: string;
@@ -546,7 +546,7 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
     }) {
       await ctx.ports.getReady();
       const { SUPPORTED_AST_LANGUAGES } = await import(
-        "@natalia/diff-wasm/ast"
+        "@anthelia/diff-wasm/ast"
       );
       const supported = new Set<string>(SUPPORTED_AST_LANGUAGES);
       const plan = await this.astRefactorPlan!({
@@ -898,7 +898,7 @@ async function structuredForPatch(patch: string): Promise<{
 }> {
   try {
     const { parsePatchInWorker } = await import(
-      "@natalia/framework-diff/runtime/diff-parse-client"
+      "@anthelia/diff/runtime/diff-parse-client"
     );
     const result = await parsePatchInWorker(patch);
     return result;
@@ -1018,7 +1018,7 @@ export async function collectWorkspaceGitDiff(
   const changes = await (async () => {
     try {
       const { diffChangesInWorker } = await import(
-        "@natalia/framework-diff/runtime/diff-parse-client"
+        "@anthelia/diff/runtime/diff-parse-client"
       );
       return (await diffChangesInWorker(
         rawDiff.stdout,

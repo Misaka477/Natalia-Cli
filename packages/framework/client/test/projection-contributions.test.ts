@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { CapabilityRegistry } from "@natalia/capability";
+import { CapabilityRegistry } from "@anthelia/capability";
 import { snapshotProjectionContributions } from "@anthelia/substrate";
 
 test("projection contributions keep title and placement and drop unknown keys", () => {

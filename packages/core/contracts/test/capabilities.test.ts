@@ -102,7 +102,7 @@ function completeStub() {
   ];
   const client: Record<string, unknown> = {};
   for (const member of members) client[member] = () => undefined;
-  return client as unknown as import("@natalia/contracts").RuntimeClient;
+  return client as unknown as import("@anthelia/contracts").RuntimeClient;
 }
 
 test("the stable surface binds the required members to the API version", () => {

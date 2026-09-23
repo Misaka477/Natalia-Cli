@@ -7,7 +7,7 @@ import {
   onMount,
   onCleanup,
 } from "solid-js";
-import type { StructuredDiffResult } from "@natalia/diff-wasm";
+import type { StructuredDiffResult } from "@anthelia/diff-wasm";
 import { highlightLine, type SyntaxPart } from "./syntax";
 import { highlightInWorker } from "./syntax-client";
 

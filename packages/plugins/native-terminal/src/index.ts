@@ -43,9 +43,9 @@ export {
   TERMINAL_PLUGIN_ID,
   TERMINAL_PLUGIN_MANIFEST,
 } from "./terminal-plugin";
-import type { Plugin, PluginAPI } from "@natalia/plugin";
-import { terminalInput } from "@natalia/runtime-services";
-import type { TerminalControllerInput } from "@natalia/runtime-services";
+import type { Plugin, PluginAPI } from "@anthelia/plugin";
+import { terminalInput } from "@anthelia/runtime-services";
+import type { TerminalControllerInput } from "@anthelia/runtime-services";
 import {
   createTerminalPlugin,
   TERMINAL_PLUGIN_MANIFEST,

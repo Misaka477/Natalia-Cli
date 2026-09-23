@@ -4,8 +4,8 @@ import type {
   QuestionResponse,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
-import type { ProviderToolCall } from "@natalia/runtime";
+} from "@anthelia/contracts";
+import type { ProviderToolCall } from "@anthelia/runtime";
 import type { RuntimeTool } from "@anthelia/tools";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
@@ -54,19 +54,19 @@ export interface InteractiveWaiter {
     turnID: string;
     kind: string;
     title: string;
-    payload: import("@natalia/contracts").JsonValue;
-    responseSchema?: import("@natalia/contracts").JsonSchema;
+    payload: import("@anthelia/contracts").JsonValue;
+    responseSchema?: import("@anthelia/contracts").JsonSchema;
     expiresAt?: string;
     priority?: number;
     validate?(
-      response: import("@natalia/contracts").JsonValue,
+      response: import("@anthelia/contracts").JsonValue,
     ): string[] | void;
   }): Promise<{
-    response: import("@natalia/contracts").JsonValue;
+    response: import("@anthelia/contracts").JsonValue;
     rejected?: boolean;
   }>;
   respondInteractive(
-    response: import("@natalia/contracts").InteractiveResponse,
+    response: import("@anthelia/contracts").InteractiveResponse,
   ): InteractiveResponseOutcome;
   revokeTerminalApprovalScope(terminalID: string): {
     id: string;
@@ -84,7 +84,7 @@ export interface InteractiveWaiter {
     sessionID?: SessionID;
     permissionMode?: "ask" | "auto" | "read_only";
     signal?: AbortSignal;
-    permissionFamily?: import("@natalia/contracts").PermissionFamily;
+    permissionFamily?: import("@anthelia/contracts").PermissionFamily;
     /**
      * EI §3.7.1/3.7.2: a rule-class/user-safety change is confirmed per item —
      * the gate is never auto-granted in `auto` mode and never session-approved.

@@ -1,6 +1,6 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
-import { mcpService } from "@natalia/runtime-services";
-import { updateConfigAtScope } from "@natalia/config";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
+import { mcpService } from "@anthelia/runtime-services";
+import { updateConfigAtScope } from "@anthelia/config";
 import type { RuntimeContext } from "@anthelia/substrate";
 type Surface = Pick<
   RuntimeServiceClient,

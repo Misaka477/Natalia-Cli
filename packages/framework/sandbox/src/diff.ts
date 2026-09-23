@@ -8,7 +8,7 @@ export type TextDiffResult = {
   additions: number;
   deletions: number;
   patch?: string;
-  structured?: import("@natalia/contracts").RuntimeStructuredDiff;
+  structured?: import("@anthelia/contracts").RuntimeStructuredDiff;
 };
 
 type DiffLineOp =
@@ -95,7 +95,7 @@ function renderUnifiedPatch(path: string, ops: DiffLineOp[]): string {
 
 export function unifiedPatchToStructured(
   patch: string,
-): import("@natalia/contracts").RuntimeStructuredDiff {
+): import("@anthelia/contracts").RuntimeStructuredDiff {
   const hunks: Array<{
     oldStart: number;
     oldCount: number;
@@ -255,7 +255,7 @@ export async function diffTextAsync(
   newText: string | undefined,
 ): Promise<TextDiffResult> {
   try {
-    const { diffWasmStructured } = await import("@natalia/diff-wasm");
+    const { diffWasmStructured } = await import("@anthelia/diff-wasm");
     const wasm = await diffWasmStructured(oldText ?? "", newText ?? "");
     const patch = wasm.hunks.length
       ? `--- a/${path}\n+++ b/${path}\n${renderStructuredPatch(wasm)}`

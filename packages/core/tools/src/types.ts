@@ -10,13 +10,16 @@
  * implementation so a caller can reason about what a tool is allowed to do without
  * holding the code that does it.
  */
-import type { ConfinementMode, EscalationApprover } from "@natalia/confinement";
+import type {
+  ConfinementMode,
+  EscalationApprover,
+} from "@anthelia/confinement";
 import type {
   ExecutionTarget,
   RuntimeEvent,
   SandboxDiffKind,
   SandboxStatus,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export type SubagentStatusView =
   | "idle"
@@ -268,7 +271,7 @@ export type SandboxChangeView = {
   after?: string;
   additions?: number;
   deletions?: number;
-  structured?: import("@natalia/contracts").RuntimeStructuredDiff;
+  structured?: import("@anthelia/contracts").RuntimeStructuredDiff;
 };
 
 export type SandboxManifestView = {

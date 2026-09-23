@@ -1,4 +1,4 @@
-import type { ContextBudget } from "@natalia/runtime";
+import type { ContextBudget } from "@anthelia/runtime";
 
 /**
  * The resolved context budget carried by the runtime and each exec.

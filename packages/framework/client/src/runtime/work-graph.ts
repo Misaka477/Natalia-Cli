@@ -1,4 +1,4 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import {
   projectedWorkGraphEdges,
   projectedWorkGraphNodes,
@@ -16,7 +16,7 @@ type WorkGraphRuntime = Pick<
 
 async function graphProjectionWithFallback(
   name: "workGraphNodes" | "workGraphEdges",
-  events: import("@natalia/contracts").RuntimeEvent[],
+  events: import("@anthelia/contracts").RuntimeEvent[],
 ) {
   try {
     const { runSessionProjectionInWorker } = await import(

@@ -6,23 +6,23 @@
  * closures to that exec while a background turn of the previous session keeps
  * running. Reads and writes host state through `RuntimeContext` ports.
  */
-import { contextStatusEvent, type TokenMeterMessage } from "@natalia/runtime";
+import { contextStatusEvent, type TokenMeterMessage } from "@anthelia/runtime";
 import { restoreProjection } from "@anthelia/session";
-import { RuntimeRefusal } from "@natalia/contracts";
+import { RuntimeRefusal } from "@anthelia/contracts";
 import {
   terminalController,
   type TerminalController,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
-import { statusSnapshotController } from "@natalia/runtime-status";
-import type { SessionID } from "@natalia/contracts";
+import { statusSnapshotController } from "@anthelia/runtime-status";
+import type { SessionID } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import {
   naviChatProviderMessagesFromHistory,
   niaChatProviderMessagesFromHistory,
 } from "@natalia/collab";
-import { perfLog } from "@natalia/runtime-services";
-import type { StatusSnapshotController } from "@natalia/runtime-status";
+import { perfLog } from "@anthelia/runtime-services";
+import type { StatusSnapshotController } from "@anthelia/runtime-status";
 import type { SessionStoreController } from "@anthelia/session-store";
 
 export function createSessionAttach(ctx: RuntimeContext) {

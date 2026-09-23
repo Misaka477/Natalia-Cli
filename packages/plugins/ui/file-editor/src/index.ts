@@ -1,4 +1,4 @@
-import { definePlugin, type PluginManifest } from "@natalia/plugin";
+import { definePlugin, type PluginManifest } from "@anthelia/plugin";
 
 export const FILE_EDITOR_PLUGIN_ID = "natalia-file-editor";
 

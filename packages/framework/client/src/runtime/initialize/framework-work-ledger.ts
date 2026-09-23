@@ -9,7 +9,7 @@
  */
 import { createWorkLedgerController } from "@natalia/work-ledger";
 import { workLedgerController } from "@natalia/work-ledger";
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 

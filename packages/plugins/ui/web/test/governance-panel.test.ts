@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { RuntimeClient } from "@natalia/contracts";
+import type { RuntimeClient } from "@anthelia/contracts";
 import {
   acknowledgeDriftFindingViaRpc,
   collapseList,

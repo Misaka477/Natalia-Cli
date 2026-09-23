@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@natalia/runtime",
+  "name": "@anthelia/runtime",
   "version": "0.0.0-m13",
   "private": true,
   "type": "module",
@@ -12,11 +12,11 @@
     "@anthelia/agent": "workspace:*",
     "@anthelia/session": "workspace:*",
     "@anthelia/tools": "workspace:*",
-    "@natalia/config": "workspace:*",
-    "@natalia/contracts": "workspace:*",
-    "@natalia/diff-wasm": "workspace:*",
-    "@natalia/object-store": "workspace:*",
-    "@natalia/platform": "workspace:*"
+    "@anthelia/config": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/diff-wasm": "workspace:*",
+    "@anthelia/object-store": "workspace:*",
+    "@anthelia/platform": "workspace:*"
   },
   "devDependencies": {
     "@anthelia/session": "workspace:*",

@@ -39,7 +39,7 @@ import type {
   RuntimeEvent,
   RuntimeProjectedMessage,
   RuntimeSubagentView,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { applyActivityEvent } from "./activity";
 import {
   applyNataliaCollabEvent,
@@ -398,7 +398,7 @@ function chatRowToBlock(row: ChatMessageRow): {
   pendingText: string;
   reasoningVisible?: boolean;
   status?: string;
-  attachments?: import("@natalia/contracts").LocalAttachment[];
+  attachments?: import("@anthelia/contracts").LocalAttachment[];
   tool?: ToolBlock;
 } {
   if (row.kind === "thinking") {
@@ -496,7 +496,7 @@ export function hydrateNiaMessages(
  */
 export function hydrateRuntimeNotices(
   state: AppState,
-  notices: import("@natalia/contracts").RuntimeProjectedNotice[],
+  notices: import("@anthelia/contracts").RuntimeProjectedNotice[],
 ): boolean {
   let changed = false;
   for (const notice of notices) {

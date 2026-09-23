@@ -1,5 +1,5 @@
-import type { ConfigV3, ModelRef } from "@natalia/contracts";
-import { modelRefKey, parseModelRef } from "@natalia/contracts";
+import type { ConfigV3, ModelRef } from "@anthelia/contracts";
+import { modelRefKey, parseModelRef } from "@anthelia/contracts";
 import { resolveEffectiveModel } from "./catalog";
 
 export type SetupContextWindowResolution = {

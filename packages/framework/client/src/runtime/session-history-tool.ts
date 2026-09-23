@@ -1,6 +1,6 @@
 import type { RuntimeTool } from "@anthelia/tools";
 import { sessionStoreController } from "@anthelia/session-store";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionStoreController } from "@anthelia/session-store";
 

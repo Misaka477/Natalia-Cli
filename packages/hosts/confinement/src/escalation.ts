@@ -1,4 +1,4 @@
-import type { ConfinementMode } from "@natalia/contracts";
+import type { ConfinementMode } from "@anthelia/contracts";
 
 /**
  * The sandbox escalation vocabulary and choreography.

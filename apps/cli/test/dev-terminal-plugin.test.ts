@@ -13,12 +13,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRealRuntimeClient } from "@natalia/client";
-import { CapabilityRegistry } from "@natalia/capability";
+import { CapabilityRegistry } from "@anthelia/capability";
 import {
   initializeOfficialPlugins,
   type PackageManagerRun,
 } from "@natalia/installer";
-import { terminalController } from "@natalia/runtime-services";
+import { terminalController } from "@anthelia/runtime-services";
 import { initializeOfficialPluginsForHostCommand } from "../src/official-plugins";
 
 const pluginDistributionRoot = resolve(

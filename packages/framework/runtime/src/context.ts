@@ -5,7 +5,7 @@ import type {
   ProviderContentPart,
   ProviderReasoningBlock,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 
 export type ContextRole =
   | "system"

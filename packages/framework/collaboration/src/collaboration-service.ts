@@ -3,7 +3,7 @@ import type {
   CollaborationParticipant,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import {
   projectedCollabMessages,
   type ProjectedCollabMessage,

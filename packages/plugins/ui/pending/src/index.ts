@@ -1,4 +1,4 @@
-import { definePlugin, type PluginManifest } from "@natalia/plugin";
+import { definePlugin, type PluginManifest } from "@anthelia/plugin";
 
 export const PENDING_INBOX_PLUGIN_ID = "natalia-pending-inbox";
 

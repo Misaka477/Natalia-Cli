@@ -8,8 +8,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@natalia/config": "workspace:*",
-    "@natalia/contracts": "workspace:*",
-    "@natalia/plugin": "workspace:*"
+    "@anthelia/config": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/plugin": "workspace:*"
   }
 }

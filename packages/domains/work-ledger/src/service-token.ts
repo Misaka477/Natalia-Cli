@@ -1,4 +1,4 @@
-import { defineService } from "@natalia/runtime-services";
+import { defineService } from "@anthelia/runtime-services";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 
 /** The work ledger controller token; lives with the mechanism. */

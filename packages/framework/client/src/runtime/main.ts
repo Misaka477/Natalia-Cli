@@ -1,9 +1,9 @@
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import {
   terminalApprovalScope,
   terminalInputRisk,
-} from "@natalia/runtime-services";
-import { startMemoryTraceSampler } from "@natalia/runtime";
+} from "@anthelia/runtime-services";
+import { startMemoryTraceSampler } from "@anthelia/runtime";
 import { createClientSurface } from "./client-surface";
 import { createCompositionContext } from "./composition/state";
 import { wireFoundation } from "./composition/foundation";

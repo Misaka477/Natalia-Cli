@@ -9,7 +9,7 @@ import {
   rm,
 } from "node:fs/promises";
 import { dirname } from "node:path";
-import { configV3Schema, type ConfigV3 } from "@natalia/contracts";
+import { configV3Schema, type ConfigV3 } from "@anthelia/contracts";
 import {
   migrateConfig,
   migrationSummaryText,

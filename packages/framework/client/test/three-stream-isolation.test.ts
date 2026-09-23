@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
-} from "@natalia/runtime";
-import type { RuntimeEvent } from "@natalia/contracts";
+} from "@anthelia/runtime";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createRealRuntimeClient } from "../src";

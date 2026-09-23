@@ -1,4 +1,4 @@
-import type { RuntimeEvent } from "@natalia/contracts";
+import type { RuntimeEvent } from "@anthelia/contracts";
 
 /**
  * Discovery D5 / G-b — the internal-evaluation scorer: score a run from

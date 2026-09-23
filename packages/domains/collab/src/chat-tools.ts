@@ -19,7 +19,7 @@ import {
   type RuntimeTool,
 } from "@anthelia/tools";
 import { niaShellPolicyDenial } from "./nia-shell-policy";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import { governanceLedgerController } from "@natalia/governance-ledger";
 import {
   COLLABORATION_SERVICE,
@@ -31,7 +31,7 @@ import type { SessionExecutionState } from "@anthelia/substrate";
 import { ensureCompleteSessionFactState } from "@anthelia/substrate";
 import { captureRepositoryEvidenceFields } from "@anthelia/substrate";
 import { createDetourReviewTool } from "./plan-contract-tools";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 const CHAT_READ_ONLY_TOOLS = new Set([
   "read_file",
@@ -898,7 +898,9 @@ export function createChatTools(ctx: RuntimeContext) {
           let evidenceID: string | undefined;
           try {
             const sessionID = (context as { sessionID?: string } | undefined)
-              ?.sessionID as import("@natalia/contracts").SessionID | undefined;
+              ?.sessionID as
+              | import("@anthelia/contracts").SessionID
+              | undefined;
             const owner = sessionID
               ? ctx.ports.getExecutionBySession().get(sessionID)
               : exec;
@@ -917,7 +919,7 @@ export function createChatTools(ctx: RuntimeContext) {
                   context: owner.context,
                   step: owner.context.journalStatus().messageCount,
                   sessionID: owner.session
-                    .id as import("@natalia/contracts").SessionID,
+                    .id as import("@anthelia/contracts").SessionID,
                   turnID: (context as { turnID?: string } | undefined)?.turnID,
                 });
               roundCheckpointID = record?.id;
@@ -936,7 +938,7 @@ export function createChatTools(ctx: RuntimeContext) {
                   repositoryVersion?: string;
                   commit?: string;
                   manifestRef?: string;
-                }) => import("@natalia/contracts").RuntimeEvent;
+                }) => import("@anthelia/contracts").RuntimeEvent;
               }>(governanceLedgerController.id);
               if (governanceLedger) {
                 const now = new Date().toISOString();
@@ -1033,7 +1035,7 @@ export function createChatTools(ctx: RuntimeContext) {
         };
         if (!args.target) return "diff_workspace requires target";
         const sessionID = (context as { sessionID?: string } | undefined)
-          ?.sessionID as import("@natalia/contracts").SessionID | undefined;
+          ?.sessionID as import("@anthelia/contracts").SessionID | undefined;
         const checkpoint = ctx.ports.getCheckpointRuntime();
         const paths = Array.isArray(args.paths)
           ? args.paths.filter(
@@ -1073,8 +1075,8 @@ export function createChatTools(ctx: RuntimeContext) {
           if (!checkpoint.roundDiff)
             return "diff_workspace: round diff unavailable";
           const changes = await checkpoint.roundDiff({
-            from: from as import("@natalia/contracts").CheckpointRef,
-            to: to as import("@natalia/contracts").CheckpointRef,
+            from: from as import("@anthelia/contracts").CheckpointRef,
+            to: to as import("@anthelia/contracts").CheckpointRef,
             paths,
             includePatch: args.format !== "summary" && args.format !== "files",
             includeContent: false,

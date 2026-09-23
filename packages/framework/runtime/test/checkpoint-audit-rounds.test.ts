@@ -9,7 +9,7 @@ async function makeStore() {
   const ledger = new ContextLedger();
   ledger.add({ id: "user", role: "user", content: "start" });
   const store = await initializeDefaultCheckpointStore({
-    sessionID: "ses_audit_rounds" as import("@natalia/contracts").SessionID,
+    sessionID: "ses_audit_rounds" as import("@anthelia/contracts").SessionID,
     workspaceRoot: root,
     context: ledger,
   });
@@ -26,7 +26,7 @@ test("audit round checkpoints are listed and diffable across rounds", async () =
     verdict: "gaps",
     context: ledger,
     step: ledger.journalStatus().messageCount,
-    sessionID: "ses_audit_rounds" as import("@natalia/contracts").SessionID,
+    sessionID: "ses_audit_rounds" as import("@anthelia/contracts").SessionID,
   });
   await writeFile(join(root, "src.txt"), "one\ntwo\n");
   ledger.add({ id: "a2", role: "assistant", content: "write two" });
@@ -36,7 +36,7 @@ test("audit round checkpoints are listed and diffable across rounds", async () =
     verdict: "gaps",
     context: ledger,
     step: ledger.journalStatus().messageCount,
-    sessionID: "ses_audit_rounds" as import("@natalia/contracts").SessionID,
+    sessionID: "ses_audit_rounds" as import("@anthelia/contracts").SessionID,
   });
   await writeFile(join(root, "src.txt"), "one\ntwo\nthree\n");
   const current = await store.diffCheckpoints(
@@ -77,7 +77,7 @@ test("duplicate audit round is rejected", async () => {
     verdict: "passed" as const,
     context: ledger,
     step: 1,
-    sessionID: "ses_audit_rounds" as import("@natalia/contracts").SessionID,
+    sessionID: "ses_audit_rounds" as import("@anthelia/contracts").SessionID,
   };
   await store.createAuditRoundCheckpoint(input);
   await expect(store.createAuditRoundCheckpoint(input)).rejects.toThrow(

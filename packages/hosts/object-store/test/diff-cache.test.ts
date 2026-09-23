@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimeStructuredDiff } from "@natalia/contracts";
+import type { RuntimeStructuredDiff } from "@anthelia/contracts";
 import { DiffCache, ObjectStore } from "../src";
 
 const structured: RuntimeStructuredDiff = {

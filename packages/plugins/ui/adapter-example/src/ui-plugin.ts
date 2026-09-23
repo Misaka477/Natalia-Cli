@@ -1,5 +1,5 @@
-import type { RuntimeEvent } from "@natalia/contracts";
-import { definePlugin } from "@natalia/plugin";
+import type { RuntimeEvent } from "@anthelia/contracts";
+import { definePlugin } from "@anthelia/plugin";
 
 export const EXAMPLE_UI_ADAPTER = "ui.example";
 

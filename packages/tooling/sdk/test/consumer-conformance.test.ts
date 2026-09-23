@@ -3,14 +3,14 @@ import { cp, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
-import { failureKind } from "@natalia/contracts";
+import { failureKind } from "@anthelia/contracts";
 import type {
   RuntimeClient,
   RuntimeDiagnostic,
   RuntimeEvent,
   RuntimeRPCError,
   SubmittedTurn,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import { createRealRuntimeClient } from "@natalia/client";
 import { callRuntimeRPC } from "@natalia/transport";
 import { createRuntimeHttpServer } from "@natalia/transport/host";
@@ -24,12 +24,12 @@ import { createNataliaSDK } from "../src";
  * real runtime over the real HTTP transport using **only** the packages §2.1
  * allows a consumer to depend on —
  *
- *   @natalia/contracts   types
+ *   @anthelia/contracts   types
  *   @natalia/sdk         talking to a runtime
  *   @natalia/view-store  turning events into displayable state
  *   @natalia/client      public exports only (to host the runtime under test)
  *
- * It deliberately imports nothing from `@natalia/runtime`, `@anthelia/session`,
+ * It deliberately imports nothing from `@anthelia/runtime`, `@anthelia/session`,
  * `@anthelia/tools`, any package internal, or any UI framework. `guard:imports`
  * enforces most of that statically; this proves the surface is actually
  * *sufficient*, which no static rule can show.
@@ -941,7 +941,7 @@ test("an external integration configures the runtime the way the TUI does", asyn
 test("an external integration manages sessions, policy, agents and plugins over RPC", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-conformance-management-"));
   // The demo plugin lives under a /tmp workspace; bun resolves bare
-  // specifiers by walking up from the importing file, so `@natalia/plugin`
+  // specifiers by walking up from the importing file, so `@anthelia/plugin`
   // needs the same node_modules links the plugin test helpers install
   // (plugin-test-helpers.ts), with a copy fallback for Windows hosts
   // without Developer Mode. Without them this scenario is at the mercy of

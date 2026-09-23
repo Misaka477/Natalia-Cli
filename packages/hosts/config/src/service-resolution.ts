@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { configV3Schema, parseModelRef } from "@natalia/contracts";
-import { globalConfigHome } from "@natalia/platform";
+import { configV3Schema, parseModelRef } from "@anthelia/contracts";
+import { globalConfigHome } from "@anthelia/platform";
 import { parseConfigText } from "./file";
 import { mergeConfig } from "./service-merge";
 import type {

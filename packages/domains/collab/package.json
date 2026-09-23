@@ -19,14 +19,14 @@
     "@anthelia/workspace": "workspace:*",
     "@natalia/agent-prompts": "workspace:*",
     "@natalia/collaboration": "workspace:*",
-    "@natalia/config": "workspace:*",
+    "@anthelia/config": "workspace:*",
     "@natalia/context-ledger": "workspace:*",
-    "@natalia/contracts": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
     "@natalia/goal": "workspace:*",
     "@natalia/governance-ledger": "workspace:*",
-    "@natalia/operation-log": "workspace:*",
-    "@natalia/runtime": "workspace:*",
-    "@natalia/runtime-services": "workspace:*",
+    "@anthelia/operation-log": "workspace:*",
+    "@anthelia/runtime": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*",
     "@natalia/work-ledger": "workspace:*"
   }
 }

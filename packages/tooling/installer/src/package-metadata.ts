@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { PluginPackageSource } from "@natalia/contracts";
+import type { PluginPackageSource } from "@anthelia/contracts";
 import {
   discoverPluginManifests,
   pluginManifestSchema,
   type PluginInstallationMetadata,
-} from "@natalia/plugin";
+} from "@anthelia/plugin";
 import {
   closureDependencies,
   packageDirectory,

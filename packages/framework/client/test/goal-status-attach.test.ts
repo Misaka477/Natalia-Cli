@@ -3,11 +3,11 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAttachmentService } from "@anthelia/attachments";
-import type { RuntimeEvent, SessionID } from "@natalia/contracts";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import type {
   ProviderStreamRequest,
   StreamingProvider,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 import { createSessionStoreController } from "@anthelia/session-store";
 import { projectSessionMessages } from "@anthelia/session";
 import { createRealRuntimeClient } from "../src/runtime/main";

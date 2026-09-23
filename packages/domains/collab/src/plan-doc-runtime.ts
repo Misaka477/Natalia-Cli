@@ -13,8 +13,8 @@
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { RuntimeInvalidParams } from "@natalia/contracts";
-import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import { RuntimeInvalidParams } from "@anthelia/contracts";
+import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
 import type {
@@ -23,7 +23,7 @@ import type {
 } from "@anthelia/substrate";
 import type { SessionStoreController } from "@anthelia/session-store";
 import type { WorkLedgerController } from "@natalia/work-ledger";
-import { logOf } from "@natalia/operation-log";
+import { logOf } from "@anthelia/operation-log";
 
 // The port contract moved to @anthelia/substrate (P3): one definition,
 // at the port. Callers importing PlanDocRuntime/PlanDocRecord from here
@@ -144,12 +144,12 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     if (sessionID)
       return ctx.ports
         .getExecutionBySession()
-        .get(sessionID as import("@natalia/contracts").SessionID);
+        .get(sessionID as import("@anthelia/contracts").SessionID);
     return ctx.ports.getActiveExec();
   }
 
   function publish(
-    event: import("@natalia/contracts").RuntimeEvent,
+    event: import("@anthelia/contracts").RuntimeEvent,
     sessionID?: string,
   ) {
     ctx.ports.publishForSession(sessionExec(sessionID), event);
@@ -162,7 +162,7 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
     let exec = sessionExec(sessionID);
     if (!exec && sessionID)
       exec = await ctx.ports.ensureExecution(
-        sessionID as import("@natalia/contracts").SessionID,
+        sessionID as import("@anthelia/contracts").SessionID,
       );
     if (!exec) return { updated: false };
     const store = ctx.state.serviceDirectory.getOptional(
@@ -371,7 +371,7 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
       let exec = sessionExec(sessionID);
       if (!exec && sessionID)
         exec = await ctx.ports.ensureExecution(
-          sessionID as import("@natalia/contracts").SessionID,
+          sessionID as import("@anthelia/contracts").SessionID,
         );
       const planID = exec?.session?.metadata?.activePlanID;
       return {

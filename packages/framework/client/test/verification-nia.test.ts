@@ -3,9 +3,9 @@ import type {
   ConstitutionRule,
   RuntimeEvent,
   SessionID,
-} from "@natalia/contracts";
-import { configV3Schema } from "@natalia/contracts";
-import { buildGeneration } from "@natalia/composition";
+} from "@anthelia/contracts";
+import { configV3Schema } from "@anthelia/contracts";
+import { buildGeneration } from "@anthelia/composition";
 import {
   officialPluginWorkspace,
   useWorkspaceCleanup,

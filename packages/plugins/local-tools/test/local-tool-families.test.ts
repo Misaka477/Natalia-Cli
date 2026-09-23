@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { fingerprintFile } from "@natalia/config";
+import { fingerprintFile } from "@anthelia/config";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { GoalBlockCode } from "@natalia/contracts";
-import type { GoalSnapshot, RuntimeEvent } from "@natalia/contracts";
+import type { GoalBlockCode } from "@anthelia/contracts";
+import type { GoalSnapshot, RuntimeEvent } from "@anthelia/contracts";
 import { foldGoal } from "../src";
 
 const AT = "2026-01-01T00:00:00.000Z";

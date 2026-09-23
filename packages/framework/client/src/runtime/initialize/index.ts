@@ -7,11 +7,11 @@ import { createSubagentTools } from "./subagent-tools";
 import { installSubagents } from "./subagent-runner";
 import { recoverSession } from "./session-recovery";
 import { finalizeInitialize } from "./finalize";
-import { perfLog } from "@natalia/runtime-services";
+import { perfLog } from "@anthelia/runtime-services";
 import {
   reloadProviderAdapterModules,
   providerAdapterModuleRequests,
-} from "@natalia/runtime";
+} from "@anthelia/runtime";
 
 export function createInitialize(
   ctx: RuntimeContext,

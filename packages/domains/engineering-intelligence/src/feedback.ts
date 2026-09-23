@@ -3,7 +3,7 @@ import type {
   FeedbackInput,
   FeedbackResult,
   RuntimeEvent,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 
 /**

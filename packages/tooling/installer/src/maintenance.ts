@@ -1,4 +1,4 @@
-import { discoverPluginManifests } from "@natalia/plugin";
+import { discoverPluginManifests } from "@anthelia/plugin";
 import {
   loadNataliaLock,
   packageDirectory,

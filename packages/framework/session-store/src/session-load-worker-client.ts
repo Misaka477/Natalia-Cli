@@ -2,7 +2,7 @@ import type {
   RuntimeEvent,
   RuntimeMessagePage,
   SessionID,
-} from "@natalia/contracts";
+} from "@anthelia/contracts";
 import type {
   SessionLoadWorkerRequest,
   SessionLoadWorkerResponse,

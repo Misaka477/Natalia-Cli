@@ -1,5 +1,5 @@
 import { createEventSink } from "../event-sink";
-import type { SessionID } from "@natalia/contracts";
+import type { SessionID } from "@anthelia/contracts";
 import type { ProductRuntimeContext } from "@natalia/collab";
 import { createProviderSelection } from "../provider-selection";
 import { createTurnRunner } from "../turn-runner";
@@ -8,8 +8,8 @@ import { createExecuteOne } from "../tool-execution/execute-one";
 import { createCheckpointRuntime } from "../checkpoint-runtime";
 import { createTitleGeneration } from "../title-generation";
 import { createSelfReview } from "@natalia/engineering-intelligence";
-import { skillService } from "@natalia/runtime-services";
-import { withProviderConcurrency } from "@natalia/runtime";
+import { skillService } from "@anthelia/runtime-services";
+import { withProviderConcurrency } from "@anthelia/runtime";
 import { createSessionAdmission } from "../session-admission";
 import { createCommands } from "../commands";
 import { discoverDesiredPluginEntries } from "@anthelia/substrate";

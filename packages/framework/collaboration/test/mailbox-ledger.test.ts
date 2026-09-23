@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   buildMailboxQueued,
   buildMailboxStatus,
-} from "@natalia/runtime-services";
+} from "@anthelia/runtime-services";
 
 test("buildMailboxQueued carries the durable intent fact", () => {
   const event = buildMailboxQueued({

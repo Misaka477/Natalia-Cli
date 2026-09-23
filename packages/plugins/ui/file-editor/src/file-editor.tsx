@@ -7,7 +7,7 @@ import {
   onMount,
 } from "solid-js";
 import type { UiProjection, UiTransport } from "@natalia/ui-host";
-import type { RuntimeClient } from "@natalia/contracts";
+import type { RuntimeClient } from "@anthelia/contracts";
 import {
   ContextMenu,
   cssVar,

@@ -1,4 +1,4 @@
-import { configV3Schema, type ConfigV3 } from "@natalia/contracts";
+import { configV3Schema, type ConfigV3 } from "@anthelia/contracts";
 import type { ConfigPatch } from "./service-types";
 
 export function configPatch(base: ConfigV3, next: ConfigV3): ConfigPatch {
