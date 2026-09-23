@@ -18,6 +18,36 @@ import { join, resolve } from "node:path";
  */
 
 // src -> object-store -> hosts -> packages -> object-store-rust
+/**
+ * The backend a store should use (the object-store-rust plan's "TS
+ * keeps its implementation as the fallback"):
+ *  - default: TypeScript (nothing to decide, nothing to break);
+ *  - `NATALIA_OBJECT_STORE_BACKEND=rust`: an EXPLICIT demand — used by
+ *    the mode runner, which treats an unavailable backend as a FAILURE
+ *    (a requested mode that silently didn't engage would make its
+ *    acceptance run a lie). In ordinary code the demand degrades to
+ *    TypeScript by the same rule: availability never beats honesty.
+ * `NATALIA_OBJECT_STORE_RUST_LIB` overrides the library path (tests
+ * force the fallback with a broken path).
+ */
+export function objectStoreBackendStatus():
+  | "typescript"
+  | "rust"
+  | "rust-fallback-typescript" {
+  if (process.env.NATALIA_OBJECT_STORE_BACKEND !== "rust") return "typescript";
+  const previous = LIB_PATH;
+  const override = process.env.NATALIA_OBJECT_STORE_RUST_LIB;
+  if (override) LIB_PATH = override;
+  try {
+    load();
+    return "rust";
+  } catch {
+    return "rust-fallback-typescript";
+  } finally {
+    LIB_PATH = previous;
+  }
+}
+
 const CRATE_DIR = resolve(
   import.meta.dir,
   "..",
@@ -25,7 +55,7 @@ const CRATE_DIR = resolve(
   "..",
   "object-store-rust",
 );
-const LIB_PATH = join(
+let LIB_PATH = join(
   CRATE_DIR,
   "target",
   "release",
@@ -66,6 +96,10 @@ type RustCasLib = {
 };
 
 let lib: RustCasLib | undefined;
+// Memo KEYED BY PATH: a store/test that probes an overridden library
+// path (the fallback face) must get THAT answer, not a handle loaded
+// from another path — and a throwing probe never memoizes failure.
+let loadedPath: string | undefined;
 
 async function newestSourceTime(): Promise<number> {
   let newest = 0;
@@ -103,7 +137,7 @@ async function buildIfStale(): Promise<void> {
 }
 
 function load(): RustCasLib {
-  if (lib) return lib;
+  if (lib && loadedPath === LIB_PATH) return lib;
   const loaded = dlopen(LIB_PATH, {
     cas_sha256_hex: {
       args: [FFIType.pointer, FFIType.u64, FFIType.pointer],
@@ -140,6 +174,7 @@ function load(): RustCasLib {
     },
   }) as unknown as RustCasLib;
   lib = loaded;
+  loadedPath = LIB_PATH;
   return loaded;
 }
 

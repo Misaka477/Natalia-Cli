@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ObjectStore, rustCas } from "../src";
+import { ObjectStore, objectStoreBackendStatus, rustCas } from "../src";
 
 /**
  * T2 Phase A slice 1 — the Rust CAS proves itself against the TS
@@ -103,4 +103,49 @@ test("a corrupt object fails identically on both sides (verify-on-read)", async 
   expect(() => rustCas.get(storeRoot, id)).toThrow(/is corrupt/u);
   // has() is existence (both sides answer true — put dedups on it too)
   expect(rustCas.has(storeRoot, id)).toBe(true);
+});
+
+test("the fallback face: an explicit rust demand with an unusable library degrades to TypeScript honestly", async () => {
+  const previousBackend = process.env.NATALIA_OBJECT_STORE_BACKEND;
+  const previousLib = process.env.NATALIA_OBJECT_STORE_RUST_LIB;
+  process.env.NATALIA_OBJECT_STORE_BACKEND = "rust";
+  process.env.NATALIA_OBJECT_STORE_RUST_LIB = join(
+    tmpdir(),
+    "natalia-no-such-rust-lib.so",
+  );
+  try {
+    // The demand cannot be met -> the STATUS says so (no silent pass,
+    // no thrown panic: availability degrades, the answer stays honest).
+    expect(objectStoreBackendStatus()).toBe("rust-fallback-typescript");
+    // and the store built under that status keeps working, on the TS path
+    const root = await mkdtemp(join(tmpdir(), "natalia-fallback-"));
+    const storeRoot = join(root, "objects");
+    const objects = new ObjectStore(storeRoot);
+    const id = await objects.put("written while degraded");
+    expect(id).toBe(sha256("written while degraded"));
+    expect((await objects.get(id)).toString("utf8")).toBe(
+      "written while degraded",
+    );
+  } finally {
+    if (previousBackend === undefined)
+      delete process.env.NATALIA_OBJECT_STORE_BACKEND;
+    else process.env.NATALIA_OBJECT_STORE_BACKEND = previousBackend;
+    if (previousLib === undefined)
+      delete process.env.NATALIA_OBJECT_STORE_RUST_LIB;
+    else process.env.NATALIA_OBJECT_STORE_RUST_LIB = previousLib;
+  }
+});
+
+test("the honest default: with no demand the backend is plain TypeScript", () => {
+  // The test states the DEFAULT, so it must withdraw the demand for its
+  // own observation — asserting "typescript" inside a rust-mode run
+  // would test the environment, not the code (the runner's own red).
+  const previous = process.env.NATALIA_OBJECT_STORE_BACKEND;
+  delete process.env.NATALIA_OBJECT_STORE_BACKEND;
+  try {
+    expect(objectStoreBackendStatus()).toBe("typescript");
+  } finally {
+    if (previous !== undefined)
+      process.env.NATALIA_OBJECT_STORE_BACKEND = previous;
+  }
 });

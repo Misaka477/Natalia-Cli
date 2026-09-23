@@ -15,6 +15,7 @@
  */
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
+import { objectStoreBackendStatus, rustCas } from "./rust-store";
 import { mkdirSync } from "node:fs";
 import {
   mkdir,
@@ -68,8 +69,13 @@ export class ObjectStore {
   private nativeIndexes = new Map<string, NativePackIndex>();
   private readonly packBloom = new Uint8Array(1 << 20);
   private packBloomInitialized = false;
+  /** The loose-object fast path through the Rust core (slice 2 of the
+   * object-store-rust plan); the TS path stays the implementation and
+   * the fallback — packs, chunks and meta are always TS (their slices). */
+  private readonly useRust: boolean;
 
   constructor(private readonly root: string) {
+    this.useRust = objectStoreBackendStatus() === "rust";
     const metaDir = join(root, ".meta");
     mkdirSync(metaDir, { recursive: true, mode: 0o700 });
     this.metaDb = new Database(join(metaDir, "index.sqlite"));
@@ -113,12 +119,14 @@ export class ObjectStore {
     if (this.lru.has(id)) return true;
     if (await this.getMeta<{ manifestId: string }>(`chunked:${id}`))
       return true;
-    try {
-      await stat(this.objectPath(id));
-      return true;
-    } catch {
-      // Fall through to pack indexes.
-    }
+    const looseExists = this.useRust
+      ? rustCas.has(this.root, id)
+      : await stat(this.objectPath(id)).then(
+          () => true,
+          () => false,
+        );
+    if (looseExists) return true;
+    // Fall through to pack indexes.
     if (this.packBloomInitialized && !this.bloomMaybe(id)) return false;
     await this.loadPackIndexes();
     return this.packs.has(id);
@@ -153,6 +161,20 @@ export class ObjectStore {
       this.lru.delete(id);
       this.lru.set(id, cached);
       return cached;
+    }
+    if (this.useRust && rustCas.has(this.root, id)) {
+      // The Rust side verified while reading; the TS verify rides along
+      // as the belt — one hash over bytes already in memory, and the
+      // contract byte-for-byte identical across backends.
+      try {
+        return this.verify(id, rustCas.get(this.root, id));
+      } catch (error) {
+        if (String(error).includes("not found")) {
+          // vanished between has and get: fall to the TS path's answer
+        } else {
+          throw error;
+        }
+      }
     }
     return this.verify(id, await this.readObject(id));
   }
@@ -231,6 +253,14 @@ export class ObjectStore {
 
   private async putRaw(content: Buffer | string): Promise<string> {
     const data = Buffer.from(content);
+    if (this.useRust)
+      // Same contract end to end: id = sha256, dedup by existence, the
+      // Rust side writes atomically (temp+rename) where the TS write is
+      // direct — a torn file becomes impossible rather than merely
+      // detected by the next verify-on-read. A pack-only id (packs are
+      // slice 4) gets a redundant loose copy instead of TS's early
+      // return; readers see identical truth.
+      return rustCas.put(this.root, data);
     const id = createHash("sha256").update(data).digest("hex");
     if (await this.has(id)) return id;
     const path = this.objectPath(id);
