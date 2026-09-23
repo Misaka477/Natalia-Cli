@@ -36,6 +36,9 @@ export type VaultRecordType =
 
 export type VaultRecord = {
   id: string;
+  /** The record's own time (the event's `at` when known) — the time
+   * signal is meaningless if every row is stamped at insert. */
+  createdAt?: string;
   workspaceID: string;
   sessionID: string;
   agentID?: string;
@@ -63,6 +66,56 @@ export type VaultRecallHit = {
   createdAt: string;
   /** FTS5's bm25 (lower = better, negated so bigger = better). */
   rank: number;
+  /** The four-signal total (the study's coefficients). */
+  score: number;
+  /** What made the total — the study's score breakdown. */
+  breakdown: VaultScoreBreakdown;
+};
+
+// --- Phase2a: the study's retrieval scoring model, made explicit ------
+// Its coefficients, its four signals; its TABLES are ours to name (the
+// study prescribes the signals, not the numbers) — every knob lives
+// here, once, commented, testable.
+
+const SCORE_WEIGHTS = {
+  fts: 0.35,
+  time: 0.25,
+  evidence: 0.2,
+  entity: 0.2,
+} as const;
+
+/** Recency horizon: the study sets the weight but no horizon;30 days
+ * sits next to its curator-adjacent intervals and is the ONE place to
+ * retune. */
+const TIME_HALF_LIFE_DAYS = 30;
+
+/** "Evidence strength": a per-type baseline (how much the type's
+ * EXISTENCE proves) plus a real evidence reference as a bonus. */
+const EVIDENCE_STRENGTH: Record<VaultRecordType, number> = {
+  evidence: 1,
+  decision: 0.9,
+  plan: 0.8,
+  mailbox: 0.7,
+  collab: 0.6,
+  tool_history: 0.4,
+};
+
+export type VaultScoreBreakdown = {
+  fts: number;
+  time: number;
+  evidence: number;
+  entity: number;
+};
+
+export type VaultPackRole = "natalia" | "navi" | "nia";
+
+/** The study's role→type pick (its Nia example = plan/evidence/tool
+ * events; Navi's job = chat/risk/mailbox; the main agent keeps the
+ * whole vault). */
+const ROLE_TYPES: Record<VaultPackRole, readonly VaultRecordType[] | null> = {
+  natalia: null, // all types
+  navi: ["mailbox", "collab"],
+  nia: ["plan", "evidence", "decision", "tool_history"],
 };
 
 export type RinaVaultService = {
@@ -72,6 +125,14 @@ export type RinaVaultService = {
   flushNow(): number;
   remember(record: VaultRecord): string;
   recall(query: string, scope?: VaultRecallScope): VaultRecallHit[];
+  /** The study's context_read face: a promoted hit answers from the
+   * bounded hot tier first, else the row — same shape either way (an
+   * eviction can change SPEED, never the answer). */
+  get(id: string): VaultRecallHit | undefined;
+  /** Cost-observable hot tier: the promotion's size (its cap is the
+   * one bound; the eviction is unobservable by design because get()
+   * falls through to the store). */
+  hotStats(): { size: number };
   /** Delete by scope (the study's invalidation scopes). Returns count. */
   invalidate(scope: {
     sessionID?: string;
@@ -124,6 +185,38 @@ const CLASSIFIED: Partial<Record<RuntimeEvent["type"], EventClassification>> = {
   },
 };
 
+/** bm25 squashed to (0,1): bigger-better and bounded, so the weight
+ * coefficients mean the same thing across queries. */
+function squashedFts(rankRaw: number): number {
+  const rank = Math.max(0, -rankRaw);
+  return rank / (1 + rank);
+}
+
+function timeWeight(createdAt: string, nowMs: number): number {
+  const ageDays = Math.max(0, (nowMs - Date.parse(createdAt)) / 86_400_000);
+  return Math.exp(-ageDays / TIME_HALF_LIFE_DAYS);
+}
+
+/** A query's tokens against the entity key's: a simple overlap in
+ * [0,1] (no tokenizer dependency; the entity keys are structural
+ * strings). */
+function entityOverlap(query: string, entityKey: string): number {
+  const queryTokens = query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter(Boolean);
+  if (!queryTokens.length) return 0;
+  const entityTokens = new Set(
+    entityKey
+      .toLowerCase()
+      .split(/[^a-z0-9]+/u)
+      .filter(Boolean),
+  );
+  let matched = 0;
+  for (const token of queryTokens) if (entityTokens.has(token)) matched += 1;
+  return matched / queryTokens.length;
+}
+
 function classify(event: RuntimeEvent): VaultRecord | undefined {
   const rule = CLASSIFIED[event.type];
   if (!rule) return undefined;
@@ -143,6 +236,9 @@ function classify(event: RuntimeEvent): VaultRecord | undefined {
     entityKey: rule.entityOf(event),
     summary: rule.label(event),
     ...(typeof seq === "number" ? { seq } : {}),
+    ...((event as { at?: string }).at
+      ? { createdAt: (event as { at?: string }).at! }
+      : {}),
   };
 }
 
@@ -166,6 +262,8 @@ export function createUnavailableVault(reason: string): RinaVaultService {
       throw new Error(`context vault unavailable: ${reason}`);
     },
     recall: () => [],
+    get: () => undefined,
+    hotStats: () => ({ size: 0 }),
     invalidate: () => 0,
     rebuild: () => 0,
     state: () => absent,
@@ -175,6 +273,78 @@ export function createUnavailableVault(reason: string): RinaVaultService {
 
 const FLUSH_MS = 100;
 const FLUSH_N = 50;
+
+// --- Phase2a: ContextPack — the study's assembly component (pure) -----
+// A caller owns tokenization (the runtime's estimateTokens is what
+// prompt-side callers pass; a test injects a counting fake) — the pack
+// assembles, it does not tokenize.
+
+export type ContextPackItem = {
+  id: string;
+  recordType: VaultRecordType;
+  entityKey: string;
+  summary: string;
+  score: number;
+  breakdown: VaultScoreBreakdown;
+  tokens: number;
+};
+
+export type ContextPack = {
+  items: ContextPackItem[];
+  tokens: number;
+  truncated: boolean;
+  droppedByRole: number;
+  deduped: number;
+};
+
+export function buildContextPack(
+  hits: readonly VaultRecallHit[],
+  input: {
+    role: VaultPackRole;
+    budgetTokens: number;
+    estimate: (text: string) => number;
+  },
+): ContextPack {
+  const allowed = ROLE_TYPES[input.role];
+  let droppedByRole = 0;
+  let deduped = 0;
+  const kept: VaultRecallHit[] = [];
+  const entities = new Set<string>();
+  for (const hit of [...hits].sort((a, b) => b.score - a.score)) {
+    if (allowed && !allowed.includes(hit.recordType)) {
+      droppedByRole += 1;
+      continue;
+    }
+    if (entities.has(hit.entityKey)) {
+      deduped += 1;
+      continue;
+    }
+    entities.add(hit.entityKey);
+    kept.push(hit);
+  }
+  const items: ContextPackItem[] = [];
+  let tokens = 0;
+  let truncated = false;
+  for (const hit of kept) {
+    const text = `${hit.summary}\n${hit.entityKey}`;
+    const cost = input.estimate(text);
+    if (tokens + cost > input.budgetTokens) {
+      truncated = true;
+      break;
+    }
+    tokens += cost;
+    items.push({
+      id: hit.id,
+      recordType: hit.recordType,
+      entityKey: hit.entityKey,
+      summary: hit.summary,
+      score: hit.score,
+      breakdown: hit.breakdown,
+      tokens: cost,
+    });
+  }
+  return { items, tokens, truncated, droppedByRole, deduped };
+}
 
 export function createContextVault(input: {
   dir: string;
@@ -234,6 +404,11 @@ export function createContextVault(input: {
 
   let queue: VaultRecord[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // The study's promotion tier: insertion-ordered = an LRU by re-set.
+  // A bound (not a TTL — law: no guessing) and eviction that can only
+  // change SPEED: get() falls through to the store for the answer.
+  const HOT_CAP = 200;
+  const hot = new Map<string, VaultRecallHit>();
   const flushMs = input.flushMs ?? FLUSH_MS;
   const flushN = input.flushN ?? FLUSH_N;
 
@@ -252,7 +427,7 @@ export function createContextVault(input: {
           record.summary,
           record.sourceEvidenceID ?? null,
           record.seq ?? null,
-          now,
+          record.createdAt ?? now,
           now,
         );
         ftsInsert.run(record.id, record.summary, record.entityKey);
@@ -349,8 +524,12 @@ export function createContextVault(input: {
         args.push(scope.recordType);
       }
       const limit = Math.max(1, Math.min(scope.limit ?? 20, 200));
+      // Two-phase by the study's model: FTS supplies the CANDIDATES (a
+      // wider window), the four signals pick the top-N.
+      const window = Math.min(Math.max(limit * 4, 50), 500);
       const sql = `
-        SELECT r.id, r.record_type, r.entity_key, r.summary, r.session_id, r.seq, r.created_at,
+        SELECT r.id, r.record_type, r.entity_key, r.summary, r.session_id, r.seq,
+               r.created_at, r.source_evidence_id,
                bm25(context_records_fts) AS rank
         FROM context_records_fts
         JOIN context_records r ON r.id = context_records_fts.id
@@ -358,7 +537,7 @@ export function createContextVault(input: {
           ${filters.length ? `AND ${filters.join(" AND ")}` : ""}
         ORDER BY rank
         LIMIT ?`;
-      const rows = db.query(sql).all(query, ...args, limit) as Array<{
+      const rows = db.query(sql).all(query, ...args, window) as Array<{
         id: string;
         record_type: VaultRecordType;
         entity_key: string;
@@ -366,6 +545,7 @@ export function createContextVault(input: {
         session_id: string;
         seq: number | null;
         created_at: string;
+        source_evidence_id: string | null;
         rank: number;
       }>;
       const touch = db.prepare(
@@ -383,7 +563,96 @@ export function createContextVault(input: {
           );
         }
       })();
-      return rows.map((row) => ({
+      const nowMs = Date.now();
+      const scored = rows.map((row) => {
+        const fts = squashedFts(row.rank);
+        const time = timeWeight(row.created_at, nowMs);
+        const strength = Math.min(
+          1,
+          (EVIDENCE_STRENGTH[row.record_type] ?? 0.5) +
+            (row.source_evidence_id ? 0.1 : 0),
+        );
+        const entity = entityOverlap(query, row.entity_key);
+        const breakdown: VaultScoreBreakdown = {
+          fts,
+          time,
+          evidence: strength,
+          entity,
+        };
+        return {
+          hit: {
+            id: row.id,
+            recordType: row.record_type,
+            entityKey: row.entity_key,
+            summary: row.summary,
+            sessionID: row.session_id,
+            ...(row.seq === null ? {} : { seq: row.seq }),
+            createdAt: row.created_at,
+            // bm25 ascends (lower better); expose a bigger-is-better rank
+            rank: -row.rank,
+            score:
+              SCORE_WEIGHTS.fts * fts +
+              SCORE_WEIGHTS.time * time +
+              SCORE_WEIGHTS.evidence * strength +
+              SCORE_WEIGHTS.entity * entity,
+            breakdown,
+          } satisfies VaultRecallHit,
+        };
+      });
+      const hits = scored
+        .map((entry) => entry.hit)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, limit);
+      // Promotion (the study's 升档): re-set refreshes LRU position;
+      // the cap evicts from the head (Map order = insertion).
+      for (const hit of hits) {
+        hot.delete(hit.id);
+        hot.set(hit.id, hit);
+      }
+      while (hot.size > HOT_CAP) {
+        const oldest = hot.keys().next().value;
+        if (oldest === undefined) break;
+        hot.delete(oldest);
+      }
+      return hits;
+    },
+    get(id: string): VaultRecallHit | undefined {
+      const promoted = hot.get(id);
+      if (promoted) return promoted;
+      const row = db
+        .query(
+          `SELECT id, record_type, entity_key, summary, session_id, seq, created_at,
+                  source_evidence_id
+           FROM context_records WHERE id = ?`,
+        )
+        .get(id) as
+        | {
+            id: string;
+            record_type: VaultRecordType;
+            entity_key: string;
+            summary: string;
+            session_id: string;
+            seq: number | null;
+            created_at: string;
+            source_evidence_id: string | null;
+          }
+        | undefined;
+      if (!row) return undefined;
+      const time = timeWeight(row.created_at, Date.now());
+      const strength = Math.min(
+        1,
+        (EVIDENCE_STRENGTH[row.record_type] ?? 0.5) +
+          (row.source_evidence_id ? 0.1 : 0),
+      );
+      // A point read has NO query: the fts and entity terms are absent
+      // BY DEFINITION (0), and the total is honestly over what exists.
+      const breakdown: VaultScoreBreakdown = {
+        fts: 0,
+        time,
+        evidence: strength,
+        entity: 0,
+      };
+      const hit: VaultRecallHit = {
         id: row.id,
         recordType: row.record_type,
         entityKey: row.entity_key,
@@ -391,9 +660,20 @@ export function createContextVault(input: {
         sessionID: row.session_id,
         ...(row.seq === null ? {} : { seq: row.seq }),
         createdAt: row.created_at,
-        // bm25 ascends (lower better); expose a bigger-is-better rank
-        rank: -row.rank,
-      }));
+        rank: 0,
+        score: SCORE_WEIGHTS.time * time + SCORE_WEIGHTS.evidence * strength,
+        breakdown,
+      };
+      hot.set(row.id, hit);
+      while (hot.size > HOT_CAP) {
+        const oldest = hot.keys().next().value;
+        if (oldest === undefined) break;
+        hot.delete(oldest);
+      }
+      return hit;
+    },
+    hotStats(): { size: number } {
+      return { size: hot.size };
     },
     invalidate(scope): number {
       const { sql, args } = invalidateSelect(scope);
@@ -411,12 +691,14 @@ export function createContextVault(input: {
         for (const id of ids) {
           db.run("DELETE FROM context_records_fts WHERE id = ?", [id]);
           historyInsert.run(`evict:${id}:${now}`, id, "evict", now);
+          hot.delete(id); // the law: a promoted hit never outlives its row
         }
       })();
       return ids.length;
     },
     rebuild(events: readonly RuntimeEvent[]): number {
       flushNow();
+      hot.clear();
       const now = new Date().toISOString();
       db.transaction(() => {
         db.run(
