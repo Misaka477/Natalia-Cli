@@ -626,6 +626,41 @@ await scan(join(root, "packages/domains"), sourceExtensions, (full, text) => {
   }
 });
 
+// Housekeeping rule ("不留冗余", mechanized): a compiled artifact beside
+// its TypeScript source is dead weight AND a resolution landmine (a
+// stray `./x` import could bind the stale JS). The build emits only
+// declarations to dist/, so any source-tree .js/.d.ts with a .ts twin
+// is a leftover. Skips the usual output/dependency dirs.
+{
+  const twinViolation = async (dir: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (skippedDirs.has(entry.name) || entry.name === "coverage") continue;
+        await twinViolation(full);
+        continue;
+      }
+      if (!entry.name.endsWith(".js") && !entry.name.endsWith(".d.ts"))
+        continue;
+      const base = entry.name.endsWith(".d.ts")
+        ? entry.name.slice(0, -".d.ts".length) + ".ts"
+        : entry.name.slice(0, -".js".length) + ".ts";
+      if (await Bun.file(join(dir, base)).exists())
+        failures.push(
+          `${full.slice(root.length + 1)}: compiled artifact beside its TypeScript source`,
+        );
+    }
+  };
+  for (const dir of productionRoots) await twinViolation(join(root, dir));
+}
+
 if (failures.length) {
   console.error(failures.join("\n"));
   process.exit(1);
