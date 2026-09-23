@@ -97,7 +97,26 @@ export class ObjectStore {
     const data = Buffer.from(content);
     const id = createHash("sha256").update(data).digest("hex");
     if (await this.has(id)) return id;
-    if (data.length > this.chunkMin) {
+    if (data.length > this.chunkMin && this.useRust) {
+      // Slice 3: Rust owns the CDC split + chunk/manifest writes; the
+      // meta row below (SQLite) stays here — the store of record for
+      // chunk maps never left the TS metaDb. A single-chunk outcome
+      // writes NOTHING and falls through to the plain put, exactly as
+      // the TS path does (the second if is mutually excluded).
+      const outcome = rustCas.putChunked(this.root, data);
+      if (outcome.chunkCount > 1) {
+        const manifest = JSON.parse(
+          (await this.chunkRead(outcome.manifestId!)).toString("utf8"),
+        ) as { version: number; chunks: string[] };
+        await this.putMeta(`chunked:${id}`, {
+          manifestId: outcome.manifestId,
+          totalLength: data.length,
+          chunks: manifest.chunks,
+        });
+        return id;
+      }
+    }
+    if (data.length > this.chunkMin && !this.useRust) {
       const chunks = this.splitIntoChunks(data);
       if (chunks.length > 1) {
         const chunkIds: string[] = [];
@@ -203,11 +222,11 @@ export class ObjectStore {
     }>(`chunked:${id}`);
     if (chunked) {
       const manifest = JSON.parse(
-        (await this.getRaw(chunked.manifestId)).toString("utf8"),
+        (await this.chunkRead(chunked.manifestId)).toString("utf8"),
       ) as { version: number; chunks: string[] };
       const parts: Buffer[] = [];
       for (const chunkId of manifest.chunks)
-        parts.push(await this.getRaw(chunkId));
+        parts.push(await this.chunkRead(chunkId));
       const buffer = Buffer.concat(parts);
       this.cacheSet(id, buffer);
       return buffer;
@@ -236,13 +255,13 @@ export class ObjectStore {
       return;
     }
     const manifest = JSON.parse(
-      (await this.getRaw(chunked.manifestId)).toString("utf8"),
+      (await this.chunkRead(chunked.manifestId)).toString("utf8"),
     ) as { version: number; chunks: string[] };
     // Chunks are yielded as they are read, so the checksum can only be checked
     // at the end — but the reader is told rather than handed corrupt bytes.
     const hash = createHash("sha256");
     for (const chunkId of manifest.chunks) {
-      const chunk = await this.getRaw(chunkId);
+      const chunk = await this.chunkRead(chunkId);
       hash.update(chunk);
       yield chunk;
     }
@@ -267,6 +286,20 @@ export class ObjectStore {
     await mkdir(join(path, ".."), { recursive: true, mode: 0o700 });
     await writeFile(path, data, { mode: 0o600 });
     return id;
+  }
+
+  /**
+   * A chunk-map part (the manifest itself or one chunk): the Rust core
+   * reads a loose object WITH verify; anything else (a packed chunk, a
+   * missing file) keeps the TS route. The stream path's early honest
+   * "is corrupt" satisfies the same `rejects.toThrow(/corrupt/)`
+   * contract the drain test pins — the reader is told, never handed
+   * rotted bytes.
+   */
+  private async chunkRead(id: string): Promise<Buffer> {
+    if (this.useRust && rustCas.has(this.root, id))
+      return rustCas.get(this.root, id);
+    return await this.getRaw(id);
   }
 
   private async getRaw(id: string): Promise<Buffer> {

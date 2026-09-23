@@ -149,3 +149,48 @@ test("the honest default: with no demand the backend is plain TypeScript", () =>
       process.env.NATALIA_OBJECT_STORE_BACKEND = previous;
   }
 });
+
+test("slice 3: a chunked big blob lands IDENTICALLY in a TS store and a Rust-mode store", async () => {
+  // The same fixture the suite's own chunk test uses (the1 MiB repeating
+  // pattern with proven multi-chunk boundaries): under the CDC parity
+  // the split must produce the same chunk ids, hence the same manifest,
+  // hence the same manifestId — boundary parity proven through the
+  // PUBLIC API, no private access.
+  const text = "0123456789abcdef".repeat(64 * 1024); // 1 MiB
+  const previous = process.env.NATALIA_OBJECT_STORE_BACKEND;
+  delete process.env.NATALIA_OBJECT_STORE_BACKEND;
+  const tsRoot = await mkdtemp(join(tmpdir(), "natalia-chunk-ts-"));
+  const tsStore = new ObjectStore(join(tsRoot, "objects"));
+  try {
+    const tsId = await tsStore.put(text);
+    const tsMeta = await tsStore.getMeta<{
+      manifestId: string;
+      chunks: string[];
+    }>(`chunked:${tsId}`);
+    expect(tsMeta).toBeDefined(); // >1 chunk by construction (the suite's own fixture)
+
+    process.env.NATALIA_OBJECT_STORE_BACKEND = "rust";
+    const rustRoot = await mkdtemp(join(tmpdir(), "natalia-chunk-rs-"));
+    const rustStore = new ObjectStore(join(rustRoot, "objects"));
+    expect(objectStoreBackendStatus()).toBe("rust");
+    const rustId = await rustStore.put(text);
+    const rustMeta = await rustStore.getMeta<{
+      manifestId: string;
+      chunks: string[];
+    }>(`chunked:${rustId}`);
+
+    // byte-for-byte identity of the chunk map (the CDC boundary rule
+    // ported bit-exactly): same id, same manifest id, same chunk list
+    expect(rustId).toBe(tsId);
+    expect(rustMeta).toEqual(tsMeta!);
+    // and the Rust-mode store round-trips and streams the content whole
+    expect((await rustStore.get(rustId)).toString("utf8")).toBe(text);
+    let streamed = 0;
+    for await (const chunk of rustStore.getStream(rustId))
+      streamed += chunk.byteLength;
+    expect(streamed).toBe(text.length);
+  } finally {
+    if (previous === undefined) delete process.env.NATALIA_OBJECT_STORE_BACKEND;
+    else process.env.NATALIA_OBJECT_STORE_BACKEND = previous;
+  }
+});

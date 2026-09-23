@@ -84,6 +84,13 @@ type RustCasLib = {
       id: unknown,
       idLen: number,
     ) => number;
+    cas_put_chunked: (
+      root: unknown,
+      rootLen: number,
+      data: unknown,
+      dataLen: number,
+      out: unknown,
+    ) => number;
     cas_get: (
       root: unknown,
       rootLen: number,
@@ -161,6 +168,16 @@ function load(): RustCasLib {
       args: [FFIType.pointer, FFIType.u64, FFIType.pointer, FFIType.u64],
       returns: FFIType.i64,
     },
+    cas_put_chunked: {
+      args: [
+        FFIType.pointer,
+        FFIType.u64,
+        FFIType.pointer,
+        FFIType.u64,
+        FFIType.pointer,
+      ],
+      returns: FFIType.i64,
+    },
     cas_get: {
       args: [
         FFIType.pointer,
@@ -203,6 +220,37 @@ export const rustCas = {
     if (code !== 0) throw new Error(`cas_sha256_hex failed: ${code}`);
     return hex(out);
   },
+  /**
+   * Slice 3: the content-defined split + chunk/manifest writes in one
+   * call (the manifest id arrives via the fixed 64-byte out buffer;
+   * the RETURN is the chunk count — 0 = single chunk, nothing was
+   * written and the caller falls through to the plain put).
+   */
+  putChunked(
+    root: string,
+    data: Buffer | string,
+  ): {
+    chunkCount: number;
+    manifestId?: string;
+  } {
+    const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const rootBuf = enc(root);
+    const out = Buffer.alloc(64);
+    const count = Number(
+      load().symbols.cas_put_chunked(
+        ffiPtr(rootBuf),
+        rootBuf.byteLength,
+        bptr(bytes),
+        bytes.byteLength,
+        bptr(out),
+      ),
+    );
+    if (count < 0) throw new Error(`cas_put_chunked failed: ${count}`);
+    return count > 0
+      ? { chunkCount: count, manifestId: out.toString("utf8") }
+      : { chunkCount: 0 };
+  },
+
   put(root: string, data: Buffer | string): string {
     const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
     const rootBuf = enc(root);

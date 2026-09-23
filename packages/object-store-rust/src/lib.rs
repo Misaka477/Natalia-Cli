@@ -194,6 +194,81 @@ pub fn get(root: &Path, id_hex: &str) -> Result<Vec<u8>, String> {
 }
 
 // ---------------------------------------------------------------------------
+// Slice 3: content-defined chunking (the TS splitIntoChunks, ported
+// bit-exactly): a u32 rolling hash with wrapping shifts — JS `<<` is
+// 32-bit and `>>>0` re-unsigned, which is exactly u32 wrapping
+// arithmetic, and the boundary test (>= chunkMin && hash&mask==0 &&
+// not last byte) plus the chunkMax ceiling follow the same clause for
+// clause. The chunked META row (SQLite) stays TS: zero-dep is the
+// environment's law and the TS metaDb remains the store of record for
+// chunk maps — this side owns content: split, chunk objects, manifest.
+// ---------------------------------------------------------------------------
+
+const CHUNK_MIN: usize = 32 * 1024;
+const CHUNK_MAX: usize = 1024 * 1024;
+const CHUNK_MASK: u32 = 0x3ffff;
+
+pub fn split_into_chunks(data: &[u8]) -> Vec<(usize, usize)> {
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    let mut start = 0usize;
+    while start < data.len() {
+        let mut end = (start + CHUNK_MAX).min(data.len());
+        let mut hash: u32 = 0;
+        for i in start..end {
+            hash = hash
+                .wrapping_shl(1)
+                .wrapping_add(hash.wrapping_shl(7))
+                .wrapping_add(hash.wrapping_shl(15))
+                .wrapping_add(data[i] as u32)
+                ^ (data[i] as u32);
+            if i - start >= CHUNK_MIN && (hash & CHUNK_MASK) == 0 && i + 1 < data.len() {
+                end = i + 1;
+                break;
+            }
+        }
+        spans.push((start, end));
+        start = end;
+    }
+    spans
+}
+
+/// Splits and WRITES (chunks, then the manifest) — mirroring the TS
+/// operation order so a crash lands the same way: orphan chunks with no
+/// meta row (harmless, GC's material later), never a meta row without
+/// its manifest. Returns the chunk count: >1 means the manifest id sits
+/// in `out64`; 0 means a single chunk (nothing written — the caller
+/// falls through to the plain put, exactly like the TS path).
+pub fn put_chunked(root: &Path, data: &[u8], out64: *mut u8) -> Result<i64, String> {
+    let spans = split_into_chunks(data);
+    if spans.len() <= 1 {
+        return Ok(0);
+    }
+    let mut ids: Vec<String> = Vec::with_capacity(spans.len());
+    for (start, end) in &spans {
+        ids.push(put(root, &data[*start..*end])?);
+    }
+    // The manifest is exactly the TS store's JSON.stringify({version:1,
+    // chunks}) — hex ids need no escaping, so the bytes match by shape.
+    let mut manifest = String::from(r#"{"version":1,"chunks":["#);
+    for (i, id) in ids.iter().enumerate() {
+        if i > 0 {
+            manifest.push(',');
+        }
+        manifest.push('"');
+        manifest.push_str(id);
+        manifest.push('"');
+    }
+    manifest.push_str("]}");
+    let manifest_id = put(root, manifest.as_bytes())?;
+    if !out64.is_null() {
+        unsafe {
+            std::ptr::copy_nonoverlapping(manifest_id.as_ptr(), out64, 64);
+        }
+    }
+    Ok(ids.len() as i64)
+}
+
+// ---------------------------------------------------------------------------
 // FFI for bun:ffi — strings arrive as (ptr, len) so ids and roots never
 // depend on NUL termination; byte buffers are (ptr, len) with the caller's
 // own capacity for results. Return codes: 0 ok, 1 corrupt, 2 unreadable,
@@ -221,6 +296,24 @@ fn id_from(ptr: *const u8, len: usize) -> Result<String, ()> {
     match std::str::from_utf8(bytes) {
         Ok(text) if validate_id(text).is_ok() => Ok(text.to_string()),
         _ => Err(()),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn cas_put_chunked(
+    root: *const u8,
+    root_len: usize,
+    data: *const u8,
+    data_len: usize,
+    out64: *mut u8,
+) -> i64 {
+    let root = match root_from(root, root_len) {
+        Ok(root) => root,
+        Err(()) => return -3,
+    };
+    match put_chunked(&root, slice(data, data_len), out64) {
+        Ok(count) => count,
+        Err(_) => -2,
     }
 }
 
