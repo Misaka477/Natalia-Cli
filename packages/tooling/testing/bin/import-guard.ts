@@ -19,6 +19,7 @@ import {
   frameworkSubsystemFiles,
   frameworkSubsystemRoots,
 } from "../src/migrated-plugin-rules";
+import { findEnginePrefixBandViolations } from "../src/prefix-band-rules";
 
 const root = process.cwd();
 const dependencyGuarded = [
@@ -245,6 +246,23 @@ for (const manifest of await workspacePackageManifests("packages")) {
     failures.push(
       `${manifest.path}: @natalia/testing must be a devDependency, not a production dependency`,
     );
+  // §1.1 包前缀即边界 — the never-reverse law, derived FROM the package
+  // name: a new @anthelia/* package is band-covered the moment it is
+  // named, and only its src (the shipped boundary) is scanned; engine
+  // tests may import policy as fixtures.
+  if (manifest.name?.startsWith("@anthelia/")) {
+    const packageDir = manifest.path.slice(0, -"/package.json".length);
+    await scan(
+      join(packageDir, "src"),
+      /\.(?:ts|tsx|mjs|js|jsx)$/u,
+      (full, text) => {
+        for (const specifier of findEnginePrefixBandViolations(text))
+          failures.push(
+            `${full}: the engine must not import ${specifier} (@anthelia may never import @natalia — decisions §1.1)`,
+          );
+      },
+    );
+  }
 }
 for (const dir of dependencyGuarded)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
