@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { staticSystemPrompt } from "@natalia/agent-prompts";
 import {
   AnthropicProvider,
   ContextLedger,
@@ -147,6 +148,7 @@ function makeHarness(
       },
   });
   const runner = createProviderRunner({
+    staticSystemPrompt,
     provider: () => provider,
     session: () => undefined,
     context: () => ledger,

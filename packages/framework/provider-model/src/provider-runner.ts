@@ -34,7 +34,6 @@ import { modelRefKey } from "@anthelia/contracts";
 import { cacheHitRate, totalInputTokens } from "@anthelia/contracts";
 import { buildSubmittedTurn } from "@anthelia/session";
 import { materializeTools } from "@anthelia/tools";
-import { agentSystemPrompt } from "@natalia/agent-prompts";
 import type {
   ConstitutionDocRule,
   ProviderRunnerInput,
@@ -354,13 +353,12 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       // across turns, sessions and workspaces.
       messages.unshift({
         role: "system",
-        content: staticSystemPrompt({
-          agentPrompt:
-            config?.instructions.enabled === false
-              ? undefined
-              : agent?.systemPrompt ||
+        content: input.staticSystemPrompt(
+          config?.instructions.enabled === false
+            ? undefined
+            : agent?.systemPrompt ||
                 config?.agentModes[config.defaultAgentMode]?.systemPrompt,
-        }),
+        ),
       });
       // Turn-local revision so a mid-turn refresh outranks the snapshot taken
       // at turn start (ADR D6 latest-win); earlier messages are never mutated.
@@ -1603,35 +1601,6 @@ type RuntimeContextBlockInput = {
     hash: string;
   };
 };
-
-/**
- * The static system prompt (ADR D1). Byte-identical for the same agent role
- * across sessions and workspaces: persona, policies, tool-usage rules, the
- * authority model and the goal policy only. Per-turn dynamic state (environment,
- * skills, collaboration, plan) never enters here — it is appended as
- * `<runtime_context>` user messages by `runtimeContextBlocks`, so provider
- * prefix caches key off one stable per-role block.
- */
-function staticSystemPrompt(input: { agentPrompt?: string }) {
-  const lines = agentSystemPrompt("natalia").split("\n");
-  if (input.agentPrompt?.trim()) {
-    lines.push(
-      "<agent_instructions>",
-      input.agentPrompt.trim(),
-      "</agent_instructions>",
-    );
-  }
-  lines.push(
-    "<goal_policy>",
-    "Use the goal tools for one long-running completion objective in the current session.",
-    "Propose a goal when a direct human request is a multi-step objective, but never for routine single-turn work; confirm with the user through ask_user before calling create_goal.",
-    "Call get_goal before update_goal and copy its exact goal_id and revision.",
-    "After session resume or fork an active goal is disarmed: when a human asks to continue in any wording, use update_goal action resume to re-arm it.",
-    "Mark complete only when the objective is actually achieved. Mark blocked only after the same blocking condition persists across at least 3 consecutive goal rounds, and report that concrete condition in blocked_reason; difficulty, uncertainty, or useful remaining work is not blocked. When you must stop for a human decision, use ask_user.",
-    "</goal_policy>",
-  );
-  return lines.join("\n");
-}
 
 /**
  * The dynamic runtime context (ADR D1/D2): every per-turn fact as

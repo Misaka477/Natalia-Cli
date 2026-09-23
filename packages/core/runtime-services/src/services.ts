@@ -142,7 +142,153 @@ export interface TeamBehaviorService {
   sandboxedSubagentSystemPrompt(domain?: string[]): string;
 }
 
+/**
+ * The work-ledger's service shape. This interface's only outside
+ * consumers are engine readers (the checkpoint gate) — keeping it here
+ * means @anthelia never reaches into policy for a type (the source
+ * file's own note said it was "moved from runtime-services with the
+ * token"; this moves the TYPE back and leaves the implementation and
+ * token where policy owns them).
+ */
+export interface WorkLedgerController {
+  buildPlanDocCreated: ServiceOperation;
+  buildPlanDocUpdated: ServiceOperation;
+  buildPlanDocMarked: ServiceOperation;
+  buildPlanDocDeleted: ServiceOperation;
+  buildPlanDocStatus: ServiceOperation;
+  buildAuditRequested: ServiceOperation;
+  evaluateDrift: ServiceOperation;
+  evaluateBehaviorDrift: ServiceOperation;
+  buildDriftFindingUpdate: ServiceOperation;
+  buildWorkContractDrafted: ServiceOperation;
+  buildWorkContractAccepted: ServiceOperation;
+  buildDetourRequested: ServiceOperation;
+  buildDetourReviewed: ServiceOperation;
+  validateDetour: ServiceOperation;
+  mergeDetourIntoContract: ServiceOperation;
+  validateWorkContractFields: ServiceOperation;
+  evaluateCompletionCard: ServiceOperation;
+  agentActionNode: ServiceOperation;
+  approvalEdge: ServiceOperation;
+  approvalNode: ServiceOperation;
+  completionNode: ServiceOperation;
+  completionValidationEdge: ServiceOperation;
+  checkpointNode: ServiceOperation;
+  constitutionCheckEdge: ServiceOperation;
+  constitutionRuleNode: ServiceOperation;
+  decisionNode: ServiceOperation;
+  externalWorkspaceChangeNode: ServiceOperation;
+  toolCallEdge: ServiceOperation;
+  toolCallNode: ServiceOperation;
+  rollbackCheckpointEdge: ServiceOperation;
+  workspaceChangeEdge: ServiceOperation;
+  workspaceChangeNode: ServiceOperation;
+}
+
+export interface InteractiveWaiter {
+  requireApproval(
+    approvalID: string,
+    tool: import("@anthelia/tools").RuntimeTool,
+    call: import("@anthelia/runtime").ProviderToolCall,
+    turnID: string,
+    options?: { force?: boolean; reason?: string },
+  ): Promise<{ reason: string } | undefined>;
+  requireQuestion(
+    requestID: string,
+    turnID: string,
+    request: {
+      title: string;
+      questions: Array<{
+        id: string;
+        header: string;
+        question: string;
+        options: Array<{ label: string; description?: string }>;
+        multiple?: boolean;
+        custom?: boolean;
+      }>;
+    },
+  ): Promise<string[][]>;
+  restoreInteractiveState(events: RuntimeEvent[]): void;
+  restoreRecoveredInteractiveState(
+    approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>,
+    questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>,
+    interactives?: Array<
+      Extract<RuntimeEvent, { type: "interactive.request" }>
+    >,
+  ): void;
+  respondApproval(response: ApprovalResponse): InteractiveResponseOutcome;
+  respondQuestion(response: QuestionResponse): InteractiveResponseOutcome;
+  /**
+   * Issues a generic interactive request and waits for its response. The
+   * `validate` callback is the in-process business authority; the runtime only
+   * checks the envelope, and the returned promise carries the raw response.
+   */
+  requireInteractive(input: {
+    requestID: string;
+    turnID: string;
+    kind: string;
+    title: string;
+    payload: import("@anthelia/contracts").JsonValue;
+    responseSchema?: import("@anthelia/contracts").JsonSchema;
+    expiresAt?: string;
+    priority?: number;
+    validate?(
+      response: import("@anthelia/contracts").JsonValue,
+    ): string[] | void;
+  }): Promise<{
+    response: import("@anthelia/contracts").JsonValue;
+    rejected?: boolean;
+  }>;
+  respondInteractive(
+    response: import("@anthelia/contracts").InteractiveResponse,
+  ): InteractiveResponseOutcome;
+  revokeTerminalApprovalScope(terminalID: string): {
+    id: string;
+    scope: string;
+    revoked: boolean;
+  };
+  hasPendingWaiters(): boolean;
+  requirePlanAcceptance(input: {
+    approvalID: string;
+    planID: string;
+    title: string;
+    detail: string;
+    preview?: string;
+    scope?: string;
+    sessionID?: SessionID;
+    permissionMode?: "ask" | "auto" | "read_only";
+    signal?: AbortSignal;
+    permissionFamily?: import("@anthelia/contracts").PermissionFamily;
+    /**
+     * EI §3.7.1/3.7.2: a rule-class/user-safety change is confirmed per item —
+     * the gate is never auto-granted in `auto` mode and never session-approved.
+     */
+    requireExplicit?: boolean;
+  }): Promise<ApprovalResponse | undefined>;
+}
+
+export type InteractiveWaiterDeps = {
+  publish(event: RuntimeEvent): void;
+  sessionID(): SessionID;
+  permissionMode(turnID?: string): "ask" | "auto" | "read_only";
+  abortSignal(turnID: string): AbortSignal | undefined;
+  activeTurnID(): string | undefined;
+  isPending(sessionID: SessionID, id: string, kind: string): boolean;
+  sessionIDForTurn(turnID: string): SessionID;
+  agentIDForTurn?(turnID: string): string | undefined;
+  publishForSession(sessionID: SessionID, event: RuntimeEvent): void;
+  capabilityOwnerForTool?(toolName: string): string | undefined;
+  workLedger(): WorkLedgerController;
+};
+
 export type ProviderRunnerInput = {
+  /**
+   * The composed static system prompt (ADR D1): persona, goal policy,
+   * agent instructions — POLICY content injected by the caller. The
+   * engine renders and forwards it without ever carrying a brand, a
+   * persona, or a goal rule (§1.1: the engine knows no product).
+   */
+  staticSystemPrompt(agentPrompt?: string): string;
   provider(): StreamingProvider | undefined;
   session(): SessionRecord | undefined;
   context(): RuntimeContextLedgerInput;

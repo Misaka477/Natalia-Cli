@@ -13,7 +13,6 @@ import {
 import type { SessionFactState, SessionRecord } from "@anthelia/session";
 import type { SkillMetadata } from "@anthelia/runtime-services";
 import type { RuntimeContextStatusConfig } from "./status-config";
-import type { RuntimeContextLedger } from "@natalia/context-ledger";
 
 export type CollabSnapshot = {
   collabMessages: import("@anthelia/session").ProjectedCollabMessage[];
@@ -27,7 +26,7 @@ type PermissionProfile = import("@anthelia/contracts").PermissionProfile;
 
 export type SessionExecutionState = {
   session: SessionRecord;
-  context: RuntimeContextLedger;
+  context: ContextLedger;
   attachmentReferences: Map<string, LocalAttachment[]>;
   toolCalls: Map<string, number[]>;
   provider?: StreamingProvider;

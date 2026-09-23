@@ -10,7 +10,7 @@ import type {
   CreateCheckpointInput,
   DurableContextCheckpoint,
 } from "@anthelia/runtime";
-import type { WorkLedgerController } from "@natalia/work-ledger";
+import type { WorkLedgerController } from "@anthelia/runtime-services";
 import type { SubagentsService } from "@anthelia/runtime-services";
 
 /**

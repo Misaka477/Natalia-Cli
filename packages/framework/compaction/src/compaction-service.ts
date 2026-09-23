@@ -10,13 +10,13 @@ import {
 } from "@anthelia/runtime";
 import { prepareContextRequest } from "./prepare-context-request";
 import type { CompactionService, RetryService } from "@anthelia/runtime";
-import type { RuntimeContextLedger } from "@natalia/context-ledger";
+import type { ContextLedger } from "@anthelia/runtime";
 
 export type CompactionOutcome = Awaited<ReturnType<typeof compactContext>>;
 
 type CompactionOperation = {
   compactionID: string;
-  ledger: RuntimeContextLedger;
+  ledger: ContextLedger;
   provider: StreamingProvider;
   budget: CompactionBudget;
   preservedRecentMessages: number;

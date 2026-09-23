@@ -18,7 +18,6 @@
     "@anthelia/turn-orchestration": "workspace:*",
     "@anthelia/workspace": "workspace:*",
     "@anthelia/capability": "workspace:*",
-    "@natalia/collaboration": "workspace:*",
     "@anthelia/config": "workspace:*",
     "@natalia/context-ledger": "workspace:*",
     "@anthelia/contracts": "workspace:*",

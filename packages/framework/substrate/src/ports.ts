@@ -29,7 +29,7 @@ import type { RuntimeContextStatusConfig } from "./status-config";
 import type { SessionExecutionState } from "./context";
 import type { WorkspaceWriteLock } from "@anthelia/workspace";
 import type { CheckpointController } from "@anthelia/checkpoint";
-import type { RuntimeContextLedger } from "@natalia/context-ledger";
+import type { ContextLedger } from "@anthelia/runtime";
 import type { PlanDocRuntime } from "./plan-doc-port";
 
 export type RuntimePorts = {
@@ -127,7 +127,7 @@ export type RuntimePorts = {
   getActiveExec: () => SessionExecutionState | undefined;
   getActiveTurnID: () => string | undefined;
   getPauseWaiters: () => Array<() => void>;
-  getRuntimeContext: () => RuntimeContextLedger;
+  getRuntimeContext: () => ContextLedger;
   currentModelImageInput: (exec: SessionExecutionState | undefined) => boolean;
   modelCapabilitiesForExecution: (
     exec: SessionExecutionState | undefined,

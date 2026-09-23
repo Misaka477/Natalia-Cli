@@ -89,7 +89,7 @@ export type { SessionExecutionState } from "./session-execution-state";
 import type {
   InteractiveWaiter,
   InteractiveWaiterDeps,
-} from "@natalia/collaboration";
+} from "@anthelia/runtime-services";
 import type { TurnController } from "@anthelia/turn-orchestration";
 
 type PermissionProfile = import("@anthelia/contracts").PermissionProfile;
@@ -216,4 +216,4 @@ export type { TurnController } from "@anthelia/turn-orchestration";
 export type {
   InteractiveWaiter,
   InteractiveWaiterDeps,
-} from "@natalia/collaboration";
+} from "@anthelia/runtime-services";

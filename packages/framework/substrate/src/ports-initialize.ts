@@ -1,8 +1,8 @@
 import type { AgentRegistry } from "@anthelia/agent";
 import type { ProviderConcurrencyLimiter } from "@anthelia/runtime";
 import type { SessionRecord } from "@anthelia/session";
-import type { InteractiveWaiter } from "@natalia/collaboration";
-import type { RuntimeContextLedger } from "@natalia/context-ledger";
+import type { InteractiveWaiter } from "@anthelia/runtime-services";
+import type { ContextLedger } from "@anthelia/runtime";
 
 export type RuntimeInitializePorts = {
   getSession: () => SessionRecord | undefined;
@@ -32,7 +32,7 @@ export type RuntimeInitializePorts = {
     | import("@anthelia/contracts").PermissionProfile
     | undefined;
   getAgentRegistry: () => AgentRegistry | undefined;
-  getRuntimeContext: () => RuntimeContextLedger;
+  getRuntimeContext: () => ContextLedger;
   getProviderConcurrencyLimiter: () => ProviderConcurrencyLimiter;
   getRetryPolicy: () => import("@anthelia/runtime").RetryRunnerOptions["policy"];
 };

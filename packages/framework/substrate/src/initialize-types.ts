@@ -14,8 +14,8 @@ import type {
   TerminalCommandBuffer,
 } from "@anthelia/tools";
 import type { SessionExecutionState } from "./session-execution-state";
-import type { InteractiveWaiterDeps } from "@natalia/collaboration";
-import type { RuntimeContextLedger } from "@natalia/context-ledger";
+import type { InteractiveWaiterDeps } from "@anthelia/runtime-services";
+import type { ContextLedger } from "@anthelia/runtime";
 
 export type InitializeOptions = {
   sessionID?: SessionID;
@@ -134,10 +134,7 @@ export type SubagentSupport = {
     reason: "done" | "cancelled" | "error",
   ): void;
   /** Register the ledger a subagent's current run is writing to. */
-  registerSubagentLedger(
-    agentId: string,
-    ledger: RuntimeContextLedger,
-  ): RuntimeContextLedger;
+  registerSubagentLedger(agentId: string, ledger: ContextLedger): ContextLedger;
   /** Drop a subagent's live ledger, when its run ends. */
   unregisterSubagentLedger(agentId: string): void;
   /** Queue a parent message for a subagent with no live runner. */
@@ -149,9 +146,9 @@ export type SubagentSupport = {
     task: string,
     planPointer?: { planID: string; documentPath: string; version: number },
     forkSeed?: { entries: readonly ContextEntry[] },
-  ): RuntimeContextLedger;
+  ): ContextLedger;
   runSubagentProviderStep(
-    ledger: RuntimeContextLedger,
+    ledger: ContextLedger,
     tools: RuntimeTool[],
     runner: SubagentRunnerContext,
     step: number,
@@ -165,7 +162,7 @@ export type SubagentSupport = {
     protocolViolation: string;
   }>;
   appendSubagentAssistant(
-    ledger: RuntimeContextLedger,
+    ledger: ContextLedger,
     runner: SubagentRunnerContext,
     step: number,
     output: string,
@@ -173,7 +170,7 @@ export type SubagentSupport = {
   ): void;
 
   appendSubagentToolResult(
-    ledger: RuntimeContextLedger,
+    ledger: ContextLedger,
     runner: SubagentRunnerContext,
     step: number,
     call: ProviderToolCall,

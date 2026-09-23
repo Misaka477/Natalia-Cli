@@ -1,39 +1,6 @@
-import type { SessionID } from "@anthelia/contracts";
-import type { ServiceOperation } from "@anthelia/runtime-services";
+import type { WorkLedgerController } from "@anthelia/runtime-services";
 
-/** Work ledger contracts, moved from runtime-services with the token. */
+export type { WorkLedgerController };
 
-export interface WorkLedgerController {
-  buildPlanDocCreated: ServiceOperation;
-  buildPlanDocUpdated: ServiceOperation;
-  buildPlanDocMarked: ServiceOperation;
-  buildPlanDocDeleted: ServiceOperation;
-  buildPlanDocStatus: ServiceOperation;
-  buildAuditRequested: ServiceOperation;
-  evaluateDrift: ServiceOperation;
-  evaluateBehaviorDrift: ServiceOperation;
-  buildDriftFindingUpdate: ServiceOperation;
-  buildWorkContractDrafted: ServiceOperation;
-  buildWorkContractAccepted: ServiceOperation;
-  buildDetourRequested: ServiceOperation;
-  buildDetourReviewed: ServiceOperation;
-  validateDetour: ServiceOperation;
-  mergeDetourIntoContract: ServiceOperation;
-  validateWorkContractFields: ServiceOperation;
-  evaluateCompletionCard: ServiceOperation;
-  agentActionNode: ServiceOperation;
-  approvalEdge: ServiceOperation;
-  approvalNode: ServiceOperation;
-  completionNode: ServiceOperation;
-  completionValidationEdge: ServiceOperation;
-  checkpointNode: ServiceOperation;
-  constitutionCheckEdge: ServiceOperation;
-  constitutionRuleNode: ServiceOperation;
-  decisionNode: ServiceOperation;
-  externalWorkspaceChangeNode: ServiceOperation;
-  toolCallEdge: ServiceOperation;
-  toolCallNode: ServiceOperation;
-  rollbackCheckpointEdge: ServiceOperation;
-  workspaceChangeEdge: ServiceOperation;
-  workspaceChangeNode: ServiceOperation;
-}
+/** Work ledger contracts: the controller SHAPE lives engine-side with the
+ * service vocabulary (checkpoint reads it); implementations stay here. */

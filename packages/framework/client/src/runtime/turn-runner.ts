@@ -9,6 +9,7 @@
  * call time.
  */
 import { providerForModel } from "@anthelia/runtime";
+import { staticSystemPrompt } from "@natalia/agent-prompts";
 import {
   claimNextSteps,
   projectedCollabMessages,
@@ -96,6 +97,7 @@ export function createTurnRunner(
     const retry = ctx.state.serviceDirectory.get(retryService);
     const activeExec = getActiveExec();
     return {
+      staticSystemPrompt,
       provider: () => {
         if (exec.provider) return exec.provider;
         const config = ctx.ports.getTsRuntimeConfig();
