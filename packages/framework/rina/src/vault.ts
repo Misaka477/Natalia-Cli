@@ -53,6 +53,19 @@ export type VaultRecallScope = {
   sessionID?: string;
   workspaceID?: string;
   recordType?: VaultRecordType;
+  /** ISO bounds on the record's own time (the study's timeRange). */
+  createdAfter?: string;
+  createdBefore?: string;
+  limit?: number;
+};
+
+export type VaultListScope = {
+  sessionID?: string;
+  workspaceID?: string;
+  recordType?: VaultRecordType;
+  /** ISO bounds on the record's own time (the study's timeRange). */
+  createdAfter?: string;
+  createdBefore?: string;
   limit?: number;
 };
 
@@ -128,7 +141,16 @@ export type RinaVaultService = {
   /** The study's context_read face: a promoted hit answers from the
    * bounded hot tier first, else the row — same shape either way (an
    * eviction can change SPEED, never the answer). */
-  get(id: string): VaultRecallHit | undefined;
+  get(id: string, opts?: { sessionID?: string }): VaultRecallHit | undefined;
+  /** The study's context_list: a STRUCTURED read (no query), newest
+   * first, same scopes + the time window. */
+  list(scope?: VaultListScope): VaultRecallHit[];
+  /** The study's context_history: the recorded actions on one record
+   * (insert/accessed/evict/rebuild), oldest first. */
+  history(
+    id: string,
+    opts?: { sessionID?: string; limit?: number },
+  ): Array<{ action: string; at: string }>;
   /** Cost-observable hot tier: the promotion's size (its cap is the
    * one bound; the eviction is unobservable by design because get()
    * falls through to the store). */
@@ -263,6 +285,8 @@ export function createUnavailableVault(reason: string): RinaVaultService {
     },
     recall: () => [],
     get: () => undefined,
+    list: () => [],
+    history: () => [],
     hotStats: () => ({ size: 0 }),
     invalidate: () => 0,
     rebuild: () => 0,
@@ -346,6 +370,14 @@ export function buildContextPack(
   return { items, tokens, truncated, droppedByRole, deduped };
 }
 
+/** The id scheme (`${session}:${seq...}`) makes the SESSION readable
+ * from the id itself — a cross-session face refuses before touching
+ * the store (the study's isolation, enforced at the edge). */
+function idBelongsTo(id: string, sessionID: string | undefined): boolean {
+  if (!sessionID) return true;
+  return id.startsWith(`${sessionID}:`);
+}
+
 export function createContextVault(input: {
   dir: string;
   /** The hot-state reader the wire injects (Phase0's fact state). */
@@ -409,6 +441,56 @@ export function createContextVault(input: {
   // change SPEED: get() falls through to the store for the answer.
   const HOT_CAP = 200;
   const hot = new Map<string, VaultRecallHit>();
+
+  /** The shared point-read row -> hit (no query: the fts/entity terms
+   * are absent BY DEFINITION — the total is honestly over what exists). */
+  const pointHit = (row: {
+    id: string;
+    record_type: VaultRecordType;
+    entity_key: string;
+    summary: string;
+    session_id: string;
+    seq: number | null;
+    created_at: string;
+    source_evidence_id: string | null;
+  }): VaultRecallHit => {
+    const time = timeWeight(row.created_at, Date.now());
+    const strength = Math.min(
+      1,
+      (EVIDENCE_STRENGTH[row.record_type] ?? 0.5) +
+        (row.source_evidence_id ? 0.1 : 0),
+    );
+    const breakdown: VaultScoreBreakdown = {
+      fts: 0,
+      time,
+      evidence: strength,
+      entity: 0,
+    };
+    return {
+      id: row.id,
+      recordType: row.record_type,
+      entityKey: row.entity_key,
+      summary: row.summary,
+      sessionID: row.session_id,
+      ...(row.seq === null ? {} : { seq: row.seq }),
+      createdAt: row.created_at,
+      rank: 0,
+      score: SCORE_WEIGHTS.time * time + SCORE_WEIGHTS.evidence * strength,
+      breakdown,
+    };
+  };
+
+  /** One promotion path for all readers (recall/get/list): re-set = an
+   * LRU refresh, the cap evicts from the head. */
+  const promote = (hit: VaultRecallHit): void => {
+    hot.delete(hit.id);
+    hot.set(hit.id, hit);
+    while (hot.size > HOT_CAP) {
+      const oldest = hot.keys().next().value;
+      if (oldest === undefined) break;
+      hot.delete(oldest);
+    }
+  };
   const flushMs = input.flushMs ?? FLUSH_MS;
   const flushN = input.flushN ?? FLUSH_N;
 
@@ -523,6 +605,14 @@ export function createContextVault(input: {
         filters.push("r.record_type = ?");
         args.push(scope.recordType);
       }
+      if (scope.createdAfter) {
+        filters.push("r.created_at >= ?");
+        args.push(scope.createdAfter);
+      }
+      if (scope.createdBefore) {
+        filters.push("r.created_at <= ?");
+        args.push(scope.createdBefore);
+      }
       const limit = Math.max(1, Math.min(scope.limit ?? 20, 200));
       // Two-phase by the study's model: FTS supplies the CANDIDATES (a
       // wider window), the four signals pick the top-N.
@@ -616,7 +706,8 @@ export function createContextVault(input: {
       }
       return hits;
     },
-    get(id: string): VaultRecallHit | undefined {
+    get(id: string, opts?: { sessionID?: string }): VaultRecallHit | undefined {
+      if (!idBelongsTo(id, opts?.sessionID)) return undefined;
       const promoted = hot.get(id);
       if (promoted) return promoted;
       const row = db
@@ -638,39 +729,70 @@ export function createContextVault(input: {
           }
         | undefined;
       if (!row) return undefined;
-      const time = timeWeight(row.created_at, Date.now());
-      const strength = Math.min(
-        1,
-        (EVIDENCE_STRENGTH[row.record_type] ?? 0.5) +
-          (row.source_evidence_id ? 0.1 : 0),
-      );
-      // A point read has NO query: the fts and entity terms are absent
-      // BY DEFINITION (0), and the total is honestly over what exists.
-      const breakdown: VaultScoreBreakdown = {
-        fts: 0,
-        time,
-        evidence: strength,
-        entity: 0,
-      };
-      const hit: VaultRecallHit = {
-        id: row.id,
-        recordType: row.record_type,
-        entityKey: row.entity_key,
-        summary: row.summary,
-        sessionID: row.session_id,
-        ...(row.seq === null ? {} : { seq: row.seq }),
-        createdAt: row.created_at,
-        rank: 0,
-        score: SCORE_WEIGHTS.time * time + SCORE_WEIGHTS.evidence * strength,
-        breakdown,
-      };
-      hot.set(row.id, hit);
-      while (hot.size > HOT_CAP) {
-        const oldest = hot.keys().next().value;
-        if (oldest === undefined) break;
-        hot.delete(oldest);
-      }
+      const hit = pointHit(row);
+      promote(hit);
       return hit;
+    },
+    list(scope: VaultListScope = {}): VaultRecallHit[] {
+      flushNow();
+      const filters: string[] = [];
+      const args: (string | number | null)[] = [];
+      if (scope.sessionID) {
+        filters.push("session_id = ?");
+        args.push(scope.sessionID);
+      }
+      if (scope.workspaceID) {
+        filters.push("workspace_id = ?");
+        args.push(scope.workspaceID);
+      }
+      if (scope.recordType) {
+        filters.push("record_type = ?");
+        args.push(scope.recordType);
+      }
+      if (scope.createdAfter) {
+        filters.push("created_at >= ?");
+        args.push(scope.createdAfter);
+      }
+      if (scope.createdBefore) {
+        filters.push("created_at <= ?");
+        args.push(scope.createdBefore);
+      }
+      const limit = Math.max(1, Math.min(scope.limit ?? 50, 500));
+      const sql = `
+        SELECT id, record_type, entity_key, summary, session_id, seq, created_at,
+               source_evidence_id
+        FROM context_records
+        ${filters.length ? `WHERE ${filters.join(" AND ")}` : ""}
+        ORDER BY created_at DESC
+        LIMIT ?`;
+      const rows = db.query(sql).all(...args, limit) as Array<{
+        id: string;
+        record_type: VaultRecordType;
+        entity_key: string;
+        summary: string;
+        session_id: string;
+        seq: number | null;
+        created_at: string;
+        source_evidence_id: string | null;
+      }>;
+      return rows.map((row) => {
+        const hit = pointHit(row);
+        promote(hit);
+        return hit;
+      });
+    },
+    history(
+      id: string,
+      opts: { sessionID?: string; limit?: number } = {},
+    ): Array<{ action: string; at: string }> {
+      if (!idBelongsTo(id, opts.sessionID)) return [];
+      const limit = Math.max(1, Math.min(opts.limit ?? 50, 500));
+      const rows = db
+        .query(
+          "SELECT action, at FROM context_history WHERE record_id = ? ORDER BY at ASC LIMIT ?",
+        )
+        .all(id, limit) as Array<{ action: string; at: string }>;
+      return rows;
     },
     hotStats(): { size: number } {
       return { size: hot.size };

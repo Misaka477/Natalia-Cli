@@ -66,6 +66,7 @@ import {
   searchWorkspaceFiles,
 } from "@anthelia/platform";
 import { createSessionHistoryTool } from "../session-history-tool";
+import { createRinaContextTools } from "../context-tools";
 import {
   createPlanDocListTool,
   createPlanDocReadTool,
@@ -308,6 +309,16 @@ export async function wireFrameworkServices(
       `framework tool already registered: ${sessionHistoryTool.name}`,
     );
   ctx.state.tools.set(sessionHistoryTool.name, sessionHistoryTool);
+
+  // The RINA study's Agent Tools (Phase2b-1): five read-only faces over
+  // the cold vault, session-scoped at the edge. The consumer switch to
+  // THEM (dropping ensureSessionFullEvents from prompts) = Phase2b-2,
+  // with the prompt tests as its net.
+  for (const tool of createRinaContextTools(ctx)) {
+    if (ctx.state.tools.get(tool.name))
+      throw new Error(`framework tool already registered: ${tool.name}`);
+    ctx.state.tools.set(tool.name, tool);
+  }
 
   // ADR D4/B3: the main agent reads the plan document itself — the plan正文
   // is never injected into any prompt. Register the plan read tools so the
