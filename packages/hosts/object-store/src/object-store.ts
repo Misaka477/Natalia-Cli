@@ -622,72 +622,95 @@ export class ObjectStore {
     const originalById = new Map(
       originals.map((original, index) => [keepIdList[index]!, original]),
     );
-    const fd = await open(packFile, "w");
-    await fd.write(this.packMagic);
-    await fd.write(Buffer.from([this.packVersion]));
-    let offset = this.packMagic.length + 1;
-    let lastId: string | undefined;
-    let lastOriginal: Buffer | undefined;
-    try {
-      for (const id of keepIds) {
-        const original = originalById.get(id)!;
-        const delta =
-          lastOriginal && this.deltaSize(original, lastOriginal)
-            ? this.computeDelta(lastOriginal, original)
-            : undefined;
-        if (delta) {
-          const baseId = lastId!;
-          const baseIdBuffer = Buffer.from(baseId, "utf8");
-          const header = Buffer.alloc(1 + 4 + baseIdBuffer.length + 4 + 4);
-          header.writeUInt8(1, 0);
-          header.writeUInt32LE(baseIdBuffer.length, 1);
-          baseIdBuffer.copy(header, 5);
-          header.writeUInt32LE(original.length, 5 + baseIdBuffer.length);
-          header.writeUInt32LE(delta.bytes.length, 9 + baseIdBuffer.length);
-          await fd.write(header);
-          await fd.write(delta.bytes);
-          indexEntries.push({
-            id,
-            offset,
-            dataOffset: offset + header.length,
-            origLen: original.length,
-            compLen: 0,
-            kind: 1,
-            baseId,
-            deltaLen: delta.bytes.length,
-          });
-          offset += header.length + delta.bytes.length;
-        } else {
-          const compressed = deflateSync(original);
-          const idBuffer = Buffer.from(id, "utf8");
-          const header = Buffer.alloc(1 + 4 + idBuffer.length + 4 + 4);
-          header.writeUInt8(0, 0);
-          header.writeUInt32LE(idBuffer.length, 1);
-          idBuffer.copy(header, 5);
-          header.writeUInt32LE(original.length, 5 + idBuffer.length);
-          header.writeUInt32LE(compressed.length, 9 + idBuffer.length);
-          await fd.write(header);
-          await fd.write(compressed);
-          indexEntries.push({
-            id,
-            offset,
-            dataOffset: offset + header.length,
-            origLen: original.length,
-            compLen: compressed.length,
-            kind: 0,
-          });
-          offset += header.length + compressed.length;
-        }
-        lastId = id;
-        lastOriginal = original;
+    if (this.useRust) {
+      // Rust builds the frame (delta chain + NDX1 in one call) over the
+      // SAME keep order; fs/order and the file-management tail (old-pack
+      // removal, reload) stay TS. Write order mirrors the TS path:
+      // pack first, then the index — the index IS the commit (a pack
+      // without one is ignored), and on any failure the half-written
+      // pack is removed exactly like the TS catch below.
+      try {
+        const entries = [...keepIds].map((id) => ({
+          id,
+          data: originalById.get(id)!,
+        }));
+        const frame = rustCas.compactFrame(entries);
+        await writeFile(packFile, frame.pack);
+        await writeFile(packFile.replace(/\.pack$/, ".idx"), frame.idx, {
+          mode: 0o600,
+        });
+      } catch (error) {
+        await rm(packFile, { force: true });
+        throw error;
       }
-      await fd.close();
-    } catch (error) {
-      await fd.close().catch(() => undefined);
-      await rm(packFile, { force: true });
-      throw error;
+    } else {
+      const fd = await open(packFile, "w");
+      await fd.write(this.packMagic);
+      await fd.write(Buffer.from([this.packVersion]));
+      let offset = this.packMagic.length + 1;
+      let lastId: string | undefined;
+      let lastOriginal: Buffer | undefined;
+      try {
+        for (const id of keepIds) {
+          const original = originalById.get(id)!;
+          const delta =
+            lastOriginal && this.deltaSize(original, lastOriginal)
+              ? this.computeDelta(lastOriginal, original)
+              : undefined;
+          if (delta) {
+            const baseId = lastId!;
+            const baseIdBuffer = Buffer.from(baseId, "utf8");
+            const header = Buffer.alloc(1 + 4 + baseIdBuffer.length + 4 + 4);
+            header.writeUInt8(1, 0);
+            header.writeUInt32LE(baseIdBuffer.length, 1);
+            baseIdBuffer.copy(header, 5);
+            header.writeUInt32LE(original.length, 5 + baseIdBuffer.length);
+            header.writeUInt32LE(delta.bytes.length, 9 + baseIdBuffer.length);
+            await fd.write(header);
+            await fd.write(delta.bytes);
+            indexEntries.push({
+              id,
+              offset,
+              dataOffset: offset + header.length,
+              origLen: original.length,
+              compLen: 0,
+              kind: 1,
+              baseId,
+              deltaLen: delta.bytes.length,
+            });
+            offset += header.length + delta.bytes.length;
+          } else {
+            const compressed = deflateSync(original);
+            const idBuffer = Buffer.from(id, "utf8");
+            const header = Buffer.alloc(1 + 4 + idBuffer.length + 4 + 4);
+            header.writeUInt8(0, 0);
+            header.writeUInt32LE(idBuffer.length, 1);
+            idBuffer.copy(header, 5);
+            header.writeUInt32LE(original.length, 5 + idBuffer.length);
+            header.writeUInt32LE(compressed.length, 9 + idBuffer.length);
+            await fd.write(header);
+            await fd.write(compressed);
+            indexEntries.push({
+              id,
+              offset,
+              dataOffset: offset + header.length,
+              origLen: original.length,
+              compLen: compressed.length,
+              kind: 0,
+            });
+            offset += header.length + compressed.length;
+          }
+          lastId = id;
+          lastOriginal = original;
+        }
+        await fd.close();
+      } catch (error) {
+        await fd.close().catch(() => undefined);
+        await rm(packFile, { force: true });
+        throw error;
+      }
+      await this.writeBinaryIndex(packFile, indexEntries);
     }
-    await this.writeBinaryIndex(packFile, indexEntries);
     for (const file of oldPackFiles) {
       await rm(file, { force: true });
       await rm(file.replace(/\.pack$/, ".idx.json"), { force: true });
@@ -765,74 +788,96 @@ export class ObjectStore {
     const originalById = new Map(
       looseOriginals.map((original, index) => [looseIds[index]!, original]),
     );
-    const fd = await open(packFile, "w");
-    await fd.write(this.packMagic);
-    await fd.write(Buffer.from([this.packVersion]));
-    let offset = this.packMagic.length + 1;
     let totalBytes = 0;
-    let lastId: string | undefined;
-    let lastOriginal: Buffer | undefined;
-    try {
-      for (const id of looseIds) {
-        const original = originalById.get(id)!;
-        const delta =
-          lastOriginal && this.deltaSize(original, lastOriginal)
-            ? this.computeDelta(lastOriginal, original)
-            : undefined;
-        if (delta) {
-          const baseId = lastId!;
-          const baseIdBuffer = Buffer.from(baseId, "utf8");
-          const header = Buffer.alloc(1 + 4 + baseIdBuffer.length + 4 + 4);
-          header.writeUInt8(1, 0);
-          header.writeUInt32LE(baseIdBuffer.length, 1);
-          baseIdBuffer.copy(header, 5);
-          header.writeUInt32LE(original.length, 5 + baseIdBuffer.length);
-          header.writeUInt32LE(delta.bytes.length, 9 + baseIdBuffer.length);
-          await fd.write(header);
-          await fd.write(delta.bytes);
-          indexEntries.push({
-            id,
-            offset,
-            dataOffset: offset + header.length,
-            origLen: original.length,
-            compLen: 0,
-            kind: 1,
-            baseId,
-            deltaLen: delta.bytes.length,
-          });
-          offset += header.length + delta.bytes.length;
-        } else {
-          const compressed = deflateSync(original);
-          const idBuffer = Buffer.from(id, "utf8");
-          const header = Buffer.alloc(1 + 4 + idBuffer.length + 4 + 4);
-          header.writeUInt8(0, 0);
-          header.writeUInt32LE(idBuffer.length, 1);
-          idBuffer.copy(header, 5);
-          header.writeUInt32LE(original.length, 5 + idBuffer.length);
-          header.writeUInt32LE(compressed.length, 9 + idBuffer.length);
-          await fd.write(header);
-          await fd.write(compressed);
-          indexEntries.push({
-            id,
-            offset,
-            dataOffset: offset + header.length,
-            origLen: original.length,
-            compLen: compressed.length,
-            kind: 0,
-          });
-          offset += header.length + compressed.length;
-        }
-        totalBytes += original.length;
-        lastId = id;
-        lastOriginal = original;
+    if (this.useRust) {
+      // Same contract as the loop below, one call: ordered loose
+      // entries -> pack + NDX1 bytes, pack-then-index (the index is
+      // the commit), and totalBytes keeps its meaning (the sum of the
+      // ORIGINAL lengths of what was packed).
+      try {
+        const entries = looseIds.map((id) => ({
+          id,
+          data: originalById.get(id)!,
+        }));
+        const frame = rustCas.compactFrame(entries);
+        await writeFile(packFile, frame.pack);
+        await writeFile(packFile.replace(/\.pack$/, ".idx"), frame.idx, {
+          mode: 0o600,
+        });
+        totalBytes = entries.reduce((sum, entry) => sum + entry.data.length, 0);
+      } catch (error) {
+        await rm(packFile, { force: true });
+        throw error;
       }
-      await fd.close();
-    } catch (error) {
-      await fd.close().catch(() => undefined);
-      await rm(packFile, { force: true });
-      throw error;
+    } else {
+      const fd = await open(packFile, "w");
+      await fd.write(this.packMagic);
+      await fd.write(Buffer.from([this.packVersion]));
+      let offset = this.packMagic.length + 1;
+      let lastId: string | undefined;
+      let lastOriginal: Buffer | undefined;
+      try {
+        for (const id of looseIds) {
+          const original = originalById.get(id)!;
+          const delta =
+            lastOriginal && this.deltaSize(original, lastOriginal)
+              ? this.computeDelta(lastOriginal, original)
+              : undefined;
+          if (delta) {
+            const baseId = lastId!;
+            const baseIdBuffer = Buffer.from(baseId, "utf8");
+            const header = Buffer.alloc(1 + 4 + baseIdBuffer.length + 4 + 4);
+            header.writeUInt8(1, 0);
+            header.writeUInt32LE(baseIdBuffer.length, 1);
+            baseIdBuffer.copy(header, 5);
+            header.writeUInt32LE(original.length, 5 + baseIdBuffer.length);
+            header.writeUInt32LE(delta.bytes.length, 9 + baseIdBuffer.length);
+            await fd.write(header);
+            await fd.write(delta.bytes);
+            indexEntries.push({
+              id,
+              offset,
+              dataOffset: offset + header.length,
+              origLen: original.length,
+              compLen: 0,
+              kind: 1,
+              baseId,
+              deltaLen: delta.bytes.length,
+            });
+            offset += header.length + delta.bytes.length;
+          } else {
+            const compressed = deflateSync(original);
+            const idBuffer = Buffer.from(id, "utf8");
+            const header = Buffer.alloc(1 + 4 + idBuffer.length + 4 + 4);
+            header.writeUInt8(0, 0);
+            header.writeUInt32LE(idBuffer.length, 1);
+            idBuffer.copy(header, 5);
+            header.writeUInt32LE(original.length, 5 + idBuffer.length);
+            header.writeUInt32LE(compressed.length, 9 + idBuffer.length);
+            await fd.write(header);
+            await fd.write(compressed);
+            indexEntries.push({
+              id,
+              offset,
+              dataOffset: offset + header.length,
+              origLen: original.length,
+              compLen: compressed.length,
+              kind: 0,
+            });
+            offset += header.length + compressed.length;
+          }
+          totalBytes += original.length;
+          lastId = id;
+          lastOriginal = original;
+        }
+        await fd.close();
+      } catch (error) {
+        await fd.close().catch(() => undefined);
+        await rm(packFile, { force: true });
+        throw error;
+      }
+      await this.writeBinaryIndex(packFile, indexEntries);
     }
-    await this.writeBinaryIndex(packFile, indexEntries);
     this.packsLoaded = false;
     await this.loadPackIndexes();
     for (const id of looseIds) {
