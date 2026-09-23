@@ -118,6 +118,7 @@ export const RPC_ROUTE_MEMBERS = {
   "interactive.pending": "pendingInteractive",
   "interactive.respond": "respondInteractive",
   "session.history": "history",
+  "feedback.record": "feedback",
   "session.eventWindow": "eventWindow",
   "session.messages": "messages",
   pause: "pause",
@@ -658,6 +659,49 @@ export async function handleRPCMessage(
         result: await client.submitAndWait(
           sessionID ? { text, sessionID } : text,
         ),
+      };
+    }
+    if (request.method === "feedback.record") {
+      const scope = request.params?.scope;
+      if (scope !== "session" && scope !== "message")
+        throw invalidParams(
+          "feedback.record.params.scope must be session or message",
+        );
+      const sessionID = request.params?.sessionID;
+      if (typeof sessionID !== "string" || !sessionID)
+        throw invalidParams(
+          "feedback.record.params.sessionID must be a non-empty string",
+        );
+      const verdict = request.params?.verdict;
+      if (verdict !== "up" && verdict !== "down")
+        throw invalidParams(
+          "feedback.record.params.verdict must be up or down",
+        );
+      const messageID = request.params?.messageID;
+      if (scope === "message" && (typeof messageID !== "string" || !messageID))
+        throw invalidParams(
+          "feedback.record.params.messageID required for message scope",
+        );
+      const category = request.params?.category;
+      if (category !== undefined && typeof category !== "string")
+        throw invalidParams("feedback.record.params.category must be a string");
+      const note = request.params?.note;
+      if (note !== undefined && typeof note !== "string")
+        throw invalidParams("feedback.record.params.note must be a string");
+      optionsGuard(client, "feedback");
+      return {
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: await client.feedback({
+          scope,
+          sessionID,
+          verdict,
+          ...(messageID !== undefined
+            ? { messageID: messageID as string }
+            : {}),
+          ...(category !== undefined ? { category: category as string } : {}),
+          ...(note !== undefined ? { note: note as string } : {}),
+        }),
       };
     }
     if (request.method === "cancel") {

@@ -751,6 +751,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "ok",
     note: "edit the current goal (objective/round cap/plan) from the status bar; refusal is expressed by ok:false plus a message",
   },
+  feedback: {
+    refusal: "value",
+    expressedBy: "recorded",
+    note: "a disposed runtime answers recorded:false without journaling; invalid input is rejected by validation at the surface AND the transport edge before anything is recorded",
+  },
 } as const satisfies Record<keyof RuntimeClient, MemberRefusalSemantics>;
 
 type AssertNever<T extends never> = T;

@@ -2133,7 +2133,29 @@ type RuntimeEventData =
         | "no_skills"
         | "no_input"
         | "error";
+    }
+  | {
+      type: "feedback.recorded";
+      /**
+       * D6a: human feedback about the OUTPUT, recorded without ever
+       * reaching the model (design law 3 — dsh's feedback group:
+       * signals about output, never input to it). The only route into
+       * model-visible material is governance (constitution / AGENTS.md
+       * / skills) with its hash-change notifications.
+       */
+      id: string;
+      at: string;
+      sessionID?: SessionID;
+      workspaceID?: string;
+      scope: "session" | "message";
+      /** Required for message scope: the assistant message this rates. */
+      messageID?: string;
+      verdict: "up" | "down";
+      /** From the fixed category taxonomy (a code change to extend, on purpose). */
+      category?: string;
+      note?: string;
     };
+
 /**
  * An episode groups all events emitted by one isolated execution without
  * changing the durable workspace-level session identity used by interactive
@@ -2863,12 +2885,33 @@ export type ChatStreamSurface = {
   ): Promise<{ rolledBackTo: string; removed: number }>;
 };
 
+export type FeedbackInput = {
+  scope: "session" | "message";
+  sessionID: string;
+  /** Required for message scope. */
+  messageID?: string;
+  verdict: "up" | "down";
+  /** From the fixed category taxonomy. */
+  category?: string;
+  note?: string;
+};
+
+export type FeedbackResult = { recorded: boolean; id: string };
+
 export type RuntimeClient = {
   start(
     onEvent: (event: RuntimeEvent) => void,
     options?: { replay?: "all" | "none" },
   ): void;
   submit(text: string, sessionID?: string): Promise<SubmittedTurn>;
+  /**
+   * Record human feedback about the session or an assistant message
+   * (D6a). Structurally model-free: recording publishes a journal event
+   * and nothing else — no provider, no prompt, no tool path. Optional
+   * like submitAndWait: the stable required surface (and the API
+   * version) does not move for additive surface members.
+   */
+  feedback?(input: FeedbackInput): Promise<FeedbackResult>;
   /**
    * Submit a turn and wait until the turn reaches a durable terminal state
    * (`turn.finished` or `turn.cancelled`). The normal `submit` method remains

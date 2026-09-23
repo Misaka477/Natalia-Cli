@@ -94,6 +94,8 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "submitInput",
     "submitAndWait",
   ],
+  /** Recording human opinions about the work — never model input (D6a). */
+  feedback: ["feedback"],
   /** Pausing and resuming a running turn, plus editing its queued inputs. */
   turnControl: [
     "pause",

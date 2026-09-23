@@ -6,7 +6,10 @@ import { createMailboxSurface } from "@natalia/collab";
 import { createPlanDocRuntime } from "@natalia/collab";
 import { createExtensionsRuntime } from "./commands/extensions-runtime";
 import type { RuntimeContext } from "@anthelia/substrate";
-import { createIntelligenceSurface } from "@natalia/engineering-intelligence";
+import {
+  createIntelligenceSurface,
+  createFeedbackSurface,
+} from "@natalia/engineering-intelligence";
 import { createAttachmentRuntime } from "./attachment-runtime";
 import { createSubagentRuntime } from "./subagent-runtime";
 import { createMcpRuntime } from "./mcp-runtime";
@@ -61,6 +64,7 @@ export function createClientSurface(
     ...createObservabilitySurface(ctx, options),
     ...createWorkGraphRuntime(ctx),
     ...createIntelligenceSurface(ctx, options),
+    ...createFeedbackSurface(ctx),
     ...createMailboxSurface(ctx),
     ...createPlanDocRuntime(ctx),
     ...createChatSurface(ctx),
