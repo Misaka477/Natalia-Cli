@@ -21,3 +21,4 @@ export {
   reconcilePlugins,
   type PluginDoctorFinding,
 } from "./maintenance";
+export * from "./update";

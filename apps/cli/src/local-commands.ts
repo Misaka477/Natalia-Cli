@@ -1,4 +1,5 @@
 import { EGRESS_ADVISORY } from "@natalia/client";
+import { resolveUpdateHome, updateProgram } from "@natalia/installer";
 import {
   groupRunsByPrompt,
   scoreRun,
@@ -56,6 +57,7 @@ export async function handleLocalCommands(argv: string[]) {
       "store",
       "debug-bundle",
       "runs",
+      "update",
     ]).has(subcommand ?? "")
   )
     return false;
@@ -140,6 +142,48 @@ export async function handleLocalCommands(argv: string[]) {
         process.exit(1);
       }
       break;
+    }
+    case "update": {
+      // D3a: check → verify-at-source → stage → atomic swap → exact
+      // --version probe → automatic rollback. POSIX-first (the atomic
+      // swap is a symlink rename; install.ps1 parity is the plan's own
+      // Windows follow-up). The default channel lands in D5 — until
+      // then a source is an explicit --from (the plan's own staging).
+      const valueFlags = new Set(["--from", "--home"]);
+      const positionals: string[] = [];
+      let from: string | undefined;
+      let home: string | undefined;
+      for (let index = 1; index < argv.length; index += 1) {
+        const arg = argv[index]!;
+        if (valueFlags.has(arg)) {
+          if (arg === "--from") from = argv[index + 1];
+          if (arg === "--home") home = argv[index + 1];
+          index += 1;
+          continue;
+        }
+        if (arg.startsWith("--")) continue;
+        positionals.push(arg);
+      }
+      if (positionals.length) {
+        console.error(
+          "usage: natalia update --from <dir|https-url> [--home <dir>]",
+        );
+        process.exit(1);
+      }
+      if (!from) {
+        console.error(
+          "update: no source — pass --from <dir|https-url> (the default channel arrives with D5)",
+        );
+        process.exit(1);
+      }
+      const installHome = resolveUpdateHome(process.env, home);
+      const result = await updateProgram({ home: installHome, from });
+      console.log(
+        `update: ${result.outcome}` +
+          (result.reason ? ` — ${result.reason}` : "") +
+          (result.receiptPath ? `\nreceipt: ${result.receiptPath}` : ""),
+      );
+      process.exit(result.exitCode);
     }
     case "runs": {
       // G-b's internal-evaluation report: score every turn from the
