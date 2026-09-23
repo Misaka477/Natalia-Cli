@@ -1,4 +1,5 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { ProductRuntimeContext } from "@natalia/collab";
 import type { SessionID } from "@natalia/contracts";
 import { createChatSurface } from "@natalia/collab";
 import { createMailboxSurface } from "@natalia/collab";
@@ -27,7 +28,7 @@ import { createWorkspaceRuntime } from "./workspace-runtime";
 import { createPluginRuntime } from "./plugin-runtime";
 
 export function createClientSurface(
-  ctx: RuntimeContext,
+  ctx: ProductRuntimeContext,
   options: RealRuntimeClientOptions,
 ): RuntimeServiceClient {
   const checkpoint = ctx.ports.getCheckpointRuntime();

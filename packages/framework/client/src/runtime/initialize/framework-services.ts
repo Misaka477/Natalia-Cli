@@ -12,6 +12,7 @@
  * returned handle.
  */
 import { createAttachmentService } from "@anthelia/attachments";
+import type { ProductRuntimeContext } from "@natalia/collab";
 import { createCheckpointFactory } from "@anthelia/checkpoint";
 import { createCompactionService } from "@anthelia/compaction";
 import { createContextLedgerFactory } from "@natalia/context-ledger";
@@ -642,7 +643,11 @@ export async function wireFrameworkServices(
   wireGovernanceLedger(ctx);
   const providerModel = wireProviderModel(ctx);
   closeHandles.push(providerModel.close);
-  const turnOrchestration = wireTurnOrchestration(ctx);
+  // Product widening at the substrate-shaped boundary: the initialize
+  // deps type declares RuntimeContext (engine vocabulary); this client
+  // module KNOWS the context carries the product state, so the cast is
+  // the honest line rather than teaching substrate about policy.
+  const turnOrchestration = wireTurnOrchestration(ctx as ProductRuntimeContext);
   closeHandles.push(turnOrchestration.close);
   const runtimeStatus = wireRuntimeStatus(ctx);
   closeHandles.push(runtimeStatus.close);

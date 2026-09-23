@@ -1,17 +1,22 @@
 import { createEventSink } from "../event-sink";
+import type { SessionID } from "@natalia/contracts";
+import type { ProductRuntimeContext } from "@natalia/collab";
 import { createProviderSelection } from "../provider-selection";
 import { createTurnRunner } from "../turn-runner";
 import { createExecuteCalls } from "../tool-execution/execute-calls";
 import { createExecuteOne } from "../tool-execution/execute-one";
 import { createCheckpointRuntime } from "../checkpoint-runtime";
 import { createTitleGeneration } from "../title-generation";
+import { createSelfReview } from "@natalia/engineering-intelligence";
+import { skillService } from "@natalia/runtime-services";
+import { withProviderConcurrency } from "@natalia/runtime";
 import { createSessionAdmission } from "../session-admission";
 import { createCommands } from "../commands";
-import type { RuntimeContext } from "@anthelia/substrate";
+import { discoverDesiredPluginEntries } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 export function wireExecution(
-  ctx: RuntimeContext,
+  ctx: ProductRuntimeContext,
   options: RealRuntimeClientOptions,
 ) {
   const { state, ports } = ctx;
@@ -49,6 +54,63 @@ export function wireExecution(
   ports.initializeCheckpointController =
     checkpoint.initializeCheckpointController;
   const title = createTitleGeneration(ctx);
+  // Discovery D4: the side-channel self-review rides the same turn lifecycle
+  // (scheduled at turn end, superseded by the next admission) with the
+  // session's OWN provider — captured first, run under the live
+  // concurrency limiter (title's stream-wrap pattern), written only through
+  // the skills service's validated boundary.
+  ctx.state.selfReview = createSelfReview({
+    enabled: () =>
+      ctx.ports.getTsRuntimeConfig?.()?.backgroundReview?.enabled ?? true,
+    provider: (sessionID) =>
+      ctx.ports.getExecutionBySession().get(sessionID as SessionID)?.provider,
+    runStream: (provider, request) =>
+      withProviderConcurrency(
+        ctx.ports.getProviderConcurrencyLimiter(),
+        provider.provider,
+        () => provider.stream(request),
+        request.signal,
+      ),
+    events: (sessionID) =>
+      ctx.ports.getExecutionBySession().get(sessionID as SessionID)?.session
+        .events ?? [],
+    disposed: () => ctx.ports.isDisposed(),
+    skills: async () => {
+      const existing = ctx.state.serviceDirectory.getOptional(skillService);
+      if (existing) return existing;
+      // Lazy-fiber ensure: discovery -> load(entry) -> lookup. The fibers
+      // activate per relevant event; a background review has no tool
+      // dispatch to spawn it, so it mounts its own write surface first.
+      try {
+        const entries = await discoverDesiredPluginEntries({
+          pluginStoreRoot: options.pluginStoreRoot,
+          workspaceRoot: options.workspaceRoot,
+          declaredIDs: [],
+          onError: (id, error) =>
+            ctx.ports.publish({
+              type: "diagnostic",
+              level: "warning",
+              owner: id,
+              message: `plugin ${id} discover failed: ${error instanceof Error ? error.message : String(error)}`,
+            }),
+        });
+        const entry = entries.find(
+          (candidate) => candidate.id === "natalia-skills",
+        );
+        if (entry) await ctx.ports.getPluginsController().load(entry);
+      } catch {
+        /* the skip below reports an unmountable surface honestly */
+      }
+      return ctx.state.serviceDirectory.getOptional(skillService);
+    },
+    publish: (event) => {
+      const exec = ctx.ports
+        .getExecutionBySession()
+        .get((event.sessionID ?? "") as SessionID);
+      if (exec) ctx.ports.publishForSession(exec, event);
+      else ctx.ports.publish(event);
+    },
+  });
   ports.cancelTitleGeneration = title.cancelTitleGeneration;
   ports.rememberTitleInput = title.rememberTitleInput;
   ports.submitInput = createSessionAdmission(ctx, options).submitInput;

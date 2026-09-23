@@ -7,6 +7,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
+import { validateSkillProposal } from "./skill-write";
 import { createHash } from "node:crypto";
 import {
   basename,
@@ -26,9 +27,24 @@ import type {
 
 export type Skill = SkillMetadata;
 
+export type SkillDiscoverInput = {
+  workspaceRoot: string;
+  userRoot?: string;
+  remoteURLs?: string[];
+  cacheRoot?: string;
+  fetch?: typeof fetch;
+};
+
 export class SkillRegistry implements SkillService {
   private skills = new Map<string, Skill>();
   private selected = new Map<string, Skill>();
+  /**
+   * Stamped by discoverSkills so a validated write knows which project
+   * root it belongs to and reload() can rebuild from the SAME roots
+   * (reload replaces the sets — reloading with fewer roots would
+   * silently forget user/remote skills).
+   */
+  origin?: SkillDiscoverInput;
 
   register(skill: Skill) {
     if (this.skills.has(skill.qualifiedName))
@@ -50,6 +66,35 @@ export class SkillRegistry implements SkillService {
     return [...this.skills.values()].sort((a, b) =>
       a.qualifiedName.localeCompare(b.qualifiedName),
     );
+  }
+
+  /**
+   * The ONLY autonomous write path (Discovery D4): a background review
+   * PROPOSES, this VALIDATES at the boundary (action whitelist + name +
+   * size + rebuilt frontmatter), writes under the project skills root
+   * (0700/0600), then reloads so the registry sees it immediately.
+   * hermes' rule: autonomous maintenance never bypasses validation.
+   */
+  async upsertSkill(
+    candidate: unknown,
+  ): Promise<{ created: boolean; name: string }> {
+    const validated = validateSkillProposal(candidate);
+    if (!validated.ok)
+      throw new Error(`skill proposal rejected: ${validated.reason}`);
+    if (!this.origin?.workspaceRoot)
+      throw new Error("skill registry has no workspace origin");
+    const { proposal, skillmd } = validated;
+    const existed = this.selected.has(proposal.name);
+    const target = join(
+      resolve(this.origin.workspaceRoot),
+      ".natalia",
+      "skills",
+      proposal.name,
+    );
+    await mkdir(target, { recursive: true, mode: 0o700 });
+    await writeFile(join(target, "SKILL.md"), skillmd, { mode: 0o600 });
+    await this.reload(this.origin);
+    return { created: !existed, name: proposal.name };
   }
 
   async reload(input: {
@@ -106,6 +151,7 @@ export async function discoverSkills(input: {
     join(resolve(input.workspaceRoot), ".natalia", "skills"),
     "project",
   );
+  registry.origin = { ...input };
   return registry;
 }
 

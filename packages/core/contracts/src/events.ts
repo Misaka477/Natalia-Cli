@@ -2102,8 +2102,38 @@ type RuntimeEventData =
       detail: string;
       workspaceID?: string;
       sessionID?: SessionID;
+    }
+  | {
+      type: "self_review.completed";
+      /**
+       * Discovery D4: a side-channel self-review finished (hermes'
+       * background_review paradigm — replays a session digest, never
+       * touches the main conversation or its prompt cache). Safe refs
+       * only: skill names and counts, never the model's prose or the
+       * skill bodies.
+       */
+      at: string;
+      sessionID?: SessionID;
+      workspaceID?: string;
+      skillsCreated: string[];
+      skillsUpdated: string[];
+      /** Proposals the write boundary rejected (whitelist/validation). */
+      rejected: number;
+    }
+  | {
+      type: "self_review.skipped";
+      /** Why no review ran (or it did not finish) — the honest edge. */
+      at: string;
+      sessionID?: SessionID;
+      workspaceID?: string;
+      reason:
+        | "disabled"
+        | "superseded"
+        | "no_provider"
+        | "no_skills"
+        | "no_input"
+        | "error";
     };
-
 /**
  * An episode groups all events emitted by one isolated execution without
  * changing the durable workspace-level session identity used by interactive

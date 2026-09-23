@@ -117,6 +117,13 @@ export type SkillPolicy = {
 export interface SkillService {
   resolve(name: string): SkillMetadata;
   list(): SkillMetadata[];
+  /**
+   * The only autonomous skill write (Discovery D4): proposals are
+   * validated at THIS boundary — action whitelist (create/update only),
+   * name/size rules, frontmatter rebuilt by the implementation. Rejected
+   * proposals throw with the reason.
+   */
+  upsertSkill(candidate: unknown): Promise<{ created: boolean; name: string }>;
   authorizeTool(
     skill: SkillMetadata,
     tool: string,

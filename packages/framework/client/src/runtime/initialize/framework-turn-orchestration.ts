@@ -7,6 +7,7 @@
  * the session-store subsystem, which is wired before it.
  */
 import { buildSubmittedTurn } from "@anthelia/session";
+import type { ProductRuntimeContext } from "@natalia/collab";
 import {
   createTurnController,
   turnController,
@@ -47,7 +48,7 @@ function buildAnnouncedTurn(
 }
 
 export function wireTurnOrchestration(
-  ctx: RuntimeContext,
+  ctx: ProductRuntimeContext,
 ): TurnOrchestrationHandle {
   const registry = ctx.state.capabilityRegistry;
   const deps = ctx.state.initialize;
@@ -115,6 +116,7 @@ export function wireTurnOrchestration(
             throw error;
           } finally {
             deps.scheduleTitleGeneration(ownerID as SessionID);
+            ctx.state.selfReview?.schedule(ownerID);
           }
         },
       ),
@@ -151,6 +153,7 @@ export function wireTurnOrchestration(
             }
           } finally {
             deps.scheduleTitleGeneration(input.sessionID as SessionID);
+            ctx.state.selfReview?.schedule(input.sessionID);
           }
         },
       ),

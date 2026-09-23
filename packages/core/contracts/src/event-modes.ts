@@ -52,6 +52,8 @@ export const EVENT_MODES: EventModeTable = {
   composition: "emit",
   // Discovery D2: findings are observation — emit, never flow-stopping.
   invariant: "emit",
+  // D4: a background review is observation — emit, never flow-stopping.
+  self_review: "emit",
   collab: "emit",
   compaction: "emit",
   completion: "emit",

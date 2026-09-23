@@ -166,3 +166,102 @@ test("project skill source overrides a user skill with the same name", async () 
     "user:review",
   ]);
 });
+
+// --- Discovery D4: the validated skill write (the review's only door) ---
+
+import { mkdtempSync, readFileSync } from "node:fs";
+import { parseSkill } from "../src/skills";
+import { validateSkillProposal } from "../src/skill-write";
+
+test("the proposal whitelist accepts create/update and rejects everything else by kind", () => {
+  const good = validateSkillProposal({
+    kind: "create",
+    name: "release-notes",
+    description: "Draft release notes",
+    content: "# Release notes\nBody.",
+  });
+  expect(good.ok).toBe(true);
+  // The action whitelist bites: only these two words can even be parsed.
+  for (const kind of ["delete", "execute", "write_file", "patch", 7, null]) {
+    const rejected = validateSkillProposal({
+      kind,
+      name: "x",
+      description: "d",
+      content: "c",
+    });
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) expect(rejected.reason).toContain("whitelisted");
+  }
+});
+
+test("name, description, content and size rules bite; frontmatter is rebuilt", () => {
+  const base = {
+    kind: "create",
+    name: "ok-name",
+    description: "d",
+    content: "body",
+  };
+  expect(validateSkillProposal({ ...base, name: "../escape" }).ok).toBe(false);
+  expect(validateSkillProposal({ ...base, name: "UPPER" }).ok).toBe(false);
+  expect(validateSkillProposal({ ...base, description: "   " }).ok).toBe(false);
+  expect(validateSkillProposal({ ...base, content: "" }).ok).toBe(false);
+  const oversized = validateSkillProposal({
+    ...base,
+    content: "x".repeat(64_001),
+  });
+  expect(oversized.ok).toBe(false);
+  // Rebuilt (never pasted): a name smuggled inside the body's frontmatter
+  // cannot override the validated name.
+  const tricky = validateSkillProposal({
+    ...base,
+    description: 'a: "quoted: value"\nname: smuggled',
+    content: "---\nname: smuggled\n---\ninjected",
+  });
+  expect(tricky.ok).toBe(true);
+  if (tricky.ok) {
+    expect(tricky.skillmd).toContain("name: ok-name");
+    expect(tricky.skillmd.indexOf("name: smuggled")).toBeGreaterThan(
+      tricky.skillmd.indexOf("---"),
+    );
+    // The validated description sits on ONE quoted line — it cannot open a
+    // second frontmatter block that the loader would read as fields.
+    expect(tricky.skillmd.split("\n")[2]).toContain("description:");
+    expect(tricky.skillmd.split("\n").length).toBeGreaterThan(4);
+    const parsed = parseSkill(tricky.skillmd, {
+      root: "/tmp/x",
+      source: "project",
+    });
+    expect(parsed.name).toBe("ok-name");
+    expect(parsed.body).toContain("injected");
+  }
+});
+
+test("upsertSkill writes under the project root, reloads, and reports created vs update", async () => {
+  const ws = mkdtempSync(join(tmpdir(), "skill-upsert-"));
+  const registry = await discoverSkills({ workspaceRoot: ws });
+  // No origin stamped scenario is covered by discoverSkills always stamping.
+  const created = await registry.upsertSkill({
+    kind: "create",
+    name: "d4-review-skill",
+    description: "Sedimented by the review loop",
+    content: "# When to use\nAlways.",
+  });
+  expect(created).toEqual({ created: true, name: "d4-review-skill" });
+  const file = join(ws, ".natalia", "skills", "d4-review-skill", "SKILL.md");
+  expect(readFileSync(file, "utf8")).toContain("Sedimented by the review loop");
+  // Immediately visible through the same service surface the model uses.
+  expect(registry.resolve("d4-review-skill").name).toBe("d4-review-skill");
+  const updated = await registry.upsertSkill({
+    kind: "update",
+    name: "d4-review-skill",
+    description: "Updated description",
+    content: "# Updated body",
+  });
+  expect(updated.created).toBe(false);
+  expect(readFileSync(file, "utf8")).toContain("Updated body");
+  // A rejected proposal never touches disk and throws with its reason.
+  await expect(
+    registry.upsertSkill({ kind: "rm", name: "d4-review-skill" }),
+  ).rejects.toThrow(/whitelisted/u);
+  expect(readFileSync(file, "utf8")).toContain("Updated body");
+});

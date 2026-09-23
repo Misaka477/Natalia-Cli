@@ -7,6 +7,7 @@ import {
   issueTargetConfigSchema,
 } from "./schema-governance";
 import {
+  backgroundReviewConfigSchema,
   checkpointConfigSchema,
   contextConfigSchema,
   modelCatalogSchema,
@@ -163,6 +164,7 @@ export const configV3Schema = z.object({
   goal: goalConfigSchema.default({}),
   team: teamConfigSchema.default({}),
   context: contextConfigSchema.default({}),
+  backgroundReview: backgroundReviewConfigSchema,
   checkpoint: checkpointConfigSchema,
   providers: z.record(providerConfigSchema).default({}),
   catalog: modelCatalogSchema,

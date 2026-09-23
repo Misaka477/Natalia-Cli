@@ -22,6 +22,15 @@ export type ProductRuntimeState = {
   planSequence: number;
   completionSequence: number;
   internalWakeTasks: Set<Promise<unknown>>;
+  /**
+   * The background self-review handle (Discovery D4), bound by the
+   * composition root — a product feature on product state (the
+   * eight-fields precedent): the engine never learns it exists.
+   */
+  selfReview?: {
+    schedule(sessionID: string): void;
+    cancel(sessionID: string): void;
+  };
 };
 
 /** The context as the composition root actually builds it: generic + policy. */

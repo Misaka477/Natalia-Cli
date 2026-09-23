@@ -220,6 +220,20 @@ export const checkpointConfigSchema = z
   })
   .default({});
 
+/**
+ * The background self-review loop (Discovery D4): after each turn a
+ * side-channel review replays a session digest and may sediment skills
+ * through the validated write boundary. Default ON, fail-open at the
+ * scheduler's read (a broken config must never silently disable the
+ * loop — a warning keeps the cost visible), mirroring hermes'
+ * background_review.enabled contract.
+ */
+export const backgroundReviewConfigSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+  })
+  .default({});
+
 export const interleavedReasoningCapabilitySchema = z.union([
   z.literal(true),
   z.literal(false),

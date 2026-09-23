@@ -1,4 +1,5 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
+import type { ProductRuntimeContext } from "@natalia/collab";
 import { sessionStoreController } from "@anthelia/session-store";
 import { contextLedgerFactory } from "@natalia/context-ledger";
 import {
@@ -27,7 +28,7 @@ type Surface = Pick<
   | "sessionAttach"
 >;
 export function createSessionsSurface(
-  ctx: RuntimeContext,
+  ctx: ProductRuntimeContext,
   options: ClientSurfaceOptions,
 ): Surface {
   function requireSessionStore() {
@@ -106,6 +107,7 @@ export function createSessionsSurface(
     async sessionDelete(id) {
       await ctx.ports.getReady();
       await ctx.ports.cancelTitleGeneration(id as SessionID);
+      ctx.state.selfReview?.cancel(id);
       const terminal =
         ctx.state.serviceDirectory.getOptional(terminalController);
       await terminal?.stopForSession?.(id);
