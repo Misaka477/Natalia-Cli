@@ -9,7 +9,7 @@ import {
 } from "@natalia/runtime";
 import { createToolRegistry } from "@anthelia/tools";
 import { RuntimePerformanceTrace } from "@anthelia/substrate";
-import { createCapabilityServiceBindings } from "./service-bindings";
+import { createCapabilityServiceBindings } from "@anthelia/substrate";
 import { defaultContextStatusConfig } from "../provider-selection";
 import type { RuntimeContext, RuntimeState } from "@anthelia/substrate";
 import type {

@@ -33,7 +33,7 @@ import { wireFrameworkServices } from "../initialize/framework-services";
 import { createInitialize } from "../initialize";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
-import { lineCount } from "./helpers";
+import { lineCount } from "@anthelia/substrate";
 
 const WAITING_TOOLS = new Set(["terminal_observe"]);
 const MAX_PROTOCOL_CORRECTIONS = 2;

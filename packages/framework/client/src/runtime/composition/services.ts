@@ -10,7 +10,10 @@ import {
 } from "../../tool-arguments";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
-import { isManagedResourceTool, waitForToolExecution } from "./helpers";
+import {
+  isManagedResourceTool,
+  waitForToolExecution,
+} from "@anthelia/substrate";
 import type { RuntimeContextLedger } from "@natalia/context-ledger";
 import { collaborationWaiter } from "@natalia/collaboration";
 
