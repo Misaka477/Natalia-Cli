@@ -27,7 +27,7 @@ console.log(
       version,
       target,
       entrypoint,
-      install: "npx bun apps/cli/src/main.ts",
+      install: "bun apps/cli/src/main.ts",
       rollback:
         "TS-only release; restore the prior repository revision if rollback is required",
       releaseReady: true,

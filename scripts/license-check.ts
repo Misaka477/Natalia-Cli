@@ -93,7 +93,7 @@ const generatedPath = "THIRD_PARTY_LICENSES.txt";
 const existingLicenses = await Bun.file(generatedPath).text();
 if (existingLicenses !== generatedLicenses)
   throw new Error(
-    `${generatedPath} is stale; run: npx bun scripts/generate-third-party-licenses.ts`,
+    `${generatedPath} is stale; run: bun scripts/generate-third-party-licenses.ts`,
   );
 
 console.log(
