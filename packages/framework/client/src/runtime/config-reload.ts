@@ -7,6 +7,7 @@
  * state through `RuntimeContext` ports.
  */
 import { agentsFromConfig } from "@anthelia/agent";
+import { compositionProfile } from "@anthelia/composition";
 import { renderSubagentTypes } from "@anthelia/subagents";
 import { resolveConfig } from "@anthelia/config";
 import { ensureBashCommandParser } from "@anthelia/tools";
@@ -219,9 +220,11 @@ export function createConfigReload(
    * generation; the journal remains the durable record either way.
    */
   function commitCandidate(candidateID: string, reason: string) {
+    const profile = ctx.state.serviceDirectory.getOptional(compositionProfile);
     ctx.ports.publish({
       type: "composition.switched",
       ...(lastGenerationID ? { from: lastGenerationID } : {}),
+      ...(profile ? { compositionHash: profile.hash } : {}),
       to: candidateID,
       reason,
     });

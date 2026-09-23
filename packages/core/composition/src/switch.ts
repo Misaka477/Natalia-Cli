@@ -51,6 +51,8 @@ export type SwitchResult = {
 };
 
 export interface SwitchGenerationInput {
+  /** The active profile at switch time: its §6.6 hash rides the event. */
+  profile?: import("./profile").CompositionProfile;
   candidateID: string;
   candidate: Generation;
   activeRules: readonly ConstitutionRule[];
@@ -148,6 +150,7 @@ export async function switchGeneration(
   input.publish({
     type: "composition.switched",
     ...(input.currentGenerationID ? { from: input.currentGenerationID } : {}),
+    ...(input.profile ? { compositionHash: input.profile.hash } : {}),
     to: input.candidateID,
     reason: input.reason,
   });
@@ -165,6 +168,7 @@ export async function switchGeneration(
       type: "composition.switched",
       from: input.candidateID,
       to: input.currentGenerationID,
+      ...(input.profile ? { compositionHash: input.profile.hash } : {}),
       reason: "health-check-failed: automatic rollback",
     });
   input.publish(

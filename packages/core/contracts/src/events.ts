@@ -2062,6 +2062,16 @@ type RuntimeEventData =
       from?: string;
       /** The generation now running: a content id from the object store. */
       to: string;
+      /**
+       * §6.6: the composition profile's canonical hash at switch time
+       * (rows sorted by id, origins stripped, SHA-256) — content-
+       * addressed, never a sequence number. The §4.4 draft nested this
+       * inside to/from objects; `from`/`to` shipped as generation
+       * STRINGS and §4.1's freeze says replayable-forever, so the hash
+       * lands as this additive top-level field (events emitted before
+       * it simply lack it — absent, never wrong).
+       */
+      compositionHash?: string;
       /** What caused the switch (config.reload, plugin.reconcile, rollback...). */
       reason: string;
       workspaceID?: string;

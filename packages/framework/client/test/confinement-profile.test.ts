@@ -16,6 +16,7 @@ import { effectiveConfinementMode } from "../src/runtime/tool-execution/execute-
 const profile = (rows: CompositionProfile["rows"]): CompositionProfile => ({
   schema: COMPOSITION_PROFILE_SCHEMA,
   rows,
+  hash: "test-hash", // the consumer reads rows; the loader owns derivation
 });
 const row = (config: Record<string, unknown>, disabled?: boolean) => ({
   id: "anthelia.sandbox",

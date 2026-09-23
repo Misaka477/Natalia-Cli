@@ -11,12 +11,14 @@ import { join } from "node:path";
 import {
   COMPOSITION_BASE_FILENAME,
   COMPOSITION_PROFILE_SCHEMA,
+  compositionProfileHash,
   createCompositionRowRegistry,
   findBaseProfileFile,
   loadCompositionProfile,
   profileSearchCandidates,
   requireBaseProfileFile,
   type CompositionRowRegistration,
+  type CompositionProfile,
 } from "../src/profile";
 
 /**
@@ -186,6 +188,7 @@ test("three layers: whole-field override, config wholesale, origin = last define
     registry,
   });
   expect(profile.schema).toBe(COMPOSITION_PROFILE_SCHEMA);
+  expect(profile.hash).toBe(compositionProfileHash(profile.rows)); // §6.6 derivation at load
   const sandbox = profile.rows.find((row) => row.id === "anthelia.sandbox")!;
   expect(sandbox.config).toEqual({ mode: "read-only" });
   expect(sandbox.origin).toEqual({
@@ -316,4 +319,57 @@ test("the shipped base parses with the real confinement registration — and its
   expect(
     requireBaseProfileFile([join(repoRoot, "composition.base.json")]),
   ).toBe(join(repoRoot, "composition.base.json"));
+});
+
+test("§6.6 composition hash: order-independent, origin-blind, content-sensitive, hex-64", async () => {
+  // Build two profiles over the SAME logical rows: shuffled order and
+  // different origins — the canonical form sorts and strips both.
+  const rowsA = [
+    {
+      id: "anthelia.sandbox",
+      config: { mode: "read-only" },
+      origin: { layer: "base" as const, file: "/a" },
+    },
+    {
+      id: "natalia.thing",
+      impl: "alpha",
+      origin: { layer: "user" as const, file: "/b" },
+    },
+  ] as CompositionProfile["rows"];
+  const rowsB = [
+    {
+      id: "natalia.thing",
+      impl: "alpha",
+      origin: { layer: "workspace" as const, file: "/c" },
+    },
+    {
+      id: "anthelia.sandbox",
+      config: { mode: "read-only" },
+      origin: { layer: "workspace" as const, file: "/d" },
+    },
+  ] as CompositionProfile["rows"];
+  const hashA = compositionProfileHash(rowsA);
+  const hashB = compositionProfileHash(rowsB);
+  expect(hashA).toBe(hashB);
+  expect(hashA).toMatch(/^[0-9a-f]{64}$/u);
+  // a content change (a config value) changes the hash
+  const rowsC = [
+    {
+      id: "anthelia.sandbox",
+      config: { mode: "workspace-write" },
+      origin: { layer: "base" as const, file: "/a" },
+    },
+    {
+      id: "natalia.thing",
+      impl: "alpha",
+      origin: { layer: "user" as const, file: "/b" },
+    },
+  ] as CompositionProfile["rows"];
+  expect(compositionProfileHash(rowsC)).not.toBe(hashA);
+  // a dropped field changes it too (disabled absent ≠ present)
+  const rowsD = [
+    ...rowsA.slice(0, 1),
+    { ...rowsA[1]!, disabled: false },
+  ] as CompositionProfile["rows"];
+  expect(compositionProfileHash(rowsD)).not.toBe(hashB);
 });

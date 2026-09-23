@@ -28,6 +28,7 @@ import {
   storeGeneration,
   switchGeneration,
   type VerificationFace,
+  compositionProfile,
 } from "@anthelia/composition";
 import { resolveWorkspaceObjectsRoot } from "@anthelia/platform";
 import { createNiaChatSurface } from "@natalia/collab";
@@ -326,9 +327,12 @@ export function createRollbackGenerationTool(ctx: RuntimeContext): RuntimeTool {
         },
       );
       await ctx.ports.reloadConfigFromDisk();
+      const profile =
+        ctx.state.serviceDirectory.getOptional(compositionProfile);
       ctx.ports.publish({
         type: "composition.switched",
         ...(pointer.current ? { from: pointer.current } : {}),
+        ...(profile ? { compositionHash: profile.hash } : {}),
         to: target,
         reason: args.reason ?? "rollback_generation",
       });

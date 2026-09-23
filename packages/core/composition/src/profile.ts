@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -53,6 +54,15 @@ export type PositionedCompositionRow = CompositionRow & {
 export type CompositionProfile = {
   schema: typeof COMPOSITION_PROFILE_SCHEMA;
   rows: PositionedCompositionRow[];
+  /**
+   * §6.6's composition hash: the canonical form of these rows (sorted
+   * by id, ORIGINS STRIPPED, present-keys-only JSON) under SHA-256 —
+   * computed ONCE at load so every consumer (the switched event's
+   * compositionHash, RINA's cache key, later speculative/manifest
+   * keys) reads one derivation instead of recomputing. Content-
+   * addressed, never sequential.
+   */
+  hash: string;
 };
 
 /**
@@ -276,6 +286,25 @@ async function listLayerFiles(dir: string): Promise<string[]> {
     .sort();
 }
 
+/**
+ * The canonical composition form (§6.6): rows sorted by id, ORIGINS
+ * STRIPPED (they are provenance, not composition), each row reduced to
+ * its present keys in a fixed order — then SHA-256 of that JSON.
+ */
+export function compositionProfileHash(
+  rows: readonly PositionedCompositionRow[],
+): string {
+  const canonical = [...rows]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((row) => ({
+      id: row.id,
+      ...(row.impl === undefined ? {} : { impl: row.impl }),
+      ...(row.config === undefined ? {} : { config: row.config }),
+      ...(row.disabled === undefined ? {} : { disabled: row.disabled }),
+    }));
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
 export async function loadCompositionProfile(input: {
   baseFile: string;
   globalDir?: string | undefined;
@@ -310,7 +339,11 @@ export async function loadCompositionProfile(input: {
   const rows: PositionedCompositionRow[] = [...effective.values()]
     .map(({ row, origin }) => ({ ...row, origin }))
     .sort((left, right) => left.id.localeCompare(right.id));
-  return { schema: COMPOSITION_PROFILE_SCHEMA, rows };
+  return {
+    schema: COMPOSITION_PROFILE_SCHEMA,
+    rows,
+    hash: compositionProfileHash(rows),
+  };
 }
 
 /**
