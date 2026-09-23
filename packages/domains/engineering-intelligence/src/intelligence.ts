@@ -3,9 +3,9 @@ import { sessionStoreController } from "@anthelia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
 import { type ConstitutionDocRule } from "@natalia/runtime-services";
 import { governanceLedgerController } from "@natalia/governance-ledger";
-import { loadProjectDocuments } from "../project-docs";
-import { applyConstitutionDocEdit } from "../constitution-doc";
-import { writeWorkspaceFile } from "@natalia/platform";
+import { loadProjectDocuments } from "./project-docs";
+import { applyConstitutionDocEdit } from "./constitution-doc";
+import { writeWorkspaceFile } from "@anthelia/workspace";
 import type { SessionFactState } from "@anthelia/session";
 import {
   projectedCanonicalTools,
@@ -48,7 +48,7 @@ import type {
   RuntimeContext,
   SessionExecutionState,
 } from "@anthelia/substrate";
-import { requestAuditAfterCompletion } from "../audit-request";
+import { requestAuditAfterCompletion } from "./audit-request";
 import { ensureCompleteSessionFactState } from "@anthelia/substrate";
 import { injectFindingIntoMainAgent } from "@natalia/collab";
 import {

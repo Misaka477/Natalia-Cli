@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCompletionCheck } from "../src/runtime/goal/goal-completion-check";
+import { runCompletionCheck } from "@natalia/goal-runtime";
 
 async function workspace(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "natalia-goal-check-"));

@@ -12,13 +12,13 @@ import { governanceLedgerController } from "@natalia/governance-ledger";
 import { projectedDriftFindings } from "@anthelia/session";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { requestAuditAfterCompletion } from "./audit-request";
+import { requestAuditAfterCompletion } from "@natalia/engineering-intelligence";
 import type {
   GovernanceLedgerController,
   WorkLedgerController,
 } from "@natalia/collab";
-import { redactToolOutput } from "./engineering-intelligence/redaction";
-import { runValidationCommand } from "./engineering-intelligence/validation";
+import { redactToolOutput } from "@natalia/engineering-intelligence";
+import { runValidationCommand } from "@natalia/engineering-intelligence";
 import { captureRepositoryEvidenceFields } from "@anthelia/substrate";
 import type {
   RuntimeContext,

@@ -25,7 +25,7 @@ import type {
   SessionExecutionState,
 } from "@anthelia/substrate";
 import { activePlanForExec } from "@natalia/collab";
-import { loadProjectDocumentsSync } from "./project-docs";
+import { loadProjectDocumentsSync } from "@natalia/engineering-intelligence";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
 import type { AttachmentService } from "@natalia/runtime";

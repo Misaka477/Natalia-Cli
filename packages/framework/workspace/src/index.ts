@@ -28,6 +28,7 @@ export {
   readWorkspaceFile,
   searchWorkspaceFiles,
   watchWorkspaceFiles,
+  writeWorkspaceFile,
 } from "@natalia/platform";
 export {
   assertSecretSafeObservation,

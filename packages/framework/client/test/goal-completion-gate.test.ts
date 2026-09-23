@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { foldGoal, GoalService } from "@natalia/goal";
-import { goalTools } from "../src/runtime/goal/goal-tools";
+import { goalTools } from "@natalia/goal-runtime";
 import type {
   RuntimeContext,
   SessionExecutionState,

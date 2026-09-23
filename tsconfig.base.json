@@ -44,6 +44,9 @@
       ],
       "@natalia/contracts": ["packages/core/contracts/src/index.ts"],
       "@natalia/diff-wasm": ["packages/framework/diff-wasm/src/index.ts"],
+      "@natalia/engineering-intelligence": [
+        "packages/domains/engineering-intelligence/src/index.ts"
+      ],
       "@natalia/example-ui-plugin": [
         "packages/examples/ui-plugin/src/index.ts"
       ],
@@ -52,6 +55,7 @@
         "packages/framework/diff/src/runtime/diff-parse-client.ts"
       ],
       "@natalia/goal": ["packages/domains/goal/src/index.ts"],
+      "@natalia/goal-runtime": ["packages/domains/goal-runtime/src/index.ts"],
       "@natalia/governance-ledger": [
         "packages/domains/governance-ledger/src/index.ts"
       ],

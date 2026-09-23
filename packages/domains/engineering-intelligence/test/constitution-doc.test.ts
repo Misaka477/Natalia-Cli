@@ -3,7 +3,7 @@ import {
   applyConstitutionDocEdit,
   parseConstitutionDocument,
   splitConstitutionSections,
-} from "../src/runtime/constitution-doc";
+} from "@natalia/engineering-intelligence";
 
 test("prose sections without annotations are warn-level soft rules", () => {
   const rules = parseConstitutionDocument(

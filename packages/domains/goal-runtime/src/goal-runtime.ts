@@ -6,13 +6,10 @@
  * `@natalia/goal` and is unit-tested there; this module only adapts it to the
  * runtime context.
  */
-import {
-  GoalRoundDriver,
-  GoalService,
-  type GoalRoundHost,
-  type GoalRoundStop,
-  type GoalView,
-} from "@natalia/goal";
+import { GoalRoundDriver } from "@natalia/goal";
+import type { GoalRoundHost, GoalRoundStop } from "@natalia/goal";
+import { GoalService } from "@natalia/goal";
+import type { GoalView } from "@natalia/goal";
 import { admittedInputs } from "@anthelia/session";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController } from "@anthelia/session-store";

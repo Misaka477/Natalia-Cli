@@ -6,7 +6,7 @@ import {
   loadProjectDocumentsSync,
   projectDocumentRules,
   renderProjectDocumentsBlock,
-} from "../src/runtime/project-docs";
+} from "@natalia/engineering-intelligence";
 
 async function workspaceWithConstitution(
   name: string,

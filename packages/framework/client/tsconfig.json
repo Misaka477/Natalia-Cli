@@ -31,7 +31,13 @@
       "path": "../../domains/context-ledger"
     },
     {
+      "path": "../../domains/engineering-intelligence"
+    },
+    {
       "path": "../../domains/goal"
+    },
+    {
+      "path": "../../domains/goal-runtime"
     },
     {
       "path": "../../domains/governance-ledger"

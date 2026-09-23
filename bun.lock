@@ -145,11 +145,38 @@
         "@natalia/runtime-services": "workspace:*",
       },
     },
+    "packages/domains/engineering-intelligence": {
+      "name": "@natalia/engineering-intelligence",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@anthelia/session": "workspace:*",
+        "@anthelia/session-store": "workspace:*",
+        "@anthelia/substrate": "workspace:*",
+        "@natalia/collab": "workspace:*",
+        "@natalia/contracts": "workspace:*",
+        "@natalia/governance-ledger": "workspace:*",
+        "@natalia/platform": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+        "@natalia/work-ledger": "workspace:*",
+      },
+    },
     "packages/domains/goal": {
       "name": "@natalia/goal",
       "version": "0.0.0-m13",
       "dependencies": {
         "@natalia/contracts": "workspace:*",
+      },
+    },
+    "packages/domains/goal-runtime": {
+      "name": "@natalia/goal-runtime",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@anthelia/session": "workspace:*",
+        "@anthelia/session-store": "workspace:*",
+        "@anthelia/substrate": "workspace:*",
+        "@anthelia/tools": "workspace:*",
+        "@natalia/contracts": "workspace:*",
+        "@natalia/operation-log": "workspace:*",
       },
     },
     "packages/domains/governance-ledger": {
@@ -234,7 +261,9 @@
         "@natalia/confinement": "workspace:*",
         "@natalia/context-ledger": "workspace:*",
         "@natalia/contracts": "workspace:*",
+        "@natalia/engineering-intelligence": "workspace:*",
         "@natalia/goal": "workspace:*",
+        "@natalia/goal-runtime": "workspace:*",
         "@natalia/governance-ledger": "workspace:*",
         "@natalia/operation-log": "workspace:*",
         "@natalia/platform": "workspace:*",
@@ -1030,11 +1059,15 @@
 
     "@natalia/diff-wasm": ["@natalia/diff-wasm@workspace:packages/framework/diff-wasm"],
 
+    "@natalia/engineering-intelligence": ["@natalia/engineering-intelligence@workspace:packages/domains/engineering-intelligence"],
+
     "@natalia/example-ui-plugin": ["@natalia/example-ui-plugin@workspace:packages/examples/ui-plugin"],
 
     "@natalia/framework-diff": ["@natalia/framework-diff@workspace:packages/framework/diff"],
 
     "@natalia/goal": ["@natalia/goal@workspace:packages/domains/goal"],
+
+    "@natalia/goal-runtime": ["@natalia/goal-runtime@workspace:packages/domains/goal-runtime"],
 
     "@natalia/governance-ledger": ["@natalia/governance-ledger@workspace:packages/domains/governance-ledger"],
 

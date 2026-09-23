@@ -359,6 +359,8 @@ const clientClosureAllowlist = [
   "attachments",
   "capability",
   "collab",
+  "engineering-intelligence",
+  "goal-runtime",
   "checkpoint",
   "collaboration",
   "compaction",
