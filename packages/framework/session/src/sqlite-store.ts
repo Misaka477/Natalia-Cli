@@ -1,12 +1,10 @@
 import { Database } from "bun:sqlite";
 import type {
   DurableContextCheckpointRecord,
-  GoalSnapshot,
   RuntimeEvent,
   RuntimeMessagePage,
   SessionID,
 } from "@anthelia/contracts";
-import type { GoalView } from "@natalia/goal";
 import type { SessionRecord } from "./index";
 import { normalizeDelivery, type AdmittedSessionInput } from "./inbox";
 import {
@@ -125,14 +123,6 @@ CREATE TABLE IF NOT EXISTS recovery_state (
   indexed_events INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS recovery_goal (
-  session_id TEXT PRIMARY KEY REFERENCES sessions(id),
-  snapshot TEXT NOT NULL,
-  rounds_started INTEGER NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS context_epochs (
   session_id TEXT PRIMARY KEY REFERENCES sessions(id),
   baseline_seq INTEGER NOT NULL,
@@ -184,8 +174,6 @@ export type StoredRecoveryProjection = {
   approvals: Array<Extract<RuntimeEvent, { type: "approval.request" }>>;
   questions: Array<Extract<RuntimeEvent, { type: "question.request" }>>;
   interactives: Array<Extract<RuntimeEvent, { type: "interactive.request" }>>;
-  /** Current goal, materialized for fast restore (always disarmed). */
-  goal?: GoalView;
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
   reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
@@ -587,6 +575,11 @@ export class SqliteSessionStore {
    * recovery, transcript paging, or work-graph projections.
    */
   compactHistoricalEvents(): SessionID[] {
+    // The goal fast-restore cache retired WITH the projection's goal
+    // fold: the journal is the source of truth and the fold now lives
+    // policy-side, so the table is obsolete — dropped here, in the same
+    // idempotent storage-maintenance pass.
+    this.db.run(`DROP TABLE IF EXISTS recovery_goal`);
     const affected = new Set<SessionID>();
     const live = this.db
       .query(
@@ -800,18 +793,6 @@ export class SqliteSessionStore {
           permission_profile?: string;
         }
       | undefined;
-    const goalRow = this.db
-      .query(
-        `SELECT snapshot, rounds_started, created_at, updated_at FROM recovery_goal WHERE session_id = ?`,
-      )
-      .get(sessionID) as
-      | {
-          snapshot: string;
-          rounds_started: number;
-          created_at: string;
-          updated_at: string;
-        }
-      | undefined;
     const attachments = new Map<
       string,
       import("@anthelia/contracts").LocalAttachment[]
@@ -835,15 +816,6 @@ export class SqliteSessionStore {
       .all(sessionID) as Array<{ event: string }>;
     return {
       activeTurnIDs: active.map((row) => row.turn_id),
-      goal: goalRow
-        ? {
-            ...(JSON.parse(goalRow.snapshot) as GoalSnapshot),
-            roundsStarted: goalRow.rounds_started,
-            createdAt: goalRow.created_at,
-            updatedAt: goalRow.updated_at,
-            activation: "disarmed",
-          }
-        : undefined,
       approvals: interactive
         .filter((row) => row.kind === "approval")
         .map(
@@ -1423,57 +1395,6 @@ export class SqliteSessionStore {
   }
 
   private applyRecoveryEvent(sessionID: SessionID, event: RuntimeEvent) {
-    if (event.type === "goal.changed") {
-      // Recovery keeps only the current goal as a fast-restore cache; the
-      // journal remains the source of truth (see the goal subsystem plan).
-      if (event.operation === "clear") {
-        this.run(`DELETE FROM recovery_goal WHERE session_id = ?`, [sessionID]);
-        return;
-      }
-      const snapshot = event.snapshot;
-      if (snapshot === undefined) return;
-      const existing = this.db
-        .query(`SELECT created_at FROM recovery_goal WHERE session_id = ?`)
-        .get(sessionID) as { created_at: string } | undefined;
-      this.run(
-        `INSERT INTO recovery_goal(session_id, snapshot, rounds_started, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(session_id) DO UPDATE SET
-           snapshot = excluded.snapshot,
-           rounds_started = excluded.rounds_started,
-           updated_at = excluded.updated_at`,
-        [
-          sessionID,
-          JSON.stringify(snapshot),
-          event.roundsStarted,
-          existing?.created_at ?? event.at,
-          event.at,
-        ],
-      );
-      return;
-    }
-    if (event.type === "goal.round") {
-      const row = this.db
-        .query(
-          `SELECT snapshot, rounds_started FROM recovery_goal WHERE session_id = ?`,
-        )
-        .get(sessionID) as
-        | { snapshot: string; rounds_started: number }
-        | undefined;
-      if (row !== undefined) {
-        const snapshot = JSON.parse(row.snapshot) as GoalSnapshot;
-        if (
-          snapshot.goalID === event.goalID &&
-          snapshot.revision === event.revision &&
-          event.round > row.rounds_started
-        )
-          this.run(
-            `UPDATE recovery_goal SET rounds_started = ? WHERE session_id = ?`,
-            [event.round, sessionID],
-          );
-      }
-      return;
-    }
     if (event.type === "turn.submitted") {
       this.run(
         `INSERT INTO recovery_turns(session_id, turn_id, active) VALUES (?, ?, 1)
@@ -1618,7 +1539,6 @@ export class SqliteSessionStore {
       sessionID,
     ]);
     this.run(`DELETE FROM recovery_state WHERE session_id = ?`, [sessionID]);
-    this.run(`DELETE FROM recovery_goal WHERE session_id = ?`, [sessionID]);
   }
 
   ensureMessageIndex(sessionID: SessionID) {

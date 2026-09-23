@@ -6,7 +6,6 @@ import type {
   RuntimeProjectedMessage,
   RuntimeProjectedMessageRowKind,
 } from "@anthelia/contracts";
-import { foldGoal, foldGoalStep, type GoalView } from "@natalia/goal";
 import { admittedInputs, type AdmittedSessionInput } from "./inbox";
 import type { SessionRecord } from "./index";
 
@@ -15,8 +14,6 @@ export type SessionProjection = {
   completedTurnIDs: string[];
   pendingInputs: AdmittedSessionInput[];
   replayableEvents: RuntimeEvent[];
-  /** Current same-session goal, folded from the log (always disarmed). */
-  goal?: GoalView;
   selectedAgent?: string;
   selectedModel?: { modelID?: string; variant?: string };
   reasoningEffort?: import("@anthelia/contracts").RuntimeReasoningEffort;
@@ -66,7 +63,6 @@ export function projectSession(session: SessionRecord): SessionProjection {
     completedTurnIDs: [...completed],
     pendingInputs: admittedInputs(session).filter((input) => !input.promotedAt),
     replayableEvents: replayable,
-    goal: projectedGoal(session.events),
     selectedAgent: selectedAgentFromEvents(replayable),
     selectedModel: selectedModelFromEvents(replayable),
     reasoningEffort: reasoningEffortFromEvents(replayable),
@@ -95,8 +91,6 @@ export type ProjectionState = {
   events: RuntimeEvent[];
   activeTurnIDs: Set<string>;
   completedTurnIDs: Set<string>;
-  /** Same-session goal, folded strictly from all events (never event-filtered). */
-  goal?: GoalView;
 };
 
 export function initProjection(): ProjectionState {
@@ -105,7 +99,6 @@ export function initProjection(): ProjectionState {
     events: [],
     activeTurnIDs: new Set(),
     completedTurnIDs: new Set(),
-    goal: undefined,
   };
 }
 
@@ -120,7 +113,6 @@ export function applyProjection(
     state.activeTurnIDs.delete(event.id);
     state.completedTurnIDs.add(event.id);
   }
-  state.goal = foldGoalStep(state.goal, event);
   return state;
 }
 
@@ -143,7 +135,6 @@ export function viewProjection(
     completedTurnIDs: [...state.completedTurnIDs],
     pendingInputs: inbox.filter((input) => !input.promotedAt),
     replayableEvents: replayable,
-    goal: state.goal,
     selectedAgent: selectedAgentFromEvents(replayable),
     selectedModel: selectedModelFromEvents(replayable),
     reasoningEffort: reasoningEffortFromEvents(replayable),
@@ -198,7 +189,6 @@ export type SerializedProjectionState = {
   events: RuntimeEvent[];
   activeTurnIDs: string[];
   completedTurnIDs: string[];
-  goal?: GoalView;
 };
 
 export function serializeProjectionState(state: ProjectionState): string {
@@ -207,7 +197,6 @@ export function serializeProjectionState(state: ProjectionState): string {
     events: state.events,
     activeTurnIDs: [...state.activeTurnIDs],
     completedTurnIDs: [...state.completedTurnIDs],
-    ...(state.goal === undefined ? {} : { goal: state.goal }),
   };
   return JSON.stringify(payload);
 }
@@ -245,7 +234,6 @@ export function deserializeProjectionState(
     events: payload.events,
     activeTurnIDs: new Set(payload.activeTurnIDs ?? []),
     completedTurnIDs: new Set(payload.completedTurnIDs ?? []),
-    goal: payload.goal,
   };
 }
 
@@ -670,15 +658,6 @@ export function settleInterruptedTurns(session: SessionRecord) {
   );
   session.events.push(...settled);
   return settled;
-}
-
-/**
- * Projects the current same-session goal from the journal. The result is always
- * `disarmed`: continuation authority is process-local and never reconstructed
- * by replay (see the goal subsystem plan).
- */
-export function projectedGoal(events: RuntimeEvent[]): GoalView | undefined {
-  return foldGoal(events);
 }
 
 /**

@@ -19,7 +19,6 @@ import {
   projectedMailboxMessages,
   projectedCollabMessages,
   projectedPlanDocs,
-  projectedGoal,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
   projectSessionMessages,
@@ -1384,38 +1383,6 @@ test("legacy persisted chat records retain isolated channel histories", () => {
   ]);
 });
 
-test("session projection carries the current goal, folded and disarmed", () => {
-  const session = createSessionRecord("ses_goal_projection", "Goal");
-  const at = "2026-01-01T00:00:00.000Z";
-  const goalEvent = (
-    operation: "create" | "edit",
-    revision: number,
-    objective: string,
-  ) =>
-    ({
-      type: "goal.changed",
-      id: `goal:${operation}:${revision}`,
-      operation,
-      snapshot: {
-        goalID: "goal_1",
-        revision,
-        objective,
-        phase: "active",
-        maxGoalRounds: 256,
-      },
-      roundsStarted: 0,
-      at,
-    }) as RuntimeEvent;
-  appendSessionEvent(session, goalEvent("create", 1, "first"));
-  appendSessionEvent(session, goalEvent("edit", 2, "second"));
-  const goal = projectSession(session).goal;
-  expect(goal?.objective).toBe("second");
-  expect(goal?.revision).toBe(2);
-  expect(goal?.phase).toBe("active");
-  expect(goal?.activation).toBe("disarmed");
-  expect(projectedGoal(session.events)?.objective).toBe("second");
-});
-
 test("projected messages include collaboration rows in event order", () => {
   const session = createSessionRecord("ses_collab_projection", "Collab");
   appendSessionEvent(session, {
@@ -1730,52 +1697,6 @@ test("foldable projection unit reproduces projectSession for a mixed log", () =>
   expect(folded.pendingInputs.map((input) => input.id)).toEqual([
     "input_pending",
   ]);
-});
-
-test("foldable projection unit folds a goal incrementally to the same view", () => {
-  const session = createSessionRecord("ses_projection_goal", "Projection Goal");
-  appendSessionEvent(session, {
-    type: "turn.submitted",
-    id: "turn_g",
-    text: "g",
-    byteLength: 1,
-    lineCount: 1,
-    sha256: "x",
-  });
-  appendSessionEvent(session, {
-    type: "goal.changed",
-    id: "goal:create:1",
-    operation: "create",
-    at: "2026-01-01T00:00:00.000Z",
-    roundsStarted: 0,
-    snapshot: {
-      goalID: "goal_1",
-      revision: 1,
-      objective: "ship the thing",
-      phase: "active",
-      maxGoalRounds: 0,
-      maxGoalTokens: 0,
-      maxGoalWallClockMs: 0,
-      spentGoalTokens: 0,
-      goalWallClockMs: 0,
-    },
-  });
-  appendSessionEvent(session, {
-    type: "goal.round",
-    id: "goal:round:1",
-    goalID: "goal_1",
-    revision: 1,
-    round: 1,
-    at: "2026-01-01T00:01:00.000Z",
-  });
-  appendSessionEvent(session, {
-    type: "turn.finished",
-    id: "turn_g",
-    stopReason: "done",
-  });
-
-  expect(foldProjection(session.events)).toEqual(projectSession(session));
-  expect(foldProjection(session.events).goal?.roundsStarted).toBe(1);
 });
 
 test("deserializeProjectionState round-trips a serialized state", () => {

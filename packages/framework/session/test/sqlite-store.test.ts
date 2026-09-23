@@ -833,66 +833,6 @@ test("SQLite passive checkpoint preserves event reads", async () => {
   }
 });
 
-test("recovery projects the current goal and its admitted rounds", () => {
-  const path = join(
-    tmpdir(),
-    `natalia-goal-recovery-${crypto.randomUUID()}.db`,
-  );
-  const store = new SqliteSessionStore(path);
-  const sessionID = "ses_goal_recovery" as SessionID;
-  try {
-    store.create(sessionID, "Goal");
-    store.appendEvents(sessionID, [
-      {
-        type: "goal.changed",
-        id: "goal:create",
-        operation: "create",
-        snapshot: {
-          goalID: "goal_1",
-          revision: 1,
-          objective: "ship it",
-          phase: "active",
-          maxGoalRounds: 256,
-        },
-        roundsStarted: 0,
-        at: "2026-01-01T00:00:00.000Z",
-      } as RuntimeEvent,
-    ]);
-    let recovery = store.loadRecoveryProjection(sessionID);
-    expect(recovery.goal?.goalID).toBe("goal_1");
-    expect(recovery.goal?.roundsStarted).toBe(0);
-    expect(recovery.goal?.activation).toBe("disarmed");
-
-    store.appendEvents(sessionID, [
-      {
-        type: "goal.round",
-        id: "goal:round:1",
-        goalID: "goal_1",
-        revision: 1,
-        round: 1,
-        at: "2026-01-01T00:00:30.000Z",
-      } as RuntimeEvent,
-    ]);
-    recovery = store.loadRecoveryProjection(sessionID);
-    expect(recovery.goal?.roundsStarted).toBe(1);
-
-    store.appendEvents(sessionID, [
-      {
-        type: "goal.changed",
-        id: "goal:clear",
-        operation: "clear",
-        cleared: { goalID: "goal_1", revision: 2 },
-        roundsStarted: 1,
-        at: "2026-01-01T00:01:00.000Z",
-      } as RuntimeEvent,
-    ]);
-    expect(store.loadRecoveryProjection(sessionID).goal).toBeUndefined();
-  } finally {
-    store.close();
-    rmSync(path, { force: true });
-  }
-});
-
 test("auto-saved checkpoint + tail replay matches a full projection", () => {
   const path = join(
     tmpdir(),

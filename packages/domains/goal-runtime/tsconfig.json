@@ -7,6 +7,18 @@
   "include": ["src", "test"],
   "references": [
     {
+      "path": "../../core/contracts"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../domains/goal"
+    },
+    {
+      "path": "../../framework/operation-log"
+    },
+    {
       "path": "../../framework/session"
     },
     {
@@ -14,15 +26,6 @@
     },
     {
       "path": "../../framework/substrate"
-    },
-    {
-      "path": "../../core/tools"
-    },
-    {
-      "path": "../../core/contracts"
-    },
-    {
-      "path": "../../framework/operation-log"
     }
   ]
 }
