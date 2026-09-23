@@ -425,6 +425,9 @@ test("CLI doctor reports safe config/model/session availability", async () => {
   ).toMatchObject({
     defaultModel: { selected: true },
     sessions: { count: 0 },
+    // P4: the doctor testifies about layers — a source checkout reads
+    // its live workspace scopes.
+    layers: { source: "node_modules" },
     sources: [
       { scope: "defaults", applied: true },
       { scope: "global", path, applied: true },

@@ -7,9 +7,13 @@ import {
   retryDisplayLine,
   searchWorkspaceFiles,
 } from "@natalia/client";
+import { layerCensus } from "./layer-census";
 import {
+  defaultConfigV3,
+  defaultGlobalConfigPath,
   loadConfigFile,
   loadTrustStore,
+  migrateConfig,
   migrationSummaryText,
   modelSelectionStatus,
   removeTrust,
@@ -163,7 +167,23 @@ export async function doctorReport(input: {
   configPath: string;
   workspaceRoot?: string;
 }) {
-  const loaded = await loadConfigFile(input.configPath);
+  // Doctor REPORTS absence, it never dies on it: the installer
+  // advertises this command as the very first run, executed from
+  // wherever the user stands (often a directory with no project
+  // config). Project file, then global, then schema defaults — the
+  // sources list below still tells the truth about what was missing.
+  const loaded = await loadConfigFile(input.configPath).catch(
+    async (error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+      try {
+        return await loadConfigFile(defaultGlobalConfigPath());
+      } catch (globalError) {
+        if ((globalError as NodeJS.ErrnoException).code !== "ENOENT")
+          throw globalError;
+        return migrateConfig(defaultConfigV3());
+      }
+    },
+  );
   const resolved = await resolveConfig({
     workspaceRoot: input.workspaceRoot ?? process.cwd(),
     globalPath: input.configPath,
@@ -202,6 +222,9 @@ export async function doctorReport(input: {
       applied: source.applied,
       diagnostic: source.diagnostic,
     })),
+    // P4: which layers this build contains (build manifest, else live
+    // workspace scopes, else honestly none).
+    layers: await layerCensus(),
   };
 }
 
