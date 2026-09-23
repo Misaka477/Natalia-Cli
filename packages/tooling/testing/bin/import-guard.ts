@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -20,6 +21,10 @@ import {
   frameworkSubsystemRoots,
 } from "../src/migrated-plugin-rules";
 import { findEnginePrefixBandViolations } from "../src/prefix-band-rules";
+import {
+  findElectronDependency,
+  findElectronResidueInText,
+} from "../src/electron-residue-rules";
 
 const root = process.cwd();
 const dependencyGuarded = [
@@ -246,6 +251,14 @@ for (const manifest of await workspacePackageManifests("packages")) {
     failures.push(
       `${manifest.path}: @natalia/testing must be a devDependency, not a production dependency`,
     );
+  // §3.6.9: the desktop shell is CEF — Electron is history, and the
+  // audit's lesson was a false "deleted" claim. The claim is now
+  // re-checkable: no manifest may declare it.
+  const electronDep = findElectronDependency(manifest);
+  if (electronDep)
+    failures.push(
+      `${manifest.path}: ${electronDep} (§3.6.9: the shell is CEF)`,
+    );
   // §1.1 包前缀即边界 — the never-reverse law, derived FROM the package
   // name: a new @anthelia/* package is band-covered the moment it is
   // named, and only its src (the shipped boundary) is scanned; engine
@@ -263,6 +276,50 @@ for (const manifest of await workspacePackageManifests("packages")) {
       },
     );
   }
+}
+// §3.6.9, source + docs bites: every workspace src tree and the
+// user-facing docs are scanned for Electron (electron-to-chromium is
+// the browserslist database, allowed by the rule itself).
+{
+  const codeOnly = /\.(?:ts|tsx|js|mjs|jsx)$/u;
+  const docs = ["README.md"];
+  for (const rootDir of ["packages", "apps"]) {
+    for (const entry of await workspacePackageManifests(rootDir)) {
+      const pkgDir = entry.path.slice(0, -"/package.json".length);
+      await scan(join(pkgDir, "src"), codeOnly, (full, text) => {
+        // The rule's own file must be able to NAME what it bans (its
+        // patterns and prose contain the words) — an explicit,
+        // reasoned exemption, the twin-guard allowlist's precedent.
+        if (full.endsWith("electron-residue-rules.ts")) return;
+        const violation = findElectronResidueInText(text);
+        if (violation)
+          failures.push(`${full}: ${violation} (§3.6.9: the shell is CEF)`);
+      });
+      for (const doc of docs) {
+        const docPath = join(pkgDir, doc);
+        if (!(await Bun.file(docPath).exists())) continue;
+        const violation = findElectronResidueInText(
+          await Bun.file(docPath).text(),
+        );
+        if (violation)
+          failures.push(`${docPath}: ${violation} (§3.6.9: the shell is CEF)`);
+      }
+    }
+  }
+  for (const doc of docs) {
+    const docPath = join(root, doc);
+    if (!(await Bun.file(docPath).exists())) continue;
+    const violation = findElectronResidueInText(await Bun.file(docPath).text());
+    if (violation)
+      failures.push(`${docPath}: ${violation} (§3.6.9: the shell is CEF)`);
+  }
+  const docsDir = join(root, "docs");
+  if (existsSync(docsDir))
+    await scan(docsDir, /\.md$/u, (full, text) => {
+      const violation = findElectronResidueInText(text);
+      if (violation)
+        failures.push(`${full}: ${violation} (§3.6.9: the shell is CEF)`);
+    });
 }
 for (const dir of dependencyGuarded)
   await scan(join(root, dir), sourceExtensions, (full, text) => {
