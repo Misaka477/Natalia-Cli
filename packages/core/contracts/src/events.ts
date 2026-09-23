@@ -2913,6 +2913,17 @@ export type RuntimeClient = {
    */
   feedback?(input: FeedbackInput): Promise<FeedbackResult>;
   /**
+   * D3b step 1 — wait until NO execution has an active turn (the plan's
+   * 排空在途: in-flight turns finish; admitted-but-unstarted inputs are
+   * durable by construction — the inbox survives restarts, so only
+   * RUNNING turns are waited on). Deliberately a WAIT, not an admission
+   * lock: nothing sticky can outlive the caller. Throws on timeout with
+   * the count still active (an error, never a partial value).
+   */
+  drainForUpdate?(input?: {
+    timeoutMs?: number;
+  }): Promise<{ waitedMs: number }>;
+  /**
    * Submit a turn and wait until the turn reaches a durable terminal state
    * (`turn.finished` or `turn.cancelled`). The normal `submit` method remains
    * non-blocking; this is the explicit blocking variant for callers/tests that

@@ -106,6 +106,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   ],
   /** Lifecycle beyond a single session. */
   lifecycle: [
+    "drainForUpdate",
     "dispose",
     "canReloadConfig",
     "reloadConfig",

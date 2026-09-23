@@ -751,6 +751,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "ok",
     note: "edit the current goal (objective/round cap/plan) from the status bar; refusal is expressed by ok:false plus a message",
   },
+  drainForUpdate: {
+    refusal: "error",
+    note: "times out with an error naming how many turns were still active — there is no value form (nothing partial to report); the wait itself is the result",
+  },
   feedback: {
     refusal: "value",
     expressedBy: "recorded",

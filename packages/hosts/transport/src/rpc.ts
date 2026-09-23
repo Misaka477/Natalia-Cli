@@ -119,6 +119,7 @@ export const RPC_ROUTE_MEMBERS = {
   "interactive.respond": "respondInteractive",
   "session.history": "history",
   "feedback.record": "feedback",
+  "daemon.drain": "drainForUpdate",
   "session.eventWindow": "eventWindow",
   "session.messages": "messages",
   pause: "pause",
@@ -702,6 +703,19 @@ export async function handleRPCMessage(
           ...(category !== undefined ? { category: category as string } : {}),
           ...(note !== undefined ? { note: note as string } : {}),
         }),
+      };
+    }
+    if (request.method === "daemon.drain") {
+      const timeoutMs = request.params?.timeoutMs;
+      if (timeoutMs !== undefined && typeof timeoutMs !== "number")
+        throw invalidParams("daemon.drain.params.timeoutMs must be a number");
+      optionsGuard(client, "drainForUpdate");
+      return {
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: await client.drainForUpdate?.(
+          timeoutMs === undefined ? undefined : { timeoutMs },
+        ),
       };
     }
     if (request.method === "cancel") {
