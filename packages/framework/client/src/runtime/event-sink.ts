@@ -7,6 +7,7 @@
  * events, and trigger session snapshots and safe-boundary settlement. Reads
  * everything it needs from `RuntimeContext` at call time.
  */
+import { rinaVault } from "@anthelia/rina";
 import {
   appendSessionEvent,
   projectedNiaChatMessages,
@@ -439,6 +440,12 @@ export function createEventSink(
         markRuntimeEventSessionSeq(event, sessionSeq);
         feedSessionEventWindow(exec, sessionSeq, event);
         appendSessionEvent(exec.session, event);
+        // RINA Phase1: the vault is a DERIVED index of the journal —
+        // enqueue beside the append (the study's choke point). Only
+        // CLASSIFIED event types ever become records: content.partial
+        // and friends carry model/user bodies and are skipped by
+        // construction (the study's never-store-bodies isolation).
+        ctx.state.serviceDirectory.getOptional(rinaVault)?.enqueue(event);
         feedSessionFactState(exec, event);
         scheduleContextEpochWrite(exec, event);
         if (isCollabSnapshotRelevantEvent(event)) {

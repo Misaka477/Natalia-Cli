@@ -24,6 +24,7 @@ export type InitializeOptions = {
   sessionDir?: string;
   checkpointDir?: string;
   operationLogsDir?: string;
+  vaultDir?: string;
   useSqliteStore?: boolean;
   nativeTerminal?: import("@anthelia/runtime-services").TerminalControllerInput["external"];
   provider?: StreamingProvider;

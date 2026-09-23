@@ -1,5 +1,6 @@
 import { defineService } from "@anthelia/runtime-services";
 import type { CacheFabric } from "./cache";
+import type { RinaVaultService } from "./vault";
 
 /**
  * `rina.*` as a tokenized service (architecture decisions: RINA's
@@ -13,5 +14,10 @@ import type { CacheFabric } from "./cache";
  */
 export const rinaCache = defineService<CacheFabric>("rina.cache", {
   scope: "workspace",
+  capability: "services",
+});
+
+export const rinaVault = defineService<RinaVaultService>("rina.vault", {
+  scope: "process",
   capability: "services",
 });

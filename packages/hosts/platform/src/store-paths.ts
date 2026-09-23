@@ -373,3 +373,13 @@ export function resolveWorkspaceJsonSessionsDir(
 export function operationLogsDir(osHome: string = homedir()): string {
   return join(osHome, ".natalia", "logs");
 }
+
+/**
+ * The ContextVault's home (RINA Phase1): the same `.natalia/` family
+ * as the daemon store and the operation logs — one SQLite file per
+ * home, scoped per workspace/session by the study's isolation rules
+ * (queries never cross them; the columns keep them apart).
+ */
+export function contextVaultDir(osHome: string = homedir()): string {
+  return join(osHome, ".natalia", "vault");
+}

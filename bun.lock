@@ -375,6 +375,7 @@
       "name": "@anthelia/rina",
       "version": "0.0.0-m13",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
         "@anthelia/runtime-services": "workspace:*",
       },
     },

@@ -43,7 +43,14 @@ import {
   createInteractiveWaiter,
 } from "@natalia/collaboration";
 import type { ServiceToken } from "@anthelia/runtime-services";
-import { createCacheFabric, L1_CACHE_KINDS, rinaCache } from "@anthelia/rina";
+import {
+  createCacheFabric,
+  createContextVault,
+  createUnavailableVault,
+  L1_CACHE_KINDS,
+  rinaCache,
+  rinaVault,
+} from "@anthelia/rina";
 import { join } from "node:path";
 import { createOperationLog, operationLog } from "@anthelia/operation-log";
 import { createRuntimeDiagnostics } from "@anthelia/runtime-diagnostics";
@@ -55,6 +62,7 @@ import {
   findWorkspaceFiles,
   migrateLegacyWorkspaceStore,
   operationLogsDir,
+  contextVaultDir,
   searchWorkspaceFiles,
 } from "@anthelia/platform";
 import { createSessionHistoryTool } from "../session-history-tool";
@@ -603,6 +611,38 @@ export async function wireFrameworkServices(
   });
   ctx.state.serviceDirectory.provide(operationLog, telemetry);
   closeHandles.push(() => telemetry.close());
+  // RINA Phase1: the Cold Vault rides the SAME home-conditional shape
+  // as the operation log (an injected dir wins, NATALIA_HOME redirects
+  // isolated runs, the .natalia family is the real-home default) and
+  // closes with the runtime exactly like it.
+  // Fail-soft, honestly: a store that cannot open (a read-only home
+  // under a sandbox, a locked dir in the field) degrades to an
+  // unavailable vault that says WHY — the boot continues, writes fail
+  // loud at their call site, and a diagnostic lands in the journal so
+  // the loss is observable. Telemetry must never be able to kill the
+  // runtime; silence would be the other dishonest direction.
+  let vault: import("@anthelia/rina").RinaVaultService;
+  try {
+    vault = createContextVault({
+      dir:
+        options.vaultDir ??
+        (process.env.NATALIA_HOME
+          ? join(process.env.NATALIA_HOME, "vault")
+          : contextVaultDir()),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // NO boot-time diagnostic, deliberately: any read-only home would
+    // warn on EVERY boot (a flood by construction) — and worse, the
+    // diagnostics channel is DURABLE, so the spam would be restored on
+    // every reopen (the channel's own tests drew this boundary). The
+    // honesty lives ON DEMAND instead: rina.vault.state() says exactly
+    // why the vault is unavailable and remember() fails loud at its
+    // call site — availability is queried, not announced at birth.
+    vault = createUnavailableVault(`vault store will not open: ${message}`);
+  }
+  ctx.state.serviceDirectory.provide(rinaVault, vault);
+  closeHandles.push(() => vault.close());
   // The domain-invariant layer (Discovery D1): domains declare their data
   // relations, this ticks them live over the running sessions' event
   // windows — findings report to the operation log with owner attribution

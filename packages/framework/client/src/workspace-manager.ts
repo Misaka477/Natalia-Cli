@@ -29,6 +29,7 @@ export type WorkspaceManagerOptions = Pick<
   | "sessionDir"
   | "checkpointDir"
   | "operationLogsDir"
+  | "vaultDir"
   | "contextWindowCachePath"
 >;
 

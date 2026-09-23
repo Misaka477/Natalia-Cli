@@ -1,3 +1,4 @@
+export * from "./vault";
 export {
   createCacheFabric,
   DEFAULT_CACHE_MAX_BYTES,
@@ -16,4 +17,4 @@ export {
   toolGlobKind,
   toolSearchKind,
 } from "./tool-kinds";
-export { rinaCache } from "./service-tokens";
+export { rinaCache, rinaVault } from "./service-tokens";
