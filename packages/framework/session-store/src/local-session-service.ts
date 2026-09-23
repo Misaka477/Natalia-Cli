@@ -147,6 +147,32 @@ export function createLocalSessionService(workspaceRoot = process.cwd()) {
       };
     },
 
+    /**
+     * All of a session's events, offline (Discovery D5's replay source):
+     * WHATEVER STORE THE FILES SHOW wins — the journal database when it
+     * exists, the JSON store otherwise. Same store-first rule `show`
+     * uses, so counts and scores can never disagree about the source.
+     */
+    async events(
+      id: string,
+    ): Promise<import("@natalia/contracts").RuntimeEvent[]> {
+      const database = sqlite();
+      if (database) {
+        const session = database.get(id as SessionID);
+        if (session) {
+          try {
+            return database.loadEvents(session.id);
+          } finally {
+            database.close();
+          }
+        }
+        database.close();
+      }
+      const session = await json().load(id as SessionID);
+      if (!session) throw new Error(`session not found: ${id}`);
+      return session.events;
+    },
+
     async workGraph(sessionID: string) {
       const database = sqlite();
       const session = database?.loadRecord(sessionID as SessionID);

@@ -19,6 +19,9 @@
       "path": "../../packages/core/tools"
     },
     {
+      "path": "../../packages/domains/engineering-intelligence"
+    },
+    {
       "path": "../../packages/framework/client"
     },
     {

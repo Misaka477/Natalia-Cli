@@ -1,4 +1,10 @@
 import { EGRESS_ADVISORY } from "@natalia/client";
+import {
+  groupRunsByPrompt,
+  scoreRun,
+  segmentTurns,
+} from "@natalia/engineering-intelligence";
+import { createLocalSessionService } from "@natalia/session-store";
 import { createRecordedFetch, readCassette } from "@natalia/transport";
 import {
   deleteLocalSession,
@@ -49,6 +55,7 @@ export async function handleLocalCommands(argv: string[]) {
       "purge",
       "store",
       "debug-bundle",
+      "runs",
     ]).has(subcommand ?? "")
   )
     return false;
@@ -132,6 +139,68 @@ export async function handleLocalCommands(argv: string[]) {
         console.error(error instanceof Error ? error.message : String(error));
         process.exit(1);
       }
+      break;
+    }
+    case "runs": {
+      // G-b's internal-evaluation report: score every turn from the
+      // workspace journal and show the same-prompt distribution — pure
+      // offline replay, no telemetry, no daemon.
+      // Flag VALUES are not positionals (the --workspace <path> value
+      // must not trip the usage gate): value-taking flags skip their
+      // argument, boolean flags stand alone.
+      const valueFlags = new Set(["--workspace", "--prompt"]);
+      const positionals: string[] = [];
+      for (let index = 1; index < argv.length; index += 1) {
+        const arg = argv[index]!;
+        if (valueFlags.has(arg)) {
+          index += 1;
+          continue;
+        }
+        if (arg.startsWith("--")) continue;
+        positionals.push(arg);
+      }
+      if (positionals.length) {
+        console.error(
+          "usage: natalia runs [--prompt <sha-prefix>] [--workspace <root>] [--json]",
+        );
+        process.exit(1);
+      }
+      const workspaceRoot = valueAfter(argv, "--workspace") ?? process.cwd();
+      const promptFilter = valueAfter(argv, "--prompt");
+      const service = createLocalSessionService(workspaceRoot);
+      const rows = await service.list();
+      const scores = [];
+      for (const row of rows) {
+        const events = await service.events(row.id).catch(() => []);
+        for (const window of segmentTurns(events))
+          scores.push(scoreRun(window, { sessionID: row.id }));
+      }
+      const groups = groupRunsByPrompt(scores)
+        .filter(
+          (group) => !promptFilter || group.promptKey.startsWith(promptFilter),
+        )
+        .sort((left, right) => right.runs - left.runs);
+      if (argv.includes("--json")) {
+        console.log(JSON.stringify({ groups, runs: scores.length }, null, 2));
+        break;
+      }
+      if (!groups.length) {
+        console.log("no turns found");
+        break;
+      }
+      console.log("PROMPT\tRUNS\tOK%\tAVG_IN\tAVG_OUT\tAVG_MS\tRETRIES");
+      for (const group of groups)
+        console.log(
+          [
+            group.promptKey,
+            group.runs,
+            `${group.successRate}%`,
+            group.avgInputTokens ?? "-",
+            group.avgOutputTokens ?? "-",
+            group.avgDurationMs ?? "-",
+            group.retries,
+          ].join("\t"),
+        );
       break;
     }
     case "store": {
