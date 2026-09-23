@@ -126,7 +126,7 @@ test("switched: staged tree lands, the relative link flips, the probe proves it,
   expect(receipt.toVersion).toBe("2.0.0");
   expect((receipt.probe as { version?: string }).version).toBe("2.0.0");
   expect((receipt.steps as Array<{ name: string }>).map((s) => s.name)).toEqual(
-    ["locate", "verify", "version", "stage", "swap", "probe"],
+    ["locate", "detect", "verify", "version", "stage", "swap", "probe"],
   );
   expect(existsSync(join(home, ".natalia-update-in-progress"))).toBe(false);
   // idempotent second run on the same source: still switched, no damage

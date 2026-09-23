@@ -85,7 +85,11 @@ export async function runtimeDaemonStatus(store: RuntimeDaemonStore) {
   if (registration.version !== store.version)
     return { state: "incompatible" as const, registration };
   if (!isProcessRunning(registration.pid)) {
-    await rm(store.registrationPath, { force: true });
+    // Best-effort cleanup, same discipline as the update receipts: a
+    // READ-ONLY state home (a real deployment — and this repo's own
+    // sandbox) must never turn a status READ into a crash. The record
+    // stays on disk then, still honestly reported as stale.
+    await rm(store.registrationPath, { force: true }).catch(() => undefined);
     return { state: "stale" as const, registration };
   }
   return { state: "running" as const, registration };

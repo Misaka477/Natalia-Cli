@@ -69,12 +69,14 @@ export type UpdateReceipt = {
   steps: UpdateStep[];
   outcome: UpdateOutcome;
   reason?: string;
+  warning?: string;
 };
 
 export type UpdateResult = {
   outcome: UpdateOutcome;
   exitCode: number;
   reason?: string;
+  warning?: string;
   receiptPath?: string;
   steps: UpdateStep[];
 };
@@ -270,6 +272,79 @@ export type UpdateProgramInput = {
   from: string;
   env?: Record<string, string | undefined>;
   now?: () => Date;
+  /**
+   * A LIVE runtime to orchestrate (the caller read it from the daemon
+   * store — the store's own status is the liveness authority: pid +
+   * protocol version, stale records self-clean). Present = drain it
+   * right BEFORE the staging, so the flip and its restart sit in the
+   * tightest window; absent = the interactive path (the next launch
+   * picks the new version up by construction).
+   */
+  runtime?: { url: string; token?: string; drainTimeoutMs?: number };
+  /** The systemd unit to restart AFTER a passed probe — explicit or
+   * not at all (no guessed restarts). */
+  restartUnit?: string;
+  /** The restart executor, injected for tests; default = systemctl. */
+  exec?: (argv: string[]) => { code: number; output: string };
+};
+
+/**
+ * The one RPC the orchestrator speaks (`daemon.drain`, B1's route),
+ * bounded so a hung daemon cannot hang the update: the runtime enforces
+ * its own turn-wait semantics, this adds the client-side ceiling.
+ * Returns how long the runtime waited.
+ */
+async function drainRuntime(runtime: {
+  url: string;
+  token?: string;
+  drainTimeoutMs?: number;
+}): Promise<number> {
+  const ceiling = Math.max(1_000, runtime.drainTimeoutMs ?? 120_000) + 15_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ceiling);
+  try {
+    const response = await fetch(`${runtime.url.replace(/\/$/u, "")}/rpc`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(runtime.token ? { authorization: `Bearer ${runtime.token}` } : {}),
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "daemon.drain",
+        params:
+          runtime.drainTimeoutMs === undefined
+            ? {}
+            : { timeoutMs: runtime.drainTimeoutMs },
+      }),
+      signal: controller.signal,
+    });
+    const body = (await response.json()) as {
+      result?: { waitedMs?: number };
+      error?: { message?: string };
+    };
+    if (!response.ok) throw new Error(`http ${response.status}`);
+    if (body.error)
+      throw new Error(body.error.message ?? "the runtime refused the drain");
+    return body.result?.waitedMs ?? 0;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const defaultRestartExec = (argv: string[]) => {
+  const proc = Bun.spawnSync(argv, {
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 60_000,
+  });
+  const out = new TextDecoder().decode(proc.stdout).trim();
+  const err = new TextDecoder().decode(proc.stderr).trim();
+  return {
+    code: proc.exitCode ?? 1,
+    output: [out, err].filter(Boolean).join("\n"),
+  };
 };
 
 export async function updateProgram(
@@ -308,11 +383,16 @@ export async function updateProgram(
       reason?: string,
       extra: Partial<UpdateReceipt> = {},
     ): UpdateResult => {
-      const receiptPath = writeReceipt(
-        home,
-        receipt(outcome, { reason, ...extra }),
-      );
-      return { outcome, exitCode, reason, receiptPath, steps };
+      const finalReceipt = receipt(outcome, { reason, ...extra });
+      const receiptPath = writeReceipt(home, finalReceipt);
+      return {
+        outcome,
+        exitCode,
+        reason,
+        receiptPath,
+        steps,
+        ...(finalReceipt.warning ? { warning: finalReceipt.warning } : {}),
+      };
     };
 
     // The current install, by the installer's exact-match discipline.
@@ -331,6 +411,13 @@ export async function updateProgram(
       ok: current.code === 0,
       detail:
         current.code === 0 ? `current ${fromVersion ?? "?"}` : current.detail,
+    });
+    steps.push({
+      name: "detect",
+      ok: true,
+      detail: input.runtime
+        ? `runtime at ${input.runtime.url}`
+        : "none (next launch picks up the new version)",
     });
 
     // Load + verify AT THE SOURCE before anything is written (the
@@ -355,6 +442,26 @@ export async function updateProgram(
           fromVersion,
           probe: { version: current.version },
         });
+    }
+
+    // Drain FIRST, immediately before the staging: a flip whose runtime
+    // never went quiet would strand in-flight turns at the restart, and
+    // draining for an update that turns out to be a no-op (the
+    // same-version early return above) would be a lie in the receipt.
+    if (input.runtime) {
+      try {
+        const waitedMs = await drainRuntime(input.runtime);
+        steps.push({ name: "drain", ok: true, detail: `waited ${waitedMs}ms` });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        steps.push({ name: "drain", ok: false, detail });
+        return finish(
+          "refused",
+          1,
+          `drain failed before anything was touched: ${detail}`,
+          { fromVersion, toVersion: targetVersion },
+        );
+      }
     }
 
     // Stage the new version directory, then flip the symlink.
@@ -394,11 +501,37 @@ export async function updateProgram(
     const probe = probeVersion(binLink);
     if (probe.code === 0 && probe.version === targetVersion) {
       steps.push({ name: "probe", ok: true, detail: probe.version });
-      return finish("switched", 0, undefined, {
+      const switchFacts = {
         fromVersion,
         toVersion: targetVersion,
         probe: { version: probe.version },
-      });
+      };
+      if (input.restartUnit) {
+        const argv = ["systemctl", "restart", input.restartUnit];
+        const run = input.exec ?? defaultRestartExec;
+        let warning: string | undefined;
+        let stepOk = false;
+        let detail = "";
+        try {
+          const outcome = run(argv);
+          stepOk = outcome.code === 0;
+          detail = outcome.output || `exit ${outcome.code}`;
+          if (!stepOk)
+            detail = `exit ${outcome.code}: ${outcome.output}`.trim();
+        } catch (error) {
+          detail = error instanceof Error ? error.message : String(error);
+        }
+        steps.push({ name: "restart", ok: stepOk, detail });
+        if (!stepOk)
+          warning =
+            `restart not executed (${detail}) — the new binary is linked and verified; ` +
+            `run \`systemctl restart ${input.restartUnit}\` yourself`;
+        return finish("switched", 0, undefined, {
+          ...switchFacts,
+          ...(warning ? { warning } : {}),
+        });
+      }
+      return finish("switched", 0, undefined, switchFacts);
     }
     const detail = `code=${probe.code} version=${probe.version ?? "?"} expected=${targetVersion} ${probe.detail}`;
     steps.push({ name: "probe", ok: false, detail });

@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile } from "node:fs/promises";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createFakeBackend } from "@natalia/client/fixture";
@@ -137,5 +145,36 @@ test("a daemon without task execution opt-in returns a typed refusal", async () 
     });
   } finally {
     server.stop(true);
+  }
+});
+
+test("a read-only state home never breaks the status read (stale cleanup is best-effort)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "daemon-ro-"));
+  const dir = join(root, "state");
+  mkdirSync(dir, { recursive: true });
+  const store = createRuntimeDaemonStore({ dir });
+  // a leftover registration whose pid is dead (999999 is never ours)
+  writeFileSync(
+    store.registrationPath,
+    JSON.stringify({
+      version: store.version,
+      url: "http://127.0.0.1:1",
+      pid: 999999,
+      tokenFile: store.tokenPath,
+      transport: "http",
+      createdAt: "2020-01-01T00:00:00.000Z",
+    }),
+  );
+  chmodSync(dir, 0o555); // EROFS/EACCES on any unlink inside
+  try {
+    const status = await runtimeDaemonStatus(store);
+    // the state is REPORTED even when the courtesy cleanup cannot run —
+    // before the fix this rm threw and every caller (the update
+    // command) crashed before doing anything.
+    expect(status.state).toBe("stale");
+    expect(existsSync(store.registrationPath)).toBe(true);
+  } finally {
+    chmodSync(dir, 0o755);
+    rmSync(root, { recursive: true, force: true });
   }
 });

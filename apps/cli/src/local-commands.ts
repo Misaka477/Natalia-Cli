@@ -1,4 +1,10 @@
 import { EGRESS_ADVISORY } from "@natalia/client";
+import {
+  createRuntimeDaemonStore,
+  daemonToken,
+  runtimeDaemonStatus,
+} from "@natalia/transport/host";
+import { daemonDir } from "./command-helpers";
 import { resolveUpdateHome, updateProgram } from "@natalia/installer";
 import {
   groupRunsByPrompt,
@@ -149,15 +155,17 @@ export async function handleLocalCommands(argv: string[]) {
       // swap is a symlink rename; install.ps1 parity is the plan's own
       // Windows follow-up). The default channel lands in D5 — until
       // then a source is an explicit --from (the plan's own staging).
-      const valueFlags = new Set(["--from", "--home"]);
+      const valueFlags = new Set(["--from", "--home", "--restart-unit"]);
       const positionals: string[] = [];
       let from: string | undefined;
       let home: string | undefined;
+      let restartUnit: string | undefined;
       for (let index = 1; index < argv.length; index += 1) {
         const arg = argv[index]!;
         if (valueFlags.has(arg)) {
           if (arg === "--from") from = argv[index + 1];
           if (arg === "--home") home = argv[index + 1];
+          if (arg === "--restart-unit") restartUnit = argv[index + 1];
           index += 1;
           continue;
         }
@@ -177,10 +185,35 @@ export async function handleLocalCommands(argv: string[]) {
         process.exit(1);
       }
       const installHome = resolveUpdateHome(process.env, home);
-      const result = await updateProgram({ home: installHome, from });
+      // The daemon store IS the detection (its own status is the
+      // liveness authority: pid + protocol version, stale records
+      // self-clean). What the store knows, the update never asks for.
+      const store = createRuntimeDaemonStore({ dir: daemonDir() });
+      const daemonStatus = await runtimeDaemonStatus(store);
+      if (
+        daemonStatus.state === "stale" ||
+        daemonStatus.state === "incompatible"
+      )
+        console.error(
+          `update: daemon store ${daemonStatus.state} — not draining (${daemonStatus.state === "stale" ? "the recorded pid is dead and the record was removed" : "record/protocol version mismatch"})`,
+        );
+      const runtime =
+        daemonStatus.state === "running" && daemonStatus.registration
+          ? {
+              url: daemonStatus.registration.url,
+              token: await daemonToken(store),
+            }
+          : undefined;
+      const result = await updateProgram({
+        home: installHome,
+        from,
+        ...(runtime ? { runtime } : {}),
+        ...(restartUnit ? { restartUnit } : {}),
+      });
       console.log(
         `update: ${result.outcome}` +
           (result.reason ? ` — ${result.reason}` : "") +
+          (result.warning ? `\nwarning: ${result.warning}` : "") +
           (result.receiptPath ? `\nreceipt: ${result.receiptPath}` : ""),
       );
       process.exit(result.exitCode);
