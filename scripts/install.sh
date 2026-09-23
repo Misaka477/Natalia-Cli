@@ -95,6 +95,12 @@ TARGET="$HOME_DIR/versions/$VERSION"
 mkdir -p "$TARGET"
 rm -rf "${TARGET:?}/."* "$TARGET"/* 2>/dev/null || true
 cp -R "$STAGE/files/." "$TARGET/"
+# The release manifest is NOT in SHA256SUMS (it is not self-listed), so
+# the files loop above never lands it — but it is the build's identity
+# (and carries the P4 layer census the installed doctor reports from).
+if [ -f "$STAGE/manifest.json" ]; then
+  cp "$STAGE/manifest.json" "$TARGET/manifest.json"
+fi
 chmod +x "$TARGET/natalia"
 mkdir -p "$HOME_DIR/bin"
 # A relative symlink: moving/renaming the home keeps bin -> versions valid.

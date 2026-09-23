@@ -5,9 +5,11 @@ import {
   OFFICIAL_PLUGIN_PACKAGES,
   type OfficialPluginID,
 } from "@natalia/installer";
-import { join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
 
 const runtimeCommands = new Set(["serve", "run", "eval", "ui", "record"]);
 const daemonCommands = new Set(["daemon", "daemon-status", "daemon-stop"]);
@@ -32,14 +34,111 @@ export function isRecognizedHostCommand(argv: readonly string[]) {
   );
 }
 
+/**
+ * The INSTALLED layout's distribution root, for a STANDALONE-EXECUTABLE
+ * bundle: inside one, `process.execPath` AND `import.meta.dir` both live
+ * in the read-only VFS (`/$bunfs/...` — proven by the crash stack
+ * naming the program itself `/…/natalia` under `/$bunfs/root`), so every
+ * path derived from them puts the official plugins' STORE on a
+ * read-only filesystem and kills every host command with EROFS — doctor
+ * included, the very next step the installer prints.
+ *
+ * The installed truth sits beside the REAL executable
+ * (versions/<v>/plugins, writable sibling store). The real directory is
+ * found by resolving how we were invoked — argv0 first (works for
+ * `./natalia` and PATH-resolved launches), then a PATH scan — and only
+ * a candidate that actually has `plugins/` wins. Env overrides and dev
+ * paths above this branch still take precedence.
+ */
+/**
+ * Where the REAL executable lives, in every context: kernel truth on
+ * Linux (/proc/self/exe — immune to bun's argv0/execPath rewriting
+ * inside the single-executable VFS), then argv0 (symlinks resolved —
+ * the installer's bin/natalia lands on versions/<v>), then a PATH scan.
+ * Anything under /$bunfs is rejected outright: the VFS lies about
+ * location. One source of truth — the plugin distribution AND the
+ * doctor's layer census both ask this question.
+ */
+export function realExecutableDirs(input: {
+  argv0?: string;
+  execPath: string;
+  pathEnv?: string;
+}): string[] {
+  const roots: string[] = [];
+  const push = (p: string | undefined) => {
+    if (p && !p.startsWith("/$bunfs")) roots.push(p);
+  };
+  try {
+    push(dirname(realpathSync("/proc/self/exe")));
+  } catch {
+    /* not Linux / unavailable */
+  }
+  try {
+    push(dirname(realpathSync(input.argv0 ?? "")));
+  } catch {
+    /* bare name or missing: next candidate */
+  }
+  if (!input.execPath.startsWith("/$bunfs")) {
+    try {
+      push(dirname(realpathSync(input.execPath)));
+    } catch {
+      /* dev-style paths fall through to the caller's default */
+    }
+  }
+  for (const dir of (input.pathEnv ?? process.env.PATH ?? "").split(":")) {
+    if (!dir) continue;
+    try {
+      push(dirname(realpathSync(join(dir, "natalia"))));
+    } catch {
+      /* not there */
+    }
+  }
+  return [...new Set(roots)];
+}
+
+export function installedPluginDistributionRoots(input: {
+  argv0?: string;
+  execPath: string;
+  pathEnv?: string;
+}): string[] {
+  return realExecutableDirs(input);
+}
+
+export function installedPluginDistributionRoot(
+  input: Parameters<typeof installedPluginDistributionRoots>[0],
+): string | undefined {
+  for (const root of installedPluginDistributionRoots(input)) {
+    const candidate = resolve(root, "plugins");
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/** The store follows its distribution root (sibling), both contexts alike. */
+export function pluginStoreRootFrom(distributionRoot: string): string {
+  return resolve(distributionRoot, "..", "plugin-store");
+}
+
 export function officialPluginDistributionRoot() {
   if (
     process.env.NODE_ENV === "test" &&
     process.env.NATALIA_TEST_OFFICIAL_PLUGIN_DISTRIBUTION
   )
     return resolve(process.env.NATALIA_TEST_OFFICIAL_PLUGIN_DISTRIBUTION);
-  if (process.env.NATALIA_TS_VERSION)
-    return resolve(import.meta.dir, "plugins");
+  if (process.env.NATALIA_TS_VERSION) {
+    // TS_VERSION is BAKED into standalone bundles as the version stamp,
+    // so this branch means "bundled" at runtime — NOT "dev TS". The
+    // bundle's import.meta.dir is the VFS root (/$bunfs), which is how
+    // this used to poison both the distribution root and its store
+    // onto a read-only path. Resolve from the REAL executable instead;
+    // a source checkout (no bake) never enters here and keeps the dev
+    // default below.
+    const installed = installedPluginDistributionRoot({
+      argv0: process.argv0,
+      execPath: process.execPath,
+    });
+    if (installed) return installed;
+  }
   if (process.env.NATALIA_DEV_PLUGIN_DISTRIBUTION)
     return resolve(process.env.NATALIA_DEV_PLUGIN_DISTRIBUTION);
   return resolve(import.meta.dir, "../../../dist/ts/plugins");
@@ -119,8 +218,28 @@ async function syncDevOfficialPlugins() {
   }
 }
 
+/**
+ * A store path must be WRITABLE: inside the bundle every derived path
+ * lives under the read-only VFS, so the store falls back to the
+ * user home anchor (NATALIA_HOME respected — the same layout purge and
+ * install reason about). Dev/installed paths keep the sibling rule.
+ */
+export function writableStoreRoot(
+  resolved: string,
+  input: { env?: NodeJS.ProcessEnv; home?: string } = {},
+): string {
+  if (!resolved.startsWith("/$bunfs")) return resolved;
+  const env = input.env ?? process.env;
+  const anchor = env.NATALIA_HOME
+    ? resolve(env.NATALIA_HOME)
+    : resolve(input.home ?? homedir(), ".natalia");
+  return join(anchor, "plugin-store");
+}
+
 export function pluginStoreRoot() {
-  return resolve(officialPluginDistributionRoot(), "..", "plugin-store");
+  return writableStoreRoot(
+    pluginStoreRootFrom(officialPluginDistributionRoot()),
+  );
 }
 
 export async function initializeCliOfficialPlugins(
@@ -139,7 +258,22 @@ export async function initializeOfficialPluginsForHostCommand(
   initialize: typeof initializeOfficialPlugins = initializeOfficialPlugins,
 ) {
   if (!isRecognizedHostCommand(argv)) return false;
-  await initializeCliOfficialPlugins(initialize);
+  // The four obligations (constitution §1.3, the plugins zone): a plugin
+  // boundary failure must not take the caller down. Official-plugin
+  // bootstrap does real I/O — npm into the store — and a first run with
+  // a full/read-only disk or no network used to throw straight out of
+  // EVERY host command (doctor included, the installer's advertised next
+  // step): the boundary defends, warns once, and the command proceeds
+  // with plugins not-yet-initialized (their absence is reported, not
+  // fatal).
+  try {
+    await initializeCliOfficialPlugins(initialize);
+  } catch (error) {
+    console.warn(
+      "[official-plugins] initialization deferred:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
   return true;
 }
 

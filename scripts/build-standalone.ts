@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { hashTreeFiles } from "../packages/hosts/platform/src/hash-tree";
+import { censusFromWorkspace } from "../apps/cli/src/layer-census";
 
 type TargetResult = {
   target: string;
@@ -102,7 +103,18 @@ for (const target of targets) {
     // with the binary, probed at startup). The prebuilt js stays too —
     // which path the compiled runtime resolves its assets against is the
     // spike's open question, answered by running the thing.
+    // Local runtime state must NEVER ship: the dev plugin-store
+    // (natalia.lock + its node_modules + the initialized marker) and the
+    // pty stores are machine-local — found baked into release manifests
+    // and SHA256SUMS (76 entries), which both tied the artifact to this
+    // checkout and made `install.sh` copy files that a later cleanup
+    // removed. Any stale copy from a previous build is purged here too.
+    const stateDirs = new Set(["plugin-store", "cli-dev-pty-stores"]);
     for (const entry of await readdir(join(root, "dist", "ts"))) {
+      if (stateDirs.has(entry)) {
+        await rm(join(outDir, entry), { recursive: true, force: true });
+        continue;
+      }
       await cp(join(root, "dist", "ts", entry), join(outDir, entry), {
         recursive: true,
       });
@@ -115,6 +127,10 @@ for (const target of targets) {
       version,
       target: triple,
       files,
+      // P4 "doctor 报告层名": the build-time layer census — the engine
+      // compiles into the bundle, so the prefix inventory must be baked
+      // here for an installed build to testify about its own boundaries.
+      layers: await censusFromWorkspace(resolve(import.meta.dir, "..")),
     };
     await Bun.write(
       join(outDir, "manifest.json"),

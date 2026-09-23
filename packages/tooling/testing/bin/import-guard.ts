@@ -11,6 +11,7 @@ import {
   findCompositionKernelViolation,
   findForbiddenRepositoryPathViolation,
   findPolicyHostDependencyViolation,
+  findSourceTreeJsViolation,
   findWorkspaceManagerBoundaryViolation,
   findSubstratePurityViolation,
   findMigratedPluginViolations,
@@ -661,15 +662,14 @@ await scan(join(root, "packages/domains"), sourceExtensions, (full, text) => {
         await twinViolation(full);
         continue;
       }
-      if (!entry.name.endsWith(".js") && !entry.name.endsWith(".d.ts"))
-        continue;
-      const base = entry.name.endsWith(".d.ts")
-        ? entry.name.slice(0, -".d.ts".length) + ".ts"
-        : entry.name.slice(0, -".js".length) + ".ts";
-      if (await Bun.file(join(dir, base)).exists())
-        failures.push(
-          `${full.slice(root.length + 1)}: compiled artifact beside its TypeScript source`,
-        );
+      // Default-ban source-tree JS (round 51): compiled artifacts AND
+      // orphans whose .ts twin MOVED AWAY both vanish behind one rule —
+      // the orphan case is how a stale compiled test kept running in the
+      // full suite after its source moved. Only ALLOWED_LEGACY_JS stays.
+      const violation = findSourceTreeJsViolation(
+        `${dir.slice(root.length + 1)}/${entry.name}`.replace(/^\//u, ""),
+      );
+      if (violation) failures.push(violation);
     }
   };
   for (const dir of productionRoots) await twinViolation(join(root, dir));

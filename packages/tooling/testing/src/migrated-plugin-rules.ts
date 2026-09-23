@@ -628,3 +628,31 @@ export function findWorkspaceManagerBoundaryViolation(
       return `workspace-manager may only import the composition root (./runtime/main); found ${spec}`;
   return undefined;
 }
+
+/**
+ * The only .js/.jsx allowed under source trees (default-BAN rule, round
+ * 51): compiled artifacts AND ORPHANS (a twin whose .ts MOVED AWAY —
+ * exactly how contract-constitution-check's stale compiled test kept
+ * running in the full suite after its source left, asserting old logic
+ * against a missing module). These six are genuine third-party or
+ * platform sources: browser extension entrypoints and vendored wezterm
+ * docs assets.
+ */
+export const ALLOWED_LEGACY_JS = [
+  "packages/plugins/browser/src/extension/chromium/background.js",
+  "packages/plugins/browser/src/extension/firefox/background.js",
+  "packages/plugins/native-terminal/wezterm/deps/freetype/freetype2/docs/markdown/javascripts/extra.js",
+  "packages/plugins/native-terminal/wezterm/docs/asciinema-player.min.js",
+  "packages/plugins/native-terminal/wezterm/docs/javascript/fix-codeblock-console-copy-button.js",
+  "packages/plugins/native-terminal/wezterm/docs/mermaid-init.js",
+] as const;
+
+export function findSourceTreeJsViolation(
+  relativePath: string,
+): string | undefined {
+  if (!(relativePath.endsWith(".js") || relativePath.endsWith(".jsx")))
+    return undefined;
+  if ((ALLOWED_LEGACY_JS as readonly string[]).includes(relativePath))
+    return undefined;
+  return `${relativePath}: source-tree JS (compiled artifact or orphan — allowed: ALLOWED_LEGACY_JS)`;
+}

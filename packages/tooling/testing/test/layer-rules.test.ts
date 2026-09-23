@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   findCompositionKernelViolation,
   findPolicyHostDependencyViolation,
+  findSourceTreeJsViolation,
   findSubstratePurityViolation,
   findWorkspaceManagerBoundaryViolation,
 } from "../src/migrated-plugin-rules";
@@ -119,5 +120,25 @@ test("workspace-manager consumes only the composition root", () => {
     findWorkspaceManagerBoundaryViolation(
       'import type { RealRuntimeClientOptions } from "@anthelia/substrate";',
     ),
+  ).toBeUndefined();
+});
+
+test("source-tree JS is banned by default; the six legacy sources stay", () => {
+  // The orphan class: a compiled test whose .ts MOVED away — banned.
+  expect(
+    findSourceTreeJsViolation("packages/framework/client/test/old.test.js"),
+  ).toContain("source-tree JS");
+  expect(
+    findSourceTreeJsViolation("packages/domains/collab/src/STRAY.jsx"),
+  ).toContain("source-tree JS");
+  // The genuine third-party/platform sources are allowlisted by path.
+  expect(
+    findSourceTreeJsViolation(
+      "packages/plugins/browser/src/extension/chromium/background.js",
+    ),
+  ).toBeUndefined();
+  // Not JS: untouched.
+  expect(
+    findSourceTreeJsViolation("packages/domains/collab/src/index.ts"),
   ).toBeUndefined();
 });
