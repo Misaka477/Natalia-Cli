@@ -15,7 +15,7 @@ import {
 /**
  * D6b — the external-benchmark adapter: their task format in, our
  * journal-scored rows out, in their results vocabulary. Fixtures are a
- * copy of the real FrontierHarness manifest+task (devref is gitignored),
+ * copy of the external benchmark's manifest+task (devref is gitignored),
  * with the harness roster section dropped: it carries an upstream trace
  * name the import guard keeps out of the tree. When the live reference
  * exists it is parsed in full (the living check).
@@ -34,21 +34,21 @@ const liveRoot = join(
 
 test("a task directory parses into a runner-ready descriptor (all fields)", async () => {
   const task = await loadEvalTaskDir(
-    join(fixtures, "tasks", "anko-typed-variable-bindings"),
+    join(fixtures, "tasks", "typed-variable-bindings"),
   );
   expect(task).toMatchObject({
     // task.name is the source-prefixed canonical id (matches the
     // manifest's task_ids); the directory is the bare slug.
-    id: "datacurve/anko-typed-variable-bindings",
-    title: "Add typed variable bindings to Anko",
+    id: "source_a/typed-variable-bindings",
+    title: "Add typed variable bindings",
     language: "go",
-    repository: "https://github.com/mattn/anko",
-    baseCommit: "3f269a72ff69398b1250c584171f32d12c0d8085",
+    repository: "https://example.invalid/repository",
+    baseCommit: "0000000000000000000000000000000000000000",
     agentTimeoutSec: 5400,
     verifierTimeoutSec: 1800,
   });
-  expect(task.instruction).toContain("TypedBindings");
-  expect(task.dockerImage).toContain("swe-bench");
+  expect(task.instruction).toContain("TypedBindings"); // our own example instruction
+  expect(task.dockerImage).toBe("example/base:1");
   expect(task.collectCommands).toHaveLength(1);
   expect(task.collectCommands[0]).toContain("git diff --binary");
 });
@@ -67,7 +67,7 @@ test("malformed tasks fail loudly with the directory named", async () => {
 
 test("the benchmark manifest's invariants come through", async () => {
   const manifest = await loadEvalBenchmark(join(fixtures, "benchmark.json"));
-  expect(manifest.name).toBe("FrontierHarness Eval v1");
+  expect(manifest.name).toBe("eval-fixture/v1");
   expect(manifest.status).toBe("frozen");
   expect(manifest.task_count).toBe(30);
   expect(manifest.task_ids).toHaveLength(30);
@@ -75,7 +75,7 @@ test("the benchmark manifest's invariants come through", async () => {
   // Existing file, invalid JSON: the error names file and cause.
   await expect(
     loadEvalBenchmark(
-      join(fixtures, "tasks", "anko-typed-variable-bindings", "instruction.md"),
+      join(fixtures, "tasks", "typed-variable-bindings", "instruction.md"),
     ),
   ).rejects.toThrow(/not an eval benchmark manifest \(invalid JSON/u);
   // Valid JSON, wrong shape: caught by the key validation.
@@ -134,7 +134,7 @@ test("execution folds into their results vocabulary with infra never scored as f
     total_retries: 1,
   });
   expect(report.tasks.map((row) => row.id)).toEqual([
-    "datacurve/anko-typed-variable-bindings",
+    "source_a/typed-variable-bindings",
     "t2",
     "t3",
   ]);
@@ -183,7 +183,7 @@ test("a scored journal turn bridges into their vocabulary (D5 RunScore -> row)",
   const report = await runEvalTasks(
     [
       {
-        id: "terminal-bench/our-turn",
+        id: "source_a/our-turn",
         title: "a journal turn",
         instruction: "solve it",
         collectCommands: [],
@@ -193,7 +193,7 @@ test("a scored journal turn bridges into their vocabulary (D5 RunScore -> row)",
     { model: "m-1", generatedAt: "2026-01-01T00:00:00.000Z" },
   );
   expect(report.tasks[0]).toMatchObject({
-    id: "terminal-bench/our-turn",
+    id: "source_a/our-turn",
     completed: 1,
     successful: 1,
     valid_coverage: 1,

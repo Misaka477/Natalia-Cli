@@ -4,7 +4,8 @@ import type { RunScore } from "@natalia/engineering-intelligence";
 
 /**
  * D6b — the external-benchmark adapter (G-c, "先内后外"): the
- * FrontierHarness-eval TASK format in, our journal-scored rows out, in
+ * external eval benchmark's TASK format in (the gitignored `devref/eval`
+ * reference carries the real zoo), our journal-scored rows out, in
  * THEIR results shape so their own reporting can place us.
  *
  * Two directions, one seam:
@@ -94,7 +95,7 @@ export function parseEvalTask(input: {
   if (!tomlDoc.task?.name && !metadata.task_id)
     throw new Error(`${input.taskDirName}/task.toml names no task`);
   return {
-    // The canonical id is SOURCE-PREFIXED (`terminal-bench/regex-log`):
+    // The canonical id is SOURCE-PREFIXED (`source_a/task-001`):
     // `task.name` carries it, `metadata.task_id` is only the bare slug,
     // and the manifest's task_ids — the row keys of the eval-data
     // vocabulary — match this form. The living-reference test caught the

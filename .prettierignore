@@ -16,7 +16,7 @@ docs/config-reference.md
 docs/config-reference.zh-CN.md
 
 # Frozen external-benchmark samples (D6b): instruction.md IS the task
-# prompt of the FrontierHarness eval format — its bytes are benchmark
+# prompt of the external benchmark eval format — its bytes are benchmark
 # input, not our prose to reflow — and benchmark.json is their manifest
 # with one section redacted (it carries an upstream trace name the
 # import guard keeps out of the tree; see eval-adapter.test.ts).
