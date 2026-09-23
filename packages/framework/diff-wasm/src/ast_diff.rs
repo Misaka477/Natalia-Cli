@@ -1,3 +1,16 @@
+/// Prefix cap for similarity scoring (keeps the LCS matrix bounded).
+const SCORE_PREFIX_BYTES: usize = 4096;
+
+/// Byte-cap for scoring inputs, ending on a CHAR boundary (a mid-character
+/// slice panics — non-ASCII strings are real input here).
+fn bounded_prefix(s: &str) -> &str {
+    let mut end = s.len().min(SCORE_PREFIX_BYTES);
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 use tree_sitter::{Node, Parser};
 
 #[derive(Debug, Clone)]
@@ -184,6 +197,36 @@ fn diff_nodes(
     let mut new_cursor = new.walk();
     let old_children: Vec<_> = old.children(&mut old_cursor).collect();
     let new_children: Vec<_> = new.children(&mut new_cursor).collect();
+    let n = old_children.len();
+    let m = new_children.len();
+    // Budget: the scoring matcher materializes every qualifying pair — on
+    // 32-bit wasm a flat 8k-statement program (n*m = 64M candidates × ~56B)
+    // overflowed Vec capacity outright (the bench crash). Huge child lists
+    // take index pairing instead: linear, no candidate materialization.
+    if n * m > 20_000 {
+        let paired = n.min(m);
+        for k in 0..paired {
+            let old_child = old_children[k];
+            let new_child = new_children[k];
+            if old_child.is_named() && new_child.is_named() {
+                diff_nodes(old_child, new_child, old_source, new_source, changes);
+            }
+        }
+        for child in old_children.iter().skip(paired) {
+            if child.is_named() {
+                add_change(changes, 2, child.kind(), Some(*child), None, old_source, new_source);
+            }
+        }
+        for child in new_children.iter().skip(paired) {
+            if child.is_named() {
+                add_change(changes, 1, child.kind(), None, Some(*child), old_source, new_source);
+            }
+        }
+        if changes.is_empty() {
+            add_change(changes, 0, old.kind(), Some(old), Some(new), old_source, new_source);
+        }
+        return;
+    }
     let matched = match_children(&old_children, &new_children, old_source, new_source);
     let mut matched_old = vec![false; old_children.len()];
     let mut matched_new = vec![false; new_children.len()];
@@ -224,6 +267,12 @@ fn diff_nodes(
 }
 
 fn text_similar(a: &str, b: &str) -> f64 {
+    // Cell budget: the LCS matrix is len² usize cells — two 50KB nodes
+    // would ask for ~25G and overflow a 32-bit wasm outright. Score a
+    // bounded prefix instead; beyond it the kind/length heuristics carry
+    // the decision (they were already the tiebreakers).
+    let a = bounded_prefix(a);
+    let b = bounded_prefix(b);
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
     let n = a.len();
@@ -245,6 +294,12 @@ fn text_similar(a: &str, b: &str) -> f64 {
 }
 
 fn text_similar_norm(a: &str, b: &str) -> f64 {
+    // Cell budget: the LCS matrix is len² usize cells — two 50KB nodes
+    // would ask for ~25G and overflow a 32-bit wasm outright. Score a
+    // bounded prefix instead; beyond it the kind/length heuristics carry
+    // the decision (they were already the tiebreakers).
+    let a = bounded_prefix(a);
+    let b = bounded_prefix(b);
     let a: Vec<char> = a.chars().filter(|c| !c.is_whitespace()).collect();
     let b: Vec<char> = b.chars().filter(|c| !c.is_whitespace()).collect();
     let n = a.len();

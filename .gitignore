@@ -75,13 +75,15 @@ Thumbs.db
 /deploy/wezterm-bin/
 /deploy/*.tar.gz
 
-# Generated diff-wasm AST packs and scratch build trees
-/packages/tooling/diff-wasm/ast/
-/packages/tooling/diff-wasm/ast-build/
-/packages/tooling/diff-wasm/text-build/
+# diff-wasm artifacts: GENERATED AST packs (via scripts/build-ast-packs.ts,
+# rebuild with `npm run diff:build-wasm`) and cargo build trees. The text
+# crate (text-build/) is NOT a scratch tree — it is the text-wasm's recipe
+# and has no generator: it is TRACKED, so a fresh clone can rebuild.
+# (Vestigial entries for the old packages/tooling/diff-wasm/* location and
+# the deleted ast-build/ fork-copy are gone with them.)
 /packages/framework/diff-wasm/ast/
-/packages/framework/diff-wasm/ast-build/
-/packages/framework/diff-wasm/text-build/
+/packages/framework/diff-wasm/target/
+/packages/framework/diff-wasm/text-build/target/
 /packages/framework/diff-wasm/src/natalia_diff_wasm.wasm
 /packages/hosts/object-store/native-index/target/
 /packages/hosts/confinement/native/target/

@@ -3,8 +3,6 @@ use std::alloc::{alloc, dealloc, Layout};
 use std::ptr;
 use std::slice;
 
-mod ast_diff;
-mod ast_langs;
 
 const WORD_RANGE_LINE_BUDGET: u32 = 2000;
 const DIFF_CONTEXT_LINES: u32 = 3;
@@ -476,74 +474,5 @@ pub unsafe extern "C" fn wasm_diff_structured(
         new_text.as_ref(),
         ignore_whitespace != 0,
     );
-    write_output(&out, out_len_ptr)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasm_ast_diff(
-    old_ptr: *const u8,
-    old_len: usize,
-    new_ptr: *const u8,
-    new_len: usize,
-    language_ptr: *const u8,
-    language_len: usize,
-    out_len_ptr: *mut usize,
-) -> *const u8 {
-    let old_bytes = bytes(old_ptr, old_len);
-    let new_bytes = bytes(new_ptr, new_len);
-    let lang_bytes = bytes(language_ptr, language_len);
-    let old_text = String::from_utf8_lossy(old_bytes);
-    let new_text = String::from_utf8_lossy(new_bytes);
-    let language = String::from_utf8_lossy(lang_bytes).to_string();
-    let changes = ast_diff::diff(&language, old_text.as_ref(), new_text.as_ref());
-
-    let mut out = Vec::<u8>::new();
-    push_u32(&mut out, 0x54534441); // "ASTD"
-    push_u32(&mut out, 1);
-    push_u32(&mut out, changes.len() as u32);
-    for change in changes {
-        out.push(change.kind);
-        push_u32(&mut out, change.old_start);
-        push_u32(&mut out, change.old_end);
-        push_u32(&mut out, change.new_start);
-        push_u32(&mut out, change.new_end);
-        let kind_bytes = change.node_kind.as_bytes();
-        push_u32(&mut out, kind_bytes.len() as u32);
-        out.extend_from_slice(kind_bytes);
-        let text_bytes = change.node_text.as_bytes();
-        push_u32(&mut out, text_bytes.len() as u32);
-        out.extend_from_slice(text_bytes);
-    }
-    write_output(&out, out_len_ptr)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasm_ast_index(
-    source_ptr: *const u8,
-    source_len: usize,
-    language_ptr: *const u8,
-    language_len: usize,
-    out_len_ptr: *mut usize,
-) -> *const u8 {
-    let source_bytes = bytes(source_ptr, source_len);
-    let lang_bytes = bytes(language_ptr, language_len);
-    let source_text = String::from_utf8_lossy(source_bytes);
-    let language = String::from_utf8_lossy(lang_bytes).to_string();
-    let nodes = ast_diff::index(&language, source_text.as_ref());
-
-    let mut out = Vec::<u8>::new();
-    push_u32(&mut out, 0x49535441); // "ASTI"
-    push_u32(&mut out, 1);
-    push_u32(&mut out, nodes.len() as u32);
-    for node in nodes {
-        push_u32(&mut out, node.start);
-        push_u32(&mut out, node.end);
-        let kind_bytes = node.node_kind.as_bytes();
-        push_u32(&mut out, kind_bytes.len() as u32);
-        out.extend_from_slice(kind_bytes);
-        let text_bytes = node.text.as_bytes();
-        push_u32(&mut out, text_bytes.len() as u32);
-        out.extend_from_slice(text_bytes);
-    }
     write_output(&out, out_len_ptr)
 }
