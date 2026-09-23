@@ -86,12 +86,25 @@ export interface CacheFabric {
   markTreeChanged(): number;
   /** Per-kind cost observability (hits/misses/bytes), the study's platform principle. */
   metrics(kindID?: string): Record<string, CacheKindMetrics>;
+  /**
+   * §6.6(b) / law 2 — "组成换→缓存整体失效": point the fabric at a new
+   * composition hash. Returns how many entries it dropped: every entry
+   * carries the generation it was computed under (the key's scope
+   * component, kept as a field because the slot format parses kind\0key
+   * internally), so an old-composition entry can never answer a new one
+   * — and the sweep removes them now instead of waiting for budget
+   * eviction. Pending in-flight computes keep serving THEIR original
+   * awaiters but may not store into the new scope.
+   */
+  setGeneration(hash: string): number;
 }
 
 interface Entry {
   value: unknown;
   evidence: unknown;
   size: number;
+  /** The composition hash this value was computed under (§6.6(b)). */
+  generation: string;
 }
 
 function defaultSizeOf(value: unknown): number {
@@ -107,6 +120,13 @@ function defaultSizeOf(value: unknown): number {
 export interface CacheFabricOptions {
   /** Budget for stored values; the least-recently-used leave first. */
   maxBytes?: number;
+  /**
+   * The composition hash the entries are scoped to (§6.6(b)). Absent =
+   * the genesis epoch ("0"): the wiring passes the profile's hash at
+   * boot and re-points on every reload, so law 2 holds from the first
+   * entry.
+   */
+  generation?: string;
 }
 
 /** 64 MiB of cached value heat: bounded so a long session cannot leak. */
@@ -119,6 +139,7 @@ export function createCacheFabric(options: CacheFabricOptions = {}) {
   const inflight = new Map<string, Promise<unknown>>();
   const stats = new Map<string, CacheKindMetrics>();
   let totalBytes = 0;
+  let currentGeneration = options.generation ?? "0";
 
   function freshMetrics(): CacheKindMetrics {
     return {
@@ -208,6 +229,24 @@ export function createCacheFabric(options: CacheFabricOptions = {}) {
       return kinds.has(kindID);
     },
 
+    setGeneration(hash) {
+      const previous = currentGeneration;
+      currentGeneration = hash;
+      // In-flight computes keep serving their awaiters; drop them from
+      // the single-flight index so the new scope computes fresh.
+      inflight.clear();
+      if (previous === hash) return 0;
+      let dropped = 0;
+      for (const id of [...store.keys()]) {
+        const entry = store.get(id);
+        if (entry && entry.generation !== hash) {
+          drop(kindOf(id), id);
+          dropped += 1;
+        }
+      }
+      return dropped;
+    },
+
     async compute(kindID, key, compute) {
       const kind = kinds.get(kindID);
       if (!kind)
@@ -217,7 +256,15 @@ export function createCacheFabric(options: CacheFabricOptions = {}) {
       const id = slot(kindID, key);
       const record = metricsFor(kindID);
       const existing = store.get(id);
-      if (existing) {
+      if (existing && existing.generation !== currentGeneration) {
+        // Law 2, the hit guard: an entry computed under another
+        // composition can never answer — dropped (an invalidation),
+        // then the miss path recomputes under the CURRENT generation.
+        drop(kindID, id);
+      }
+      const stored = store.get(id);
+      if (stored) {
+        const existing = stored;
         let valid = true;
         if (kind.validEvidence) {
           try {
@@ -248,6 +295,7 @@ export function createCacheFabric(options: CacheFabricOptions = {}) {
       // always precedes any settle: a compute that throws synchronously
       // used to delete its own slot before it was registered, parking a
       // permanently rejected promise where later callers would find it.
+      const scopeGeneration = currentGeneration;
       const run = Promise.resolve()
         .then(() => compute())
         .then((value) => {
@@ -265,7 +313,16 @@ export function createCacheFabric(options: CacheFabricOptions = {}) {
               )
               .then(
                 (evidence) => {
-                  store.set(id, { value, evidence, size });
+                  // A composition switch mid-compute: the value answers
+                  // its ORIGINAL caller, but nothing computed under the
+                  // old scope stores into the new one.
+                  if (scopeGeneration !== currentGeneration) return;
+                  store.set(id, {
+                    value,
+                    evidence,
+                    size,
+                    generation: scopeGeneration,
+                  });
                   totalBytes += size;
                   recount(kindID);
                   evictOverBudget();

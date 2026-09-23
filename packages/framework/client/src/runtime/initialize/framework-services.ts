@@ -441,17 +441,21 @@ export async function wireFrameworkServices(
       }),
     );
     const profileHome = ctx.ports.getUserRuntimeHome();
-    provide(
-      compositionProfile,
-      await loadCompositionProfile({
-        baseFile,
-        globalDir: profileHome
-          ? join(profileHome, ".natalia", "composition.d")
-          : undefined,
-        workspaceDir: join(workspaceRoot, ".natalia", "composition.d"),
-        registry: profileRegistry,
-      }),
-    );
+    const activeProfile = await loadCompositionProfile({
+      baseFile,
+      globalDir: profileHome
+        ? join(profileHome, ".natalia", "composition.d")
+        : undefined,
+      workspaceDir: join(workspaceRoot, ".natalia", "composition.d"),
+      registry: profileRegistry,
+    });
+    provide(compositionProfile, activeProfile);
+    // Law 2: a reload is exactly when the composition can change (drop-in
+    // edits land with the profile above) — re-point every cached entry's
+    // scope so no old-composition value can answer a new one.
+    ctx.state.serviceDirectory
+      .getOptional(rinaCache)
+      ?.setGeneration(activeProfile.hash);
     const terminal: TerminalInput = {
       workspaceRoot,
       publish: (event) =>
@@ -571,7 +575,14 @@ export async function wireFrameworkServices(
   // unregistered kinds, so this list and READ_CACHE_TOOL_KINDS are only
   // safe together: forgetting the loop breaks every classified tool — which
   // is exactly the loudness the registry exists for.
-  const cacheFabric = createCacheFabric();
+  // Law 2 (§6.6(b)): entries are scoped to the composition they were
+  // computed under — the profile's hash at boot, re-pointed in
+  // refreshPluginInputs on every reload (a drop-in edit lands with the
+  // profile).
+  const cacheFabric = createCacheFabric({
+    generation:
+      ctx.state.serviceDirectory.getOptional(compositionProfile)?.hash,
+  });
   for (const kind of L1_CACHE_KINDS) cacheFabric.registerKind(kind);
   ctx.state.serviceDirectory.provide(rinaCache, cacheFabric);
   // The telemetry zone (decisions §5): the runtime's own operation log,
