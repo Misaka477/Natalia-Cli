@@ -368,6 +368,13 @@ const clientClosureAllowlist = [
   "config",
   "confinement",
   "operation-log",
+  // Decision20 assigns store/manifest/GC/fsck to Anthelia, and P4's
+  // law is "the package prefix IS the boundary": @anthelia/object-store
+  // is an ENGINE package mis-shelved under hosts/ (it even sits in
+  // HOST_LAYER_PACKAGES, which answers a different question — what the
+  // domains direction ban must scan under that directory). The shelf
+  // does not demote it to non-kernel for the client closure.
+  "object-store",
   "substrate",
   "rina",
   "runtime-diagnostics",

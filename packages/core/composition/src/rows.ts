@@ -1,7 +1,9 @@
 import {
   CONFINEMENT_COMPOSITION_ROW_ID,
   CONFINEMENT_MODES,
+  OBJECTSTORE_COMPOSITION_ROW_ID,
   confinementConfigSchema,
+  objectStoreConfigSchema,
 } from "@anthelia/contracts";
 import type { CompositionRowRegistration } from "./profile";
 
@@ -25,6 +27,23 @@ export const compositionRowRegistrations: readonly CompositionRowRegistration[] 
       configSchemaRef: {
         from: "@anthelia/contracts",
         name: "confinementConfigSchema",
+      },
+    },
+
+    {
+      // Decision17's factory form for the store backend: the CODE
+      // registers what can be bound (the two implementations below),
+      // the DATA selects what to bind (the row's `impl`); absence in a
+      // profile = the TypeScript implementation, so no profile changes
+      // behavior. The consumer is real today: the wire applies it to
+      // configureObjectStoreBackend at boot and at every reload.
+      rowID: OBJECTSTORE_COMPOSITION_ROW_ID,
+      implIDs: ["typescript", "rust"],
+      legalSummary: `impl ∈ typescript | rust`,
+      configSchema: objectStoreConfigSchema,
+      configSchemaRef: {
+        from: "@anthelia/contracts",
+        name: "objectStoreConfigSchema",
       },
     },
   ];

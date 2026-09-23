@@ -12,6 +12,7 @@
  * returned handle.
  */
 import { createAttachmentService } from "@anthelia/attachments";
+import { applyCompositionObjectStoreBackend } from "./object-store-backend";
 import {
   compositionProfile,
   compositionRowRegistrations,
@@ -450,6 +451,10 @@ export async function wireFrameworkServices(
       registry: profileRegistry,
     });
     provide(compositionProfile, activeProfile);
+    // Decision17: the store backend follows the same breath as the
+    // profile (absence = TypeScript, so nothing changes until a row
+    // says otherwise).
+    applyCompositionObjectStoreBackend(activeProfile);
     // Law 2: a reload is exactly when the composition can change (drop-in
     // edits land with the profile above) — re-point every cached entry's
     // scope so no old-composition value can answer a new one.

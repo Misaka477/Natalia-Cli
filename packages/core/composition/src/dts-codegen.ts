@@ -76,9 +76,12 @@ export function generateCompositionDts(
     `export type CompositionProfileSchema = ${SCHEMA_LITERAL};`,
     "",
     "/** The union a drop-in file's `rows` array accepts — discriminated by id. */",
-    `export type CompositionRow =${sorted.length ? "" : " never;"}`,
+    `export type CompositionRow = ${
+      sorted.length
+        ? sorted.map((entry) => typeAliasFor(entry.rowID)).join(" | ")
+        : "never"
+    };`,
   );
-  const rowTypes: string[] = [];
   for (const registration of sorted) {
     const alias = typeAliasFor(registration.rowID);
     const ref = registration.configSchemaRef;
@@ -88,22 +91,6 @@ export function generateCompositionDts(
     const origin = ref
       ? `origin: registry — ${ref.from}.${ref.name}`
       : "origin: registry (no schema ref declared)";
-    rowTypes.push(
-      ...[
-        "",
-        `/** ${origin} */`,
-        `export type ${alias} = {`,
-        `  id: ${JSON.stringify(registration.rowID)};`,
-        emitImpl(registration),
-        "  disabled?: boolean;",
-        `  config?: ${config};`,
-        "};",
-      ],
-    );
-    // extend the union row by row
-    lines[lines.length - 1] += ` | ${alias}`;
-    rowTypes.pop();
-    // push the type body AFTER the union header (built below)
     lines.push(
       "",
       `/** ${origin} */`,

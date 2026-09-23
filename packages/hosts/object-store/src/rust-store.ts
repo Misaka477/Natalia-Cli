@@ -30,11 +30,30 @@ import { join, resolve } from "node:path";
  * `NATALIA_OBJECT_STORE_RUST_LIB` overrides the library path (tests
  * force the fallback with a broken path).
  */
+let configuredImpl: "typescript" | "rust" | undefined;
+
+/**
+ * The composition row's selection (decision17): the DATA picks the
+ * factory; the wire applies it at boot and on every profile reload.
+ * `undefined` unsets (a test restoring its own demand). Precedence,
+ * highest first: the env seam (the mode runner's explicit demand and
+ * the ops escape hatch) -> this configured selection -> TypeScript.
+ */
+export function configureObjectStoreBackend(
+  impl: "typescript" | "rust" | undefined,
+): void {
+  configuredImpl = impl;
+}
+
 export function objectStoreBackendStatus():
   | "typescript"
   | "rust"
   | "rust-fallback-typescript" {
-  if (process.env.NATALIA_OBJECT_STORE_BACKEND !== "rust") return "typescript";
+  const demand =
+    process.env.NATALIA_OBJECT_STORE_BACKEND === "rust"
+      ? "rust"
+      : (configuredImpl ?? "typescript");
+  if (demand !== "rust") return "typescript";
   const previous = LIB_PATH;
   const override = process.env.NATALIA_OBJECT_STORE_RUST_LIB;
   if (override) LIB_PATH = override;

@@ -9,12 +9,21 @@
 // the declarations-file convention from nixpkgs (spec §6.5).
 
 import type { z } from "zod";
+import type { objectStoreConfigSchema } from "@anthelia/contracts";
 import type { confinementConfigSchema } from "@anthelia/contracts";
 
 export type CompositionProfileSchema = "natalia.composition-profile/1";
 
 /** The union a drop-in file's `rows` array accepts — discriminated by id. */
-export type CompositionRow = Sandbox;
+export type CompositionRow = Objectstore | Sandbox;
+
+/** origin: registry — @anthelia/contracts.objectStoreConfigSchema */
+export type Objectstore = {
+  id: "anthelia.objectstore";
+  impl?: "typescript" | "rust";
+  disabled?: boolean;
+  config?: z.input<typeof objectStoreConfigSchema>;
+};
 
 /** origin: registry — @anthelia/contracts.confinementConfigSchema */
 export type Sandbox = {

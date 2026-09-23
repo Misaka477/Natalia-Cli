@@ -76,6 +76,10 @@ export const confinementConfigSchema = z.object({
   mode: z.enum(CONFINEMENT_MODES).default("workspace-write"),
 });
 
+/** The backend seam takes no config: the selection IS the impl id.
+ * An empty schema keeps the codegen's config type an honest `{}` (an
+ * editor sees no keys, not `unknown`). */
+export const objectStoreConfigSchema = z.object({});
 /**
  * The composition-profile row that carries the confinement default
  * (interface spec §6.8's `anthelia.sandbox` row). One name for the
@@ -84,6 +88,11 @@ export const confinementConfigSchema = z.object({
  * and the code in step.
  */
 export const CONFINEMENT_COMPOSITION_ROW_ID = "anthelia.sandbox";
+/** The object-store backend seam (decision17: the row SELECTS the
+ * factory — absence means the TypeScript implementation, `rust` demands
+ * the native core with the same honest availability fallback the env
+ * seam has). */
+export const OBJECTSTORE_COMPOSITION_ROW_ID = "anthelia.objectstore";
 
 /**
  * Wall-clock budget for one subagent run, in milliseconds.

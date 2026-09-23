@@ -20,6 +20,7 @@ import {
   type CompositionRowRegistration,
   type CompositionProfile,
 } from "../src/profile";
+import { compositionRowRegistrations } from "../src/rows";
 
 /**
  * P3 "base profile 随包机制" (interface spec §6): three layers, fixed
@@ -372,4 +373,37 @@ test("§6.6 composition hash: order-independent, origin-blind, content-sensitive
     { ...rowsA[1]!, disabled: false },
   ] as CompositionProfile["rows"];
   expect(compositionProfileHash(rowsD)).not.toBe(hashB);
+});
+
+test("the objectstore backend row: a legal impl binds, an unknown one names the legal pair", async () => {
+  // The REAL registration (rows.ts = the single source): its implIDs
+  // are the legal set the loader's fail-fast must name (§6.4).
+  const registry = createCompositionRowRegistry(compositionRowRegistrations);
+  const dir = mkdtempSync(join(tmpdir(), "osrow-"));
+  try {
+    const baseFile = join(dir, "composition.base.json");
+    writeFileSync(
+      baseFile,
+      envelope([{ id: "anthelia.objectstore", impl: "rust" }]),
+    );
+    const bound = await loadCompositionProfile({ baseFile, registry });
+    const row = bound.rows.find(
+      (candidate) => candidate.id === "anthelia.objectstore",
+    );
+    expect(row?.impl).toBe("rust");
+    expect(bound.hash).toBe(compositionProfileHash(bound.rows));
+
+    writeFileSync(
+      baseFile,
+      envelope([{ id: "anthelia.objectstore", impl: "banana" }]),
+    );
+    await expect(
+      loadCompositionProfile({ baseFile, registry }),
+    ).rejects.toThrow(
+      // the error must name BOTH legal values (§6.4), whatever the phrasing
+      /typescript[\s\S]*rust|rust[\s\S]*typescript/u,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

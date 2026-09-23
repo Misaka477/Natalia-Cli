@@ -251,6 +251,7 @@
         "@anthelia/config": "workspace:*",
         "@anthelia/confinement": "workspace:*",
         "@anthelia/contracts": "workspace:*",
+        "@anthelia/object-store": "workspace:*",
         "@anthelia/operation-log": "workspace:*",
         "@anthelia/platform": "workspace:*",
         "@anthelia/plugin": "workspace:*",
@@ -426,7 +427,6 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@anthelia/contracts": "workspace:*",
-        "@natalia/goal": "workspace:*",
       },
     },
     "packages/framework/session-store": {
@@ -468,7 +468,6 @@
         "@anthelia/tools": "workspace:*",
         "@anthelia/turn-orchestration": "workspace:*",
         "@anthelia/workspace": "workspace:*",
-        "@natalia/collaboration": "workspace:*",
         "@natalia/context-ledger": "workspace:*",
       },
     },

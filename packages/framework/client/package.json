@@ -47,7 +47,8 @@
     "@anthelia/runtime-services": "workspace:*",
     "@anthelia/runtime-status": "workspace:*",
     "@natalia/tool-policy": "workspace:*",
-    "@natalia/work-ledger": "workspace:*"
+    "@natalia/work-ledger": "workspace:*",
+    "@anthelia/object-store": "workspace:*"
   },
   "devDependencies": {
     "@natalia/installer": "workspace:*",
