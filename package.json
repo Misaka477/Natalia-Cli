@@ -50,7 +50,8 @@
     "guard:test-workspaces": "bun run packages/tooling/testing/bin/test-workspace-hygiene-guard.ts",
     "guard:events": "bun run packages/tooling/testing/bin/event-fallback-guard.ts",
     "guard:console": "bun run packages/tooling/testing/bin/console-guard.ts",
-    "diff:build-wasm": "CARGO_HOME=${CARGO_HOME:-${TMPDIR:-/tmp}/natalia-cargo} cargo build --release --target wasm32-unknown-unknown --manifest-path packages/framework/diff-wasm/text-build/Cargo.toml && cp packages/framework/diff-wasm/text-build/target/wasm32-unknown-unknown/release/natalia_diff_wasm.wasm packages/framework/diff-wasm/src/natalia_diff_wasm.wasm && bun scripts/build-ast-packs.ts"
+    "diff:build-wasm": "CARGO_HOME=${CARGO_HOME:-${TMPDIR:-/tmp}/natalia-cargo} cargo build --release --target wasm32-unknown-unknown --manifest-path packages/framework/diff-wasm/text-build/Cargo.toml && cp packages/framework/diff-wasm/text-build/target/wasm32-unknown-unknown/release/natalia_diff_wasm.wasm packages/framework/diff-wasm/src/natalia_diff_wasm.wasm && bun scripts/build-ast-packs.ts",
+    "codegen:composition-dts": "bun scripts/composition-dts.ts"
   },
   "dependencies": {
     "@jsquash/jpeg": "^1.6.0",

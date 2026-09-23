@@ -75,6 +75,13 @@ export type CompositionRowRegistration = {
   /** Names every legal value an error must list (§6.4). */
   legalSummary: string;
   configSchema: CompositionConfigSchema;
+  /**
+   * The schema's import site — the ORIGIN the spec's §6.5 codegen
+   * annotates (nixpkgs `declarations`) and the type it derives
+   * `z.input<…>` from: composition.d.ts IMPORTS the real schema instead
+   * of re-spelling it, so the file cannot drift from the code.
+   */
+  configSchemaRef?: { from: string; name: string };
 };
 
 export type CompositionRowRegistry = {

@@ -14,17 +14,13 @@
 import { createAttachmentService } from "@anthelia/attachments";
 import {
   compositionProfile,
+  compositionRowRegistrations,
   createCompositionRowRegistry,
   findBaseProfileFile,
   loadCompositionProfile,
   profileSearchCandidates,
   requireBaseProfileFile,
 } from "@anthelia/composition";
-import {
-  CONFINEMENT_COMPOSITION_ROW_ID,
-  CONFINEMENT_MODES,
-  confinementConfigSchema,
-} from "@anthelia/contracts";
 import type { ProductRuntimeContext } from "@natalia/collab";
 import { createCheckpointFactory } from "@anthelia/checkpoint";
 import { createCompactionService } from "@anthelia/compaction";
@@ -433,14 +429,9 @@ export async function wireFrameworkServices(
     // read. The ONE registered row is the one with a consumer today
     // (§6.7.2: no consumerless rows); its impl set is empty on purpose —
     // the confinement backend is discovered at runtime, not selected.
-    const profileRegistry = createCompositionRowRegistry([
-      {
-        rowID: CONFINEMENT_COMPOSITION_ROW_ID,
-        implIDs: [],
-        legalSummary: `mode ∈ ${CONFINEMENT_MODES.join(" | ")}`,
-        configSchema: confinementConfigSchema,
-      },
-    ]);
+    const profileRegistry = createCompositionRowRegistry(
+      compositionRowRegistrations,
+    );
     const baseFile = requireBaseProfileFile(
       profileSearchCandidates({
         explicitFile: process.env.NATALIA_BASE_PROFILE,
