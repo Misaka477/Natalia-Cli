@@ -24,7 +24,7 @@ import { buildToolExecutionContext } from "./execute-context";
 import type { SessionExecutionState } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
-import { activePlanForExec } from "../collaboration/plan-doc-runtime";
+import { activePlanForExec } from "@natalia/collab";
 import type { WorkLedgerController } from "@natalia/work-ledger";
 import { OPAQUE_WORKSPACE_WRITERS, rinaCache } from "@natalia/rina";
 import { executeWithReadCache } from "./read-cache";
@@ -270,7 +270,7 @@ export async function runExecuteStage(
           // effect.
           try {
             const workLedger = ctx.ports.resolveService<
-              import("../product-context").WorkLedgerController
+              import("@natalia/collab").WorkLedgerController
             >(workLedgerControllerToken.id);
             const activePlan = activePlanForExec(ctx, exec);
             if (workLedger && created && activePlan)

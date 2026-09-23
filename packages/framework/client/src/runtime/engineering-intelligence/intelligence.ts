@@ -50,7 +50,7 @@ import type {
 } from "@anthelia/substrate";
 import { requestAuditAfterCompletion } from "../audit-request";
 import { ensureCompleteSessionFactState } from "@anthelia/substrate";
-import { injectFindingIntoMainAgent } from "../drift-inject";
+import { injectFindingIntoMainAgent } from "@natalia/collab";
 import {
   ensureSessionEventWindow,
   sessionWindowEvents,

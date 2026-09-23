@@ -358,6 +358,7 @@ const clientClosureAllowlist = [
   "agent-prompts",
   "attachments",
   "capability",
+  "collab",
   "checkpoint",
   "collaboration",
   "compaction",

@@ -1,8 +1,8 @@
 import type { RuntimeServiceClient } from "@natalia/runtime-services";
 import type { SessionID } from "@natalia/contracts";
-import { createChatSurface } from "./collaboration/chat";
-import { createMailboxSurface } from "./collaboration/mailbox";
-import { createPlanDocRuntime } from "./collaboration/plan-doc-runtime";
+import { createChatSurface } from "@natalia/collab";
+import { createMailboxSurface } from "@natalia/collab";
+import { createPlanDocRuntime } from "@natalia/collab";
 import { createExtensionsRuntime } from "./commands/extensions-runtime";
 import type { RuntimeContext } from "@anthelia/substrate";
 import { createIntelligenceSurface } from "./engineering-intelligence/intelligence";

@@ -10,10 +10,10 @@ import type {
   RuntimeContext,
   SessionExecutionState,
 } from "@anthelia/substrate";
-import type { ProductRuntimeContext } from "../src/runtime/product-context";
-import { createNaviChatTurn } from "../src/runtime/collaboration/chat-turn-navi";
-import { createNiaChatTurn } from "../src/runtime/collaboration/chat-turn-nia";
-import { createCollaborationWake } from "../src/runtime/collaboration/wake";
+import type { ProductRuntimeContext } from "@natalia/collab";
+import { createNaviChatTurn } from "@natalia/collab";
+import { createNiaChatTurn } from "@natalia/collab";
+import { createCollaborationWake } from "@natalia/collab";
 import type { ProviderChatTurnInput } from "@anthelia/provider-model";
 
 test("Nia normal and Navi expert resolve independent adapters, models and thinking on submit and wake", async () => {

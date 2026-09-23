@@ -21,12 +21,9 @@ import type {
   RuntimeContext,
   SessionExecutionState,
 } from "@anthelia/substrate";
-import { createNaviChatTurn } from "../src/runtime/collaboration/chat-turn-navi";
-import { createNiaChatTurn } from "../src/runtime/collaboration/chat-turn-nia";
-import {
-  createNaviChatSurface,
-  createNiaChatSurface,
-} from "../src/runtime/collaboration/chat";
+import { createNaviChatTurn } from "@natalia/collab";
+import { createNiaChatTurn } from "@natalia/collab";
+import { createNaviChatSurface, createNiaChatSurface } from "@natalia/collab";
 
 function pngBytes(width = 1, height = 1): Buffer {
   const bytes = Buffer.alloc(24, 0x61);

@@ -24,7 +24,7 @@ import type {
   RuntimeContext,
   SessionExecutionState,
 } from "@anthelia/substrate";
-import { activePlanForExec } from "./collaboration/plan-doc-runtime";
+import { activePlanForExec } from "@natalia/collab";
 import { loadProjectDocumentsSync } from "./project-docs";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { StatusSnapshotController } from "@natalia/runtime-status";

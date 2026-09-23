@@ -20,7 +20,7 @@ import type { RuntimeContext } from "@anthelia/substrate";
 import {
   naviChatProviderMessagesFromHistory,
   niaChatProviderMessagesFromHistory,
-} from "./collaboration/chat-turn-common";
+} from "@natalia/collab";
 import { perfLog } from "@natalia/runtime-services";
 import type { StatusSnapshotController } from "@natalia/runtime-status";
 import type { SessionStoreController } from "@anthelia/session-store";

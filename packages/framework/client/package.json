@@ -26,6 +26,7 @@
     "@anthelia/workspace": "workspace:*",
     "@natalia/agent-prompts": "workspace:*",
     "@natalia/capability": "workspace:*",
+    "@natalia/collab": "workspace:*",
     "@natalia/collaboration": "workspace:*",
     "@natalia/composition": "workspace:*",
     "@natalia/config": "workspace:*",

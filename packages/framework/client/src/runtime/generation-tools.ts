@@ -30,7 +30,7 @@ import {
   type VerificationFace,
 } from "@natalia/composition";
 import { resolveWorkspaceObjectsRoot } from "@natalia/platform";
-import { createNiaChatSurface } from "./collaboration/chat";
+import { createNiaChatSurface } from "@natalia/collab";
 import { activeConstitutionRows } from "./config-reload";
 import type {
   RuntimeContext,

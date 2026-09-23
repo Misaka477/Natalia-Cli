@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { niaShellPolicyDenial } from "../src/runtime/collaboration/nia-shell-policy";
+import { niaShellPolicyDenial } from "@natalia/collab";
 
 test("Nia shell policy allows read-only inspection and verification commands", async () => {
   for (const command of [

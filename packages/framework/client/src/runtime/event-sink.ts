@@ -18,8 +18,8 @@ import {
 import {
   createCollabSnapshotScheduler,
   isCollabSnapshotRelevantEvent,
-} from "./collaboration/collab-snapshot";
-import { activePlanForExec } from "./collaboration/plan-doc-runtime";
+} from "@natalia/collab";
+import { activePlanForExec } from "@natalia/collab";
 import { createGoalRuntime } from "./goal/goal-runtime";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";

@@ -50,6 +50,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.noopOperationLog = exports.operationLog = void 0;
 exports.createOperationLog = createOperationLog;
 exports.logOf = logOf;
+exports.readOperationRecords = readOperationRecords;
 var service_token_1 = require("./service-token");
 Object.defineProperty(exports, "operationLog", { enumerable: true, get: function () { return service_token_1.operationLog; } });
 var node_async_hooks_1 = require("node:async_hooks");
@@ -150,6 +151,10 @@ function createOperationLog(options) {
             (0, node_fs_1.renameSync)(stats.path, "".concat(stats.path, ".1"));
             stats.rotated += 1;
             bytes = 0;
+            // Reopen immediately: the active file must exist after ANY write —
+            // a reader (the query primitives, the debug bundle) looks for
+            // `operations.jsonl`, not for "whatever the next record creates".
+            ensureOpen();
         }
         catch (error) {
             disable(error);
@@ -207,7 +212,17 @@ function createOperationLog(options) {
             withCorrelation: function (corr) { return makeLogger(component, __assign(__assign({}, bound), corr)); },
         };
     }
+    var direct = function (recordLevel) {
+        return function (component, message, fields) {
+            return makeLogger(component)[recordLevel](message, fields);
+        };
+    };
     return {
+        error: direct("error"),
+        warn: direct("warn"),
+        info: direct("info"),
+        debug: direct("debug"),
+        trace: direct("trace"),
         component: function (name) { return makeLogger(name); },
         runWithCorrelation: function (corr, fn) {
             return als.run(__assign(__assign({}, als.getStore()), corr), fn);
@@ -247,6 +262,11 @@ function createOperationLog(options) {
 }
 /** A logger that records nothing — telemetry degrades, never crashes. */
 exports.noopOperationLog = {
+    error: function () { },
+    warn: function () { },
+    info: function () { },
+    debug: function () { },
+    trace: function () { },
     component: function () { return ({
         error: function () { },
         warn: function () { },
@@ -281,4 +301,57 @@ var noOpLogger = exports.noopOperationLog.component("noop");
 function logOf(directory) {
     var _a;
     return (_a = directory.getOptional(service_token_2.operationLog)) !== null && _a !== void 0 ? _a : exports.noopOperationLog;
+}
+/**
+ * Reads a log directory's records (active + rotated), filtered by the one
+ * query shape. Malformed lines are skipped — a half-written line at a crash
+ * must not hide the lines around it.
+ */
+function readOperationRecords(dir, filter) {
+    if (filter === void 0) { filter = {}; }
+    var paths = [
+        (0, node_path_1.join)(dir, "operations.jsonl.5"),
+        (0, node_path_1.join)(dir, "operations.jsonl.4"),
+        (0, node_path_1.join)(dir, "operations.jsonl.3"),
+        (0, node_path_1.join)(dir, "operations.jsonl.2"),
+        (0, node_path_1.join)(dir, "operations.jsonl.1"),
+        (0, node_path_1.join)(dir, "operations.jsonl"),
+    ];
+    var records = [];
+    for (var _i = 0, paths_1 = paths; _i < paths_1.length; _i++) {
+        var path = paths_1[_i];
+        var text = void 0;
+        try {
+            text = (0, node_fs_1.readFileSync)(path, "utf8");
+        }
+        catch (_a) {
+            continue; // absent generation
+        }
+        for (var _b = 0, _c = text.split("\n"); _b < _c.length; _b++) {
+            var line = _c[_b];
+            if (!line)
+                continue;
+            var record = void 0;
+            try {
+                record = JSON.parse(line);
+            }
+            catch (_d) {
+                continue;
+            }
+            if (filter.level && LEVEL_ORDER[record.level] > LEVEL_ORDER[filter.level])
+                continue;
+            if (filter.component && record.component !== filter.component)
+                continue;
+            if (filter.since && (!record.at || record.at < filter.since))
+                continue;
+            if (filter.contains &&
+                !JSON.stringify(record)
+                    .toLowerCase()
+                    .includes(filter.contains.toLowerCase()))
+                continue;
+            records.push(record);
+        }
+    }
+    // keep = read oldest generation first ... newest last; limit keeps the tail.
+    return filter.limit ? records.slice(-filter.limit) : records;
 }

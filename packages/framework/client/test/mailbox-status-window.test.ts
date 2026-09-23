@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
 import { sessionFactStateFromEvents } from "@anthelia/session";
-import { mailboxMessagesForStatus } from "../src/runtime/collaboration/chat-tools";
+import { mailboxMessagesForStatus } from "@natalia/collab";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { SessionExecutionState } from "@anthelia/substrate";
 

@@ -9,7 +9,7 @@ import type {
   ContextLedgerFactory,
   GovernanceLedgerController,
   WorkLedgerController,
-} from "../product-context";
+} from "@natalia/collab";
 import { createInitializeRuntime } from "./runtime";
 
 import { statusSnapshotController } from "@natalia/runtime-status";

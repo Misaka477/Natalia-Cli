@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  planDocMarkTool,
-  planDocWriteTool,
-} from "../src/runtime/collaboration/chat-tools";
+import { planDocMarkTool, planDocWriteTool } from "@natalia/collab";
 
 /**
  * EI §8.1: plan provenance follows the caller. The Live Work Chat tools (used

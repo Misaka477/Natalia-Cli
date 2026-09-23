@@ -7,3 +7,9 @@ export {
   createProviderRunner,
   estimateProviderMessages,
 } from "./provider-runner";
+
+// Engine facade (decisions §1.1: policy talks engine API, never the host
+// layer): model-capability resolution is provider machinery whose pure
+// implementation lives with the config stack; the engine re-exports it so
+// policy packages (@natalia/collab today) never import @natalia/config.
+export { resolveEffectiveModel } from "@natalia/config";

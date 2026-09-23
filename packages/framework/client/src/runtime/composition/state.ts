@@ -15,7 +15,7 @@ import type { RuntimeContext, RuntimeState } from "@anthelia/substrate";
 import type {
   ProductRuntimeContext,
   ProductRuntimeState,
-} from "../product-context";
+} from "@natalia/collab";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 
 type RuntimeDiagnostic = Extract<RuntimeEvent, { type: "diagnostic" }> & {

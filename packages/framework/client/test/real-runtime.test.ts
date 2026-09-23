@@ -5111,6 +5111,18 @@ test("unsupported video attachments degrade to text instead of failing the turn"
     expect(await finished("done")).toMatchObject({ stopReason: "done" });
     expect(userText(requests[0])).toContain("[Attached video/mp4: clip.mp4]");
 
+    // Title generation races this config switch: the task reads
+    // exec.provider AFTER async persistence/store I/O, so an
+    // updateConfig(vision) landing in that window turns the title call
+    // into a phantom "vision" request without attachments — and
+    // find(vision) below would pick it. Drain the title request first
+    // (its provider is resolved pre-switch), then switch. This was the
+    // root of this test's long-standing rotation failures.
+    for (let elapsed = 0; elapsed < 3_000 && requests.length < 2; elapsed += 10)
+      await Bun.sleep(10);
+    expect(requests.length).toBeGreaterThanOrEqual(2);
+    expect(requests[1]?.model).toBe("plain");
+
     await client.updateConfig?.({
       patch: { defaultModel: { provider: "local", model: "vision" } },
     });

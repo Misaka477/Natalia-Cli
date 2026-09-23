@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@natalia/contracts";
-import {
-  instructionRevision,
-  openInvariantHits,
-} from "../src/runtime/collaboration/boundary";
+import { instructionRevision, openInvariantHits } from "@natalia/collab";
 
 /**
  * Discovery D3's trigger pieces: the boundary folds D2's paired invariant

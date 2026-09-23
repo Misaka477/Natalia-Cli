@@ -58,7 +58,7 @@ import {
   createPlanProposeTool,
   createWorkContractReadTool,
   createDetourDeclareTool,
-} from "../plan-contract-tools";
+} from "@natalia/collab";
 import { createWorkGraphQueryTool } from "../work-graph-tools";
 import {
   createApplyGenerationTool,

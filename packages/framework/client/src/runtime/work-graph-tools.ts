@@ -12,7 +12,7 @@ import {
   projectedWorkGraphEdges,
 } from "@anthelia/session";
 import type { WorkGraphEdge, WorkGraphNode } from "@natalia/contracts";
-import { activePlanForExec } from "./collaboration/plan-doc-runtime";
+import { activePlanForExec } from "@natalia/collab";
 import type { RuntimeContext } from "@anthelia/substrate";
 
 const WORK_GRAPH_PAGE_LIMIT = 50;

@@ -111,6 +111,31 @@
         "web-tree-sitter": "0.25.10",
       },
     },
+    "packages/domains/collab": {
+      "name": "@natalia/collab",
+      "version": "0.0.0-m13",
+      "dependencies": {
+        "@anthelia/attachments": "workspace:*",
+        "@anthelia/compaction": "workspace:*",
+        "@anthelia/provider-model": "workspace:*",
+        "@anthelia/session": "workspace:*",
+        "@anthelia/session-store": "workspace:*",
+        "@anthelia/substrate": "workspace:*",
+        "@anthelia/tools": "workspace:*",
+        "@anthelia/workspace": "workspace:*",
+        "@natalia/agent-prompts": "workspace:*",
+        "@natalia/collaboration": "workspace:*",
+        "@natalia/config": "workspace:*",
+        "@natalia/context-ledger": "workspace:*",
+        "@natalia/contracts": "workspace:*",
+        "@natalia/goal": "workspace:*",
+        "@natalia/governance-ledger": "workspace:*",
+        "@natalia/operation-log": "workspace:*",
+        "@natalia/runtime": "workspace:*",
+        "@natalia/runtime-services": "workspace:*",
+        "@natalia/work-ledger": "workspace:*",
+      },
+    },
     "packages/domains/context-ledger": {
       "name": "@natalia/context-ledger",
       "version": "0.0.0-m13",
@@ -202,6 +227,7 @@
         "@anthelia/workspace": "workspace:*",
         "@natalia/agent-prompts": "workspace:*",
         "@natalia/capability": "workspace:*",
+        "@natalia/collab": "workspace:*",
         "@natalia/collaboration": "workspace:*",
         "@natalia/composition": "workspace:*",
         "@natalia/config": "workspace:*",
@@ -987,6 +1013,8 @@
     "@natalia/cli": ["@natalia/cli@workspace:apps/cli"],
 
     "@natalia/client": ["@natalia/client@workspace:packages/framework/client"],
+
+    "@natalia/collab": ["@natalia/collab@workspace:packages/domains/collab"],
 
     "@natalia/collaboration": ["@natalia/collaboration@workspace:packages/framework/collaboration"],
 

@@ -3,7 +3,7 @@ import type { RuntimeEvent } from "@natalia/contracts";
 import {
   deliveredMailboxConstraints,
   lastAssistantNarration,
-} from "../src/runtime/collaboration/boundary";
+} from "@natalia/collab";
 
 function contentDone(id: string, text: string): RuntimeEvent {
   return {

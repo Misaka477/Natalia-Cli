@@ -16,7 +16,7 @@ import { requestAuditAfterCompletion } from "./audit-request";
 import type {
   GovernanceLedgerController,
   WorkLedgerController,
-} from "./product-context";
+} from "@natalia/collab";
 import { redactToolOutput } from "./engineering-intelligence/redaction";
 import { runValidationCommand } from "./engineering-intelligence/validation";
 import { captureRepositoryEvidenceFields } from "@anthelia/substrate";
@@ -39,10 +39,10 @@ function resolveExec(
 
 function requireWorkLedger(
   ctx: RuntimeContext,
-): import("./product-context").WorkLedgerController | undefined {
+): import("@natalia/collab").WorkLedgerController | undefined {
   return ctx.state.serviceDirectory.getOptional(
     workLedgerController,
-  ) as unknown as import("./product-context").WorkLedgerController | undefined;
+  ) as unknown as import("@natalia/collab").WorkLedgerController | undefined;
 }
 
 function requireGovernanceLedger(

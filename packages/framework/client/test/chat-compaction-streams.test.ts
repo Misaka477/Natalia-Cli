@@ -4,7 +4,7 @@ import { compactionService } from "@anthelia/compaction";
 import { ContextLedger, TokenMeter } from "@natalia/runtime";
 import type { ContextEntry, ProviderMessage } from "@natalia/runtime";
 import type { RuntimeEvent } from "@natalia/contracts";
-import { compactChatBeforeProviderStep } from "../src/runtime/collaboration/chat-turn-common";
+import { compactChatBeforeProviderStep } from "@natalia/collab";
 import {
   projectedNaviChatMessages,
   projectedNiaChatMessages,
