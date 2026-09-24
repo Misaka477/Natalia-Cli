@@ -58,6 +58,9 @@ export const EVENT_MODES: EventModeTable = {
   invariant: "emit",
   // D4: a background review is observation — emit, never flow-stopping.
   self_review: "emit",
+  // G-a: a growth proposal is a recorded fact — emit, never flow-stopping
+  // (the proposal applies nothing by itself; the approval policy gates).
+  growth: "emit",
   // D6a: feedback is observation — emit, never flow-stopping.
   feedback: "emit",
   collab: "emit",

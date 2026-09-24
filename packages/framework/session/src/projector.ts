@@ -860,6 +860,17 @@ export function projectedEvidenceRecords(events: RuntimeEvent[]) {
   );
 }
 
+/** Growth proposals (Discovery G-a), newest first (each derives the whole
+ * curriculum, so the latest is the current state of the question). */
+export function projectedGrowthProposals(events: RuntimeEvent[]) {
+  return events
+    .filter(
+      (event): event is Extract<RuntimeEvent, { type: "growth.proposed" }> =>
+        event.type === "growth.proposed",
+    )
+    .reverse();
+}
+
 /** Completion cards (P2 E4), in journal order. */
 export function projectedCompletions(events: RuntimeEvent[]) {
   return events.filter(
@@ -2044,6 +2055,7 @@ export type SessionIntelligenceFactState = {
   journalEvents: Array<
     | Extract<RuntimeEvent, { type: "evidence.recorded" }>
     | Extract<RuntimeEvent, { type: "completion.recorded" }>
+    | Extract<RuntimeEvent, { type: "growth.proposed" }>
   >;
   /**
    * EI Phase 0: the latest human validation note per completion taskID. The
@@ -2107,6 +2119,10 @@ export function applySessionIntelligenceFact(
     return;
   }
   if (event.type === "completion.recorded") {
+    state.journalEvents.push(event);
+    return;
+  }
+  if (event.type === "growth.proposed") {
     state.journalEvents.push(event);
     return;
   }
@@ -2354,6 +2370,16 @@ export function sessionFactCompletions(
   return state.intelligence.journalEvents.filter(
     (event): event is Extract<RuntimeEvent, { type: "completion.recorded" }> =>
       event.type === "completion.recorded",
+  );
+}
+
+/** The growth proposals from the hot fact state (B6 / G-a). */
+export function sessionFactGrowthProposals(
+  state: SessionFactState,
+): Array<Extract<RuntimeEvent, { type: "growth.proposed" }>> {
+  return state.intelligence.journalEvents.filter(
+    (event): event is Extract<RuntimeEvent, { type: "growth.proposed" }> =>
+      event.type === "growth.proposed",
   );
 }
 

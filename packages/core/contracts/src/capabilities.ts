@@ -262,6 +262,8 @@ export const RUNTIME_CAPABILITY_GROUPS = {
    */
   intelligence: [
     "constitutionRules",
+    "growthPropose",
+    "growthProposals",
     "constitutionOverrides",
     "decisionRecords",
     "recordDecision",

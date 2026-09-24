@@ -2205,6 +2205,34 @@ type RuntimeEventData =
         | "error";
     }
   | {
+      /**
+       * Discovery G-a: a growth proposal was derived from the journal's
+       * completed/failed distribution (the capability curriculum). The
+       * proposal is a FACT — the audit trail, the NGM proposal interface
+       * and the human's review read this one event, and growth 默认
+       * 不自授权 (the study's approval policy): recording a proposal
+       * applies nothing.
+       */
+      type: "growth.proposed";
+      id: string;
+      at: string;
+      sessionID?: SessionID;
+      workspaceID?: string;
+      /** The suggestions, strongest first (the curriculum's shape). */
+      suggestions: Array<{
+        kind: "tool" | "skill" | "rule" | "policy";
+        capability: string;
+        observations: number;
+        sources: string[];
+        reason: string;
+      }>;
+      /** What the derivation read (the proposal's provenance). */
+      considered: {
+        tasks: number;
+        gaps: number;
+      };
+    }
+  | {
       type: "feedback.recorded";
       /**
        * D6a: human feedback about the OUTPUT, recorded without ever
@@ -4329,6 +4357,44 @@ export type RuntimeClient = {
       rollbackState?: string;
       evidenceIDs: string[];
       recordedAt: string;
+    }>
+  >;
+  /**
+   * Discovery G-a's growth faces. `growthPropose` derives the capability
+   * curriculum from the journal (the completions' known gaps and the
+   * plan's unbacked tasks) and records the `growth.proposed` fact — a
+   * proposal applies nothing (the study's approval policy: growth 默认
+   * 不自授权; the NGM proposal interface and the constitution's class
+   * policy decide). `growthProposals` reads the journaled proposals.
+   */
+  growthPropose?(
+    input?: { planID?: string },
+    sessionID?: string,
+  ): Promise<{
+    proposalID: string;
+    at: string;
+    suggestions: Array<{
+      kind: "tool" | "skill" | "rule" | "policy";
+      capability: string;
+      observations: number;
+      sources: string[];
+      reason: string;
+    }>;
+    considered: { tasks: number; gaps: number };
+  }>;
+  growthProposals?(sessionID?: string): Promise<
+    Array<{
+      proposalID: string;
+      at: string;
+      suggestions: Array<{
+        kind: "tool" | "skill" | "rule" | "policy";
+        capability: string;
+        observations: number;
+        sources: string[];
+        reason: string;
+      }>;
+      considered: { tasks: number; gaps: number };
+      sessionID?: string;
     }>
   >;
   /**

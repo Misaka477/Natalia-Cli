@@ -529,6 +529,15 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure read of the granted scoped overrides",
   },
+  growthPropose: {
+    refusal: "value",
+    expressedBy: "proposalID",
+    note: "the derivation always answers (a repeat appends nothing); the proposal records nothing by itself — growth 默认不自授权",
+  },
+  growthProposals: {
+    refusal: "none",
+    note: "pure read of the journaled proposals",
+  },
   notices: {
     refusal: "none",
     note: "pure read of the projected runtime notices",

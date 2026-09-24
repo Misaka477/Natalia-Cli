@@ -42,6 +42,9 @@ export const WORKER_ROUTE_MEMBERS = {
   history: "history",
   diagnostics: "diagnostics",
   "diagnostics.operations": "operationRecords",
+  "growth.propose": "growthPropose",
+  "growth.proposals": "growthProposals",
+  "workspace.ast_move": "workspaceAstMove",
   messages: "messages",
   agents: "agents",
   "model.catalog": "modelCatalog",
@@ -188,6 +191,9 @@ type WorkerRequest = {
     | "history"
     | "diagnostics"
     | "diagnostics.operations"
+    | "growth.propose"
+    | "growth.proposals"
+    | "workspace.ast_move"
     | "messages"
     | "agents"
     | "model.catalog"
@@ -1114,6 +1120,22 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["operationRecords"]>>
       >;
     },
+    async workspaceAstMove(input?: { paths?: string[]; from?: string }) {
+      return (await request("workspace.ast_move", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["workspaceAstMove"]>>
+      >;
+    },
+    async growthPropose(input?: { planID?: string }) {
+      return (await request("growth.propose", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["growthPropose"]>>
+      >;
+    },
+    async growthProposals(sessionID?: string) {
+      return (await request(
+        "growth.proposals",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["growthProposals"]>>>;
+    },
     async diagnostics(limit, sessionID) {
       return (await request("diagnostics", { limit, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["diagnostics"]>>
@@ -1376,6 +1398,20 @@ export async function handleWorkerRequest(
       value.id,
       value.sessionID,
     );
+  }
+  if (request.method === "workspace.ast_move") {
+    const value = request.value as
+      | { paths?: string[]; from?: string }
+      | undefined;
+    return await client.workspaceAstMove?.(value);
+  }
+  if (request.method === "growth.propose") {
+    const value = request.value as { planID?: string } | undefined;
+    return await client.growthPropose?.(value);
+  }
+  if (request.method === "growth.proposals") {
+    const value = request.value as { sessionID?: string } | undefined;
+    return await client.growthProposals?.(value?.sessionID);
   }
   if (request.method === "diagnostics.operations") {
     const value = request.value as

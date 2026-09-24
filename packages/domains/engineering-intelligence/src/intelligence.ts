@@ -9,6 +9,10 @@ import { applyConstitutionDocEdit } from "./constitution-doc";
 import { writeWorkspaceFile } from "@anthelia/workspace";
 import type { SessionFactState } from "@anthelia/session";
 import {
+  projectedGrowthProposals,
+  sessionFactGrowthProposals,
+} from "@anthelia/session";
+import {
   projectedCanonicalTools,
   projectedWorkGraphNodes,
   projectedWorkGraphEdges,
@@ -31,6 +35,8 @@ import {
   sessionFactEvidenceRecords,
 } from "@anthelia/session";
 import type { PlanLifecycleState } from "@anthelia/runtime-services";
+import { deriveGrowthCurriculum, type TaskOutcome } from "./growth";
+import { createHash } from "node:crypto";
 import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
 import type { EpisodeID } from "@anthelia/contracts";
 import { readFile } from "node:fs/promises";
@@ -76,6 +82,8 @@ type ClientSurfaceOptions = {
 
 type Surface = Pick<
   RuntimeServiceClient,
+  | "growthPropose"
+  | "growthProposals"
   | "constitutionRules"
   | "constitutionOverrides"
   | "decisionRecords"
@@ -582,6 +590,99 @@ export function createIntelligenceSurface(
         input?.limit,
         input?.cursor,
       );
+    },
+    /**
+     * Discovery G-a's growth face (the reader): the journaled proposals,
+     * newest first. A read — the derivation and its journaling are
+     * `growthPropose`'s, not a read's.
+     */
+    async growthProposals(sessionID?: string) {
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session) return [];
+      return readFactSlice(exec, sessionFactGrowthProposals, () =>
+        projectedGrowthProposals(exec.session.events),
+      ).map((event) => ({
+        proposalID: event.id,
+        at: event.at,
+        suggestions: event.suggestions,
+        considered: event.considered,
+        ...(event.sessionID ? { sessionID: event.sessionID } : {}),
+      }));
+    },
+    /**
+     * Discovery G-a's growth face (the writer): derive the curriculum
+     * from the journal — the completions' known gaps and the plan's
+     * unbacked tasks — record the proposal as the `growth.proposed`
+     * fact, and answer it. The proposal's id is its content's hash, so
+     * a repeat derivation appends nothing (the journal dedups by id).
+     *
+     * Growth 默认不自授权 (the study's approval policy): this records a
+     * proposal and applies nothing; the NGM proposal interface and the
+     * constitution's class policy decide what may become real.
+     */
+    async growthPropose(input?: { planID?: string }, sessionID?: string) {
+      const resolvedSessionID = sessionID;
+      const exec = await completeIntelligenceExec(resolvedSessionID);
+      const emptyAt = new Date().toISOString();
+      if (!exec?.session)
+        // No session to read: an empty curriculum, answered in the
+        // contract's shape, journaling nothing (an empty derivation is
+        // not a fact worth the journal's space).
+        return {
+          proposalID: "growth:none",
+          at: emptyAt,
+          suggestions: [],
+          considered: { tasks: 0, gaps: 0 },
+        };
+      const completions = readFactSlice(exec, sessionFactCompletions, () =>
+        projectedCompletions(exec.session.events),
+      );
+      const taskStates = await this.planTaskStates!(input, sessionID);
+      const tasks: TaskOutcome[] = [
+        ...completions.map((record) => ({
+          text: record.objective,
+          ...(record.knownGaps?.length ? { gaps: record.knownGaps } : {}),
+        })),
+        ...taskStates
+          .filter((task) => task.state === "gap")
+          .map((task) => ({ text: task.text, unbacked: true })),
+      ];
+      const curriculum = deriveGrowthCurriculum({ tasks });
+      if (curriculum.suggestions.length === 0)
+        // Nothing to propose: no write, and the answer names the empty
+        // derivation (an empty proposal in the journal is a fact with
+        // nothing to say).
+        return {
+          proposalID: "growth:none",
+          at: new Date().toISOString(),
+          suggestions: [],
+          considered: curriculum.considered,
+        };
+      const digest = createHash("sha256")
+        .update(JSON.stringify(curriculum.suggestions))
+        .digest("hex")
+        .slice(0, 16);
+      const id = `growth:${digest}`;
+      // Idempotence is the WRITER's job: the journal's events table is
+      // seq-keyed with no id dedup, so a repeat derivation would append
+      // the same fact twice. The last proposal's id is the guard — an
+      // unchanged curriculum appends nothing and answers the recorded
+      // fact's id and time.
+      const previous = readFactSlice(exec, sessionFactGrowthProposals, () =>
+        projectedGrowthProposals(exec.session.events),
+      )[0];
+      if (previous?.id === id)
+        return { ...curriculum, proposalID: previous.id, at: previous.at };
+      const at = new Date().toISOString();
+      ctx.ports.publishForSession(exec, {
+        type: "growth.proposed",
+        id,
+        at,
+        ...(exec.session.id ? { sessionID: exec.session.id } : {}),
+        suggestions: curriculum.suggestions,
+        considered: curriculum.considered,
+      });
+      return { ...curriculum, proposalID: id, at };
     },
     async completions(
       input?: { sessionID?: string; limit?: number; cursor?: string },

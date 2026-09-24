@@ -50,6 +50,17 @@ export function stringParam(
   return value;
 }
 
+/** A string array param, or undefined when absent (and a non-array is a
+ * refusal rather than a coercion). */
+function stringArrayParam(params: unknown, key: string): string[] | undefined {
+  const record = (params ?? {}) as Record<string, unknown>;
+  const raw = record[key];
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw) || raw.some((entry) => typeof entry !== "string"))
+    throw invalidParams(`invalid_parameter_value: ${key}`);
+  return raw as string[];
+}
+
 function optionalStringParam(
   params: Record<string, unknown> | undefined,
   name: string,
@@ -215,6 +226,9 @@ export const RPC_ROUTE_MEMBERS = {
   "runtime.status": "runtimeStatus",
   "diagnostics.list": "diagnostics",
   "diagnostics.operations": "operationRecords",
+  "growth.propose": "growthPropose",
+  "growth.proposals": "growthProposals",
+  "workspace.ast_move": "workspaceAstMove",
   "workgraph.nodes": "workGraphNodes",
   "workgraph.edges": "workGraphEdges",
   // --- P0-C: the reachability gap closed (audit list in the API plan §8.10) ---
@@ -377,6 +391,8 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   // Both faces: the same route reads (no params) and flips (`enabled`), so
   // it is a write for a read-only credential.
   "cache.response",
+  // growth.propose journals the proposal fact (proposals are records).
+  "growth.propose",
   "checkpoint.rollback",
   "checkpoint.rename",
   "sandbox.merge",
@@ -3905,6 +3921,50 @@ export async function handleRPCMessage(
           typeof limit === "number" ? limit : undefined,
           optionalStringParam(body.params, "sessionID"),
         ),
+      };
+    }
+    if (body.method === "workspace.ast_move") {
+      optionsGuard(client, "workspaceAstMove");
+      const paths = stringArrayParam(body.params, "paths");
+      const from = optionalStringParam(body.params, "from");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.workspaceAstMove?.(
+          paths ? { paths, ...(from ? { from } : {}) } : from ? { from } : {},
+        )) ?? {
+          from: from ?? "HEAD",
+          scanned: 0,
+          skipped: [],
+          moves: [],
+        },
+      };
+    }
+    if (body.method === "growth.propose") {
+      optionsGuard(client, "growthPropose");
+      const params = body.params as Record<string, unknown> | undefined;
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.growthPropose?.(
+          params?.planID === undefined
+            ? undefined
+            : { planID: String(params.planID) },
+        )) ?? {
+          proposalID: "growth:none",
+          at: new Date().toISOString(),
+          suggestions: [],
+          considered: { tasks: 0, gaps: 0 },
+        },
+      };
+    }
+    if (body.method === "growth.proposals") {
+      optionsGuard(client, "growthProposals");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.growthProposals?.(sessionID)) ?? [],
       };
     }
     if (body.method === "diagnostics.operations") {
