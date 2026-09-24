@@ -38,6 +38,13 @@ import {
   workGraphLines,
 } from "./index";
 import { valueAfter } from "./command-helpers";
+import {
+  applyCompositionPatch,
+  compositionRowViews,
+  compositionStatus,
+  compositionStatusLines,
+  switchCompositionRow,
+} from "./composition-cli";
 import { captureDebugBundle } from "./debug-bundle";
 import { createInterface } from "node:readline/promises";
 import {
@@ -59,6 +66,7 @@ export async function handleLocalCommands(argv: string[]) {
       "status",
       "workgraph",
       "doctor",
+      "composition",
       "session",
       "fs",
       "trust",
@@ -373,6 +381,72 @@ export async function handleLocalCommands(argv: string[]) {
             ].join("\n"),
       );
       break;
+    }
+
+    case "composition": {
+      // Decision 12's v1 face: list / status / apply / switch over the
+      // workspace's drop-in layer. `switch` is decision 17's factory
+      // selection (the row's impl), not the gated NGM generation switch.
+      const action = argv[1];
+      const workspace = valueAfter(argv, "--workspace") ?? process.cwd();
+      const home = nataliaHome();
+      if (action === "list") {
+        const rows = compositionRowViews();
+        console.log(
+          argv.includes("--json")
+            ? JSON.stringify(rows, null, 2)
+            : rows
+                .map(
+                  (row) =>
+                    `${row.rowID} — ${row.legalSummary}${row.implIDs.length ? ` (impl ∈ ${row.implIDs.join(" | ")})` : ""}`,
+                )
+                .join("\n"),
+        );
+        break;
+      }
+      if (action === "status") {
+        const status = await compositionStatus({ workspace, home });
+        console.log(
+          argv.includes("--json")
+            ? JSON.stringify(status, null, 2)
+            : compositionStatusLines(status).join("\n"),
+        );
+        break;
+      }
+      if (action === "apply") {
+        const file = argv[2];
+        if (!file)
+          throw new Error("composition apply requires a patch file path");
+        const result = await applyCompositionPatch({ file, workspace });
+        console.log(
+          [
+            `applied ${result.rows.length} row(s) to ${result.file}`,
+            ...result.rows.map((row) => `  ${row.id}`),
+            "the workspace layer wins over the shipped base at the next boot or config reload",
+          ].join("\n"),
+        );
+        break;
+      }
+      if (action === "switch") {
+        const rowID = argv[2];
+        if (!rowID)
+          throw new Error(
+            "composition switch requires a row id (see: natalia composition list)",
+          );
+        const result = await switchCompositionRow({
+          rowID,
+          impl: valueAfter(argv, "--impl"),
+          workspace,
+          disabled: argv.includes("--disabled") ? true : undefined,
+        });
+        console.log(
+          `switched ${rowID} in ${result.file} (takes effect at the next boot or config reload)`,
+        );
+        break;
+      }
+      throw new Error(
+        "composition <list|status|apply|switch> (decision 12's v1 face; see: natalia composition list)",
+      );
     }
 
     case "session": {

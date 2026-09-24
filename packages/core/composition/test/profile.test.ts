@@ -16,6 +16,7 @@ import {
   findBaseProfileFile,
   loadCompositionProfile,
   profileSearchCandidates,
+  readCompositionLayer,
   requireBaseProfileFile,
   type CompositionRowRegistration,
   type CompositionProfile,
@@ -402,6 +403,47 @@ test("the objectstore backend row: a legal impl binds, an unknown one names the 
     ).rejects.toThrow(
       // the error must name BOTH legal values (§6.4), whatever the phrasing
       /typescript[\s\S]*rust|rust[\s\S]*typescript/u,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("readCompositionLayer validates one layer before it becomes one", async () => {
+  const registry = createCompositionRowRegistry(compositionRowRegistrations);
+  const dir = mkdtempSync(join(tmpdir(), "composition-layer-"));
+  try {
+    const legal = join(dir, "legal.json");
+    writeFileSync(
+      legal,
+      envelope([{ id: "anthelia.objectstore", impl: "rust" }]),
+    );
+    // The same validation loadCompositionProfile applies per layer —
+    // including the unknown-key and bad-config refusals, so a face that
+    // validates before writing (§6.4's earliest point) gets them too.
+    expect(await readCompositionLayer(legal, registry)).toEqual([
+      { id: "anthelia.objectstore", impl: "rust" },
+    ]);
+
+    const unknownRow = join(dir, "unknown-row.json");
+    writeFileSync(unknownRow, envelope([{ id: "anthelia.nope" }]));
+    await expect(readCompositionLayer(unknownRow, registry)).rejects.toThrow(
+      /anthelia\.nope.*not a registered composition row \(registered: anthelia\.objectstore, anthelia\.sandbox\)/,
+    );
+
+    const badEnvelope = join(dir, "bad-envelope.json");
+    writeFileSync(badEnvelope, JSON.stringify({ rows: [] }));
+    await expect(readCompositionLayer(badEnvelope, registry)).rejects.toThrow(
+      /has schema undefined \(expected natalia\.composition-profile\/1\)/,
+    );
+
+    const badRows = join(dir, "bad-rows.json");
+    writeFileSync(
+      badRows,
+      JSON.stringify({ schema: COMPOSITION_PROFILE_SCHEMA, rows: {} }),
+    );
+    await expect(readCompositionLayer(badRows, registry)).rejects.toThrow(
+      /rows must be an array/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

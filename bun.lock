@@ -32,6 +32,7 @@
         "natalia-ts": "./src/main.ts",
       },
       "dependencies": {
+        "@anthelia/composition": "workspace:*",
         "@anthelia/config": "workspace:*",
         "@anthelia/contracts": "workspace:*",
         "@anthelia/operation-log": "workspace:*",

@@ -267,6 +267,29 @@ function applyLayerRow(
   existing.origin = origin;
 }
 
+/**
+ * Read one layer file, validated row by row against the registry — the
+ * same validation `loadCompositionProfile` applies per layer, exposed for
+ * faces that validate a layer BEFORE it becomes one. §6.4's fail-fast at
+ * the earliest resolvable point: the alternative is a boot-time error the
+ * user cannot trace back to the command that wrote the file.
+ */
+export async function readCompositionLayer(
+  file: string,
+  registry: CompositionRowRegistry,
+): Promise<CompositionRow[]> {
+  const rows = await readEnvelope(file);
+  return rows.map((raw, index) => {
+    const parsed = validateRow(file, raw, index, registry);
+    return {
+      id: parsed.id,
+      ...(parsed.implPresent ? { impl: parsed.impl } : {}),
+      ...(parsed.configPresent ? { config: parsed.config } : {}),
+      ...(parsed.disabledPresent ? { disabled: parsed.disabled } : {}),
+    };
+  });
+}
+
 async function listLayerFiles(dir: string): Promise<string[]> {
   let entries;
   try {

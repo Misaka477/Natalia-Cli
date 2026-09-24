@@ -15,6 +15,7 @@
     "test": "bun test ./test --timeout 60000"
   },
   "dependencies": {
+    "@anthelia/composition": "workspace:*",
     "@anthelia/runtime-services": "workspace:*",
     "@anthelia/session-store": "workspace:*",
     "@natalia/client": "workspace:*",
