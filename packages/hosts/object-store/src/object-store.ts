@@ -14,6 +14,7 @@
  * one owner's GC can never prune another owner's live objects.
  */
 import { Database } from "bun:sqlite";
+import { openPackDaemon, type PackDaemon } from "./daemon-client";
 import { createHash } from "node:crypto";
 import { objectStoreBackendStatus, rustCas } from "./rust-store";
 import { mkdirSync } from "node:fs";
@@ -67,15 +68,45 @@ export class ObjectStore {
   >();
   private packsLoaded = false;
   private nativeIndexes = new Map<string, NativePackIndex>();
+  /** The daemon-number → pack-file cache (the daemon's sorted names). */
+  private daemonPackNames: string[] = [];
   private readonly packBloom = new Uint8Array(1 << 20);
   private packBloomInitialized = false;
   /** The loose-object fast path through the Rust core (slice 2 of the
    * object-store-rust plan); the TS path stays the implementation and
    * the fallback — packs, chunks and meta are always TS (their slices). */
   private readonly useRust: boolean;
+  /**
+   * Phase B's daemon preference: the operator's env switch (the same
+   * shape as the backend selection), resolved once per store. Off means
+   * the store's own index load — the behavior this whole phase must not
+   * change by default. `daemonFactory` is the injection seam: production
+   * leaves it (the lazy spawn), a test observes the preference through a
+   * recording double.
+   */
+  private readonly daemonPreference: boolean;
+  private daemonFactory:
+    | ((packsDir: string) => Promise<PackDaemon | undefined>)
+    | undefined;
+  /** The daemon handle: `hit` false after a failed probe (one attempt,
+   * then the local path for this store's life). */
+  private daemon:
+    | { hit: false; handle: undefined }
+    | { hit: true; handle: PackDaemon }
+    | undefined;
 
-  constructor(private readonly root: string) {
+  constructor(
+    private readonly root: string,
+    options?: {
+      /** The test seam: a daemon factory replacing the lazy spawn. */
+      daemonFactory?: (packsDir: string) => Promise<PackDaemon | undefined>;
+    },
+  ) {
     this.useRust = objectStoreBackendStatus() === "rust";
+    this.daemonPreference = options?.daemonFactory
+      ? true
+      : process.env.NATALIA_PACK_DAEMON === "1";
+    this.daemonFactory = options?.daemonFactory;
     const metaDir = join(root, ".meta");
     mkdirSync(metaDir, { recursive: true, mode: 0o700 });
     this.metaDb = new Database(join(metaDir, "index.sqlite"));
@@ -1170,7 +1201,68 @@ export class ObjectStore {
     return undefined;
   }
 
+  /**
+   * The pack daemon (Phase B's "TS ObjectStore 优先连 daemon，失败回退
+   * 本地 FS"): the INDEX server answers where an object lives; the bytes
+   * still come from the local pack file. A hit short-circuits the store's
+   * own index load; a MISS or any failure falls through identically —
+   * the daemon's freshness is the writer's reload to declare, so a read
+   * must not miss a freshly written object because the daemon's table
+   * is old.
+   */
+  private async packDaemon(): Promise<PackDaemon | undefined> {
+    if (!this.daemonPreference) return undefined;
+    if (this.daemon) return this.daemon.hit ? this.daemon.handle : undefined;
+    const handle = await (this.daemonFactory
+      ? this.daemonFactory(join(this.root, "packs"))
+      : openPackDaemon({ packsDir: join(this.root, "packs") }));
+    // The probe failed once: remember the absence for this store's life
+    // (a dead daemon would otherwise be re-spawned per read).
+    if (!handle) {
+      this.daemon = { hit: false, handle: undefined };
+      return undefined;
+    }
+    this.daemon = { hit: true, handle };
+    return handle;
+  }
+
+  /**
+   * The daemon's pack number → the pack file name: the daemon numbers by
+   * the sorted `.idx` names in the packs directory (its own walk made
+   * deterministic), and the store's cache of the same listing keeps the
+   * two in step. An out-of-range number (a stale daemon) answers
+   * undefined and the read falls to the local path.
+   */
+  private packFileAt(pack: number): string | undefined {
+    return this.daemonPackNames[pack];
+  }
+
+  private async refreshDaemonPackNames(): Promise<void> {
+    const dir = join(this.root, "packs");
+    const files = await readdir(dir).catch(() => [] as string[]);
+    this.daemonPackNames = files
+      .filter((file) => file.endsWith(".idx"))
+      .sort()
+      .map((file) => file.replace(/\.idx$/, ".pack"));
+  }
+
   private async packGet(id: string): Promise<Buffer> {
+    if (this.daemonPackNames.length === 0) await this.refreshDaemonPackNames();
+    const daemon = await this.packDaemon();
+    if (daemon) {
+      const hit = await daemon.find(id);
+      const packFile = hit ? this.packFileAt(hit.pack) : undefined;
+      if (hit && packFile)
+        return await this.readPackEntry(id, {
+          packFile: join(this.root, "packs", packFile),
+          offset: hit.offset,
+          dataOffset: hit.dataOffset,
+          origLen: hit.origLen,
+          compLen: hit.compLen,
+          kind: hit.kind,
+          ...(hit.deltaLen === undefined ? {} : { deltaLen: hit.deltaLen }),
+        });
+    }
     await this.loadPackIndexes();
     const nativeEntry = this.findNativeEntry(id);
     if (nativeEntry && nativeEntry.kind === 0) {
