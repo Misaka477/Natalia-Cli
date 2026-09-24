@@ -56,6 +56,7 @@ function candidate() {
       { id: "natalia-tool-shell", enabled: true, fingerprint: "fp-shell" },
     ],
     policyRows: [RULE],
+    prompts: { perRoleStatic: {}, docs: [] },
   });
 }
 

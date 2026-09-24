@@ -47,6 +47,7 @@ function candidate(policyRows: ConstitutionRule[]) {
     config: CONFIG,
     catalog: [],
     policyRows,
+    prompts: { perRoleStatic: {}, docs: [] },
   });
 }
 
@@ -197,11 +198,13 @@ test("buildGeneration sorts policy rows, so order never changes the id", () => {
     config: CONFIG,
     catalog: [],
     policyRows: [FORBIDDEN, SCOPED],
+    prompts: { perRoleStatic: {}, docs: [] },
   });
   const b = buildGeneration({
     config: CONFIG,
     catalog: [],
     policyRows: [SCOPED, FORBIDDEN],
+    prompts: { perRoleStatic: {}, docs: [] },
   });
   expect(JSON.stringify(a)).toBe(JSON.stringify(b));
 });

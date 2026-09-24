@@ -461,6 +461,7 @@ test("a candidate that drops a forbidden rule fails the gate at the tool", async
           }),
           catalog: [],
           policyRows: [], // drops every active forbidden rule
+          prompts: { perRoleStatic: {}, docs: [] },
         }),
       );
       return [

@@ -33,6 +33,7 @@ import {
 import { resolveWorkspaceObjectsRoot } from "@anthelia/platform";
 import { createNiaChatSurface } from "@natalia/collab";
 import { activeConstitutionRows } from "./config-reload";
+import { generationAdapterRows, generationPrompts } from "./generation-inputs";
 import type {
   RuntimeContext,
   SessionExecutionState,
@@ -178,6 +179,12 @@ export function createProposeGenerationTool(ctx: RuntimeContext): RuntimeTool {
         config: merged,
         catalog,
         policyRows: activeConstitutionRows(ctx),
+        // The prompt surface and the seam rows the candidate would run
+        // with: a proposal that edits the prompt docs or the backend
+        // selection must land inside the generation hash, or the switch
+        // would look like a no-op to the cache scope.
+        prompts: generationPrompts(ctx.ports.getWorkspaceRoot()),
+        rows: generationAdapterRows(ctx),
       });
       const candidateID = await storeGeneration(objectStore(ctx), candidate);
       ctx.ports.publish({

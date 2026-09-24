@@ -29,6 +29,7 @@ function candidate(config: unknown) {
     config: config as typeof VALID_CONFIG,
     catalog: [],
     policyRows: [] as ConstitutionRule[],
+    prompts: { perRoleStatic: {}, docs: [] },
   });
 }
 

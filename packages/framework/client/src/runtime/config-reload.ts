@@ -23,6 +23,7 @@ import {
 } from "@anthelia/checkpoint";
 import { ObjectStore } from "@anthelia/object-store";
 import { buildGeneration, storeGeneration } from "@anthelia/composition";
+import { generationAdapterRows, generationPrompts } from "./generation-inputs";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { ConfigV3, ConstitutionRule } from "@anthelia/contracts";
@@ -200,6 +201,8 @@ export function createConfigReload(
           config,
           catalog,
           policyRows: activeConstitutionRows(ctx),
+          prompts: generationPrompts(ctx.ports.getWorkspaceRoot()),
+          rows: generationAdapterRows(ctx),
         }),
       );
       ctx.ports.publish({ type: "composition.proposed", candidateID, reason });

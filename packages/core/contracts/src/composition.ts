@@ -5,10 +5,10 @@ import type { ConfigV3 } from "./schema-types";
  * Composition generations (master plan P2, NGM study G1).
  *
  * A generation is a named, addressable snapshot of what the runtime is made
- * of. The study's full shape also carries prompts, skills, policy rows and
- * adapter bindings; this first cut holds only the two things that are real
- * and serializable today — the resolved config and the desired plugin
- * catalog — because a generation field without a producer is a stub.
+ * of. The study's full shape carries prompts, skills, policy rows and adapter
+ * bindings; skills are deliberately absent (no fingerprint catalog exists —
+ * skills are directory-discovered at runtime, and a field without a producer
+ * is a stub), everything else is here.
  *
  * Plugins are referenced by identity plus the catalog's content fingerprint
  * rather than by embedding manifests: the fingerprint is the entry's content
@@ -25,6 +25,34 @@ export type GenerationPluginRef = {
   fingerprint: string;
 };
 
+/**
+ * The prompt surface a generation carries (study §4.1): a hash per role's
+ * STATIC system prompt (ADR D1's byte-stable block) and per instruction
+ * document. Hashes, not bodies — the generation addresses the content, the
+ * same discipline as the plugin fingerprints. The prompt hash is what makes
+ * the study's cache-aware rule decidable: only a role whose prompt hash
+ * changed needs the deferred boundary. The document hashes are the loader's
+ * own change-detection identity, passed through: the generation addresses
+ * exactly the content the runtime would read, under the runtime's own name
+ * for it.
+ */
+export type GenerationPrompts = {
+  /** sha256 of each role's static system prompt, by role id. */
+  perRoleStatic: Record<string, string>;
+  /** The loader's content hash of each instruction document, by path. */
+  docs: Array<{ path: string; sha256: string }>;
+};
+
+/**
+ * The adapter bindings a generation carries (study §4.1 / G6): one entry
+ * per seam row the composition selected. The seam REGISTRY is the
+ * composition row registry — code registers what can be bound, the profile
+ * row selects what is bound — so this map is the generation's snapshot of
+ * that selection. An absent impl means the backend is discovered at
+ * runtime, not selected (the confinement row's shape).
+ */
+export type GenerationAdapterRef = { impl?: string };
+
 export type Generation = {
   schema: typeof GENERATION_SCHEMA;
   /** The resolved runtime config this generation was composed with. */
@@ -38,6 +66,10 @@ export type Generation = {
    * user's constitution still enforces.
    */
   policyRows: ConstitutionRule[];
+  /** The prompt surface, hashed (study §4.1). */
+  prompts: GenerationPrompts;
+  /** The seam bindings, by composition row id (study §4.1 / G6). */
+  adapters: Record<string, GenerationAdapterRef>;
 };
 
 /**

@@ -35,11 +35,22 @@ const CATALOG = [
   { id: "natalia-team", enabled: false, fingerprint: "fp-team" },
 ];
 
+const PROMPTS = {
+  perRoleStatic: { natalia: "h-natalia", navi: "h-navi", nia: "h-nia" },
+  docs: [{ path: "AGENTS.md", sha256: "h-agents" }],
+};
+
+const ROWS = [
+  { id: "anthelia.objectstore", impl: "rust" },
+  { id: "anthelia.sandbox" },
+];
+
 test("serialize and parse round-trip a generation", () => {
   const generation = buildGeneration({
     config: CONFIG,
     catalog: CATALOG,
     policyRows: [],
+    prompts: PROMPTS,
   });
   const parsed = parseGeneration(serializeGeneration(generation));
   expect(parsed).toEqual(generation);
@@ -51,11 +62,13 @@ test("the catalog is stored sorted, so entry order never changes the id", () => 
     config: CONFIG,
     catalog: CATALOG,
     policyRows: [],
+    prompts: PROMPTS,
   });
   const b = buildGeneration({
     config: CONFIG,
     catalog: [...CATALOG].reverse(),
     policyRows: [],
+    prompts: PROMPTS,
   });
   expect(serializeGeneration(a)).toBe(serializeGeneration(b));
 });
@@ -67,11 +80,13 @@ test("storing identical content yields the identical id", async () => {
       config: CONFIG,
       catalog: CATALOG,
       policyRows: [],
+      prompts: PROMPTS,
     });
     const b = buildGeneration({
       config: CONFIG,
       catalog: CATALOG,
       policyRows: [],
+      prompts: PROMPTS,
     });
     const first = await storeGeneration(store, a);
     const second = await storeGeneration(store, b);
@@ -91,7 +106,12 @@ test("a changed config is a different generation", async () => {
   try {
     const first = await storeGeneration(
       store,
-      buildGeneration({ config: CONFIG, catalog: CATALOG, policyRows: [] }),
+      buildGeneration({
+        config: CONFIG,
+        catalog: CATALOG,
+        policyRows: [],
+        prompts: PROMPTS,
+      }),
     );
     const second = await storeGeneration(
       store,
@@ -102,6 +122,7 @@ test("a changed config is a different generation", async () => {
         } as Generation["config"],
         catalog: CATALOG,
         policyRows: [],
+        prompts: PROMPTS,
       }),
     );
     expect(second).not.toBe(first);
@@ -189,3 +210,97 @@ function switched(
     reason,
   } as unknown as RuntimeEvent;
 }
+
+test("the prompt surface and the seam rows ride inside the generation", () => {
+  const generation = buildGeneration({
+    config: CONFIG,
+    catalog: CATALOG,
+    policyRows: [],
+    prompts: PROMPTS,
+    rows: ROWS,
+  });
+  expect(generation.prompts).toEqual(PROMPTS);
+  // The seam selection, one entry per row; an absent impl is recorded as
+  // absent (the runtime-discovered backend's shape), not invented.
+  expect(generation.adapters).toEqual({
+    "anthelia.objectstore": { impl: "rust" },
+    "anthelia.sandbox": {},
+  });
+});
+
+test("a changed prompt hash is a different generation", async () => {
+  const { root, store } = testStore();
+  try {
+    const first = await storeGeneration(
+      store,
+      buildGeneration({
+        config: CONFIG,
+        catalog: CATALOG,
+        policyRows: [],
+        prompts: PROMPTS,
+      }),
+    );
+    const second = await storeGeneration(
+      store,
+      buildGeneration({
+        config: CONFIG,
+        catalog: CATALOG,
+        policyRows: [],
+        prompts: {
+          ...PROMPTS,
+          perRoleStatic: { ...PROMPTS.perRoleStatic, navi: "h-navi-edited" },
+        },
+      }),
+    );
+    // The cache-aware rule needs exactly this: a prompt edit moves the
+    // generation, so the RINA scope invalidates instead of serving the
+    // old prompts.
+    expect(second).not.toBe(first);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a changed adapter selection is a different generation", async () => {
+  const { root, store } = testStore();
+  try {
+    const first = await storeGeneration(
+      store,
+      buildGeneration({
+        config: CONFIG,
+        catalog: CATALOG,
+        policyRows: [],
+        prompts: PROMPTS,
+        rows: ROWS,
+      }),
+    );
+    const second = await storeGeneration(
+      store,
+      buildGeneration({
+        config: CONFIG,
+        catalog: CATALOG,
+        policyRows: [],
+        prompts: PROMPTS,
+        rows: [{ id: "anthelia.objectstore", impl: "typescript" }],
+      }),
+    );
+    expect(second).not.toBe(first);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a legacy generation without prompts or adapters still reads", () => {
+  // Fail-soft, documented like the policyRows path: an older generation
+  // reads as carrying none, and its hash simply differs from a current
+  // one — the surface moved, and the difference is visible.
+  const legacy = JSON.stringify({
+    schema: GENERATION_SCHEMA,
+    config: CONFIG,
+    plugins: [{ id: "natalia-skills", enabled: true, fingerprint: "fp" }],
+  });
+  const parsed = parseGeneration(legacy);
+  expect(parsed.prompts).toEqual({ perRoleStatic: {}, docs: [] });
+  expect(parsed.adapters).toEqual({});
+  expect(parsed.policyRows).toEqual([]);
+});

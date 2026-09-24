@@ -54,6 +54,7 @@ function harness(overrides: Partial<SwitchGenerationInput> = {}) {
       config: CONFIG_B,
       catalog: [],
       policyRows: [RULE],
+      prompts: { perRoleStatic: {}, docs: [] },
     }),
     activeRules: [RULE],
     faces: faces(),

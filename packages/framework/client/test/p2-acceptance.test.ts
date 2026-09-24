@@ -96,6 +96,7 @@ async function acceptance(
       config: currentConfig,
       catalog: [],
       policyRows: [RULE],
+      prompts: { perRoleStatic: {}, docs: [] },
     }),
   );
   const candidate = buildGeneration({
@@ -109,6 +110,7 @@ async function acceptance(
     }),
     catalog: [],
     policyRows: [RULE],
+    prompts: { perRoleStatic: {}, docs: [] },
   });
   const candidateID = await storeGeneration(store, candidate);
 

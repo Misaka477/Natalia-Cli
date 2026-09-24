@@ -13,7 +13,9 @@ import {
   GENERATION_SCHEMA,
   type CompositionPointer,
   type Generation,
+  type GenerationAdapterRef,
   type GenerationPluginRef,
+  type GenerationPrompts,
 } from "@anthelia/contracts";
 
 /**
@@ -43,8 +45,16 @@ export function parseGeneration(text: string): Generation {
     throw new Error("generation is missing its plugin catalog");
   // Generations stored before the constitution face existed carry no rows;
   // reading them as "carries no policy" is honest (the gate then fails
-  // closed against active rules rather than inventing rows).
-  return { ...parsed, policyRows: parsed.policyRows ?? [] };
+  // closed against active rules rather than inventing rows). The same
+  // fail-soft for the prompt/adapter fields added later: an older
+  // generation reads as carrying none, and its hash simply differs from a
+  // current one — the surface moved, and the difference is visible.
+  return {
+    ...parsed,
+    policyRows: parsed.policyRows ?? [],
+    prompts: parsed.prompts ?? { perRoleStatic: {}, docs: [] },
+    adapters: parsed.adapters ?? {},
+  };
 }
 
 /** Stores a generation, returning its content id. */
@@ -64,7 +74,7 @@ export async function loadGeneration(
   return parseGeneration(bytes.toString("utf8"));
 }
 
-/** Builds a generation from the live config and the desired catalog. */
+/** Builds a generation from the live config, catalog, policy, prompts and seams. */
 export function buildGeneration(input: {
   config: ConfigV3;
   catalog: ReadonlyArray<{
@@ -78,6 +88,20 @@ export function buildGeneration(input: {
    * gate's constitution face by emptiness while the user's rules are active.
    */
   policyRows: readonly ConstitutionRule[];
+  /**
+   * The prompt surface, hashed. Required for the same reason: a generation
+   * that silently carries no prompts would make a prompt edit invisible to
+   * the generation hash, and the RINA cache scope would keep serving under
+   * the old prompts (the study's cache-aware rule needs the hashes).
+   */
+  prompts: GenerationPrompts;
+  /**
+   * The seam rows the composition selected (the profile's effective rows).
+   * Recorded as the generation's adapter bindings: an impl selection is a
+   * runtime-shaping fact (decision 17's factory), so it belongs inside the
+   * hash — a backend switch changes the generation.
+   */
+  rows?: ReadonlyArray<{ id: string; impl?: string }>;
 }): Generation {
   const plugins: GenerationPluginRef[] = input.catalog
     .map(({ id, enabled, fingerprint }) => ({ id, enabled, fingerprint }))
@@ -85,11 +109,18 @@ export function buildGeneration(input: {
   const policyRows = [...input.policyRows].sort((a, b) =>
     a.id.localeCompare(b.id),
   );
+  const adapters: Record<string, GenerationAdapterRef> = {};
+  for (const row of input.rows ?? [])
+    adapters[row.id] = {
+      ...(row.impl !== undefined ? { impl: row.impl } : {}),
+    };
   return {
     schema: GENERATION_SCHEMA,
     config: input.config,
     plugins,
     policyRows,
+    prompts: input.prompts,
+    adapters,
   };
 }
 
