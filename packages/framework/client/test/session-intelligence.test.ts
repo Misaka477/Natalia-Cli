@@ -248,3 +248,29 @@ test("the snapshot carries the confinement posture: the live mode plus the last 
   });
   expect(bare.confinement).toBeUndefined();
 });
+
+test("the snapshot carries the L1 fabric's counters, and stays silent without them", () => {
+  // DoD #3's "命中", observable: the cache's earning rides the snapshot's
+  // live half (a runtime truth, like the confinement mode), per-kind split
+  // intact. A bare context (no fabric) rides nothing rather than zeros.
+  const cache = {
+    hits: 7,
+    misses: 3,
+    byKind: {
+      "tool.fs-read": { hits: 5, misses: 1, evictions: 0 },
+      "tool.search": { hits: 2, misses: 2, evictions: 1 },
+    },
+  };
+  const snapshot = buildSessionIntelligenceSnapshot({
+    id: "snap:cache",
+    events: [],
+    live: { agentStatus: "idle", confinementMode: "workspace-write", cache },
+  });
+  expect(snapshot.cache).toEqual(cache);
+  const bare = buildSessionIntelligenceSnapshot({
+    id: "snap:bare",
+    events: [],
+    live: { agentStatus: "idle" },
+  });
+  expect(bare.cache).toBeUndefined();
+});

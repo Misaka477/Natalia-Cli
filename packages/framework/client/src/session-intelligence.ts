@@ -41,6 +41,16 @@ export type SessionIntelligenceLive = {
    * a journal fact — the escalation below is the journal half.
    */
   confinementMode?: import("@anthelia/contracts").ConfinementMode;
+  /**
+   * The L1 read fabric's counters, the same runtime-truth class as the
+   * mode above: the cache's earning, readable without opening a metric
+   * pipe (DoD #3).
+   */
+  cache?: {
+    hits: number;
+    misses: number;
+    byKind: Record<string, { hits: number; misses: number; evictions: number }>;
+  };
 };
 
 /** The changed workspace files, as recorded by the Work Graph writer. */
@@ -115,6 +125,15 @@ export function buildSessionIntelligenceSnapshotFromFacts(input: {
     ...(output ? { recentOutput: output.slice(0, 2000) } : {}),
     hasPTY: input.facts.hasPTY,
     hasSandbox: input.facts.hasSandbox,
+    ...(input.live.cache
+      ? {
+          cache: {
+            hits: input.live.cache.hits,
+            misses: input.live.cache.misses,
+            byKind: input.live.cache.byKind,
+          },
+        }
+      : {}),
     ...(input.live.confinementMode
       ? {
           confinement: {

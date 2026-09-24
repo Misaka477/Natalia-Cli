@@ -83,6 +83,25 @@ export function StatusPanel(props: {
     RuntimeStatusSnapshot | undefined
   >();
   const [diagRows, setDiagRows] = createSignal<RuntimeDiagnostic[]>([]);
+  // The L1 cache card's line (pure beside the panel's other helpers):
+  // the aggregate hits/misses, per-kind in the title.
+  const cacheLine = () => {
+    const cache = props.state.intelligence?.cache;
+    if (!cache) return undefined;
+    const total = cache.hits + cache.misses;
+    if (!total) return { text: "无查询", title: "尚无读查询经过缓存" };
+    const percent = Math.round((cache.hits / total) * 1000) / 10;
+    const perKind = Object.entries(cache.byKind)
+      .map(
+        ([kind, metrics]) =>
+          `${kind}: ${metrics.hits}/${metrics.misses + metrics.hits}`,
+      )
+      .join(" · ");
+    return {
+      text: `命中 ${percent}%（${cache.hits}/${total}）`,
+      title: perKind || "无分类计数",
+    };
+  };
   const [opRows, setOpRows] = createSignal<
     import("@anthelia/contracts").OperationRecord[]
   >([]);
@@ -200,6 +219,22 @@ export function StatusPanel(props: {
                     {props.state.sessionID ?? "无"}
                   </span>
                 </div>
+                {/*
+                  The L1 read fabric's earning (DoD #3's "命中", now
+                  observable): the aggregate over the snapshot's per-kind
+                  counters. Absent on a snapshot without the posture (an
+                  older build's event) renders nothing.
+                */}
+                <Show when={cacheLine()}>
+                  {(line) => (
+                    <div class="neu-status-card">
+                      <span class="neu-status-card-label">读缓存 L1</span>
+                      <span class="neu-status-card-value" title={line().title}>
+                        {line().text}
+                      </span>
+                    </div>
+                  )}
+                </Show>
                 <div class="neu-status-card">
                   <span class="neu-status-card-label">上下文</span>
                   <span class="neu-status-card-value">

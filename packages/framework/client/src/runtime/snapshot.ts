@@ -10,6 +10,7 @@ import {
   sessionFactActiveTurnIDs,
   sessionFactIntelligenceFacts,
 } from "@anthelia/session";
+import { rinaCache } from "@anthelia/rina";
 import {
   buildSessionIntelligenceSnapshot,
   buildSessionIntelligenceSnapshotFromFacts,
@@ -137,12 +138,37 @@ export function createSnapshot(ctx: RuntimeContext) {
       profile: ctx.state.serviceDirectory.getOptional(compositionProfile),
       configMode: ctx.ports.getTsRuntimeConfig()?.confinement?.mode,
     });
+    // The L1 fabric's counters (DoD #3's "命中"): aggregated over its
+    // kinds, per-kind split kept — an absent fabric (a bare runtime)
+    // rides nothing rather than inventing zeros.
+    const fabric = ctx.state.serviceDirectory.getOptional(rinaCache);
+    const cache = fabric
+      ? (() => {
+          const byKind: Record<
+            string,
+            { hits: number; misses: number; evictions: number }
+          > = {};
+          let hits = 0;
+          let misses = 0;
+          for (const [kind, metrics] of Object.entries(fabric.metrics())) {
+            byKind[kind] = {
+              hits: metrics.hits,
+              misses: metrics.misses,
+              evictions: metrics.evictions,
+            };
+            hits += metrics.hits;
+            misses += metrics.misses;
+          }
+          return { hits, misses, byKind };
+        })()
+      : undefined;
     const live = {
       agentStatus,
       ...(active ? { currentStep: `step ${step}` } : {}),
       ...(activeTool ? { activeTool } : {}),
       ...(liveOutput ? { recentOutput: liveOutput } : {}),
       confinementMode,
+      ...(cache ? { cache } : {}),
     };
     return facts
       ? buildSessionIntelligenceSnapshotFromFacts({ id, facts, live })

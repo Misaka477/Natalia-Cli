@@ -1041,6 +1041,20 @@ type RuntimeEventData =
         escalatedTo?: import("./schema-types").ConfinementMode;
         justification?: string;
       };
+      /**
+       * The L1 read fabric's counters (DoD #3's "命中", made observable):
+       * the aggregate hit/miss over its kinds and the per-kind split. A
+       * cache nobody can read the earning of is a cache nobody can judge
+       * — the same lesson the confinement posture rides.
+       */
+      cache?: {
+        hits: number;
+        misses: number;
+        byKind: Record<
+          string,
+          { hits: number; misses: number; evictions: number }
+        >;
+      };
       currentStep?: string;
       activeTool?: string;
       changedFiles: number;
