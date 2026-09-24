@@ -17,6 +17,7 @@ import { RuntimeInvalidParams } from "@anthelia/contracts";
 import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
+import { scanAuditRequestFacts } from "@anthelia/substrate";
 import type {
   RuntimeContext,
   SessionExecutionState,
@@ -431,16 +432,15 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
           },
         );
         if (exec) {
-          const round =
-            exec.session.events.filter(
-              (event) =>
-                event.type === "audit.requested" && event.planID === planID,
-            ).length + 1;
-          const alreadyRequested = exec.session.events.some(
-            (event) =>
-              event.type === "audit.requested" &&
-              event.triggerEventID === statusID,
-          );
+          // The wake dedupe/round reads the whole log, not the resident
+          // tail: a fast attach can hold only the post-epoch tail, where an
+          // older audit.requested for this plan is invisible (duplicate
+          // request, or a round that restarts). The shared scan pages the
+          // durable log for it.
+          const auditFacts = await scanAuditRequestFacts(ctx, exec, planID);
+          const round = auditFacts.count + 1;
+          const alreadyRequested =
+            auditFacts.triggerEventIDs.includes(statusID);
           if (!alreadyRequested) {
             ctx.ports.publishForSession(
               exec,

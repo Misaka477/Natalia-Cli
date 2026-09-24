@@ -7,7 +7,10 @@ import { countFullContentReads, type FullReadClass } from "./full-events-reads";
  * read of the session's full event array is named, counted and
  * CLASSIFIED — the study's taxonomy enforced by drift detection rather
  * than by hope. A new read without a deliberate inventory edit goes
- * red; a removed one does too (the table tracks reality both ways).
+ * red; a changed count — including a count that fell to zero — goes
+ * red too (the table tracks reality in both directions: a file that
+ * stopped reading the array moved the surface as much as one that
+ * started).
  *
  * The classes and their notes are the acceptance itself:
  *   explicit-history  — behind ensure/complete in the same function
@@ -54,11 +57,6 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
     cls: "state-first",
     note: "fact fold -> worker-backed projection fallback",
   },
-  "packages/domains/collab/src/plan-doc-runtime.ts": {
-    count: 2,
-    cls: "fold-direct",
-    note: "DEBT: doc-request idempotency scans over the resident journal — a fast attach can miss an older marker; a paged store scan is the named fix (next)",
-  },
   "packages/domains/collab/src/plan-contract-tools.ts": {
     count: 6,
     cls: "state-first",
@@ -68,11 +66,6 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
     count: 15,
     cls: "state-first",
     note: "the EI folds are fact-first with resident fallbacks; one store.history paged read rides the same class family",
-  },
-  "packages/domains/engineering-intelligence/src/audit-request.ts": {
-    count: 2,
-    cls: "fold-direct",
-    note: "DEBT: audit idempotency scans over the resident journal — same family as plan-doc-runtime's; the paged store scan is the shared fix",
   },
   "packages/domains/goal-runtime/src/goal-runtime.ts": {
     count: 5,
@@ -149,6 +142,11 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
     cls: "state-first",
     note: "drift-acknowledge answers from the completed fact fold (resident projection = the belt)",
   },
+  "packages/framework/substrate/src/session-audit-scan.ts": {
+    count: 2,
+    cls: "paged-mechanism",
+    note: "the audit scan's own paged store read + its resident-tail union — the shared fix the two fold-direct debts named",
+  },
   "packages/framework/substrate/src/session-event-window.ts": {
     count: 8,
     cls: "paged-mechanism",
@@ -198,13 +196,13 @@ export async function findFullReadInventoryViolations(
           .catch(() => undefined);
         if (text === undefined) continue;
         const actual = countFullContentReads(text);
-        if (actual === 0) continue;
         const expected = inventory[rel];
-        if (!expected)
-          failures.push(
-            `${rel}: ${actual} full-event content read(s) with no inventory entry — classify it (explicit-history | state-first | paged-mechanism | derivation | fold-direct) and add it to FULL_READ_INVENTORY with a note`,
-          );
-        else if (expected.count !== actual)
+        if (!expected) {
+          if (actual > 0)
+            failures.push(
+              `${rel}: ${actual} full-event content read(s) with no inventory entry — classify it (explicit-history | state-first | paged-mechanism | derivation | fold-direct) and add it to FULL_READ_INVENTORY with a note`,
+            );
+        } else if (expected.count !== actual)
           failures.push(
             `${rel}: ${actual} content read(s), inventory says ${expected.count} [${expected.cls}] — the acceptance surface moved: fix the reads or update the inventory deliberately, with its note`,
           );

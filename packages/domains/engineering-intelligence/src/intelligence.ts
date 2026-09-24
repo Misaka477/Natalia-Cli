@@ -830,7 +830,7 @@ export function createIntelligenceSurface(
       ctx.ports.publishForSession(exec, event);
       // EI §3.9: completion.recorded is one of the two explicit audit triggers
       // (the other is awaiting_audit/auditing).
-      requestAuditAfterCompletion(ctx, exec, event);
+      await requestAuditAfterCompletion(ctx, exec, event);
       // P2 E4 Work Graph integration: each completed change is validated by the
       // card through a `validated_by` edge.
       for (const path of input.changePaths ?? [])

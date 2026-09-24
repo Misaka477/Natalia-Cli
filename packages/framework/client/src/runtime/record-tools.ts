@@ -288,7 +288,7 @@ export function createRecordCompletionTool(
         recordedAt,
       });
       ctx.ports.publishForSession(exec, completionEvent);
-      requestAuditAfterCompletion(ctx, exec, completionEvent);
+      await requestAuditAfterCompletion(ctx, exec, completionEvent);
       const workLedger = requireWorkLedger(ctx);
       if (workLedger) {
         // E4: the completion is itself a validation-class node; the

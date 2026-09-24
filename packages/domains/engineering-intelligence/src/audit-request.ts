@@ -1,5 +1,6 @@
 import { workLedgerController } from "@natalia/work-ledger";
 import type { RuntimeEvent } from "@anthelia/contracts";
+import { scanAuditRequestFacts } from "@anthelia/substrate";
 import type {
   RuntimeContext,
   SessionExecutionState,
@@ -10,31 +11,27 @@ import type { WorkLedgerController } from "@natalia/work-ledger";
  * EI §3.9: completion.recorded is a durable audit trigger. The request is
  * written before waking Nia so restart/dedup have a journal shadow, and both
  * the model tool and the SDK surface go through this one path.
+ *
+ * The dedupe/round facts are paged from the durable log (the shared scan): a
+ * fast attach holds only the post-epoch tail, where an older audit.requested
+ * for this plan is invisible — the request would republish or its round would
+ * restart.
  */
-export function requestAuditAfterCompletion(
+export async function requestAuditAfterCompletion(
   ctx: RuntimeContext,
   exec: SessionExecutionState,
   completion: Extract<RuntimeEvent, { type: "completion.recorded" }>,
-): void {
-  const alreadyRequested = exec.session.events.some(
-    (candidate) =>
-      candidate.type === "audit.requested" &&
-      candidate.triggerEventID === completion.id,
-  );
-  if (alreadyRequested) return;
+): Promise<void> {
+  const auditFacts = await scanAuditRequestFacts(ctx, exec, completion.taskID);
+  if (auditFacts.triggerEventIDs.includes(completion.id)) return;
   const ledger = ctx.state.serviceDirectory.getOptional(workLedgerController);
   if (!ledger) return;
-  const planID = completion.taskID;
-  const round =
-    exec.session.events.filter(
-      (candidate) =>
-        candidate.type === "audit.requested" && candidate.planID === planID,
-    ).length + 1;
+  const round = auditFacts.count + 1;
   ctx.ports.publishForSession(
     exec,
     ledger.buildAuditRequested({
-      id: `audit:${planID}:${ctx.ports.nextPlanSequence()}`,
-      planID,
+      id: `audit:${completion.taskID}:${ctx.ports.nextPlanSequence()}`,
+      planID: completion.taskID,
       planVersion: 1,
       triggerEventID: completion.id,
       round,

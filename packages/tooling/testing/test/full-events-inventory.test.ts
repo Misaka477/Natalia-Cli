@@ -6,11 +6,12 @@ import { countFullContentReads } from "../src/full-events-reads";
 import { findFullReadInventoryViolations } from "../src/full-events-inventory";
 
 /**
- * The study's acceptance #1, asserted three ways: the REAL tree matches
+ * The study's acceptance #1, asserted four ways: the REAL tree matches
  * its inventory exactly (the table IS the truth); the counter's
  * taxonomy holds on synthetic lines; and every branch of the walker —
- * unclassified read, count drift, vanished source, clean — fires or
- * stays silent exactly as the acceptance demands.
+ * unclassified read, count drift, a count that fell to zero, vanished
+ * source, clean — fires or stays silent exactly as the acceptance
+ * demands.
  */
 
 test("the repository matches its full-read inventory exactly", async () => {
@@ -90,6 +91,17 @@ test("a read matching its entry is silent", async () => {
     "packages/a/src/x.ts": { count: 1, cls: "state-first", note: "as counted" },
   });
   expect(failures).toEqual([]);
+});
+
+test("an entry whose file no longer reads the array is red too", async () => {
+  // The table tracks reality in both directions: a file that stopped
+  // reading moved the surface as much as one that started.
+  const dir = tmpTree({ "packages/a/src/x.ts": "export const clean = 1;" });
+  const failures = await findFullReadInventoryViolations(dir, {
+    "packages/a/src/x.ts": { count: 1, cls: "state-first", note: "was read" },
+  });
+  expect(failures).toHaveLength(1);
+  expect(failures[0]).toContain("0 content read(s), inventory says 1");
 });
 
 test("an entry with no source is named for pruning", async () => {

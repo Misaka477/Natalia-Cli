@@ -24,6 +24,7 @@ export * from "./ports-initialize";
 export * from "./projection-contributions";
 export * from "./repository-refs";
 export * from "./service-bindings";
+export * from "./session-audit-scan";
 export * from "./session-event-retention";
 export * from "./session-event-window";
 export * from "./session-execution-state";
