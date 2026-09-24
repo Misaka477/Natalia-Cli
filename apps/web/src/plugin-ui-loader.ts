@@ -165,8 +165,10 @@ async function loadOnePluginUi(
     const uiPlugin = factory();
     await host.load(uiPlugin);
     uiSourceByPluginId.set(uiPlugin.id, plugin.id);
-    if (plugin.id === "natalia-tool-terminal" || plugin.ui?.css)
-      await loadPluginUiCss(runtimeURL, plugin.id, token);
+    // The declaration drives it: the manifest's css field is the contract.
+    // (It used to need a hardcoded id special-case, back when the schema
+    // stripped the field and only the release manifest carried it.)
+    if (plugin.ui?.css) await loadPluginUiCss(runtimeURL, plugin.id, token);
     console.info(
       `[plugin-ui] loaded ${plugin.id}@${plugin.version} +${(performance.now() - pluginStart).toFixed(1)}ms`,
     );

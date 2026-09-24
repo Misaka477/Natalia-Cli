@@ -3,7 +3,7 @@ import type {
   PluginPackageSource,
   PluginUiManifest,
 } from "@anthelia/contracts";
-import { discoverPluginManifests } from "@anthelia/plugin";
+import { discoverPluginManifests, pluginFacetFor } from "@anthelia/plugin";
 import {
   loadNataliaLock,
   packageDirectory,
@@ -49,7 +49,10 @@ export async function listInstalledPlugins(input: {
       installed: true,
       source: entry.metadata.source,
       packageName: entry.packageName,
-      ui: manifest?.apiVersion === 2 ? manifest.ui : undefined,
+      // The web facet through the version-blind resolver: a v2 manifest's
+      // `ui` is its `facets.web` (spec §2.3), so the row — and every face
+      // that reads it — never learns which version wrote the declaration.
+      ui: manifest ? pluginFacetFor(manifest, "web") : undefined,
     });
   }
   return rows.sort((left, right) => left.id.localeCompare(right.id));

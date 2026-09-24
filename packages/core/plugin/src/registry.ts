@@ -132,7 +132,9 @@ export function createPluginRegistry(input: PluginRegistryInput) {
     const manifest = pluginManifestSchema.parse(plugin.manifest);
     if (plugins.has(manifest.id))
       throw new Error(`plugin already loaded: ${manifest.id}`);
-    if (manifest.apiVersion === 2) {
+    // v2 and v3 both declare dependencies; the graph check below is the
+    // same for either (v1 predates the dependency model entirely).
+    if (manifest.apiVersion === 2 || manifest.apiVersion === 3) {
       const mounted = [...plugins.values()];
       const resolution = resolvePluginDependencies(
         [manifest],

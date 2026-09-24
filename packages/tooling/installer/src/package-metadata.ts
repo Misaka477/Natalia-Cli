@@ -82,7 +82,7 @@ export async function validateStagedPackage(
     contentHash: await computePluginPackageHash(packageDir),
     scope: manifest.scope,
     dependencies:
-      manifest.apiVersion === 2
+      manifest.apiVersion === 2 || manifest.apiVersion === 3
         ? manifest.dependencies.map((dependency) => ({
             id: dependency.id,
             resolvedVersion: "unresolved",

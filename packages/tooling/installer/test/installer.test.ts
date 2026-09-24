@@ -859,3 +859,53 @@ function lockEntry(packageName: string, id: string) {
     },
   };
 }
+
+test("a v3 manifest's web facet reaches the catalog row version-blind", async () => {
+  // The row is what the web loader, the CLI bundle service and the CEF
+  // host read; they must never learn which version wrote the declaration.
+  const pluginStoreRoot = await mkdtemp(join(tmpdir(), "natalia-v3-store-"));
+  const workspaceRoot = await mkdtemp(join(tmpdir(), "natalia-v3-ws-"));
+  const packageDir = join(pluginStoreRoot, "node_modules", "fixture-v3");
+  await mkdir(packageDir, { recursive: true });
+  const manifestPath = join(packageDir, "natalia.plugin.json");
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      apiVersion: 3,
+      id: "fixture.v3",
+      version: "1.0.0",
+      name: "V3 Fixture",
+      entry: "index.ts",
+      scope: "workspace",
+      facets: {
+        web: { entry: "ui/web.js", css: "ui/web.css" },
+        // The reserved key: declared, not served, harmless.
+        tui: { entry: "ui/tui.js" },
+      },
+    }),
+  );
+  await writeFile(
+    join(pluginStoreRoot, "natalia.lock"),
+    JSON.stringify({
+      version: 1,
+      plugins: {
+        "fixture.v3": {
+          packageName: "fixture-v3",
+          manifest: manifestPath,
+          metadata: {
+            id: "fixture.v3",
+            source: { type: "registry", spec: "fixture-v3@1.0.0" },
+            resolvedVersion: "1.0.0",
+            scope: "workspace",
+            dependencies: [],
+          },
+        },
+      },
+    }),
+  );
+  const rows = await listInstalledPlugins({ pluginStoreRoot, workspaceRoot });
+  expect(rows).toHaveLength(1);
+  // §2.3's mapping at the row: the web facet, css included, and nothing
+  // of the unwired env leaks into the row.
+  expect(rows[0]!.ui).toEqual({ entry: "ui/web.js", css: "ui/web.css" });
+});

@@ -10,6 +10,9 @@ import {
   definePlugin,
   discoverPluginManifests,
   pluginManifestSchema,
+  manifestIntegrationPoints,
+  pluginFacetFor,
+  PLUGIN_FACET_ENVS,
   resolvePluginDependencies,
   resolvePluginConfig,
   computePluginPackageHash,
@@ -2191,4 +2194,101 @@ test("the content pin verifies the installed package at load", async () => {
   const legacy = await resolveInstalledPluginEntries({ pluginStoreRoot });
   expect(legacy.errors).toEqual([]);
   expect(legacy.entries).toHaveLength(1);
+});
+
+test("v2 ui metadata keeps its css (the schema no longer strips it)", () => {
+  // The contract mirror and the web loader have always carried css; the
+  // zod schema silently dropped it — a half-wired field, now aligned.
+  const parsed = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "css.plugin",
+    version: "1.0.0",
+    name: "CSS Plugin",
+    ui: { entry: "src/ui/plugin.js", css: "src/ui/plugin.css" },
+  });
+  expect(parsed.apiVersion === 2 && parsed.ui?.css).toBe("src/ui/plugin.css");
+});
+
+test("v3 manifests generalize renderer packages as facets and reject ui", () => {
+  const parsed = pluginManifestSchema.parse({
+    apiVersion: 3,
+    id: "facets.plugin",
+    version: "1.0.0",
+    name: "Facets Plugin",
+    integrationPoints: ["tools"],
+    facets: {
+      web: {
+        entry: "src/ui/web.js",
+        css: "src/ui/web.css",
+        panels: [{ id: "settings", title: "Settings", region: "settings" }],
+      },
+      // The reserved, unwired key: a declaration the runtime does not
+      // interpret yet — it fails no load, it simply serves nobody.
+      tui: { entry: "src/ui/tui.js" },
+    },
+  });
+  expect(parsed.apiVersion).toBe(3);
+  if (parsed.apiVersion !== 3) throw new Error("unreachable");
+  expect(parsed.facets?.web?.css).toBe("src/ui/web.css");
+  expect(parsed.facets?.tui?.entry).toBe("src/ui/tui.js");
+  // ui is rejected at v3 — carrying both would let the two drift.
+  expect(() =>
+    pluginManifestSchema.parse({
+      apiVersion: 3,
+      id: "both.plugin",
+      version: "1.0.0",
+      name: "Both",
+      ui: { entry: "src/ui/x.js" },
+      facets: { web: { entry: "src/ui/y.js" } },
+    }),
+  ).toThrow(/ui/);
+});
+
+test("the facet resolver maps v2's ui to facets.web and stays version-blind", () => {
+  const v2 = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "v2.plugin",
+    version: "1.0.0",
+    name: "V2",
+    ui: { entry: "src/ui/v2.js" },
+  });
+  const v3 = pluginManifestSchema.parse({
+    apiVersion: 3,
+    id: "v3.plugin",
+    version: "1.0.0",
+    name: "V3",
+    facets: { web: { entry: "src/ui/v3.js" }, tui: { entry: "src/ui/t.js" } },
+  });
+  const v1 = pluginManifestSchema.parse({
+    apiVersion: 1,
+    id: "v1.plugin",
+    version: "1.0.0",
+    name: "V1",
+  });
+  // The migration mapping, exactly: v2's ui IS its facets.web.
+  expect(pluginFacetFor(v2, "web")).toEqual(
+    v2.apiVersion === 2 ? v2.ui : undefined,
+  );
+  // An env the declaration does not serve is undefined — the degradation
+  // law's first clause, no error.
+  expect(pluginFacetFor(v2, "tui")).toBeUndefined();
+  expect(pluginFacetFor(v3, "web")).toEqual({ entry: "src/ui/v3.js" });
+  expect(pluginFacetFor(v3, "tui")).toEqual({ entry: "src/ui/t.js" });
+  expect(pluginFacetFor(v1, "web")).toBeUndefined();
+});
+
+test("v3's integration points and dependencies load like v2's", () => {
+  const v3 = pluginManifestSchema.parse({
+    apiVersion: 3,
+    id: "points.plugin",
+    version: "1.0.0",
+    name: "Points",
+    integrationPoints: ["tools", "services"],
+    dependencies: [{ id: "dep.plugin", spec: "^1.0.0" }],
+  });
+  if (v3.apiVersion !== 3) throw new Error("unreachable");
+  expect(manifestIntegrationPoints(v3)).toEqual(["tools", "services"]);
+  // The env registry: web wired, tui reserved (a consumer checks this,
+  // the schema never restricts keys).
+  expect(PLUGIN_FACET_ENVS).toEqual(["web", "tui"]);
 });

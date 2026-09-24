@@ -28,6 +28,11 @@ export const TERMINAL_PLUGIN_MANIFEST: PluginManifest = {
   integrationPoints: ["tools", "services"],
   ui: {
     entry: "ui/plugin.js",
+    // The built-path convention this manifest already follows for `entry`
+    // (the module self-declares the names the release build produces), and
+    // the reason the release manifest can carry it too: the install-time
+    // manifest comparison holds the module and the file to one declaration.
+    css: "ui/plugin.css",
     panels: [
       {
         id: "terminal",

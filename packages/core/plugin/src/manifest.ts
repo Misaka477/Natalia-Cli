@@ -65,6 +65,10 @@ export const uiPanelMetaSchema = z.object({
 
 export const pluginUiManifestSchema = z.object({
   entry: z.string().min(1),
+  // The contract mirror (events.ts PluginUiManifest) has always carried
+  // it and the web loader has always read it; the schema silently
+  // stripped it — a half-wired field, now aligned.
+  css: z.string().optional(),
   panels: z.array(uiPanelMetaSchema).optional(),
 });
 
@@ -86,18 +90,89 @@ export const pluginManifestV2Schema = z.object({
   ui: pluginUiManifestSchema.optional(),
 });
 
+/**
+ * The env registry (interface spec §2.3): `web` is WIRED today — the
+ * browser renderer is what the catalog row, the web loader, the CLI
+ * bundle service and the CEF host all read. `tui` is a RESERVED,
+ * UNWIRED key: no TUI consumer exists, so the runtime does not
+ * interpret a `tui` facet — the degradation law's first clause (a
+ * facet for an env the runtime does not serve is a silent no-row).
+ * Facet KEYS are open in the schema (only the value shape is closed);
+ * this constant is what a consumer checks against, never a validation
+ * set — an unknown env fails no load, it simply serves nobody.
+ */
+export const PLUGIN_FACET_ENVS = ["web", "tui"] as const;
+export type PluginFacetEnv = (typeof PLUGIN_FACET_ENVS)[number];
+
+/** A renderer-side facet: the shape v2's `ui` carried, generalized. */
+export const pluginFacetSchema = z.object({
+  entry: z.string().min(1),
+  css: z.string().optional(),
+  panels: z.array(uiPanelMetaSchema).optional(),
+});
+
+/**
+ * v3 (interface spec §2.2–2.3): v2 in full plus the facets
+ * generalization — one renderer package per env in one map — and
+ * `ui` REJECTED (a v2 manifest's `ui` is exactly its `facets.web`;
+ * carrying both would let the two drift). Strict so the refusal names
+ * the key. The logging self-convention declaration of the spec's field
+ * table is deliberately NOT here yet: a field nothing reads is the
+ * half-wired shape this house refuses (see the integrity landing); it
+ * lands with its first consumer.
+ */
+export const pluginManifestV3Schema = z
+  .object({
+    apiVersion: z.literal(3),
+    id: pluginIDSchema,
+    version: versionSchema,
+    name: z.string().min(1),
+    description: z.string().default(""),
+    entry: z.string().default("index.ts"),
+    scope: pluginScopeSchema.default("session"),
+    provides: z.array(z.string()).default([]),
+    requires: z.array(z.string()).default([]),
+    optionalRequires: z.array(z.string()).default([]),
+    conflicts: z.array(pluginIDSchema).default([]),
+    dependencies: z.array(pluginDependencySchema).default([]),
+    hooks: pluginLifecycleHooksSchema,
+    integrationPoints: z.array(pluginIntegrationPointSchema).default([]),
+    facets: z.record(z.string(), pluginFacetSchema).optional(),
+  })
+  .strict();
+
 export const pluginManifestSchema = z.discriminatedUnion("apiVersion", [
   pluginManifestV1Schema,
   pluginManifestV2Schema,
+  pluginManifestV3Schema,
 ]);
 
 export type PluginManifestV1 = z.infer<typeof pluginManifestV1Schema>;
 export type PluginManifestV2 = z.infer<typeof pluginManifestV2Schema>;
+export type PluginManifestV3 = z.infer<typeof pluginManifestV3Schema>;
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type PluginIntegrationPoint = z.infer<
   typeof pluginIntegrationPointSchema
 >;
 export type PluginUiManifestFromSchema = z.infer<typeof pluginUiManifestSchema>;
+export type PluginFacet = z.infer<typeof pluginFacetSchema>;
+
+/**
+ * The migration mapping, one function (spec §2.3): a v2 manifest's
+ * `ui` IS its `facets.web`, and a v3 manifest reads its facet for the
+ * env. Every face that wants a renderer package asks for
+ * (manifest, env) — never "the ui field" — so the version distinction
+ * lives in exactly one place and the loader paths stay version-blind.
+ */
+export function pluginFacetFor(
+  manifest: PluginManifest,
+  env: string,
+): PluginFacet | undefined {
+  if (manifest.apiVersion === 2)
+    return env === "web" ? (manifest.ui as PluginFacet) : undefined;
+  if (manifest.apiVersion === 3) return manifest.facets?.[env];
+  return undefined;
+}
 
 export type { PluginPackageSource } from "@anthelia/contracts";
 
@@ -129,7 +204,10 @@ export type InstalledPluginPackage = PluginPackageConfig;
 export function manifestIntegrationPoints(
   manifest: PluginManifest,
 ): PluginIntegrationPoint[] {
-  if (manifest.apiVersion === 2) return manifest.integrationPoints;
+  // v2 and v3 carry the declared list; v1 predates it (its capabilities
+  // plus provides-as-services is the reconstructed equivalent).
+  if (manifest.apiVersion === 2 || manifest.apiVersion === 3)
+    return manifest.integrationPoints;
   return [
     ...manifest.capabilities,
     ...(manifest.provides.length ? (["services"] as const) : []),
