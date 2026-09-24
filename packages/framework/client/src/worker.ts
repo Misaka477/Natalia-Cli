@@ -45,6 +45,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "growth.propose": "growthPropose",
   "growth.proposals": "growthProposals",
   "workspace.ast_move": "workspaceAstMove",
+  "prompt.run_groups": "promptRunGroups",
   messages: "messages",
   agents: "agents",
   "model.catalog": "modelCatalog",
@@ -194,6 +195,7 @@ type WorkerRequest = {
     | "growth.propose"
     | "growth.proposals"
     | "workspace.ast_move"
+    | "prompt.run_groups"
     | "messages"
     | "agents"
     | "model.catalog"
@@ -1125,6 +1127,12 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["workspaceAstMove"]>>
       >;
     },
+    async promptRunGroups(sessionID?: string) {
+      return (await request(
+        "prompt.run_groups",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["promptRunGroups"]>>>;
+    },
     async growthPropose(input?: { planID?: string }) {
       return (await request("growth.propose", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["growthPropose"]>>
@@ -1404,6 +1412,10 @@ export async function handleWorkerRequest(
       | { paths?: string[]; from?: string }
       | undefined;
     return await client.workspaceAstMove?.(value);
+  }
+  if (request.method === "prompt.run_groups") {
+    const value = request.value as { sessionID?: string } | undefined;
+    return await client.promptRunGroups?.(value?.sessionID);
   }
   if (request.method === "growth.propose") {
     const value = request.value as { planID?: string } | undefined;

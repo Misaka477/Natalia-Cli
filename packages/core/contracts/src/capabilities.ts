@@ -264,6 +264,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "constitutionRules",
     "growthPropose",
     "growthProposals",
+    "promptRunGroups",
     "constitutionOverrides",
     "decisionRecords",
     "recordDecision",

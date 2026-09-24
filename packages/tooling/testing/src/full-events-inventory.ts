@@ -73,9 +73,9 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
     note: "constitution/work-contract/drift ternaries + two request-marker scans counted with them",
   },
   "packages/domains/engineering-intelligence/src/intelligence.ts": {
-    count: 17,
+    count: 21,
     cls: "state-first",
-    note: "the EI folds are fact-first with resident fallbacks; one store.history paged read and the override-grant merge (instance + session, deduped by id) ride the same class family",
+    note: "the EI folds are fact-first with resident fallbacks; one store.history paged read, the override-grant merge (instance + session, deduped by id), and the growth branch's folds (the completions/unbacked-task derivation's reads, the writer's idempotence guard, the proposal reader) and the prompt-run-groups scorer (segmentTurns/scoreRun/groupRunsByPrompt — a defensive replay fold, no fork) ride the same class family",
   },
   "packages/domains/goal-runtime/src/goal-runtime.ts": {
     count: 5,

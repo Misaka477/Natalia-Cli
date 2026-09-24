@@ -37,6 +37,7 @@ import {
 import type { PlanLifecycleState } from "@anthelia/runtime-services";
 import { deriveGrowthCurriculum, type TaskOutcome } from "./growth";
 import { createHash } from "node:crypto";
+import { groupRunsByPrompt, scoreRun, segmentTurns } from "./run-scorer";
 import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
 import type { EpisodeID } from "@anthelia/contracts";
 import { readFile } from "node:fs/promises";
@@ -83,6 +84,7 @@ type ClientSurfaceOptions = {
 type Surface = Pick<
   RuntimeServiceClient,
   | "growthPropose"
+  | "promptRunGroups"
   | "growthProposals"
   | "constitutionRules"
   | "constitutionOverrides"
@@ -590,6 +592,28 @@ export function createIntelligenceSurface(
         input?.limit,
         input?.cursor,
       );
+    },
+    /**
+     * Discovery G-b — the internal-evaluation face: the SAME prompt's
+     * success distribution, scored from the journal (a replay fold, no
+     * fork required — the study's "同 prompt N 次重放的成败/成本分布").
+     * The runs our fork/duplicate infrastructure already made turn up as
+     * turns sharing a promptKey; the face reads them.
+     *
+     * Defensive reads only: a legacy event misses its optional fields and
+     * the scorer reports what it can see (missing numbers stay undefined,
+     * never zero-invented).
+     */
+    async promptRunGroups(sessionID?: string) {
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session) return [];
+      const windows = segmentTurns(exec.session.events);
+      const scores = windows.map((window) =>
+        scoreRun(window, {
+          ...(exec.session.id ? { sessionID: exec.session.id } : {}),
+        }),
+      );
+      return groupRunsByPrompt(scores);
     },
     /**
      * Discovery G-a's growth face (the reader): the journaled proposals,

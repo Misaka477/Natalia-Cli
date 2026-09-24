@@ -229,6 +229,7 @@ export const RPC_ROUTE_MEMBERS = {
   "growth.propose": "growthPropose",
   "growth.proposals": "growthProposals",
   "workspace.ast_move": "workspaceAstMove",
+  "prompt.run_groups": "promptRunGroups",
   "workgraph.nodes": "workGraphNodes",
   "workgraph.edges": "workGraphEdges",
   // --- P0-C: the reachability gap closed (audit list in the API plan §8.10) ---
@@ -3938,6 +3939,15 @@ export async function handleRPCMessage(
           skipped: [],
           moves: [],
         },
+      };
+    }
+    if (body.method === "prompt.run_groups") {
+      optionsGuard(client, "promptRunGroups");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.promptRunGroups?.(sessionID)) ?? [],
       };
     }
     if (body.method === "growth.propose") {

@@ -4360,6 +4360,27 @@ export type RuntimeClient = {
     }>
   >;
   /**
+   * Discovery G-b — the internal-evaluation read: the same prompt's
+   * success/cost distribution, scored from the journal (a replay fold —
+   * the fork/duplicate turns a prompt replayed through show up sharing
+   * its promptKey). Read-only and defensive: missing numbers stay
+   * undefined, never zero-invented.
+   */
+  promptRunGroups?(sessionID?: string): Promise<
+    Array<{
+      promptKey: string;
+      runs: number;
+      successes: number;
+      successRate: number;
+      avgInputTokens?: number;
+      avgOutputTokens?: number;
+      avgDurationMs?: number;
+      avgSteps: number;
+      retries: number;
+      lastAt?: string;
+    }>
+  >;
+  /**
    * Discovery G-a's growth faces. `growthPropose` derives the capability
    * curriculum from the journal (the completions' known gaps and the
    * plan's unbacked tasks) and records the `growth.proposed` fact — a

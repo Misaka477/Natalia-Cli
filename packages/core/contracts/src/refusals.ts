@@ -538,6 +538,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure read of the journaled proposals",
   },
+  promptRunGroups: {
+    refusal: "none",
+    note: "pure read: the journal folded into per-prompt distributions",
+  },
   notices: {
     refusal: "none",
     note: "pure read of the projected runtime notices",
