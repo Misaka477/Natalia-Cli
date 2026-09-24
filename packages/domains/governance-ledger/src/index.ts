@@ -15,6 +15,7 @@ export {
   buildConstitutionRuleRemoved,
   buildPromotedConstitutionRule,
   buildProposedConstitutionRule,
+  applicablePlanConstraints,
   constitutionPathMatch,
   recordDecision,
   seedConstitutionRules,

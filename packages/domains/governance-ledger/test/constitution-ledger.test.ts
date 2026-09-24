@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   SELF_PROTECTION_RULES,
+  applicablePlanConstraints,
   buildConstitutionRuleUpdate,
   buildConstitutionRuleRemoved,
   buildProposedConstitutionRule,
@@ -252,4 +253,40 @@ test("constitutionPathMatch treats ? and regex metacharacters as literal", () =>
 test("constitutionPathMatch normalizes backslashes and a leading ./", () => {
   expect(constitutionPathMatch("src\\a.ts", "src/a.ts")).toBe(true);
   expect(constitutionPathMatch("./src/a.ts", "src/a.ts")).toBe(true);
+});
+
+test("applicablePlanConstraints names the critical/high rules on a plan's paths", () => {
+  // Constitution/decision ledger plan §5: the active plan's header shows
+  // the applicable critical/high constraints. Critical/high only, and only
+  // rules with a path anchor matching one of the plan's scope paths.
+  const rule = (
+    ruleID: string,
+    priority: "critical" | "high" | "medium" | "low",
+    paths?: string[],
+  ) => ({
+    type: "constitution.rule_added" as const,
+    id: `rule:${ruleID}`,
+    ruleID,
+    statement: `statement ${ruleID}`,
+    scope: "project" as const,
+    priority,
+    source: "user" as const,
+    enforcement: "deny" as const,
+    overridePolicy: "forbidden" as const,
+    ...(paths ? { appliesTo: { paths } } : {}),
+  });
+  const rules = [
+    rule("C-CRIT", "critical", ["src/**"]),
+    rule("C-HIGH", "high", ["src/parser/*.ts"]),
+    rule("C-MED", "medium", ["src/**"]), // priority below the header bar
+    rule("C-NOANCHOR", "critical"), // no path anchor: prose, not executable
+    rule("C-OTHER", "critical", ["docs/**"]), // not this plan's paths
+  ];
+  const applicable = applicablePlanConstraints(rules, [
+    "src/parser/lexer.ts",
+    "src/index.ts",
+  ]);
+  expect(applicable.map((entry) => entry.ruleID)).toEqual(["C-CRIT", "C-HIGH"]);
+  // No scope paths: nothing is applicable (an empty plan judges nothing).
+  expect(applicablePlanConstraints(rules, [])).toEqual([]);
 });

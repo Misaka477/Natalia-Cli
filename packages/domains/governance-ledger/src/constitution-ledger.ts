@@ -31,6 +31,33 @@ import type { RuntimeEvent } from "@anthelia/contracts";
  * `?` matches exactly (it is not a regex quantifier or a wildcard).
  * Pure and deterministic.
  */
+/**
+ * The constitution rules that apply to a plan's work (constitution/decision
+ * ledger plan §5: "每个 active plan header 显示适用的 critical/high
+ * constraints"). Critical/high only — medium/low rules are noise in a plan
+ * header — and only rules with a path anchor that matches one of the plan's
+ * scope paths; a rule without an anchor is a prose rule, not an executable
+ * constraint on this plan's files. Structural input so any projection's rule
+ * shape works; journal order preserved.
+ */
+export function applicablePlanConstraints<
+  T extends {
+    ruleID: string;
+    statement: string;
+    priority: "critical" | "high" | "medium" | "low";
+    appliesTo?: { paths?: string[] };
+  },
+>(rules: readonly T[], scopePaths: readonly string[]): T[] {
+  if (!scopePaths.length) return [];
+  return rules.filter(
+    (rule) =>
+      (rule.priority === "critical" || rule.priority === "high") &&
+      (rule.appliesTo?.paths ?? []).some((pattern) =>
+        scopePaths.some((path) => constitutionPathMatch(pattern, path)),
+      ),
+  );
+}
+
 export function constitutionPathMatch(pattern: string, path: string): boolean {
   const normalizedPattern = pattern.replace(/\\/gu, "/").replace(/^\.\//u, "");
   const normalizedPath = path.replace(/\\/gu, "/").replace(/^\.\//u, "");

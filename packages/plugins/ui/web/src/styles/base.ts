@@ -4898,6 +4898,41 @@ button.wg-node-row:hover {
   opacity: 0.7;
   margin-bottom: 0;
 }
+/* The active plan's applicable constitution constraints (ledger plan §5):
+   the plan is judged against these, so the header names them. */
+.plan-constraints {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border: 1px solid var(--neu-border, rgba(128, 128, 128, 0.3));
+  border-radius: 6px;
+  font-size: 12px;
+}
+.plan-constraints-title {
+  font-weight: 600;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+.plan-constraint-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+}
+.plan-constraint-row[data-priority="critical"] .plan-constraint-id {
+  color: var(--neu-danger);
+  font-weight: 700;
+}
+.plan-constraint-row[data-priority="high"] .plan-constraint-id {
+  color: var(--neu-warning);
+  font-weight: 600;
+}
+.plan-constraint-id {
+  flex: none;
+  font-family: var(--neu-font-mono, monospace);
+}
+.plan-constraint-text {
+  opacity: 0.85;
+}
+
 .plan-contract-bar {
   display: flex;
   flex-wrap: wrap;

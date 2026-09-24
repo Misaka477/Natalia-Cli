@@ -12,6 +12,9 @@
       "path": "../../../../packages/core/contracts"
     },
     {
+      "path": "../../../../packages/domains/governance-ledger"
+    },
+    {
       "path": "../../../../packages/hosts/ui-host"
     },
     {

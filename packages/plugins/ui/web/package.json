@@ -16,6 +16,7 @@
     "@natalia/ui-host": "workspace:*",
     "@natalia/ui-kit": "workspace:*",
     "@natalia/ui-model": "workspace:*",
+    "@natalia/governance-ledger": "workspace:*",
     "@natalia/view-store": "workspace:*",
     "@vscode/tree-sitter-wasm": "*",
     "@xterm/addon-canvas": "^0.7.0",

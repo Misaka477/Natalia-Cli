@@ -9,6 +9,7 @@ import {
 import { marked } from "marked";
 import type { RuntimeClient, RuntimeEvent } from "@anthelia/contracts";
 import type { AppState } from "@natalia/view-store";
+import { applicablePlanConstraints } from "@natalia/governance-ledger";
 
 type PlanRow = {
   planID: string;
@@ -455,6 +456,53 @@ export function PlanPanel(props: {
                     </Show>
                   </div>
                 )}
+              </Show>
+              {/*
+                Constitution/decision ledger plan §5: the active plan's
+                header shows the applicable critical/high constraints —
+                the plan is judged against them, so the header names them.
+                The scope is the work contract's; a rule without a path
+                anchor is prose, not an executable constraint on the plan.
+              */}
+              <Show
+                when={
+                  selected() &&
+                  (props.state.workContracts[selected()!.planID]?.scope
+                    ?.length ?? 0) > 0
+                }
+              >
+                {(() => {
+                  const rules = () =>
+                    applicablePlanConstraints(
+                      Object.values(props.state.constitutionRules ?? {}),
+                      props.state.workContracts[selected()!.planID]?.scope ??
+                        [],
+                    );
+                  return (
+                    <Show when={rules().length > 0}>
+                      <div class="plan-constraints">
+                        <div class="plan-constraints-title">
+                          适用约束 ×{rules().length}（critical/high）
+                        </div>
+                        <For each={rules()}>
+                          {(rule) => (
+                            <div
+                              class="plan-constraint-row"
+                              data-priority={rule.priority}
+                            >
+                              <span class="plan-constraint-id">
+                                {rule.ruleID}
+                              </span>
+                              <span class="plan-constraint-text">
+                                {rule.statement}
+                              </span>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  );
+                })()}
               </Show>
               <div class="plan-panel-doc-buttons">
                 <button
