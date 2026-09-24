@@ -272,6 +272,84 @@ export class ObjectStore {
   }
 
   /**
+   * Phase D's fsck: the store's self-check. Three families of truth:
+   *
+   *  1. **pairing** — every `.idx` has its `.pack` and vice versa; an
+   *     orphan index claims entries nobody can read, an orphan pack holds
+   *     bytes no index names (a half-written compaction);
+   *  2. **entries** — every indexed entry must inflate to bytes that hash
+   *     to its id (the content-addressed contract the get() path
+   *     enforces, enforced here against the whole store at once);
+   *  3. **the meta** — a delta entry's base must exist (a delta whose
+   *     base is gone cannot apply).
+   *
+   * A full fsck is HEAVY by design: it hashes every packed byte. It is a
+   * maintenance operation (the CLI's, not the hot path's), and a
+   * sampled check would be a lie about the store's state.
+   */
+  async fsck(): Promise<{
+    packs: number;
+    indexes: number;
+    entries: number;
+    orphanIndexes: string[];
+    orphanPacks: string[];
+    corrupt: Array<{ pack: string; id?: string; reason: string }>;
+    ok: boolean;
+  }> {
+    await this.loadPackIndexes();
+    const packDir = join(this.root, "packs");
+    const files = await readdir(packDir).catch(() => [] as string[]);
+    const packNames = files.filter((file) => file.endsWith(".pack")).sort();
+    const indexNames = files.filter((file) => file.endsWith(".idx")).sort();
+    const packStems = new Set(
+      packNames.map((name) => name.slice(0, -".pack".length)),
+    );
+    const indexStems = new Set(
+      indexNames.map((name) => name.slice(0, -".idx".length)),
+    );
+    const orphanPacks = packNames.filter(
+      (name) => !indexStems.has(name.slice(0, -".pack".length)),
+    );
+    const orphanIndexes = indexNames.filter(
+      (name) => !packStems.has(name.slice(0, -".idx".length)),
+    );
+    const corrupt: Array<{ pack: string; id?: string; reason: string }> = [];
+    const byPack = new Map<string, string[]>();
+    for (const [id, entry] of this.packs) {
+      const packName = entry.packFile.split("/").pop() ?? entry.packFile;
+      const list = byPack.get(packName) ?? [];
+      list.push(id);
+      byPack.set(packName, list);
+    }
+    for (const packName of packNames) {
+      for (const id of byPack.get(packName) ?? []) {
+        try {
+          const buffer = await this.packGet(id);
+          this.verify(id, buffer);
+        } catch (error) {
+          corrupt.push({
+            pack: packName,
+            id,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+    return {
+      packs: packNames.length,
+      indexes: indexNames.length,
+      entries: this.packs.size,
+      orphanIndexes,
+      orphanPacks,
+      corrupt,
+      ok:
+        orphanIndexes.length === 0 &&
+        orphanPacks.length === 0 &&
+        corrupt.length === 0,
+    };
+  }
+
+  /**
    * Streams an object's contents without forcing a whole large object into one
    * Buffer. Chunked objects yield each stored chunk; normal objects yield a
    * single buffer.
