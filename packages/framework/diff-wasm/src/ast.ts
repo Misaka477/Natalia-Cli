@@ -148,6 +148,17 @@ export const SUPPORTED_AST_LANGUAGES = Object.keys(
   PACK_BY_LANGUAGE,
 ) as readonly string[];
 
+/**
+ * The path's AST language (same table the pack selection uses), or
+ * undefined when the extension is unknown. A single place naming the
+ * mapping, so a workspace face never re-derives one.
+ */
+export function astLanguageForPath(path: string): string | undefined {
+  const name = path.split("/").pop() ?? path;
+  const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+  return ext ? PACK_BY_LANGUAGE[ext] : PACK_BY_LANGUAGE[name.toLowerCase()];
+}
+
 const packInstances = new Map<string, AstExports>();
 const packPromises = new Map<string, Promise<AstExports>>();
 

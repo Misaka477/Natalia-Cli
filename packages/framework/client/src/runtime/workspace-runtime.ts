@@ -28,6 +28,7 @@ import { resolveNamedPluginWorkspaceResource } from "./plugin-workspace-resource
 type WorkspaceRuntime = Pick<
   RuntimeServiceClient,
   | "astMove"
+  | "workspaceAstMove"
   | "workspaceFiles"
   | "workspaceSearch"
   | "workspaceList"
@@ -453,6 +454,81 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
     },
 
     /**
+     * Phase C's WORKSPACE move face (the study's second face): the real
+     * files — the working tree (`after`) against a git ref (`from`,
+     * default HEAD) — through the very same index, answered as the
+     * detected moves. The honest before: a path that does not exist at
+     * the ref is a NEW file (it joins only the after set); a path whose
+     * extension has no AST language is skipped, reported by name; and the
+     * before set is the named paths AT THE REF plus the ref's DELETED
+     * files — a move is a file that LEFT, the caller named only where it
+     * landed, and without the left side the detection has nothing to
+     * pair (the face's own e2e taught this). The cap matches the
+     * index's own (50 files) — a workspace-wide scan is the caller's
+     * `workspaceList` to narrow.
+     */
+    async workspaceAstMove(input?: { paths?: string[]; from?: string }) {
+      await ctx.ports.getReady();
+      const root = ctx.ports.getWorkspaceRoot();
+      const from = input?.from ?? "HEAD";
+      const paths = (input?.paths ?? []).slice(0, 50);
+      const { astLanguageForPath } = await import("@anthelia/diff-wasm/ast");
+      const before: Array<{
+        path?: string;
+        source: string;
+        language: string;
+      }> = [];
+      const after: Array<{
+        path?: string;
+        source: string;
+        language: string;
+      }> = [];
+      const skipped: Array<{ path: string; reason: string }> = [];
+      // The DELETED counterparts: a move is a file that left, and the
+      // caller named only where it LANDED. The ref's deleted files join
+      // the before set — otherwise a moved symbol has no left side and
+      // the detection has nothing to pair. (The first cut named only the
+      // paths and its own e2e caught the hole: a move detected nothing.)
+      const deleted = await gitDeletedFiles(root, from);
+      const beforePaths = [...new Set([...paths, ...deleted])].slice(0, 50);
+      await Promise.all(
+        beforePaths.map(async (path) => {
+          const language = astLanguageForPath(path);
+          if (!language) return;
+          const committedText = await gitShowContentBuffer(root, from, path);
+          if (committedText !== undefined)
+            before.push({
+              path,
+              source: committedText.toString("utf8"),
+              language,
+            });
+        }),
+      );
+      await Promise.all(
+        paths.map(async (path) => {
+          const language = astLanguageForPath(path);
+          if (!language) {
+            skipped.push({ path, reason: "no_ast_language" });
+            return;
+          }
+          const current = await readWorkspaceContentBuffer(root, path);
+          if (current === undefined) {
+            skipped.push({ path, reason: "not_in_worktree" });
+            return;
+          }
+          after.push({ path, source: current.toString("utf8"), language });
+        }),
+      );
+      const moves = await this.astMove!({ before, after });
+      return {
+        from,
+        scanned: paths.length,
+        ...(skipped.length ? { skipped } : {}),
+        moves: moves.moves,
+      };
+    },
+
+    /**
      * Phase C's move face (the object-store study's acceptance 3): the
      * cross-file detection over the SAME index — before and after sets,
      * one shared path. Each detected move's `from`/`to` are the existing
@@ -468,6 +544,8 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
         indexAstFiles(input.before),
         indexAstFiles(input.after),
       ]);
+      // (the detection's shape — see move-detect: the same run the
+      // workspace face performs over real files)
       const symbols = (set: typeof before) =>
         set.flatMap((file) =>
           file.error
@@ -907,6 +985,32 @@ async function gitShowContentBuffer(
   } catch {
     return undefined;
   }
+}
+
+/** The files deleted between the ref and the working tree. */
+async function gitDeletedFiles(
+  workspaceRoot: string,
+  ref: string,
+): Promise<string[]> {
+  const proc = Bun.spawn(
+    ["git", "diff", "--name-only", "--diff-filter=D", ref],
+    {
+      cwd: workspaceRoot,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const [text, code] = [
+    await new Response(proc.stdout).text(),
+    await proc.exited,
+  ];
+  return code === 0
+    ? text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : [];
 }
 
 async function gitShowContent(

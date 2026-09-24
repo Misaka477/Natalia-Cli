@@ -612,6 +612,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure detection over the AST index; never writes, the plan/apply faces stay the writers",
   },
+  workspaceAstMove: {
+    refusal: "none",
+    note: "pure detection over the workspace's files and git ref; never writes",
+  },
   astRefactorPlan: {
     refusal: "none",
     note: "pure refactor plan generation in runtime; returns structural targets, never writes",

@@ -154,6 +154,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "astRefactorPreview",
     "astService",
     "astMove",
+    "workspaceAstMove",
     "astRefactorPlan",
     "astApplyRefactor",
     "workspaceRoots",

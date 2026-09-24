@@ -3256,6 +3256,31 @@ export type RuntimeClient = {
     }>;
   }>;
   /**
+   * Phase C's workspace move face (the object-store study's second
+   * face): the workspace's real files — the working tree against a git
+   * ref (default HEAD) — through the same index, answered as the
+   * detected moves. The same from/to-to-rename-plan contract as
+   * `astMove`.
+   */
+  workspaceAstMove?(input?: {
+    workspaceID?: string;
+    paths?: string[];
+    from?: string;
+  }): Promise<{
+    from: string;
+    scanned: number;
+    skipped?: Array<{ path: string; reason: string }>;
+    moves: Array<{
+      from: string;
+      to: string;
+      fromFile: string;
+      toFile: string;
+      nodeKind: string;
+      similarity: number;
+      states: { renamed: boolean; moved: boolean; modified: boolean };
+    }>;
+  }>;
+  /**
    * Refactor plan generation. It uses AST query/index to find every structure
    * that would participate in a refactor and returns a non-writing plan. The
    * plan can be sent to `astRefactorPreview` for final review.
