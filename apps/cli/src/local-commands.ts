@@ -384,6 +384,11 @@ export async function handleLocalCommands(argv: string[]) {
               `config: ${report.configPath}`,
               `migration: ${report.migration}`,
               `layers: @anthelia ${report.layers.anthelia.length} · @natalia ${report.layers.natalia.length} (${report.layers.source})`,
+              // DoD #4: the build identity rides the same manifest the
+              // layers do — an incident report must name the build.
+              report.layers.version
+                ? `build: ${report.layers.version}${report.layers.target ? ` (${report.layers.target})` : ""}`
+                : "build: source checkout (no baked version)",
               `default model: ${report.defaultModel.key} (${report.defaultModel.selected ? "selected" : (report.defaultModel.reason ?? "unavailable")})`,
               `sessions: ${report.sessions.count} (${report.sessions.pendingInputs} pending inputs)`,
               EGRESS_ADVISORY,

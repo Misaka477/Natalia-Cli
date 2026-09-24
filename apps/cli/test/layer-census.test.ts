@@ -40,6 +40,37 @@ test("the build manifest is the primary source (installed context)", async () =>
   expect(census.anthelia).toEqual(["@anthelia/substrate"]);
   expect(census.natalia).toEqual(["@natalia/collab"]);
   expect(census.roots[0]).toContain("manifest.json");
+  // DoD #4: the build identity rides the SAME manifest as the layers —
+  // an incident bundle names the build that produced it.
+  expect(census.version).toBe("1.2.3");
+});
+
+test("the target rides along when the manifest carries one", async () => {
+  const root = join(base, "targeted");
+  await mkdir(root, { recursive: true });
+  await writeFile(
+    join(root, "manifest.json"),
+    JSON.stringify({
+      name: "natalia",
+      version: "0.0.0-m14",
+      target: "linux-x64",
+      layers: { anthelia: [], natalia: [] },
+    }),
+  );
+  const census = await layerCensus([root]);
+  expect(census.version).toBe("0.0.0-m14");
+  expect(census.target).toBe("linux-x64");
+});
+
+test("a source checkout has no baked version — absent stays absent", async () => {
+  const root = join(base, "no-manifest");
+  await mkdir(join(root, "node_modules", "@anthelia", "substrate"), {
+    recursive: true,
+  });
+  const census = await layerCensus([root]);
+  expect(census.source).toBe("node_modules");
+  expect(census.version).toBeUndefined();
+  expect(census.target).toBeUndefined();
 });
 
 test("live workspace scopes testify when no manifest exists", async () => {

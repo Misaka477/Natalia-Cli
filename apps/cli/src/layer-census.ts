@@ -29,6 +29,15 @@ export type LayerCensus = {
   /** Package names per prefix, sorted. */
   anthelia: string[];
   natalia: string[];
+  /**
+   * The build's identity, when a manifest carried it (DoD #4: an incident
+   * bundle must say which build produced it — the version is baked into
+   * the same manifest the layers come from, so dropping it was losing the
+   * one fact the analyst most needs). A source checkout has no build
+   * version; absent stays absent rather than guessing.
+   */
+  version?: string;
+  target?: string;
 };
 
 /** Build-time census over a source checkout's workspaces (used by the release build). */
@@ -130,6 +139,8 @@ export async function layerCensus(
     try {
       const parsed = JSON.parse(await readFile(manifestPath, "utf8")) as {
         layers?: { anthelia?: string[]; natalia?: string[] };
+        version?: string;
+        target?: string;
       };
       if (parsed.layers)
         return {
@@ -137,6 +148,8 @@ export async function layerCensus(
           roots: [manifestPath],
           anthelia: [...(parsed.layers.anthelia ?? [])].sort(),
           natalia: [...(parsed.layers.natalia ?? [])].sort(),
+          ...(parsed.version ? { version: parsed.version } : {}),
+          ...(parsed.target ? { target: parsed.target } : {}),
         };
     } catch {
       /* fall through to the live scope census */
