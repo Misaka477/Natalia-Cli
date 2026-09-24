@@ -9,7 +9,10 @@
  */
 import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
-import { projectedDriftFindings } from "@anthelia/session";
+import {
+  sessionFactDriftFindings,
+  projectedDriftFindings,
+} from "@anthelia/session";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { requestAuditAfterCompletion } from "@natalia/engineering-intelligence";
@@ -476,9 +479,14 @@ export function createDriftAcknowledgeTool(
       const governanceLedger = requireGovernanceLedger(ctx);
       if (!governanceLedger) return "governance ledger unavailable";
       // Only an open finding transitions; the projection is the authority.
-      const openFindings = projectedDriftFindings(exec.session.events).filter(
-        (finding) => finding.findingID === args.findingID!.trim(),
-      );
+      // State-first like every sanctioned reader (the boundary's shape):
+      // the completed fact fold answers a fast-attach tail correctly,
+      // the resident projection stays the emergency belt.
+      const openFindings = (
+        exec.factStateComplete === true && exec.factState
+          ? sessionFactDriftFindings(exec.factState)
+          : projectedDriftFindings(exec.session.events)
+      ).filter((finding) => finding.findingID === args.findingID!.trim());
       const finding = openFindings.at(-1);
       if (!finding) return `no open drift finding ${args.findingID}`;
       if (finding.status !== "open")

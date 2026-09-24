@@ -26,6 +26,7 @@ import {
   findElectronResidueInText,
 } from "../src/electron-residue-rules";
 import { findUndeclaredWorkspaceImports } from "../src/manifest-dep-rules";
+import { findFullReadInventoryViolations } from "../src/full-events-inventory";
 
 const root = process.cwd();
 const dependencyGuarded = [
@@ -281,6 +282,13 @@ for (const manifest of await workspacePackageManifests("packages")) {
 // §3.6.9, source + docs bites: every workspace src tree and the
 // user-facing docs are scanned for Electron (electron-to-chromium is
 // the browserslist database, allowed by the rule itself).
+// The RINA study's acceptance #1: every full-event content read is
+// named, counted and classified — drift in either direction is red.
+// ONE walk covers both source roots (the rule walks packages/ and
+// apps/ itself); it must not ride the per-package loop below, which
+// would re-walk the tree per manifest and duplicate every finding.
+for (const failure of await findFullReadInventoryViolations(root))
+  failures.push(`${failure} (full-read inventory)`);
 {
   const codeOnly = /\.(?:ts|tsx|js|mjs|jsx)$/u;
   const docs = ["README.md"];
@@ -296,6 +304,7 @@ for (const manifest of await workspacePackageManifests("packages")) {
         deps: entry.dependencies ?? {},
       }))
         failures.push(`${failure} (manifest<->src reconciliation)`);
+
       await scan(join(pkgDir, "src"), codeOnly, (full, text) => {
         // The rule's own file must be able to NAME what it bans (its
         // patterns and prose contain the words) — an explicit,
