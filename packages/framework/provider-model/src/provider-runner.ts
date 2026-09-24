@@ -34,6 +34,7 @@ import { modelRefKey } from "@anthelia/contracts";
 import { cacheHitRate, totalInputTokens } from "@anthelia/contracts";
 import { buildSubmittedTurn } from "@anthelia/session";
 import { materializeTools } from "@anthelia/tools";
+import { confinementContextLine } from "@anthelia/confinement";
 import type {
   ConstitutionDocRule,
   ProviderRunnerInput,
@@ -346,6 +347,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         niaIntro: input.niaIntro?.() ?? false,
         activePlan: input.activePlan(),
         projectDocuments: input.projectDocuments?.(),
+        confinementMode: input.confinementMode?.(),
       });
       // ADR D1: the system message is the static per-role prompt only — no
       // environment, skills, collaboration or plan. Those arrive as appended
@@ -1497,6 +1499,13 @@ export function createProviderRunner(input: ProviderRunnerInput) {
 type RuntimeContextBlockInput = {
   workspaceRoot: string;
   permissionMode: PermissionMode;
+  /**
+   * The session's effective file-effect mode (sandbox study §6b①): stated
+   * in the environment block so the agent knows its CURRENT confinement
+   * state — the tool schema advertises the escalation targets, this says
+   * where the agent IS. Rides the dynamic layer, never the cached prefix.
+   */
+  confinementMode?: import("@anthelia/contracts").ConfinementMode;
   agentName?: string;
   /**
    * The session's start date, `YYYY-MM-DD`.
@@ -1667,6 +1676,9 @@ function runtimeContextBlocks(
       `Working directory: ${input.workspaceRoot}`,
       `Workspace root folder: ${input.workspaceRoot}`,
       `Permission mode: ${input.permissionMode}`,
+      input.confinementMode
+        ? confinementContextLine(input.confinementMode)
+        : undefined,
       input.agentName ? `Active agent: ${input.agentName}` : undefined,
       // Date only, no time: seconds make the string look volatile, which
       // misleads anyone later reading a log or a diff.

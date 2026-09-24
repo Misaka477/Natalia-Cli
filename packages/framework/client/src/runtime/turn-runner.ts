@@ -27,6 +27,8 @@ import type {
 } from "@anthelia/substrate";
 import { activePlanForExec } from "@natalia/collab";
 import { loadProjectDocumentsSync } from "@natalia/engineering-intelligence";
+import { compositionProfile } from "@anthelia/composition";
+import { effectiveConfinementMode } from "./tool-execution/execute-context";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { StatusSnapshotController } from "@anthelia/runtime-status";
 import type { AttachmentService } from "@anthelia/runtime";
@@ -243,6 +245,16 @@ export function createTurnRunner(
         const snapshot = loadProjectDocumentsSync(getWorkspaceRoot());
         return snapshot?.documents.length ? snapshot : undefined;
       },
+      // The agent layer of the danger design (sandbox study §6b①): the
+      // session's CURRENT confinement mode, stated per turn in the
+      // environment block — the tool schema advertises the escalation
+      // targets, this says where the agent IS. The dynamic layer, so the
+      // cached prefix stays stable.
+      confinementMode: () =>
+        effectiveConfinementMode({
+          profile: ctx.state.serviceDirectory.getOptional(compositionProfile),
+          configMode: getTsRuntimeConfig()?.confinement?.mode,
+        }),
       retry: retry,
       lastProviderUsage: () => exec.lastProviderUsage,
       setLastProviderUsage: (usage) => {

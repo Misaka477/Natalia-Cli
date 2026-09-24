@@ -353,6 +353,7 @@
       "version": "0.0.0-m13",
       "dependencies": {
         "@anthelia/config": "workspace:*",
+        "@anthelia/confinement": "workspace:*",
         "@anthelia/contracts": "workspace:*",
         "@anthelia/runtime": "workspace:*",
         "@anthelia/runtime-services": "workspace:*",

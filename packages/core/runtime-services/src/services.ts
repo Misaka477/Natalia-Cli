@@ -337,6 +337,14 @@ export type ProviderRunnerInput = {
    * authority, never in the static system prompt.
    */
   projectDocuments?(): ProjectDocumentSnapshot | undefined;
+  /**
+   * The session's effective file-effect mode (sandbox study §6b①), stated
+   * in the per-turn environment block: the agent knows its CURRENT
+   * confinement state — the tool schema advertises the escalation targets,
+   * this says where the agent IS. Rides the dynamic layer, never the
+   * cached prefix.
+   */
+  confinementMode?(): import("@anthelia/contracts").ConfinementMode;
   naviSuggestions(): Array<{
     id: string;
     suggestion: string;

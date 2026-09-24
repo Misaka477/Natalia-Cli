@@ -105,6 +105,7 @@ function makeHarness(
       riskNotes: string[];
     };
     projectDocuments?: ProjectDocumentSnapshot;
+    confinementMode?: import("@anthelia/contracts").ConfinementMode;
     retryPolicy?: {
       maxAttemptsPerStep: number | null;
       initialBackoffMs: number;
@@ -221,6 +222,7 @@ function makeHarness(
     naviChats: () => options?.naviChats ?? [],
     activePlan: () => options?.activePlan,
     projectDocuments: () => options?.projectDocuments,
+    confinementMode: () => options?.confinementMode ?? "workspace-write",
     ...(options?.tokenMeter ? { tokenMeter: () => options.tokenMeter! } : {}),
     retry,
     lastProviderUsage: () => lastUsage,
@@ -1906,4 +1908,37 @@ test("main-path request metering counts advertised tools and exposes the three b
   expect(status!.requestTokens).toBe(
     (status!.headerTokens ?? 0) + (status!.surfaceTokens ?? 0),
   );
+});
+
+test("the environment block states the session's current confinement mode", async () => {
+  // The agent layer (sandbox study §6b①): the model knows its CURRENT
+  // confinement state — the tool schema advertises the escalation targets,
+  // this says where the agent IS.
+  const shapes: Array<Array<{ role: string; content: string }>> = [];
+  const { runner } = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream(request) {
+        shapes.push(
+          request.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        );
+        yield content("ok");
+      },
+    },
+    { permissionMode: "ask", confinementMode: "workspace-write" },
+  );
+  await runner.runTurn(turn);
+  const environment = shapes[0]!.find((message) =>
+    message.content.includes('<runtime_context source="environment"'),
+  );
+  expect(environment).toBeDefined();
+  expect(environment!.content).toContain("Confinement mode: workspace-write");
+  expect(environment!.content).toContain("targets: danger-full-access");
+  // The statement rides the dynamic layer, never the static system.
+  const system = shapes[0]!.find((message) => message.role === "system");
+  expect(system!.content).not.toContain("Confinement mode");
 });

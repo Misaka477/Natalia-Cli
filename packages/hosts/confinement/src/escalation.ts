@@ -63,6 +63,22 @@ export function validateEscalationArgs(
     throw new Error("invalid justification: expected a non-empty sentence");
 }
 
+/**
+ * The same advertisement as one environment-block line (the agent layer's
+ * production form): the turn runner passes the effective mode, the runner
+ * renders it inside the per-turn `<environment_details>` block — the
+ * dynamic layer, so the cached prefix (system prompt + tool schemas) is
+ * untouched and ten sessions still share one cache entry.
+ */
+export function confinementContextLine(mode: ConfinementMode): string {
+  const targets = WIDER_MODES[mode];
+  return (
+    `Confinement mode: ${mode} (file effects outside it are refused by the ` +
+    `OS-level wrapper` +
+    `${targets.length ? `; a wider mode is available only per call via sandbox_permissions with a justification and the user's approval — targets: ${targets.join(", ")}` : "; no wider mode exists from here"})`
+  );
+}
+
 /** The model-facing denial marker (verbatim dsh vocabulary). */
 export function sandboxDenialMarker(mode: ConfinementMode): string {
   return `[sandbox: file access denied under ${mode} mode]`;

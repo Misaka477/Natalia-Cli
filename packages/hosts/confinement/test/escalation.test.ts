@@ -3,6 +3,7 @@ import {
   ESCALATION_TARGETS,
   WIDER_MODES,
   approveEscalation,
+  confinementContextLine,
   escalationHintMarker,
   sandboxDenialMarker,
   validateEscalationArgs,
@@ -160,5 +161,21 @@ test("the model-facing markers keep the reference wording", () => {
   );
   expect(escalationHintMarker("command")).toContain(
     "the approval prompt asks the user",
+  );
+});
+
+test("the context line states the mode and targets for the environment block", () => {
+  // The production form of the agent layer: one environment-block line,
+  // rendered per turn in the dynamic layer (the cached prefix is untouched).
+  const line = confinementContextLine("workspace-write");
+  expect(line).toContain("Confinement mode: workspace-write");
+  expect(line).toContain("OS-level wrapper");
+  expect(line).toContain("targets: danger-full-access");
+  expect(confinementContextLine("read-only")).toContain(
+    "targets: workspace-write, danger-full-access",
+  );
+  // The top mode: no wider target, stated.
+  expect(confinementContextLine("danger-full-access")).toContain(
+    "no wider mode exists from here",
   );
 });

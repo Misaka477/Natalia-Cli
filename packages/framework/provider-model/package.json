@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@anthelia/confinement": "workspace:*",
     "@anthelia/session": "workspace:*",
     "@anthelia/tools": "workspace:*",
     "@natalia/agent-prompts": "workspace:*",
