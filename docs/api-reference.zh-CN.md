@@ -868,7 +868,7 @@ Deployment notes:
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (22 groups · 183 optional members)
+### Capability groups (22 groups · 184 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -876,7 +876,7 @@ Deployment notes:
 | feedback       | `feedback`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | turnControl    | `pause` · `resume` · `removeInput` · `replaceInput` · `promoteInput`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | lifecycle      | `drainForUpdate` · `dispose` · `canReloadConfig` · `reloadConfig` · `updateConfig` · `configGet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| settings       | `settingsGet` · `settingsSet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| settings       | `settingsGet` · `settingsSet` · `responseCache`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | selection      | `agents` · `selectAgent` · `modelCatalog` · `modelSelection` · `selectModel` · `setDefaultModel` · `reasoningEffort` · `setReasoningEffort` · `skills` · `agentCreate` · `agentUpdate` · `agentDelete` · `providerDiscover` · `providerAdd` · `providerRemove`                                                                                                                                                                                                                                                                                                                                                                     |
 | workspace      | `workspaceFiles` · `workspaceSearch` · `workspaceList` · `workspaceRead` · `resourceRead` · `workspaceWrite` · `workspaceCreate` · `workspaceRename` · `workspaceDelete` · `workspaceWriteConflicts` · `workspaceGlob` · `workspaceDiff` · `workspaceGitDiff` · `gitRefs` · `astDiff` · `astDiffBatch` · `astRefactorPreview` · `astService` · `astRefactorPlan` · `astApplyRefactor` · `workspaceRoots` · `workspaceAdd` · `workspaceRemove` · `workspaceActivate` · `workspacePermissionGet` · `workspacePermissionSet` · `workspaceToolGet` · `workspaceToolSet`                                                                |
 | nativeTerminal | `nativeTerminalList` · `nativeTerminalRead` · `nativeTerminalClaimHumanInput` · `nativeTerminalOpenHub` · `nativeTerminalRevokeApprovalScope` · `nativeTerminalReleaseHumanControl` · `nativeTerminalBeginSecureInput` · `nativeTerminalEndSecureInput` · `nativeTerminalStop` · `nativeTerminalStart` · `nativeTerminalWrite` · `nativeTerminalResize`                                                                                                                                                                                                                                                                            |
@@ -895,7 +895,7 @@ Deployment notes:
 | attachments    | `uploadAttachment` · `attachmentDataUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | chat           | `naviChat` · `niaChat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
-### RPC route table (200 methods → members)
+### RPC route table (201 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -920,6 +920,7 @@ Deployment notes:
 | `config.get`                         | `configGet`                         | lifecycle        | read  |
 | `settings.get`                       | `settingsGet`                       | settings         | read  |
 | `settings.set`                       | `settingsSet`                       | settings         | write |
+| `cache.response`                     | `responseCache`                     | settings         | write |
 | `agent.list`                         | `agents`                            | selection        | read  |
 | `agent.select`                       | `selectAgent`                       | selection        | write |
 | `model.catalog`                      | `modelCatalog`                      | selection        | read  |
@@ -1100,7 +1101,7 @@ Deployment notes:
 | `nia.chat.model.profile`             | `niaChat`                           | chat             | read  |
 | `nia.chat.model.profile.set`         | `niaChat`                           | chat             | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 69 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 70 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `submit.andWait`
@@ -1121,6 +1122,7 @@ Deployment notes:
 - `config.reload`
 - `config.update`
 - `settings.set`
+- `cache.response`
 - `checkpoint.rollback`
 - `checkpoint.rename`
 - `sandbox.merge`
@@ -1250,6 +1252,7 @@ Deployment notes:
 | `respondApproval`            | `accepted`           | a response to a request that timed out or was already answered is dropped, and the caller has to be told; it used to answer responded:true either way                   |
 | `respondInteractive`         | `accepted`           | an answer to a generic request that is no longer pending is dropped, and the caller learns from accepted:false                                                          |
 | `respondQuestion`            | `accepted`           | same as respondApproval                                                                                                                                                 |
+| `responseCache`              | `enabled`            | the flip always lands (a cache is always toggleable); the answer's `enabled` is the process's new state — process-local, not persisted                                  |
 | `resume`                     | `resumed`            | nothing paused is an ordinary answer                                                                                                                                    |
 | `selectAgent`                | `outcome`            | three real outcomes exist in the runtime — applied, deferred until the turn ends, unknown agent — and the caller could see none of them                                 |
 | `sessionArchive`             | `archived`           | archiving an archived session answers archived:true; an unknown session is an argument error                                                                            |
@@ -2257,7 +2260,7 @@ createRuntimeHttpServer({
   `start`, `submit`, `cancel`, `snapshot`, `diagnostic`, `lastSubmission`, `respondApproval`, `respondQuestion`.
 - Deprecated members (`DEPRECATED_RUNTIME_MEMBERS`): none (mechanism in place, table empty).
 
-### Capability groups (22 groups · 183 optional members)
+### Capability groups (22 groups · 184 optional members)
 
 | Group          | Members (RuntimeClient names)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -2265,7 +2268,7 @@ createRuntimeHttpServer({
 | feedback       | `feedback`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | turnControl    | `pause` · `resume` · `removeInput` · `replaceInput` · `promoteInput`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | lifecycle      | `drainForUpdate` · `dispose` · `canReloadConfig` · `reloadConfig` · `updateConfig` · `configGet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| settings       | `settingsGet` · `settingsSet`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| settings       | `settingsGet` · `settingsSet` · `responseCache`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | selection      | `agents` · `selectAgent` · `modelCatalog` · `modelSelection` · `selectModel` · `setDefaultModel` · `reasoningEffort` · `setReasoningEffort` · `skills` · `agentCreate` · `agentUpdate` · `agentDelete` · `providerDiscover` · `providerAdd` · `providerRemove`                                                                                                                                                                                                                                                                                                                                                                     |
 | workspace      | `workspaceFiles` · `workspaceSearch` · `workspaceList` · `workspaceRead` · `resourceRead` · `workspaceWrite` · `workspaceCreate` · `workspaceRename` · `workspaceDelete` · `workspaceWriteConflicts` · `workspaceGlob` · `workspaceDiff` · `workspaceGitDiff` · `gitRefs` · `astDiff` · `astDiffBatch` · `astRefactorPreview` · `astService` · `astRefactorPlan` · `astApplyRefactor` · `workspaceRoots` · `workspaceAdd` · `workspaceRemove` · `workspaceActivate` · `workspacePermissionGet` · `workspacePermissionSet` · `workspaceToolGet` · `workspaceToolSet`                                                                |
 | nativeTerminal | `nativeTerminalList` · `nativeTerminalRead` · `nativeTerminalClaimHumanInput` · `nativeTerminalOpenHub` · `nativeTerminalRevokeApprovalScope` · `nativeTerminalReleaseHumanControl` · `nativeTerminalBeginSecureInput` · `nativeTerminalEndSecureInput` · `nativeTerminalStop` · `nativeTerminalStart` · `nativeTerminalWrite` · `nativeTerminalResize`                                                                                                                                                                                                                                                                            |
@@ -2284,7 +2287,7 @@ createRuntimeHttpServer({
 | attachments    | `uploadAttachment` · `attachmentDataUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | chat           | `naviChat` · `niaChat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
-### RPC route table (200 methods → members)
+### RPC route table (201 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -2309,6 +2312,7 @@ createRuntimeHttpServer({
 | `config.get`                         | `configGet`                         | lifecycle        | read  |
 | `settings.get`                       | `settingsGet`                       | settings         | read  |
 | `settings.set`                       | `settingsSet`                       | settings         | write |
+| `cache.response`                     | `responseCache`                     | settings         | write |
 | `agent.list`                         | `agents`                            | selection        | read  |
 | `agent.select`                       | `selectAgent`                       | selection        | write |
 | `model.catalog`                      | `modelCatalog`                      | selection        | read  |
@@ -2489,7 +2493,7 @@ createRuntimeHttpServer({
 | `nia.chat.model.profile`             | `niaChat`                           | chat             | read  |
 | `nia.chat.model.profile.set`         | `niaChat`                           | chat             | read  |
 
-### Write surface (`RPC_WRITE_METHODS`, 69 methods; read-only credentials get `-32001 refused`)
+### Write surface (`RPC_WRITE_METHODS`, 70 methods; read-only credentials get `-32001 refused`)
 
 - `prompt`
 - `submit.andWait`
@@ -2510,6 +2514,7 @@ createRuntimeHttpServer({
 - `config.reload`
 - `config.update`
 - `settings.set`
+- `cache.response`
 - `checkpoint.rollback`
 - `checkpoint.rename`
 - `sandbox.merge`
@@ -2639,6 +2644,7 @@ createRuntimeHttpServer({
 | `respondApproval`            | `accepted`           | a response to a request that timed out or was already answered is dropped, and the caller has to be told; it used to answer responded:true either way                   |
 | `respondInteractive`         | `accepted`           | an answer to a generic request that is no longer pending is dropped, and the caller learns from accepted:false                                                          |
 | `respondQuestion`            | `accepted`           | same as respondApproval                                                                                                                                                 |
+| `responseCache`              | `enabled`            | the flip always lands (a cache is always toggleable); the answer's `enabled` is the process's new state — process-local, not persisted                                  |
 | `resume`                     | `resumed`            | nothing paused is an ordinary answer                                                                                                                                    |
 | `selectAgent`                | `outcome`            | three real outcomes exist in the runtime — applied, deferred until the turn ends, unknown agent — and the caller could see none of them                                 |
 | `sessionArchive`             | `archived`           | archiving an archived session answers archived:true; an unknown session is an argument error                                                                            |

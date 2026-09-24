@@ -227,6 +227,12 @@ const categories: Category[] = [
         description: "模型请求超时（0 表示不设置）",
         value: "不设置",
       },
+      {
+        label: "Response Cache",
+        description:
+          "provider 响应精确匹配缓存（相同请求命中即跳过调用；boot 期开关走 composition 行）",
+        value: "关闭",
+      },
       { label: "Compaction", description: "上下文压缩", value: "开启" },
       {
         label: "Compaction Threshold",
@@ -294,6 +300,18 @@ export function SettingsPanel(props: {
   host?: import("@natalia/ui-host").UiPluginContext["host"];
 }) {
   const [activeCategory, setActiveCategory] = createSignal<CategoryId>("model");
+  // RINA Phase 4's live switch: the cache is process-scoped, so this host's
+  // face reads and flips the connected runtime's cache (the boot-time
+  // opt-in is the composition row).
+  const [responseCache, setResponseCache] = createSignal<{
+    enabled: boolean;
+    hits: number;
+    misses: number;
+    entries: number;
+  }>();
+  onMount(() => {
+    void props.runtime?.responseCache?.().then(setResponseCache);
+  });
   const { alert, dialog } = useConfirmDialog();
   const [uiWriteScope, setUiWriteScope] = createSignal(
     props.preferences?.get<string>("uiWriteScope") ?? "project",
@@ -493,6 +511,14 @@ export function SettingsPanel(props: {
           });
       });
     },
+    "Response Cache": () => {
+      const next = !(responseCache()?.enabled ?? false);
+      // The flip is process-local (not persisted): the answer's state is
+      // the new truth, and the value cell shows it.
+      void props.runtime
+        ?.responseCache?.({ enabled: next })
+        .then(setResponseCache);
+    },
     "Permission Profile": () => {
       setPermissionListOpen(true);
     },
@@ -649,6 +675,13 @@ export function SettingsPanel(props: {
       case "Request Timeout": {
         const seconds = config.runtime?.timeouts?.requestSec ?? 0;
         return seconds > 0 ? `${seconds}s` : "不设置";
+      }
+      case "Response Cache": {
+        const live = responseCache();
+        if (!live) return "…";
+        // The value states the switch and the hit rate's raw numbers — the
+        // study's metrics, readable without opening the operation log.
+        return `${live.enabled ? "开启" : "关闭"}（命中 ${live.hits} / 未中 ${live.misses}，${live.entries} 条）`;
       }
       case "Compaction":
         return config.context?.compactionEnabled ? "开启" : "关闭";

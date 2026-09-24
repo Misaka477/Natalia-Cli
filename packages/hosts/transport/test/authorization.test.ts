@@ -333,6 +333,7 @@ test("the write surface is an enumerated, test-pinned list", () => {
   expect(RPC_WRITE_METHODS.has("config.reload")).toBe(true);
   expect(RPC_WRITE_METHODS.has("settings.get")).toBe(false);
   expect(RPC_WRITE_METHODS.has("settings.set")).toBe(true);
+  expect(RPC_WRITE_METHODS.has("cache.response")).toBe(true);
   expect(RPC_WRITE_METHODS.has("checkpoint.rollback")).toBe(true);
   expect(RPC_WRITE_METHODS.has("session.delete")).toBe(true);
   expect(RPC_WRITE_METHODS.has("session.new")).toBe(true);

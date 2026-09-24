@@ -114,7 +114,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "configGet",
   ],
   /** The interface-preference settings file served over RPC. */
-  settings: ["settingsGet", "settingsSet"],
+  settings: ["settingsGet", "settingsSet", "responseCache"],
   /** Choosing the agent and model a turn runs as. */
   selection: [
     "agents",

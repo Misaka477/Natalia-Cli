@@ -3339,6 +3339,19 @@ export type RuntimeClient = {
     scope: "global" | "project",
   ): Promise<{ applied: boolean }>;
   /**
+   * The response cache's runtime face (rina Phase 4): read its state, or
+   * flip the opt-in for the live process (a restart-free toggle, beside
+   * the composition row's boot-time one). Omitted input reads; `enabled`
+   * sets. The stats answer "is it earning its keep" — the study's
+   * metrics, readable without opening the operation log.
+   */
+  responseCache?(input?: { enabled?: boolean }): Promise<{
+    enabled: boolean;
+    hits: number;
+    misses: number;
+    entries: number;
+  }>;
+  /**
    * Applies the config on disk. Refusal is a value rather than an exception,
    * because refusing is a normal outcome — applying new policy underneath a
    * running turn would change the rules the turn started under.

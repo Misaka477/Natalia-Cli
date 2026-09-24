@@ -130,6 +130,7 @@ export const RPC_ROUTE_MEMBERS = {
   "config.get": "configGet",
   "settings.get": "settingsGet",
   "settings.set": "settingsSet",
+  "cache.response": "responseCache",
   "agent.list": "agents",
   "agent.select": "selectAgent",
   "model.catalog": "modelCatalog",
@@ -373,6 +374,9 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "config.reload",
   "config.update",
   "settings.set",
+  // Both faces: the same route reads (no params) and flips (`enabled`), so
+  // it is a write for a read-only credential.
+  "cache.response",
   "checkpoint.rollback",
   "checkpoint.rename",
   "sandbox.merge",
@@ -3721,6 +3725,27 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.settingsGet?.(),
+      };
+    }
+    if (body.method === "cache.response") {
+      // The response cache's runtime face (rina Phase 4): omitted params
+      // read, `enabled` flips the live process's opt-in.
+      optionsGuard(client, "responseCache");
+      const params = body.params as Record<string, unknown> | undefined;
+      const enabled = params?.enabled;
+      if (enabled !== undefined && typeof enabled !== "boolean")
+        throw invalidParams("cache.response.params.enabled must be a boolean");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.responseCache?.({
+          ...(enabled === undefined ? {} : { enabled }),
+        })) ?? {
+          enabled: false,
+          hits: 0,
+          misses: 0,
+          entries: 0,
+        },
       };
     }
     if (body.method === "settings.set") {
