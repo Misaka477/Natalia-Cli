@@ -4,6 +4,7 @@ import { join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { PluginPackageSource } from "@anthelia/contracts";
 import {
+  computePluginPackageHash,
   discoverPluginManifests,
   pluginManifestSchema,
   type PluginInstallationMetadata,
@@ -77,6 +78,8 @@ export async function validateStagedPackage(
     source: packageSource(spec),
     resolvedVersion,
     ...(record?.integrity ? { integrity: record.integrity } : {}),
+    // Our pin over what is on disk — the load-time verification's anchor.
+    contentHash: await computePluginPackageHash(packageDir),
     scope: manifest.scope,
     dependencies:
       manifest.apiVersion === 2

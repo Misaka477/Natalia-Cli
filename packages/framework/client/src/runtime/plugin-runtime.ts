@@ -10,6 +10,7 @@ import {
 } from "@natalia/installer";
 import { cp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { computePluginPackageHash } from "@anthelia/plugin";
 import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import type { RuntimeContext } from "@anthelia/substrate";
 
@@ -37,6 +38,9 @@ async function installOfficialLocal(
         path: sourceDir,
       },
       resolvedVersion: "1.0.0",
+      // Our pin over the copied files — the load-time verification's
+      // anchor, the same one the installer records for managed installs.
+      contentHash: await computePluginPackageHash(packageRoot),
       scope: "session",
       dependencies: [],
     },

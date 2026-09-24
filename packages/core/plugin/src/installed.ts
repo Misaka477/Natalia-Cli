@@ -1,5 +1,6 @@
-import { readFile, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { readdir, readFile, realpath } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { nataliaLockSchema, type NataliaLock } from "@anthelia/contracts";
 import { pluginManifestSchema, type PluginManifest } from "./manifest";
 
@@ -95,6 +96,18 @@ export async function resolveInstalledPluginEntries(input: {
         throw new Error(`plugin ${id} version does not match natalia.lock`);
       if (manifest.scope !== locked.metadata.scope)
         throw new Error(`plugin ${id} scope does not match natalia.lock`);
+      // The installed CONTENT matches the lock: the same class of check as
+      // the version/scope pair above, and the one that catches the
+      // electron-incident drift (a manifest or entry changing after
+      // install). A legacy entry with no pin passes — the field is an
+      // install-time addition, not a load-time requirement.
+      if (locked.metadata.contentHash !== undefined) {
+        const contentHash = await computePluginPackageHash(actualPackageRoot);
+        if (contentHash !== locked.metadata.contentHash)
+          throw new Error(
+            `plugin ${id} package content does not match natalia.lock (content ${contentHash}, lock ${locked.metadata.contentHash}) — the installed files changed after install; reinstall to re-pin`,
+          );
+      }
       const entry = validatePluginPath(
         resolve(actualManifestPath, ".."),
         manifest.entry,
@@ -119,6 +132,44 @@ function assertPathInside(root: string, candidate: string, message: string) {
   const inside = relative(resolve(root), resolve(candidate));
   if (inside !== "" && (inside.startsWith("..") || isAbsolute(inside)))
     throw new Error(message);
+}
+
+/**
+ * The installed package's content hash — OUR pin, distinct from the
+ * package manager's tarball `integrity`: a tarball digest proves what was
+ * published, this proves what is on disk at load time.
+ *
+ * Deterministic across machines: every file under the package root except
+ * a nested `node_modules` (npm's hoisting can rearrange a dependency tree
+ * without touching the package — pinning that would false-positive on a
+ * layout change, not a content change), sorted by relative path, each
+ * file's own SHA-256 over one canonical listing line, then a SHA-256 over
+ * the listing. No mtimes, no absolute paths, no FS ordering.
+ */
+export async function computePluginPackageHash(
+  packageRoot: string,
+): Promise<string> {
+  const files: Array<{ path: string; sha256: string }> = [];
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules") continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile())
+        files.push({
+          path: relative(packageRoot, full).split(sep).join("/"),
+          sha256: createHash("sha256")
+            .update(await readFile(full))
+            .digest("hex"),
+        });
+    }
+  };
+  await walk(packageRoot);
+  files.sort((left, right) => (left.path < right.path ? -1 : 1));
+  const listing = files
+    .map((file) => `${file.path}\0${file.sha256}\n`)
+    .join("");
+  return createHash("sha256").update(listing).digest("hex");
 }
 
 export function validatePluginPath(root: string, path: string) {

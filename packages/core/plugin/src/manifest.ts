@@ -105,7 +105,15 @@ export type PluginInstallationMetadata = {
   id: string;
   source: PluginPackageSource;
   resolvedVersion: string;
+  /** The package manager's tarball digest (provenance, from package-lock). */
   integrity?: string;
+  /**
+   * The INSTALLED PACKAGE's content hash (our pin): what is on disk at
+   * install time, verified at load. Detects the electron-incident class
+   * — a manifest or entry drifting after install — which a tarball
+   * digest cannot see.
+   */
+  contentHash?: string;
   signature?: string;
   scope: "process" | "workspace" | "session";
   dependencies: Array<{

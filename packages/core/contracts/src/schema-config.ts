@@ -51,6 +51,7 @@ export const pluginLockEntrySchema = z.object({
     source: pluginPackageSourceSchema,
     resolvedVersion: z.string().min(1),
     integrity: z.string().min(1).optional(),
+    contentHash: z.string().min(1).optional(),
     signature: z.string().min(1).optional(),
     scope: z.enum(["process", "workspace", "session"]),
     dependencies: z.array(

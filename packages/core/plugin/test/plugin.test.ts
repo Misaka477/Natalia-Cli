@@ -12,6 +12,7 @@ import {
   pluginManifestSchema,
   resolvePluginDependencies,
   resolvePluginConfig,
+  computePluginPackageHash,
   resolveInstalledPluginEntries,
   loadPluginEntries,
   runPluginConformance,
@@ -2095,4 +2096,99 @@ test("a plugin reads the runtime's resolved config via api.runtimeConfig", async
   // production consumer, not just tests.
   expect(seen).toEqual([{ defaultAgentMode: "ask", runtime: { maxSteps: 8 } }]);
   expect(registry.list()[0]?.id).toBe("cfg.reader");
+});
+
+test("the content pin verifies the installed package at load", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-pin-"));
+  const pluginStoreRoot = join(root, "plugin-store");
+  const packageRoot = join(pluginStoreRoot, "node_modules", "@fixture", "pin");
+  await mkdir(packageRoot, { recursive: true });
+  const manifestPath = join(packageRoot, "natalia.plugin.json");
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      apiVersion: 2,
+      id: "fixture.pin",
+      version: "1.2.3",
+      name: "Fixture",
+      entry: "index.ts",
+      scope: "workspace",
+    }),
+  );
+  await writeFile(join(packageRoot, "index.ts"), "export default {};");
+  const lockEntry = (contentHash: string) => ({
+    version: 1,
+    plugins: {
+      "fixture.pin": {
+        packageName: "@fixture/pin",
+        manifest: manifestPath,
+        metadata: {
+          id: "fixture.pin",
+          source: { type: "registry" as const, spec: "@fixture/pin@1.2.3" },
+          resolvedVersion: "1.2.3",
+          contentHash,
+          scope: "workspace" as const,
+          dependencies: [],
+        },
+      },
+    },
+  });
+  const lockPath = join(pluginStoreRoot, "natalia.lock");
+
+  // The pin is the installed content: resolve, then drift the package
+  // exactly the way the electron incident did — an entry file edited
+  // after install — and the load refuses with both hashes named.
+  const contentHash = await computePluginPackageHash(packageRoot);
+  // Deterministic: the same tree pins to the same hash.
+  expect(await computePluginPackageHash(packageRoot)).toBe(contentHash);
+  await writeFile(lockPath, JSON.stringify(lockEntry(contentHash)));
+  const pinned = await resolveInstalledPluginEntries({ pluginStoreRoot });
+  expect(pinned.errors).toEqual([]);
+  expect(pinned.entries).toHaveLength(1);
+
+  await writeFile(
+    join(packageRoot, "index.ts"),
+    "export default { drift: 1 };",
+  );
+  const drifted = await resolveInstalledPluginEntries({ pluginStoreRoot });
+  expect(drifted.entries).toEqual([]);
+  expect(drifted.errors).toHaveLength(1);
+  expect(drifted.errors[0]!.id).toBe("fixture.pin");
+  expect(drifted.errors[0]!.error.message).toContain(
+    "package content does not match natalia.lock",
+  );
+  expect(drifted.errors[0]!.error.message).toContain("reinstall to re-pin");
+
+  // A nested node_modules rearrangement is NOT content: hoisting moves
+  // files the package does not own, and the pin must not false-positive.
+  await writeFile(join(packageRoot, "index.ts"), "export default {};");
+  await mkdir(join(packageRoot, "node_modules", "dep"), { recursive: true });
+  await writeFile(join(packageRoot, "node_modules", "dep", "index.js"), "1;");
+  const hoisted = await resolveInstalledPluginEntries({ pluginStoreRoot });
+  expect(hoisted.errors).toEqual([]);
+
+  // A legacy entry with no pin still loads — the field is an install-time
+  // addition, not a load-time requirement.
+  await writeFile(
+    lockPath,
+    JSON.stringify({
+      version: 1,
+      plugins: {
+        "fixture.pin": {
+          packageName: "@fixture/pin",
+          manifest: manifestPath,
+          metadata: {
+            id: "fixture.pin",
+            source: { type: "registry" as const, spec: "@fixture/pin@1.2.3" },
+            resolvedVersion: "1.2.3",
+            scope: "workspace" as const,
+            dependencies: [],
+          },
+        },
+      },
+    }),
+  );
+  const legacy = await resolveInstalledPluginEntries({ pluginStoreRoot });
+  expect(legacy.errors).toEqual([]);
+  expect(legacy.entries).toHaveLength(1);
 });
