@@ -19,3 +19,4 @@ export {
 } from "./tool-kinds";
 export { rinaCache, rinaResponseCache, rinaVault } from "./service-tokens";
 export * from "./response-cache";
+export * from "./embedding";

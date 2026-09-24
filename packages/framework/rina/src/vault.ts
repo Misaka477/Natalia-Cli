@@ -2,6 +2,12 @@ import type { RuntimeEvent } from "@anthelia/contracts";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
+import {
+  cosine,
+  embedText,
+  embeddableText,
+  serializeVector,
+} from "./embedding";
 
 /**
  * RINA Phase1 — the Cold Vault (the study's own split: hot state
@@ -91,11 +97,33 @@ export type VaultRecallHit = {
 // here, once, commented, testable.
 
 const SCORE_WEIGHTS = {
-  fts: 0.35,
-  time: 0.25,
-  evidence: 0.2,
-  entity: 0.2,
+  fts: 0.3,
+  // Phase 6's semantic lane: a weight equal to bm25's, because a
+  // paraphrase the FTS cannot lexically match is exactly the recall the
+  // study added the lane for. The four Phase2a coefficients retune once,
+  // here, when the fifth signal lands.
+  semantic: 0.2,
+  time: 0.2,
+  evidence: 0.15,
+  entity: 0.15,
 } as const;
+
+/**
+ * Phase 6's vector-scan bound: the semantic lane's candidate scan is
+ * linear over the scoped rows, and this caps how many rows it touches
+ * (the vault is per-workspace; a bound keeps a pathological store from
+ * turning one recall into a full-table walk).
+ */
+const VECTOR_SCAN_CAP = 5_000;
+
+/** A stored BLOB back to a vector (the embedding module's reader). */
+function toVector(blob: Buffer | Uint8Array): Float32Array {
+  return new Float32Array(
+    blob.buffer,
+    blob.byteOffset,
+    blob.byteLength / 4,
+  ).slice();
+}
 
 /** Recency horizon: the study sets the weight but no horizon;30 days
  * sits next to its curator-adjacent intervals and is the ONE place to
@@ -115,6 +143,8 @@ const EVIDENCE_STRENGTH: Record<VaultRecordType, number> = {
 
 export type VaultScoreBreakdown = {
   fts: number;
+  /** Phase 6's semantic lane: the cosine of the query and record vectors. */
+  semantic: number;
   time: number;
   evidence: number;
   entity: number;
@@ -384,7 +414,15 @@ export function createContextVault(input: {
   readFactState?: (sessionID: string) => unknown;
   flushMs?: number;
   flushN?: number;
+  /**
+   * Phase 6's semantic lane. Off by default (the study's 仅按需启用):
+   * the module is built and tested; an operator turns the lane on per
+   * vault. Off = the four-signal behaviour, byte-identical to before.
+   */
+  semantic?: boolean;
 }): ContextVault {
+  // Phase 6's lane: opt-in per vault (off = the four-signal behaviour).
+  const semanticEnabled = input.semantic ?? false;
   mkdirSync(input.dir, { recursive: true, mode: 0o700 });
   const path = join(input.dir, "vault.sqlite");
   const db = new Database(path);
@@ -404,7 +442,8 @@ export function createContextVault(input: {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       access_count INTEGER NOT NULL DEFAULT 0,
-      priority REAL NOT NULL DEFAULT 0.5
+      priority REAL NOT NULL DEFAULT 0.5,
+      vector BLOB
     );
     CREATE INDEX IF NOT EXISTS context_records_session ON context_records (session_id, seq);
     CREATE VIRTUAL TABLE IF NOT EXISTS context_records_fts USING fts5(
@@ -420,12 +459,20 @@ export function createContextVault(input: {
       at TEXT NOT NULL
     );
   `);
+  // A vault written before Phase 6 has no vector column: add it rather
+  // than rebuild — the column is a derived projection of the summary
+  // (the journal is the source of truth; rebuild() refills it exactly).
+  const columns = db
+    .query("PRAGMA table_info(context_records)")
+    .all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "vector"))
+    db.exec("ALTER TABLE context_records ADD COLUMN vector BLOB");
 
   const insert = db.prepare(`
     INSERT OR REPLACE INTO context_records
       (id, workspace_id, session_id, agent_id, record_type, entity_key, summary,
-       content, source_evidence_id, seq, created_at, updated_at, access_count, priority)
-    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 0, 0.5)
+       content, source_evidence_id, seq, created_at, updated_at, access_count, priority, vector)
+    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 0, 0.5, ?)
   `);
   const ftsInsert = db.prepare(
     "INSERT OR REPLACE INTO context_records_fts (id, summary, entity_key) VALUES (?, ?, ?)",
@@ -462,6 +509,7 @@ export function createContextVault(input: {
     );
     const breakdown: VaultScoreBreakdown = {
       fts: 0,
+      semantic: 0,
       time,
       evidence: strength,
       entity: 0,
@@ -511,6 +559,9 @@ export function createContextVault(input: {
           record.seq ?? null,
           record.createdAt ?? now,
           now,
+          serializeVector(
+            embedText(embeddableText(record.summary, record.entityKey)),
+          ),
         );
         ftsInsert.run(record.id, record.summary, record.entityKey);
         historyInsert.run(
@@ -619,7 +670,7 @@ export function createContextVault(input: {
       const window = Math.min(Math.max(limit * 4, 50), 500);
       const sql = `
         SELECT r.id, r.record_type, r.entity_key, r.summary, r.session_id, r.seq,
-               r.created_at, r.source_evidence_id,
+               r.created_at, r.source_evidence_id, r.vector,
                bm25(context_records_fts) AS rank
         FROM context_records_fts
         JOIN context_records r ON r.id = context_records_fts.id
@@ -627,7 +678,7 @@ export function createContextVault(input: {
           ${filters.length ? `AND ${filters.join(" AND ")}` : ""}
         ORDER BY rank
         LIMIT ?`;
-      const rows = db.query(sql).all(query, ...args, window) as Array<{
+      let rows = db.query(sql).all(query, ...args, window) as Array<{
         id: string;
         record_type: VaultRecordType;
         entity_key: string;
@@ -636,8 +687,49 @@ export function createContextVault(input: {
         seq: number | null;
         created_at: string;
         source_evidence_id: string | null;
+        vector: Buffer | null;
         rank: number;
       }>;
+      // Phase 6's semantic lane: the FTS window supplies the candidates
+      // a lexical match found; the vector scan supplies the ones it could
+      // NOT (a paraphrase sharing no token). Both scoped by the same
+      // filters, both bounded by the same window — the union is the
+      // fusion's candidate set. The query vector is computed once.
+      const semanticByID = new Map<string, number>();
+      if (semanticEnabled) {
+        const queryVector = embedText(query);
+        // One full-row scan over the same scope: the similarities are
+        // computed here, the top window carried into the candidate set.
+        const scanned = db
+          .query(
+            `SELECT r.id, r.record_type, r.entity_key, r.summary, r.session_id, r.seq,
+                    r.created_at, r.source_evidence_id, r.vector
+             FROM context_records r
+             WHERE 1 = 1 ${filters.length ? `AND ${filters.join(" AND ")}` : ""}
+             LIMIT ?`,
+          )
+          .all(...args, VECTOR_SCAN_CAP) as Array<
+          Omit<(typeof rows)[number], "rank">
+        >;
+        const known = new Set(rows.map((row) => row.id));
+        const neighbors: Array<{ id: string; similarity: number }> = [];
+        for (const row of scanned) {
+          const vector = row.vector ? toVector(row.vector) : undefined;
+          if (!vector) continue;
+          const similarity = cosine(queryVector, vector);
+          if (similarity <= 0) continue;
+          if (!semanticByID.has(row.id)) semanticByID.set(row.id, similarity);
+          if (!known.has(row.id)) neighbors.push({ id: row.id, similarity });
+        }
+        neighbors.sort((left, right) => right.similarity - left.similarity);
+        // The vector-only rows enter the fusion with rank 0 — no bm25 to
+        // report for them, which the breakdown's `fts: 0` states.
+        const byID = new Map(scanned.map((row) => [row.id, row] as const));
+        for (const neighbor of neighbors.slice(0, window)) {
+          const row = byID.get(neighbor.id);
+          if (row) rows.push({ ...row, rank: 0 });
+        }
+      }
       const touch = db.prepare(
         "UPDATE context_records SET access_count = access_count + 1 WHERE id = ?",
       );
@@ -663,8 +755,10 @@ export function createContextVault(input: {
             (row.source_evidence_id ? 0.1 : 0),
         );
         const entity = entityOverlap(query, row.entity_key);
+        const semantic = semanticByID.get(row.id) ?? 0;
         const breakdown: VaultScoreBreakdown = {
           fts,
+          semantic,
           time,
           evidence: strength,
           entity,
@@ -682,6 +776,7 @@ export function createContextVault(input: {
             rank: -row.rank,
             score:
               SCORE_WEIGHTS.fts * fts +
+              SCORE_WEIGHTS.semantic * semantic +
               SCORE_WEIGHTS.time * time +
               SCORE_WEIGHTS.evidence * strength +
               SCORE_WEIGHTS.entity * entity,

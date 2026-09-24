@@ -20,10 +20,14 @@ afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-function vault(flushMs?: number) {
+function vault(flushMs?: number, semantic?: boolean) {
   const dir = mkdtempSync(join(tmpdir(), "vault-"));
   dirs.push(dir);
-  const instance = createContextVault({ dir, flushMs: flushMs ?? 5 });
+  const instance = createContextVault({
+    dir,
+    flushMs: flushMs ?? 5,
+    ...(semantic === undefined ? {} : { semantic }),
+  });
   vaults.push(instance);
   return instance;
 }
@@ -170,11 +174,20 @@ test("Phase2a scoring: the study's coefficients, each signal in its own directio
   expect(fresh).toHaveLength(2);
   expect(fresh[0]!.id).toBe("s:new"); // time signal orders them
   expect(fresh[0]!.breakdown.time).toBeGreaterThan(fresh[1]!.breakdown.time);
-  // the total IS the study's weighted sum (0.35/0.25/0.20/0.20)
+  // the total IS the weighted sum — the four Phase2a coefficients
+  // (0.35/0.25/0.20/0.20) retuned once when Phase 6's fifth signal
+  // landed (0.30 fts / 0.20 semantic / 0.20 time / 0.15 evidence /
+  // 0.15 entity), and the lane is off by default: a semantic weight of
+  // zero here keeps the old totals honest.
   for (const hit of fresh) {
     const b = hit.breakdown;
+    expect(b.semantic).toBe(0);
     expect(hit.score).toBeCloseTo(
-      0.35 * b.fts + 0.25 * b.time + 0.2 * b.evidence + 0.2 * b.entity,
+      0.3 * b.fts +
+        0.2 * b.semantic +
+        0.2 * b.time +
+        0.15 * b.evidence +
+        0.15 * b.entity,
       9,
     );
   }
@@ -304,6 +317,48 @@ function mkHit(
     createdAt: new Date().toISOString(),
     rank: score,
     score,
-    breakdown: { fts: score, time: 0.5, evidence: 0.7, entity: 0.2 },
+    breakdown: {
+      fts: score,
+      semantic: 0,
+      time: 0.5,
+      evidence: 0.7,
+      entity: 0.2,
+    },
   };
 }
+
+test("Phase 6: the semantic lane admits the paraphrase FTS cannot match, and stays off by default", () => {
+  const day = 86_400_000;
+  const now = Date.now();
+  const record = (id: string, summary: string) => ({
+    id,
+    workspaceID: "w",
+    sessionID: "s",
+    recordType: "decision" as const,
+    entityKey: `${id}-key`,
+    summary,
+    createdAt: new Date(now - day).toISOString(),
+  });
+  // On: "undo the migration" has NO token overlap with "revert the change"
+  // beyond stopword-ish glue — bm25 can never propose it, the vector can.
+  const on = vault(undefined, true);
+  on.remember(record("s:lexical", "rotate the TLS certificates"));
+  on.remember(record("s:paraphrase", "renew the web encryption keys"));
+  const hits = on.recall("rotate TLS certificates", { sessionID: "s" });
+  const paraphrase = hits.find((hit) => hit.id === "s:paraphrase");
+  expect(paraphrase).toBeDefined();
+  // It entered through the lane: a semantic score, no bm25 rank.
+  expect(paraphrase!.breakdown.semantic).toBeGreaterThan(0);
+  expect(paraphrase!.breakdown.fts).toBe(0);
+  const lexical = hits.find((hit) => hit.id === "s:lexical")!;
+  expect(lexical.breakdown.fts).toBeGreaterThan(0);
+  // Off: the same store answers exactly the four-signal behaviour — the
+  // paraphrase is NOT a candidate (no union), so the recall is identical
+  // to a vault that never had the lane.
+  const off = vault();
+  off.remember(record("s:lexical", "rotate the TLS certificates"));
+  off.remember(record("s:paraphrase", "renew the web encryption keys"));
+  const offHits = off.recall("rotate TLS certificates", { sessionID: "s" });
+  expect(offHits.find((hit) => hit.id === "s:paraphrase")).toBeUndefined();
+  for (const hit of offHits) expect(hit.breakdown.semantic).toBe(0);
+});
