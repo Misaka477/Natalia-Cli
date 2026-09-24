@@ -35,6 +35,12 @@ export type SessionIntelligenceLive = {
   currentStep?: string;
   activeTool?: string;
   recentOutput?: string;
+  /**
+   * The session's effective file-effect mode (the composition/config
+   * chain's resolution). Rides `live` because it is a runtime truth, not
+   * a journal fact — the escalation below is the journal half.
+   */
+  confinementMode?: import("@anthelia/contracts").ConfinementMode;
 };
 
 /** The changed workspace files, as recorded by the Work Graph writer. */
@@ -109,5 +115,19 @@ export function buildSessionIntelligenceSnapshotFromFacts(input: {
     ...(output ? { recentOutput: output.slice(0, 2000) } : {}),
     hasPTY: input.facts.hasPTY,
     hasSandbox: input.facts.hasSandbox,
+    ...(input.live.confinementMode
+      ? {
+          confinement: {
+            mode: input.live.confinementMode,
+            ...(input.facts.lastEscalation
+              ? {
+                  escalatedAt: input.facts.lastEscalation.escalatedAt,
+                  escalatedTo: input.facts.lastEscalation.escalatedTo,
+                  justification: input.facts.lastEscalation.justification,
+                }
+              : {}),
+          },
+        }
+      : {}),
   };
 }

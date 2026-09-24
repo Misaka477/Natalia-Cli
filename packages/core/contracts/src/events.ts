@@ -1028,6 +1028,19 @@ type RuntimeEventData =
       type: "session.snapshot";
       id: string;
       agentStatus: string;
+      /**
+       * The session's confinement posture (sandbox study §6b①): the
+       * effective file-effect mode this session runs under, plus the last
+       * escalation fact when one exists. The UI's danger indicator reads
+       * this and the journal's `confinement.escalated` — the same source,
+       * never a second state.
+       */
+      confinement?: {
+        mode: import("./schema-types").ConfinementMode;
+        escalatedAt?: string;
+        escalatedTo?: import("./schema-types").ConfinementMode;
+        justification?: string;
+      };
       currentStep?: string;
       activeTool?: string;
       changedFiles: number;

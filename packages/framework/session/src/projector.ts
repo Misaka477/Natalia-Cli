@@ -2051,6 +2051,16 @@ export type SessionIntelligenceFactState = {
    * the completion card (last write wins).
    */
   humanValidationByTask: Map<string, string>;
+  /**
+   * The last confinement escalation (sandbox study §6b①): last-write-wins,
+   * like the terminal/sandbox maps. The danger indicator reads the derived
+   * fact; the journal keeps every entry for the audit trail.
+   */
+  lastEscalation?: {
+    escalatedAt: string;
+    escalatedTo: import("@anthelia/contracts").ConfinementMode;
+    justification: string;
+  };
 };
 
 export type SessionIntelligenceFacts = {
@@ -2060,6 +2070,16 @@ export type SessionIntelligenceFacts = {
   latestOutput?: string;
   hasPTY: boolean;
   hasSandbox: boolean;
+  /**
+   * The last confinement escalation (sandbox study §6b①): the journal's
+   * `confinement.escalated` fact, folded so the danger indicator reads
+   * the same source the audit trail reads.
+   */
+  lastEscalation?: {
+    escalatedAt: string;
+    escalatedTo: import("@anthelia/contracts").ConfinementMode;
+    justification: string;
+  };
 };
 
 export function emptySessionIntelligenceFactState(): SessionIntelligenceFactState {
@@ -2104,6 +2124,16 @@ export function applySessionIntelligenceFact(
   }
   if (event.type === "sandbox.update") {
     state.sandboxStatuses.set(event.id, event.status);
+    return;
+  }
+  if (event.type === "confinement.escalated") {
+    // The last one wins: the indicator names the most recent entry, and
+    // the journal keeps every earlier one for the audit trail.
+    state.lastEscalation = {
+      escalatedAt: event.at,
+      escalatedTo: event.to,
+      justification: event.justification,
+    };
   }
 }
 
@@ -2125,6 +2155,7 @@ export function sessionIntelligenceFactsFrom(
       (status) =>
         status !== "deleted" && status !== "stopped" && status !== "failed",
     ),
+    ...(state.lastEscalation ? { lastEscalation: state.lastEscalation } : {}),
   };
 }
 

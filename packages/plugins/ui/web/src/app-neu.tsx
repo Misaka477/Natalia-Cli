@@ -54,6 +54,7 @@ import { WorkspacePanel } from "./workspace-panel";
 import { WorkspaceSettingsPanel } from "./workspace-settings-panel";
 import { NeuSelect } from "./components/NeuSelect";
 import { StatusPanel } from "./status-panel";
+import { DangerBadge } from "./danger-badge";
 import { SearchPanel } from "./search-panel";
 import { HelpPanel } from "./help-panel";
 import { StashPanel } from "./stash-panel";
@@ -3117,6 +3118,13 @@ export function AppNeu(props: { ctx: UiPluginContext }) {
               The world is not beautiful; therefore it is.
             </span>
           </div>
+          {/*
+            The danger indicator (sandbox study §6b①): a persistent,
+            pre-attentive badge in the app chrome — never inside the PTY
+            stream. It reads the session snapshot's confinement posture,
+            which is journal-derived; the audit trail reads the same fact.
+          */}
+          <DangerBadge confinement={state().intelligence?.confinement} />
         </div>
         <div class="neu-topbar-right">
           <button

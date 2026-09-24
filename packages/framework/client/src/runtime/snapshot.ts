@@ -14,6 +14,8 @@ import {
   buildSessionIntelligenceSnapshot,
   buildSessionIntelligenceSnapshotFromFacts,
 } from "../session-intelligence";
+import { effectiveConfinementMode } from "./tool-execution/execute-context";
+import { compositionProfile } from "@anthelia/composition";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController as sessionStoreControllerToken } from "@anthelia/session-store";
 import type { RuntimeEvent } from "@anthelia/contracts";
@@ -127,11 +129,20 @@ export function createSnapshot(ctx: RuntimeContext) {
           .trim()
           .slice(-2000)
       : "";
+    // The session's confinement posture (sandbox study §6b①): the effective
+    // mode rides `live` (a runtime truth); the escalation facts are
+    // journal-derived inside the builder. The UI's danger indicator reads
+    // the snapshot and the journal — the same source, never a second state.
+    const confinementMode = effectiveConfinementMode({
+      profile: ctx.state.serviceDirectory.getOptional(compositionProfile),
+      configMode: ctx.ports.getTsRuntimeConfig()?.confinement?.mode,
+    });
     const live = {
       agentStatus,
       ...(active ? { currentStep: `step ${step}` } : {}),
       ...(activeTool ? { activeTool } : {}),
       ...(liveOutput ? { recentOutput: liveOutput } : {}),
+      confinementMode,
     };
     return facts
       ? buildSessionIntelligenceSnapshotFromFacts({ id, facts, live })

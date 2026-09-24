@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildSessionIntelligenceSnapshot,
+  buildSessionIntelligenceSnapshotFromFacts,
   countChangedFiles,
   countValidatedChanges,
   hasLivePTY,
@@ -8,6 +9,7 @@ import {
   latestConfirmedOutput,
 } from "../src/session-intelligence";
 import type { RuntimeEvent } from "@anthelia/contracts";
+import { sessionIntelligenceFactsFromEvents } from "@anthelia/session";
 
 test("changed files count only work-graph workspace_change nodes", () => {
   const events: RuntimeEvent[] = [
@@ -183,4 +185,66 @@ test("snapshot builder is secret-safe and carries only derived counts", () => {
   expect(JSON.stringify(snapshot)).not.toContain("source code");
   expect(JSON.stringify(snapshot)).not.toContain("command");
   expect(JSON.stringify(snapshot)).not.toContain("arguments");
+});
+
+test("the snapshot carries the confinement posture: the live mode plus the last escalation", () => {
+  const escalated: RuntimeEvent = {
+    type: "confinement.escalated",
+    at: "2026-09-24T00:00:00.000Z",
+    from: "workspace-write",
+    to: "danger-full-access",
+    justification: "the user asked for a host-wide install",
+    toolID: "run_shell",
+  };
+  const later: RuntimeEvent = {
+    type: "confinement.escalated",
+    at: "2026-09-24T01:00:00.000Z",
+    from: "workspace-write",
+    to: "danger-full-access",
+    justification: "the second one",
+    toolID: "run_shell",
+  };
+  // Both builder variants carry it: the last escalation wins, the mode
+  // rides live (a runtime truth, not a journal fact).
+  const events = [escalated, later];
+  const live = {
+    agentStatus: "idle",
+    confinementMode: "workspace-write" as const,
+  };
+  const fromEvents = buildSessionIntelligenceSnapshot({
+    id: "snap:1",
+    events,
+    live,
+  });
+  expect(fromEvents.confinement).toEqual({
+    mode: "workspace-write",
+    escalatedAt: "2026-09-24T01:00:00.000Z",
+    escalatedTo: "danger-full-access",
+    justification: "the second one",
+  });
+  const fromFacts = buildSessionIntelligenceSnapshotFromFacts({
+    id: "snap:2",
+    facts: sessionIntelligenceFactsFromEvents(events),
+    live: { agentStatus: "idle", confinementMode: "danger-full-access" },
+  });
+  expect(fromFacts.confinement).toEqual({
+    mode: "danger-full-access",
+    escalatedAt: "2026-09-24T01:00:00.000Z",
+    escalatedTo: "danger-full-access",
+    justification: "the second one",
+  });
+  // No escalation: the mode alone, no invented facts.
+  const quiet = buildSessionIntelligenceSnapshot({
+    id: "snap:3",
+    events: [],
+    live,
+  });
+  expect(quiet.confinement).toEqual({ mode: "workspace-write" });
+  // No mode passed (a surface that does not know it): no posture field.
+  const bare = buildSessionIntelligenceSnapshot({
+    id: "snap:4",
+    events,
+    live: { agentStatus: "idle" },
+  });
+  expect(bare.confinement).toBeUndefined();
 });
