@@ -153,6 +153,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "astDiffBatch",
     "astRefactorPreview",
     "astService",
+    "astMove",
     "astRefactorPlan",
     "astApplyRefactor",
     "workspaceRoots",

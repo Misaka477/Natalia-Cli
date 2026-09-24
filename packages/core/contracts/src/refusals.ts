@@ -608,6 +608,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure AST index/query in runtime; builds structural indexes, never writes",
   },
+  astMove: {
+    refusal: "none",
+    note: "pure detection over the AST index; never writes, the plan/apply faces stay the writers",
+  },
   astRefactorPlan: {
     refusal: "none",
     note: "pure refactor plan generation in runtime; returns structural targets, never writes",

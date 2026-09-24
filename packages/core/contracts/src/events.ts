@@ -3234,6 +3234,28 @@ export type RuntimeClient = {
     }>;
   }>;
   /**
+   * Phase C's cross-file move detection (the object-store study's
+   * acceptance 3): the before and after sets through the SAME AST index,
+   * answered as the detected moves. A move's `from`/`to` are the rename
+   * plan's fields verbatim — a detection result feeds `astRefactorPlan`
+   * directly (the study's 打通).
+   */
+  astMove?(input: {
+    workspaceID?: string;
+    before: Array<{ path?: string; source: string; language: string }>;
+    after: Array<{ path?: string; source: string; language: string }>;
+  }): Promise<{
+    moves: Array<{
+      from: string;
+      to: string;
+      fromFile: string;
+      toFile: string;
+      nodeKind: string;
+      similarity: number;
+      states: { renamed: boolean; moved: boolean; modified: boolean };
+    }>;
+  }>;
+  /**
    * Refactor plan generation. It uses AST query/index to find every structure
    * that would participate in a refactor and returns a non-writing plan. The
    * plan can be sent to `astRefactorPreview` for final review.

@@ -22,10 +22,12 @@ import {
   type RuntimeWorkspaceDiffChange,
 } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
+import { detectMoves } from "@anthelia/rina";
 import { resolveNamedPluginWorkspaceResource } from "./plugin-workspace-resources";
 
 type WorkspaceRuntime = Pick<
   RuntimeServiceClient,
+  | "astMove"
   | "workspaceFiles"
   | "workspaceSearch"
   | "workspaceList"
@@ -113,6 +115,88 @@ async function astIndexWithWorkerFallback(source: string, language: string) {
 }
 
 export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
+  /**
+   * One file set through the AST index (the worker pool + the object
+   * store's cache). A closure rather than a surface method: it is the
+   * shared path for `astService` and `astMove`, not a member of the
+   * RuntimeClient — a second index walk for the move face would be a
+   * second implementation of a thing that exists.
+   */
+  const indexAstFiles = async (
+    files: Array<{
+      path?: string;
+      source: string;
+      language: string;
+    }>,
+    filter?: { nodeKind?: string; textIncludes?: string },
+  ): Promise<
+    Array<{
+      path?: string;
+      language: string;
+      nodes: RuntimeAstNode[];
+      error?: string;
+    }>
+  > => {
+    await ctx.ports.getReady();
+    const astIndexStore = new ObjectStore(
+      resolveWorkspaceObjectsRoot(ctx.ports.getWorkspaceRoot()),
+    );
+    const cap = files.slice(0, 50);
+    const results: Array<{
+      path?: string;
+      language: string;
+      nodes: RuntimeAstNode[];
+      error?: string;
+    }> = [];
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < cap.length) {
+        const file = cap[cursor++]!;
+        try {
+          const cacheKey = `ast-index:${file.language}:${createHash("sha256")
+            .update(file.source)
+            .digest("hex")}`;
+          const cached = await astIndexStore.getMeta<{
+            nodes: RuntimeAstNode[];
+          }>(cacheKey);
+          let indexed: { language: string; nodes: RuntimeAstNode[] };
+          if (cached) {
+            indexed = { language: file.language, nodes: cached.nodes };
+          } else {
+            indexed = await astIndexWithWorkerFallback(
+              file.source,
+              file.language,
+            );
+            await astIndexStore.putMeta(cacheKey, { nodes: indexed.nodes });
+          }
+          const lower = filter?.textIncludes?.toLowerCase();
+          const nodes = indexed.nodes.filter((node) => {
+            if (filter?.nodeKind && node.nodeKind !== filter.nodeKind)
+              return false;
+            if (lower && !node.text.toLowerCase().includes(lower)) return false;
+            return true;
+          });
+          results.push({
+            path: file.path,
+            language: indexed.language,
+            nodes,
+          });
+        } catch (error) {
+          results.push({
+            path: file.path,
+            language: file.language,
+            nodes: [],
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(4, cap.length) }, () => worker()),
+    );
+    return results;
+  };
+
   return {
     async workspaceFiles(input) {
       await ctx.ports.getReady();
@@ -346,6 +430,7 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
       const result = await this.astDiffBatch!({ files: input.files });
       return { operation: input.operation, files: result.files };
     },
+
     async astService(input: {
       operation: "index" | "query";
       files: Array<{
@@ -358,86 +443,46 @@ export function createWorkspaceRuntime(ctx: RuntimeContext): WorkspaceRuntime {
         textIncludes?: string;
       };
     }) {
-      await ctx.ports.getReady();
-      const astIndexStore = new ObjectStore(
-        resolveWorkspaceObjectsRoot(ctx.ports.getWorkspaceRoot()),
-      );
-      const files = input.files.slice(0, 50);
-      const results: Array<{
-        path?: string;
-        language: string;
-        nodes: RuntimeAstNode[];
-        error?: string;
-      }> = [];
-      const matches: Array<{
-        path?: string;
-        language: string;
-        nodes: RuntimeAstNode[];
-      }> = [];
-      let cursor = 0;
-      const worker = async () => {
-        while (cursor < files.length) {
-          const file = files[cursor++]!;
-          try {
-            const cacheKey = `ast-index:${file.language}:${createHash("sha256")
-              .update(file.source)
-              .digest("hex")}`;
-            const cached = await astIndexStore.getMeta<{
-              nodes: RuntimeAstNode[];
-            }>(cacheKey);
-            let indexed: { language: string; nodes: RuntimeAstNode[] };
-            if (cached) {
-              indexed = { language: file.language, nodes: cached.nodes };
-            } else {
-              indexed = await astIndexWithWorkerFallback(
-                file.source,
-                file.language,
-              );
-              await astIndexStore.putMeta(cacheKey, { nodes: indexed.nodes });
-            }
-            let nodes = indexed.nodes;
-            if (input.operation === "query" && input.query) {
-              const lower = input.query.textIncludes?.toLowerCase();
-              nodes = nodes.filter((node) => {
-                if (
-                  input.query!.nodeKind &&
-                  node.nodeKind !== input.query!.nodeKind
-                )
-                  return false;
-                if (lower && !node.text.toLowerCase().includes(lower))
-                  return false;
-                return true;
-              });
-            }
-            results.push({
-              path: file.path,
-              language: indexed.language,
-              nodes,
-            });
-            if (input.operation === "query" && nodes.length)
-              matches.push({
-                path: file.path,
-                language: indexed.language,
-                nodes,
-              });
-          } catch (error) {
-            results.push({
-              path: file.path,
-              language: file.language,
-              nodes: [],
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      };
-      await Promise.all(
-        Array.from({ length: Math.min(4, files.length) }, () => worker()),
-      );
+      const files = await indexAstFiles(input.files, input.query);
+      const matches = files.filter((file) => !file.error && file.nodes.length);
       return {
         operation: input.operation,
-        files: results,
+        files,
         ...(matches.length ? { matches } : {}),
       };
+    },
+
+    /**
+     * Phase C's move face (the object-store study's acceptance 3): the
+     * cross-file detection over the SAME index — before and after sets,
+     * one shared path. Each detected move's `from`/`to` are the existing
+     * rename plan's fields verbatim, so an `astRefactorPlan({rename})`
+     * call consumes a detection result directly (the study's 打通).
+     */
+    async astMove(input: {
+      before: Array<{ path?: string; source: string; language: string }>;
+      after: Array<{ path?: string; source: string; language: string }>;
+    }) {
+      await ctx.ports.getReady();
+      const [before, after] = await Promise.all([
+        indexAstFiles(input.before),
+        indexAstFiles(input.after),
+      ]);
+      const symbols = (set: typeof before) =>
+        set.flatMap((file) =>
+          file.error
+            ? []
+            : file.nodes.map((node) => ({
+                file: file.path ?? "(unnamed)",
+                nodeKind: node.nodeKind,
+                text: node.text,
+              })),
+        );
+      const moves = detectMoves({
+        before: symbols(before),
+        after: symbols(after),
+      });
+      return { moves };
     },
     async astRefactorPlan(input: {
       operation: "rename" | "extract" | "inline" | "move" | "custom";

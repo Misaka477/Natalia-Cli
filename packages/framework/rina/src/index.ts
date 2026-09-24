@@ -27,3 +27,4 @@ export * from "./response-cache";
 export * from "./embedding";
 export * from "./memory";
 export * from "./knowledge";
+export * from "./move-detect";
