@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthelia/confinement": "workspace:*",
+    "@anthelia/operation-log": "workspace:*",
     "@anthelia/session": "workspace:*",
     "@anthelia/tools": "workspace:*",
     "@natalia/agent-prompts": "workspace:*",

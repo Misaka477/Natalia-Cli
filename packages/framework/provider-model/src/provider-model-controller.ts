@@ -6,6 +6,7 @@ import type {
   ProviderTurnInput,
 } from "./contracts";
 import { createProviderRunner } from "./provider-runner";
+import { noopOperationLog } from "@anthelia/operation-log";
 
 export function createProviderModelController(
   input: ProviderModelControllerInput,
@@ -24,6 +25,10 @@ export function createProviderModelController(
     wakeTasks: new Map<SessionID, Promise<void>>(),
   };
   let disposed = false;
+  // T3: the collaborator turns' telemetry rides the operation log — leveled,
+  // correlated by the ambient scope the runtime zone wraps the turn body in,
+  // rotated — not the raw console.
+  const turnLog = input.log ?? noopOperationLog;
   input.initialize();
 
   async function runTurn(sessionID: SessionID, turn: ProviderTurnInput) {
@@ -48,7 +53,7 @@ export function createProviderModelController(
     const startedAt = Date.now();
     const abort = new AbortController();
     navi.aborts.set(key, abort);
-    console.log("[navi-turn] start", {
+    turnLog.info("[navi-turn]", "start", {
       sessionID: turn.sessionID,
       responseMessageID: turn.responseMessageID,
       internal: turn.internal === true,
@@ -70,7 +75,7 @@ export function createProviderModelController(
       });
       await task;
       const naviStop = abort.signal.aborted ? "cancelled" : "done";
-      console.log("[navi-turn] finished", {
+      turnLog.info("[navi-turn]", "finished", {
         sessionID: turn.sessionID,
         responseMessageID: turn.responseMessageID,
         internal: turn.internal === true,
@@ -87,7 +92,7 @@ export function createProviderModelController(
     } catch (cause) {
       const cancelled = abort.signal.aborted;
       const naviStop = cancelled ? "cancelled" : "error";
-      console.error("[navi-turn] finished", {
+      turnLog.error("[navi-turn]", "finished", {
         sessionID: turn.sessionID,
         responseMessageID: turn.responseMessageID,
         internal: turn.internal === true,
@@ -126,7 +131,7 @@ export function createProviderModelController(
     const startedAt = Date.now();
     const abort = new AbortController();
     nia.aborts.set(key, abort);
-    console.log("[nia-turn] start", {
+    turnLog.info("[nia-turn]", "start", {
       sessionID: turn.sessionID,
       responseMessageID: turn.responseMessageID,
       internal: turn.internal === true,
@@ -147,7 +152,7 @@ export function createProviderModelController(
       });
       await task;
       const niaStop = abort.signal.aborted ? "cancelled" : "done";
-      console.log("[nia-turn] finished", {
+      turnLog.info("[nia-turn]", "finished", {
         sessionID: turn.sessionID,
         responseMessageID: turn.responseMessageID,
         internal: turn.internal === true,
@@ -164,7 +169,7 @@ export function createProviderModelController(
     } catch (cause) {
       const cancelled = abort.signal.aborted;
       const niaStop = cancelled ? "cancelled" : "error";
-      console.error("[nia-turn] finished", {
+      turnLog.error("[nia-turn]", "finished", {
         sessionID: turn.sessionID,
         responseMessageID: turn.responseMessageID,
         internal: turn.internal === true,

@@ -29,6 +29,7 @@ import { activePlanForExec } from "@natalia/collab";
 import { loadProjectDocumentsSync } from "@natalia/engineering-intelligence";
 import { compositionProfile } from "@anthelia/composition";
 import { effectiveConfinementMode } from "./tool-execution/execute-context";
+import { logOf } from "@anthelia/operation-log";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { StatusSnapshotController } from "@anthelia/runtime-status";
 import type { AttachmentService } from "@anthelia/runtime";
@@ -255,6 +256,10 @@ export function createTurnRunner(
           profile: ctx.state.serviceDirectory.getOptional(compositionProfile),
           configMode: getTsRuntimeConfig()?.confinement?.mode,
         }),
+      // T3: the turn's telemetry rides the operation log, not the console.
+      // The ALS scope the runtime zone wraps the turn body in carries the
+      // correlation, so the kit's records need no call-site discipline.
+      log: logOf(ctx.state.serviceDirectory),
       retry: retry,
       lastProviderUsage: () => exec.lastProviderUsage,
       setLastProviderUsage: (usage) => {

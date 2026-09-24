@@ -11,6 +11,28 @@ import type { ProviderUsage } from "@anthelia/runtime";
 export type ProviderModelControllerInput = {
   initialize(): void;
   runnerInput(sessionID: SessionID): ProviderRunnerInput;
+  /**
+   * The operation-log channel (T3): the collaborator turns' telemetry
+   * rides here, not the console. Structural and optional — a bare context
+   * (tests) degrades to silence, telemetry never crashes a turn.
+   */
+  log?: {
+    info(
+      component: string,
+      message: string,
+      fields?: Record<string, unknown>,
+    ): void;
+    error(
+      component: string,
+      message: string,
+      fields?: Record<string, unknown>,
+    ): void;
+    debug(
+      component: string,
+      message: string,
+      fields?: Record<string, unknown>,
+    ): void;
+  };
   commands: {
     catalog(): Promise<
       Array<{ id: string; name: string; provider: string; variants: string[] }>

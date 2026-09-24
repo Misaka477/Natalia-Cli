@@ -355,6 +355,7 @@
         "@anthelia/config": "workspace:*",
         "@anthelia/confinement": "workspace:*",
         "@anthelia/contracts": "workspace:*",
+        "@anthelia/operation-log": "workspace:*",
         "@anthelia/runtime": "workspace:*",
         "@anthelia/runtime-services": "workspace:*",
         "@anthelia/session": "workspace:*",

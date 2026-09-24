@@ -106,6 +106,23 @@ function makeHarness(
     };
     projectDocuments?: ProjectDocumentSnapshot;
     confinementMode?: import("@anthelia/contracts").ConfinementMode;
+    log?: {
+      info(
+        component: string,
+        message: string,
+        fields?: Record<string, unknown>,
+      ): void;
+      error(
+        component: string,
+        message: string,
+        fields?: Record<string, unknown>,
+      ): void;
+      debug(
+        component: string,
+        message: string,
+        fields?: Record<string, unknown>,
+      ): void;
+    };
     retryPolicy?: {
       maxAttemptsPerStep: number | null;
       initialBackoffMs: number;
@@ -223,6 +240,7 @@ function makeHarness(
     activePlan: () => options?.activePlan,
     projectDocuments: () => options?.projectDocuments,
     confinementMode: () => options?.confinementMode ?? "workspace-write",
+    log: options?.log,
     ...(options?.tokenMeter ? { tokenMeter: () => options.tokenMeter! } : {}),
     retry,
     lastProviderUsage: () => lastUsage,
@@ -1941,4 +1959,63 @@ test("the environment block states the session's current confinement mode", asyn
   // The statement rides the dynamic layer, never the static system.
   const system = shapes[0]!.find((message) => message.role === "system");
   expect(system!.content).not.toContain("Confinement mode");
+});
+
+test("turn telemetry rides the injected log, and degrades to silence without it", async () => {
+  // T3: the [natalia-turn] records left the console for the operation log —
+  // leveled, rotated, correlated by the ambient scope. The kit stays bare:
+  // no log means no records and no throw.
+  const records: Array<{
+    level: string;
+    component: string;
+    message: string;
+    fields: Record<string, unknown>;
+  }> = [];
+  const capture =
+    (level: string) =>
+    (
+      component: string,
+      message: string,
+      fields?: Record<string, unknown>,
+    ): void => {
+      records.push({ level, component, message, fields: fields ?? {} });
+    };
+  const log = {
+    info: capture("info"),
+    error: capture("error"),
+    debug: capture("debug"),
+  };
+  const withLog = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield content("ok");
+      },
+    },
+    { permissionMode: "auto", log },
+  );
+  await withLog.runner.runTurn(turn);
+  const start = records.find((record) => record.component === "[natalia-turn]");
+  expect(start).toBeDefined();
+  expect(start!.message).toBe("start");
+  expect(start!.fields).toMatchObject({ model: "m1", internal: false });
+  const finished = records.filter(
+    (record) => record.component === "[natalia-turn]",
+  );
+  expect(finished.map((record) => record.message)).toContain("finished");
+  // Without the channel (a bare context): nothing recorded, nothing thrown.
+  records.length = 0;
+  const bare = makeHarness(
+    {
+      provider: "scripted",
+      model: "m1",
+      async *stream() {
+        yield content("ok");
+      },
+    },
+    { permissionMode: "auto" },
+  );
+  await bare.runner.runTurn(turn);
+  expect(records).toEqual([]);
 });

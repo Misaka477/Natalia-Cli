@@ -35,6 +35,7 @@ import { cacheHitRate, totalInputTokens } from "@anthelia/contracts";
 import { buildSubmittedTurn } from "@anthelia/session";
 import { materializeTools } from "@anthelia/tools";
 import { confinementContextLine } from "@anthelia/confinement";
+import { noopOperationLog } from "@anthelia/operation-log";
 import type {
   ConstitutionDocRule,
   ProviderRunnerInput,
@@ -215,7 +216,11 @@ export function createProviderRunner(input: ProviderRunnerInput) {
     const activeModelCapabilities = input.modelCapabilities();
     const activePermissionMode = input.permissionMode();
     const activeContextConfig = { ...input.runtimeContextConfig() };
-    console.log("[natalia-turn] start", {
+    // T3: the turn's telemetry belongs to the operation log — leveled,
+    // correlated by the ambient scope, rotated — not the raw console. The
+    // journal carries the facts (turn.submitted below); this is the
+    // operator's channel, level-gated to silence in production.
+    (input.log ?? noopOperationLog).info("[natalia-turn]", "start", {
       id,
       internal,
       sessionID: input.session()?.id,
@@ -563,7 +568,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       const finishedStopReason = input.waitingHuman()
         ? "waiting_human"
         : "done";
-      console.log("[natalia-turn] finished", {
+      (input.log ?? noopOperationLog).info("[natalia-turn]", "finished", {
         id,
         internal,
         stopReason: finishedStopReason,
@@ -594,7 +599,7 @@ export function createProviderRunner(input: ProviderRunnerInput) {
       const failedStopReason = controller.signal.aborted
         ? "cancelled"
         : "error";
-      console.error("[natalia-turn] finished", {
+      (input.log ?? noopOperationLog).error("[natalia-turn]", "finished", {
         id,
         internal,
         stopReason: failedStopReason,
@@ -754,15 +759,16 @@ export function createProviderRunner(input: ProviderRunnerInput) {
           result.thinkingDonePublished = true;
         };
         try {
-          if (process.env.NATALIA_DEBUG_PROVIDER === "1") {
-            console.log("[provider-runner] stream", {
-              id,
-              sessionID: input.session()?.id,
-              provider: activeProvider.provider,
-              model: activeProvider.model,
-              adapter: activeProvider.constructor.name,
-            });
-          }
+          // Was an env gate (NATALIA_DEBUG_PROVIDER); now the log's level
+          // gate — the operator raises the level instead of restarting with
+          // an env var, and the record lands in the rotated channel.
+          (input.log ?? noopOperationLog).debug("[provider-runner]", "stream", {
+            id,
+            sessionID: input.session()?.id,
+            provider: activeProvider.provider,
+            model: activeProvider.model,
+            adapter: activeProvider.constructor.name,
+          });
           const stream = activeProvider.stream({
             messages,
             tools:
@@ -780,15 +786,17 @@ export function createProviderRunner(input: ProviderRunnerInput) {
               )
             : stream;
           for await (const chunk of normalized) {
-            if (process.env.NATALIA_DEBUG_PROVIDER === "1") {
-              console.log(
-                "[provider-runner] chunk",
-                chunk.type,
-                "text" in chunk
-                  ? String((chunk as { text?: string }).text?.length ?? "")
-                  : "",
-              );
-            }
+            (input.log ?? noopOperationLog).debug(
+              "[provider-runner]",
+              "chunk",
+              {
+                type: chunk.type,
+                textLength:
+                  "text" in chunk
+                    ? String((chunk as { text?: string }).text?.length ?? "")
+                    : "",
+              },
+            );
             if (chunk.type === "thinking") {
               if (
                 firstTokenTime === undefined &&
@@ -944,10 +952,11 @@ export function createProviderRunner(input: ProviderRunnerInput) {
         inputTokens: totalInputTokens(output.usage),
         hitRate: hitPercent,
       });
-      if (process.env.NATALIA_DEBUG_PROVIDER === "1")
-        console.debug(
-          `[provider] cache read=${read} created=${created} hit=${hitPercent}%`,
-        );
+      (input.log ?? noopOperationLog).debug("[provider]", "cache", {
+        read,
+        created,
+        hitPercent,
+      });
     }
     if (output.usage) {
       // This is the provider sample for *this* request, not a turn total.

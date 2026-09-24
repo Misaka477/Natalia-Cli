@@ -345,6 +345,29 @@ export type ProviderRunnerInput = {
    * cached prefix.
    */
   confinementMode?(): import("@anthelia/contracts").ConfinementMode;
+  /**
+   * The operation-log channel (T3): the runtime zone passes its logger, a
+   * bare context (tests) leaves it out and the call sites degrade to
+   * silence — telemetry never crashes the turn. Structural so the kit
+   * needs no dependency on the log layer.
+   */
+  log?: {
+    info(
+      component: string,
+      message: string,
+      fields?: Record<string, unknown>,
+    ): void;
+    error(
+      component: string,
+      message: string,
+      fields?: Record<string, unknown>,
+    ): void;
+    debug(
+      component: string,
+      message: string,
+      fields?: Record<string, unknown>,
+    ): void;
+  };
   naviSuggestions(): Array<{
     id: string;
     suggestion: string;

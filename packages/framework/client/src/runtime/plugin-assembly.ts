@@ -6,6 +6,7 @@
  * inputs. Reads host state through `RuntimeContext` at call time.
  */
 import { resolve } from "node:path";
+import { logOf } from "@anthelia/operation-log";
 import { verifyTrust } from "@anthelia/config";
 import { toolFamilyCapabilityID } from "../capabilities/tool-family-capabilities";
 import type { ConfigV3, SessionID } from "@anthelia/contracts";
@@ -104,6 +105,10 @@ export function createPluginAssembly(
         }
       },
       runnerInput: providerRunnerInput,
+      // T3: the collaborator turns' telemetry rides the operation log (the
+      // controller's [navi-turn]/[nia-turn] records); an absent runtime log
+      // degrades to the noop inside the controller.
+      log: logOf(ctx.state.serviceDirectory),
       commands: {
         catalog: clientModelCatalog,
         select: async (sessionID, modelID, variant) => {

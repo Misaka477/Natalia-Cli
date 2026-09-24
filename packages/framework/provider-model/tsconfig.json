@@ -7,6 +7,9 @@
   "include": ["src", "test"],
   "references": [
     {
+      "path": "../operation-log"
+    },
+    {
       "path": "../../core/runtime-services"
     },
     {
