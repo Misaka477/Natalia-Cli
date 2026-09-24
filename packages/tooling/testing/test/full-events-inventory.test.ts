@@ -29,6 +29,12 @@ test("the counter counts content reads and only content reads", () => {
     "const first = exec.session.events[0];", // index
     "return [...exec.session.events];", // spread
     "const tail = exec.session.events.filter((e) => e.seq > n);", // filter
+    // the alias spellings the live array takes in the tree: an identifier
+    // alias (boundary's `target`), a Session-suffixed local (chat-prompt's
+    // `chatSession`), optional chaining on the seam.
+    "const rules = projectedX(target.session.events);",
+    "const m = helpers(exec, chatSession.events);",
+    "const n = projectedX(exec?.session.events);",
   ];
   for (const line of counted) expect(countFullContentReads(line)).toBe(1);
   expect(countFullContentReads(counted.join("\n"))).toBe(counted.length);
@@ -42,6 +48,11 @@ test("the counter counts content reads and only content reads", () => {
     // the trailing-comment heuristic: the only mention lives in the
     // comment, the real read is metadata — the count stays put
     "const n = exec.session.events.length; // projectedX(exec.session.events)",
+    // the belt spelling behind an empty default is not a content read
+    "const belt = projectedX(exec?.session.events ?? []);",
+    // the bare form is deliberately unmatched (SessionRecord params read
+    // it legitimately); the live array keeps a spelling with `session` in it
+    "const param = projectedX(session.events);",
   ];
   for (const line of notCounted) expect(countFullContentReads(line)).toBe(0);
 });

@@ -1068,7 +1068,7 @@ export function createIntelligenceSurface(
       const rules =
         exec.factStateComplete === true && exec.factState
           ? sessionFactConstitutionRules(exec.factState)
-          : projectedConstitutionRules(session.events);
+          : projectedConstitutionRules(exec.session.events);
       const rule = rules.find((candidate) => candidate.ruleID === input.ruleID);
       if (!rule) return { requested: false as const, reason: "unknown rule" };
       if (rule.overridePolicy === "forbidden")

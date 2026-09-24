@@ -22,7 +22,10 @@ import {
   projectedConstitutionRules,
   projectedEvidenceRecords,
   projectedWorkContracts,
+  sessionFactConstitutionRules,
   sessionFactEvidenceRecords,
+  sessionFactGoal,
+  sessionFactWorkContracts,
 } from "@anthelia/session";
 import {
   injectFindingIntoMainAgent,
@@ -122,6 +125,26 @@ export function instructionRevision(events: readonly RuntimeEvent[]): number {
 /** The epoch each execution was last evaluated under (boundary-local). */
 const lastEvaluatedEpoch = new WeakMap<SessionExecutionState, number>();
 
+/**
+ * The drift judgement's constraint inputs: the constitution rules and work
+ * contracts from the complete fact state when available, the resident array
+ * as the belt. A fast-attach tail cannot hold pre-epoch rules — a judgement
+ * made against an empty constraint set is worse than none. Exported pure so
+ * the policy is testable without a runtime (the reconcile path's own e2e is
+ * full-attach, where belt and fact agree and cannot discriminate).
+ */
+export function driftConstraintReadsFor(exec?: SessionExecutionState) {
+  if (exec?.factStateComplete === true && exec.factState)
+    return {
+      constitutionRules: sessionFactConstitutionRules(exec.factState),
+      workContracts: sessionFactWorkContracts(exec.factState),
+    };
+  return {
+    constitutionRules: projectedConstitutionRules(exec?.session.events ?? []),
+    workContracts: projectedWorkContracts(exec?.session.events ?? []),
+  };
+}
+
 export function createCollaborationBoundary(ctx: RuntimeContext) {
   const proseStreaks = new Map<string, number>();
 
@@ -148,6 +171,17 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
     )
       return snapshot.mailboxMessages;
     return projectedMailboxMessages(exec?.session.events ?? []);
+  }
+
+  /**
+   * The current goal: the fact state's view when complete, else the strict
+   * domain fold over the resident events (which keeps its
+   * throw-on-malformed-tail contract for the caller's best-effort catch).
+   */
+  function goalFor(exec?: SessionExecutionState) {
+    if (exec?.factStateComplete === true && exec.factState)
+      return sessionFactGoal(exec.factState);
+    return foldGoal(exec?.session.events ?? []);
   }
 
   return {
@@ -310,6 +344,11 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
       }
       const activePlan = activePlanForExec(ctx, target);
       const objective = activePlan?.title ?? "";
+      // The judgement's constraint inputs, fact-first: a fast-attach tail
+      // cannot hold pre-epoch rules or contracts, and a judgement against an
+      // empty constraint set is worse than none. One read serves the drift
+      // branch and the goal question channel below.
+      const constraints = driftConstraintReadsFor(target);
       // EI Phase 2 机制 2: the L4 behaviour signals (no-progress window, failure
       // loop) run every turn-end, even when there were no workspace changes.
       const behavior = deriveDriftBehaviorSignals(target.session.events);
@@ -339,7 +378,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           mailboxMessagesFor(target),
         );
         const applicableConstraints = [
-          ...projectedConstitutionRules(target.session.events)
+          ...constraints.constitutionRules
             .filter((rule) =>
               rule.appliesTo?.paths?.some((pattern) =>
                 confirmed.some((change) => globPathMatch(pattern, change.path)),
@@ -350,9 +389,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         ];
         // EI Phase 2: the same matched rules, carrying enforcement, so a deny
         // hit opens a high constitution_conflict finding.
-        const constitutionHits = projectedConstitutionRules(
-          target.session.events,
-        )
+        const constitutionHits = constraints.constitutionRules
           .filter((rule) =>
             rule.appliesTo?.paths?.some((pattern) =>
               confirmed.some((change) => globPathMatch(pattern, change.path)),
@@ -364,7 +401,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           }));
         // EI §8.6: the R is the accepted WorkContract — the evaluator judges
         // against the user-tier commitment when one exists.
-        const contract = projectedWorkContracts(target.session.events).find(
+        const contract = constraints.workContracts.find(
           (candidate) => candidate.status === "current",
         );
         const driftSignal = {
@@ -439,14 +476,14 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
       // channel owns that case).
       let goal: import("@anthelia/contracts").GoalSnapshot | undefined;
       try {
-        goal = foldGoal(target.session.events);
+        goal = goalFor(target);
       } catch {
         // A mid-history tail cannot be folded; the question channel is
         // best-effort and never blocks turn settlement.
         goal = undefined;
       }
       if (goal?.phase === "active") {
-        const hasContract = projectedWorkContracts(target.session.events).some(
+        const hasContract = constraints.workContracts.some(
           (candidate) => candidate.status === "current",
         );
         const narration = hasContract

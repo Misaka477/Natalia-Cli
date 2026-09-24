@@ -16,6 +16,17 @@
  * comments/doc lines. The filter is line-level (a trailing-comment
  * heuristic), and the companion inventory's tests keep filter and table
  * in step.
+ *
+ * WHICH references: the live execution's array under any of its spellings
+ * — `exec.session.events`, an identifier alias (`target.session.events`),
+ * a Session-suffixed alias (`chatSession.events`, the `exec?.session`
+ * local), with or without optional chaining. The BARE `session.events`
+ * form is deliberately NOT matched: it cannot tell the live array from
+ * any `SessionRecord` parameter (the session package's own projections
+ * read those legitimately); the one live-array bare alias found at
+ * rollout was de-aliased at its source instead of widening past the
+ * ambiguity. A future alias the pattern misses is exactly what the
+ * companion inventory's real-tree anchor is for.
  */
 
 export type FullReadClass =
@@ -45,7 +56,9 @@ export function countFullContentReads(text: string): number {
     // a trailing-comment heuristic: cut at // that is not inside a string
     // (the array name never appears in our string literals)
     const code = line.replace(/\/\/.*$/u, "");
-    const pattern = /exec\.session\.events|owner\.session\.events/gu;
+    // the live execution's array under any spelling: direct, identifier
+    // alias, Session-suffixed alias, optional chaining on either seam.
+    const pattern = /\w+\??\.session\.events|\w+Session\??\.events/gu;
     for (const match of code.matchAll(pattern)) {
       const after = code.slice(match.index + match[0].length);
       if (/^\s*\.length\b/u.test(after)) continue; // metadata

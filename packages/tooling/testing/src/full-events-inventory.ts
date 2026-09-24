@@ -37,6 +37,11 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
     cls: "explicit-history",
     note: "chat log pages + rollback scans behind ensureSessionFullEvents — the study's sanctioned class",
   },
+  "packages/domains/collab/src/chat-prompt.ts": {
+    count: 12,
+    cls: "state-first",
+    note: "the live-context builders pass the events into fact-first helpers (mailbox/collab/drift/decision/constitution ternaries); DEBT in the note: pendingAudits (audit.requested) and conflicts (constitution.check) filter the tail for display — the audit idempotency family, named fix: audit.requested + constitution.check fact slices",
+  },
   "packages/domains/collab/src/chat-turn-common.ts": {
     count: 3,
     cls: "state-first",
@@ -57,13 +62,18 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
     cls: "state-first",
     note: "fact fold -> worker-backed projection fallback",
   },
+  "packages/domains/collab/src/boundary.ts": {
+    count: 4,
+    cls: "fold-direct",
+    note: "the reconcile path: constitution/workContracts/goal are fact-first since the alias rollout (the module's own helper shape); deriveDriftBehaviorSignals + lastAssistantNarration are windowed/backward reads (tail-correct by design); DEBT: openInvariantHits + instructionRevision fold the whole tail — named fix: invariant.violation/resolved and context.instructions fact slices",
+  },
   "packages/domains/collab/src/plan-contract-tools.ts": {
     count: 6,
     cls: "state-first",
     note: "constitution/work-contract/drift ternaries + two request-marker scans counted with them",
   },
   "packages/domains/engineering-intelligence/src/intelligence.ts": {
-    count: 15,
+    count: 16,
     cls: "state-first",
     note: "the EI folds are fact-first with resident fallbacks; one store.history paged read rides the same class family",
   },
@@ -76,6 +86,11 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
     count: 1,
     cls: "state-first",
     note: "the tool face reads the same durable view; the belt rides along",
+  },
+  "packages/framework/client/src/runtime/session-execution/sessions.ts": {
+    count: 1,
+    cls: "paged-mechanism",
+    note: "the load/restore path hands the loaded record's events to the factory (the machinery itself)",
   },
   "packages/framework/client/src/runtime/tool-execution/execute-calls.ts": {
     count: 2,

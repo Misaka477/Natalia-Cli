@@ -5,8 +5,10 @@ import {
   initProjection,
   serializeProjectionState,
   sessionFactConstitutionRules,
+  sessionFactGoal,
   sessionFactMailboxMessages,
   sessionFactStateFromEvents,
+  sessionFactWorkContracts,
 } from "@anthelia/session";
 import { completeSessionFactState } from "@anthelia/substrate";
 import type { RuntimeContext } from "@anthelia/substrate";
@@ -183,4 +185,61 @@ test("completeSessionFactState completes from a persisted projection checkpoint 
   expect(sessionFactMailboxMessages(exec.factState!)).toEqual(
     sessionFactMailboxMessages(full),
   );
+});
+
+test("paged completion keeps the slices the boundary reads fact-first", async () => {
+  // The reconcile path (boundary.ts) reads the constitution rules, work
+  // contracts and goal from the complete fact state — these two events sit
+  // on the FIRST page while the execution carries only its tail, so a
+  // fact-blind fold would judge the turn against no contract and no goal.
+  const goal: RuntimeEvent = {
+    type: "goal.changed",
+    id: "goal:create:1",
+    operation: "create",
+    snapshot: {
+      goalID: "goal_cold",
+      revision: 1,
+      objective: "ship the thing",
+      phase: "active",
+      maxGoalRounds: 256,
+      maxGoalTokens: 0,
+      maxGoalWallClockMs: 0,
+      spentGoalTokens: 0,
+      goalWallClockMs: 0,
+    },
+    roundsStarted: 0,
+    at: "2026-01-01T00:00:00.000Z",
+  };
+  const contract: RuntimeEvent = {
+    type: "work_contract.accepted",
+    id: "work_contract:plan_cold:accepted",
+    planID: "plan_cold",
+    planVersion: 1,
+    scope: ["src/**"],
+    verification: ["bun test"],
+    constraints: ["never commit without approval"],
+    acceptedBy: "user",
+    acceptedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const log: RuntimeEvent[] = [goal, contract];
+  for (let index = 0; index < 2_500; index += 1)
+    log.push({
+      type: "tool.update",
+      id: `turn_1:call_${index}`,
+      name: "read_file",
+      callID: `call_${index}`,
+      status: "succeeded",
+      summary: "read",
+    });
+  const { ctx, exec } = harness(log);
+
+  expect(await completeSessionFactState(ctx, exec)).toBe(true);
+  const state = exec.factState!;
+  const full = sessionFactStateFromEvents(log);
+  expect(sessionFactWorkContracts(state)).toEqual(
+    sessionFactWorkContracts(full),
+  );
+  expect(sessionFactWorkContracts(state)[0]?.status).toBe("current");
+  expect(sessionFactGoal(state)).toEqual(sessionFactGoal(full));
+  expect(sessionFactGoal(state)?.objective).toBe("ship the thing");
 });
