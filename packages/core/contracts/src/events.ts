@@ -1789,6 +1789,22 @@ type RuntimeEventData =
     }
   | { type: "terminal.pane.select"; id: string }
   | {
+      /**
+       * A call was approved to run under a confinement mode WIDER than the
+       * effective one (sandbox study §6b①): the audit fact the danger
+       * indicator and the audit trail share as one source. The grant is
+       * per-call — the event records the entry, the call's own events bound
+       * it — and the UI indicator reads this, never a second state.
+       */
+      type: "confinement.escalated";
+      at: string;
+      from: import("./schema-types").ConfinementMode;
+      to: import("./schema-types").ConfinementMode;
+      justification: string;
+      toolID: string;
+      sessionID?: SessionID;
+    }
+  | {
       type: "sandbox.update";
       id: string;
       status: SandboxStatus;

@@ -106,17 +106,20 @@ export function buildToolExecutionContext(input: BuildContextInput) {
   const subagents = ctx.state.serviceDirectory.getOptional(subagentsService);
   const terminal = ctx.state.serviceDirectory.getOptional(terminalController);
   const sandboxes = ctx.state.serviceDirectory.getOptional(sandboxService);
+  // The file-effect mode for this call: composition default, per-call
+  // truth rides down to runShell (sandbox study: policy rides the call).
+  // Captured once so the escalation's audit fact can name the mode the
+  // call escalates FROM.
+  const effectiveMode = effectiveConfinementMode({
+    profile: ctx.state.serviceDirectory.getOptional(compositionProfile),
+    configMode: getTsRuntimeConfig()?.confinement?.mode,
+  });
   return {
     workspaceRoot,
     signal,
     ...(timeoutSec === undefined ? {} : { timeoutSec }),
     sessionID: exec?.session.id ?? sessionID,
-    // The file-effect mode for this call: composition default, per-call
-    // truth rides down to runShell (sandbox study: policy rides the call).
-    confinement: effectiveConfinementMode({
-      profile: ctx.state.serviceDirectory.getOptional(compositionProfile),
-      configMode: getTsRuntimeConfig()?.confinement?.mode,
-    }),
+    confinement: effectiveMode,
     // The escalation channel, closed over this call's identity — the same
     // approval seam tools already use, routed by turn so the permission
     // floors decide (read_only refuses, auto grants, ask prompts).
@@ -137,7 +140,21 @@ export function buildToolExecutionContext(input: BuildContextInput) {
           turnID,
           { reason: `escalate sandbox to ${requestedMode}: ${justification}` },
         );
-        return refusal ? "rejected" : "allowed-once";
+        if (refusal) return "rejected";
+        // Sandbox study §6b①: entering a wider mode is a journal fact —
+        // the audit trail and the (coming) danger indicator read this one
+        // event, never a second state. The grant is per-call; the event
+        // records the entry, and the call's own events bound it.
+        publish({
+          type: "confinement.escalated",
+          at: new Date().toISOString(),
+          from: effectiveMode,
+          to: requestedMode,
+          justification,
+          toolID,
+          ...(exec ? { sessionID: exec.session.id } : {}),
+        });
+        return "allowed-once";
       },
     },
     askQuestion: async (input: {

@@ -46,6 +46,10 @@ export type EventModeTable = { readonly [Family in EventFamilies]: EventMode };
 export const EVENT_MODES: EventModeTable = {
   agent: "emit",
   approval: "emit",
+  // Sandbox study §6b①: an escalation grant is an audit fact — emit, never
+  // flow-stopping; the danger indicator and the audit trail read the same
+  // event.
+  confinement: "emit",
   audit: "emit",
   capability: "emit",
   checkpoint: "emit",
