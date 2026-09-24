@@ -213,6 +213,7 @@ export const RPC_ROUTE_MEMBERS = {
   "runtime.availability": null,
   "runtime.status": "runtimeStatus",
   "diagnostics.list": "diagnostics",
+  "diagnostics.operations": "operationRecords",
   "workgraph.nodes": "workGraphNodes",
   "workgraph.edges": "workGraphEdges",
   // --- P0-C: the reachability gap closed (audit list in the API plan §8.10) ---
@@ -3879,6 +3880,52 @@ export async function handleRPCMessage(
           typeof limit === "number" ? limit : undefined,
           optionalStringParam(body.params, "sessionID"),
         ),
+      };
+    }
+    if (body.method === "diagnostics.operations") {
+      // T3/T4: the operation log's records for a host — the same records
+      // the debug bundle reads. Filter-shaped params, no defaults invented.
+      optionsGuard(client, "operationRecords");
+      const params = body.params ?? {};
+      for (const key of ["level", "component", "contains", "since"])
+        if (params[key] !== undefined && typeof params[key] !== "string")
+          throw invalidParams(
+            `diagnostics.operations.params.${key} must be a string`,
+          );
+      const limit = params.limit;
+      if (
+        limit !== undefined &&
+        (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1)
+      )
+        throw invalidParams(
+          "diagnostics.operations.params.limit must be a positive integer",
+        );
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result:
+          (await client.operationRecords?.({
+            ...(typeof params.level === "string"
+              ? {
+                  level: params.level as
+                    | "error"
+                    | "warn"
+                    | "info"
+                    | "debug"
+                    | "trace",
+                }
+              : {}),
+            ...(typeof params.component === "string"
+              ? { component: params.component }
+              : {}),
+            ...(typeof params.contains === "string"
+              ? { contains: params.contains }
+              : {}),
+            ...(typeof params.since === "string"
+              ? { since: params.since }
+              : {}),
+            ...(typeof limit === "number" ? { limit } : {}),
+          })) ?? [],
       };
     }
     if (body.method === "mcp.prompt") {

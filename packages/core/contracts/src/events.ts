@@ -3891,6 +3891,18 @@ export type RuntimeClient = {
     limit?: number,
     sessionID?: string,
   ): Promise<RuntimeDiagnostic[]>;
+  /**
+   * The operation log's records (T3/T4: the telemetry zone's read face for
+   * a host — the same records the CLI's debug bundle reads and the query
+   * primitives filter). Pure read: leveled, rotated, redaction-sealed.
+   */
+  operationRecords?(input?: {
+    level?: import("./schema-types").OperationRecord["level"];
+    component?: string;
+    contains?: string;
+    since?: string;
+    limit?: number;
+  }): Promise<import("./schema-types").OperationRecord[]>;
   snapshot(input?: { sessionID?: string; workspaceID?: string }): RuntimeEvent;
   diagnostic(message: string, level?: "info" | "warning" | "error"): void;
   lastSubmission(input?: {

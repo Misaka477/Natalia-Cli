@@ -100,6 +100,7 @@ function controllableClient() {
     "documentCatalog",
     "runtimeStatus",
     "diagnostics",
+    "operationRecords",
     "sessionSnapshot",
     "workGraphNodes",
     "workGraphEdges",

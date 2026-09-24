@@ -246,7 +246,12 @@ export const RUNTIME_CAPABILITY_GROUPS = {
   /** Security and configuration management (permission profiles). */
   management: ["permissionList", "permissionSave", "permissionDelete"],
   /** Durable task and flow documents. */
-  observability: ["runtimeStatus", "diagnostics", "sessionSnapshot"],
+  observability: [
+    "runtimeStatus",
+    "diagnostics",
+    "operationRecords",
+    "sessionSnapshot",
+  ],
   /** The Work Graph: what happened and what caused it. */
   workGraph: ["workGraphNodes", "workGraphEdges"],
   /**

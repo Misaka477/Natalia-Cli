@@ -92,3 +92,17 @@ export type ScopedOverride = z.infer<typeof governance.scopedOverrideSchema>;
  */
 export type WorkGraphNodeKind = WorkGraphNode["kind"];
 export type WorkGraphEdgeKind = WorkGraphEdge["kind"];
+
+/**
+ * The operation log's record shape (T3): mirrored structurally here because
+ * the contracts cannot depend on the framework package that owns the writer
+ * — a host reads this shape, the runtime fills it.
+ */
+export type OperationRecord = {
+  at: string;
+  level: "error" | "warn" | "info" | "debug" | "trace";
+  component: string;
+  message: string;
+  corr?: Record<string, string>;
+  fields?: Record<string, unknown>;
+};

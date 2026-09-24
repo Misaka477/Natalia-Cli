@@ -505,6 +505,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
   // --- observability ---
   runtimeStatus: { refusal: "none", note: "pure read" },
   diagnostics: { refusal: "none", note: "pure read" },
+  operationRecords: {
+    refusal: "none",
+    note: "pure read of this runtime's operation-log records",
+  },
   sessionSnapshot: { refusal: "none", note: "pure read" },
 
   // --- workGraph ---

@@ -41,6 +41,7 @@ export const WORKER_ROUTE_MEMBERS = {
   dispose: "dispose",
   history: "history",
   diagnostics: "diagnostics",
+  "diagnostics.operations": "operationRecords",
   messages: "messages",
   agents: "agents",
   "model.catalog": "modelCatalog",
@@ -186,6 +187,7 @@ type WorkerRequest = {
     | "dispose"
     | "history"
     | "diagnostics"
+    | "diagnostics.operations"
     | "messages"
     | "agents"
     | "model.catalog"
@@ -1101,6 +1103,17 @@ export function createWorkerRuntimeClient(
       notify("snapshot");
       return { type: "snapshot.created", id, files: [] };
     },
+    async operationRecords(input?: {
+      level?: import("@anthelia/contracts").OperationRecord["level"];
+      component?: string;
+      contains?: string;
+      since?: string;
+      limit?: number;
+    }) {
+      return (await request("diagnostics.operations", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["operationRecords"]>>
+      >;
+    },
     async diagnostics(limit, sessionID) {
       return (await request("diagnostics", { limit, sessionID })) as Awaited<
         ReturnType<NonNullable<RuntimeClient["diagnostics"]>>
@@ -1363,6 +1376,18 @@ export async function handleWorkerRequest(
       value.id,
       value.sessionID,
     );
+  }
+  if (request.method === "diagnostics.operations") {
+    const value = request.value as
+      | {
+          level?: import("@anthelia/contracts").OperationRecord["level"];
+          component?: string;
+          contains?: string;
+          since?: string;
+          limit?: number;
+        }
+      | undefined;
+    return await client.operationRecords?.(value);
   }
   if (request.method === "diagnostics") {
     const value = request.value as

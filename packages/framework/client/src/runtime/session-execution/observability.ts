@@ -1,11 +1,13 @@
 import { statusSnapshotController } from "@anthelia/runtime-status";
+import { dirname } from "node:path";
+import { operationLog, readOperationRecords } from "@anthelia/operation-log";
 import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { ClientSurfaceOptions } from "./types";
 import type { StatusSnapshotController } from "@anthelia/runtime-status";
 type Surface = Pick<
   RuntimeServiceClient,
-  "runtimeStatus" | "diagnostics" | "sessionSnapshot"
+  "runtimeStatus" | "diagnostics" | "sessionSnapshot" | "operationRecords"
 >;
 async function observabilityExec(ctx: RuntimeContext, sessionID?: string) {
   // Session snapshots may be the first routed call on a workspace proxy.
@@ -53,6 +55,27 @@ export function createObservabilitySurface(
           ]
         : ctx.ports.getRuntimeDiagnostics();
       return entries.slice(-Math.min(500, Math.max(1, limit)));
+    },
+    async operationRecords(input?: {
+      level?: "error" | "warn" | "info" | "debug" | "trace";
+      component?: string;
+      contains?: string;
+      since?: string;
+      limit?: number;
+    }) {
+      // T3/T4: the telemetry zone's read face for a host. The operation log
+      // owns its directory; an absent service (a bare runtime) answers
+      // empty rather than guessing a path.
+      const log = ctx.state.serviceDirectory.getOptional(operationLog);
+      const path = log?.stats().path;
+      if (!path) return [];
+      return readOperationRecords(dirname(path), {
+        ...(input?.level ? { level: input.level } : {}),
+        ...(input?.component ? { component: input.component } : {}),
+        ...(input?.contains ? { contains: input.contains } : {}),
+        ...(input?.since ? { since: input.since } : {}),
+        ...(input?.limit === undefined ? {} : { limit: input.limit }),
+      });
     },
     async sessionSnapshot(sessionID) {
       const exec = await observabilityExec(ctx, sessionID);
