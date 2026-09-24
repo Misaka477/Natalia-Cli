@@ -40,7 +40,7 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
   "packages/domains/collab/src/chat-prompt.ts": {
     count: 12,
     cls: "state-first",
-    note: "the live-context builders pass the events into fact-first helpers (mailbox/collab/drift/decision/constitution ternaries); DEBT in the note: pendingAudits (audit.requested) and conflicts (constitution.check) filter the tail for display — the audit idempotency family, named fix: audit.requested + constitution.check fact slices",
+    note: "the live-context builders pass the events into fact-first helpers (mailbox/collab/drift/decision/constitution ternaries); the audit/constitution-check display folds read the diagnostic slice through diagnosticStreamFor (paid since the slice rollout)",
   },
   "packages/domains/collab/src/chat-turn-common.ts": {
     count: 3,
@@ -63,9 +63,9 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
     note: "fact fold -> worker-backed projection fallback",
   },
   "packages/domains/collab/src/boundary.ts": {
-    count: 4,
-    cls: "fold-direct",
-    note: "the reconcile path: constitution/workContracts/goal are fact-first since the alias rollout (the module's own helper shape); deriveDriftBehaviorSignals + lastAssistantNarration are windowed/backward reads (tail-correct by design); DEBT: openInvariantHits + instructionRevision fold the whole tail — named fix: invariant.violation/resolved and context.instructions fact slices",
+    count: 2,
+    cls: "derivation",
+    note: "the reconcile path's two remaining reads are windowed/backward scans (drift behaviour signals, last narration) — tail-correct by design; its constitution/workContracts/goal constraints and invariant/instruction triggers are fact-first through driftJudgeReadsFor (belt = the ?? [] empty-default, uncounted)",
   },
   "packages/domains/collab/src/plan-contract-tools.ts": {
     count: 6,

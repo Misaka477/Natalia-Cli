@@ -2160,6 +2160,16 @@ export type SessionFactState = {
   goal?: GoalView;
   latestSnapshot?: SessionSnapshotEvent;
   /**
+   * Every event the drift-judgement and live-context folds consume:
+   * `invariant.*` (the D2 edges), `context.instructions` (the epoch
+   * reference), `audit.requested` (the wake idempotency family) and
+   * `constitution.check` (the conflict display). Collected verbatim so the
+   * boundary's reconcile and the live-context builders fold the complete
+   * slice without the raw journal — a fast-attach tail cannot hide a
+   * pre-epoch violation, instruction notice, audit request or conflict.
+   */
+  diagnosticStreamEvents: RuntimeEvent[];
+  /**
    * Every event the collaboration projections consume: `collab.*`,
    * `*.collab.*`, `plan.doc.*` and `mailbox.*`. Collected verbatim so the collab
    * snapshot, mailbox page and collaboration tools can fold the complete slice
@@ -2188,6 +2198,22 @@ export function isCollaborationStreamEvent(event: RuntimeEvent): boolean {
   );
 }
 
+/**
+ * Events the drift-judgement and live-context folds consume — the four
+ * disjoint families the boundary's reconcile (invariant edges, the
+ * instruction epoch) and the live-context builders (audit requests,
+ * constitution conflicts) fold from. Collected verbatim in the fact state
+ * so a fast-attach tail cannot hide a pre-epoch member of any family.
+ */
+export function isDiagnosticStreamEvent(event: RuntimeEvent): boolean {
+  return (
+    event.type.startsWith("invariant.") ||
+    event.type === "context.instructions" ||
+    event.type === "audit.requested" ||
+    event.type === "constitution.check"
+  );
+}
+
 /** Would `projectChatStream` render this event on the `navi` channel? */
 function naviChatStreamEvent(event: RuntimeEvent): boolean {
   const collab = normalizeCollaborationEvent(event);
@@ -2211,6 +2237,7 @@ export function emptySessionFactState(): SessionFactState {
     mailbox: emptySessionMailboxFactState(),
     decisions: emptySessionDecisionFactState(),
     intelligence: emptySessionIntelligenceFactState(),
+    diagnosticStreamEvents: [],
     collaborationEvents: [],
     naviChatEvents: [],
     niaChatEvents: [],
@@ -2229,6 +2256,7 @@ export function applySessionFactEvent(
   applySessionDecisionFact(state.decisions, event);
   applySessionIntelligenceFact(state.intelligence, event);
   applySessionGoalFact(state, event);
+  if (isDiagnosticStreamEvent(event)) state.diagnosticStreamEvents.push(event);
   if (event.type === "session.snapshot") state.latestSnapshot = event;
   if (isCollaborationStreamEvent(event)) state.collaborationEvents.push(event);
   if (naviChatStreamEvent(event)) state.naviChatEvents.push(event);
@@ -2408,6 +2436,14 @@ export function sessionFactCollabMessages(
 }
 
 /** The complete collaboration slice (collab + plan.doc + mailbox events). */
+/** The complete diagnostic slice (invariant edges, instruction notices,
+ * audit requests, constitution checks). */
+export function sessionFactDiagnosticStreamEvents(
+  state: SessionFactState,
+): RuntimeEvent[] {
+  return state.diagnosticStreamEvents;
+}
+
 export function sessionFactCollaborationEvents(
   state: SessionFactState,
 ): RuntimeEvent[] {

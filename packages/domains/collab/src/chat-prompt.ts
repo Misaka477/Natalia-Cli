@@ -17,6 +17,7 @@ import {
   sessionFactCollabMessages,
   sessionFactConstitutionRules,
   sessionFactDecisionRecords,
+  sessionFactDiagnosticStreamEvents,
   sessionFactDriftFindings,
   sessionFactMailboxMessages,
 } from "@anthelia/session";
@@ -56,6 +57,21 @@ export function createChatPrompt(ctx: RuntimeContext) {
    */
   function factStateFor(exec: SessionExecutionState | undefined) {
     return exec?.factStateComplete === true ? exec.factState : undefined;
+  }
+
+  /**
+   * The diagnostic slice (invariant edges, instruction notices, audit
+   * requests, constitution checks) the display folds read: the fact state's
+   * verbatim slice when complete, the resident events otherwise. A
+   * fast-attach tail would under-report pre-epoch audits and conflicts in
+   * the live context.
+   */
+  function diagnosticStreamFor(
+    exec: SessionExecutionState | undefined,
+    events: RuntimeEvent[],
+  ) {
+    const state = factStateFor(exec);
+    return state ? sessionFactDiagnosticStreamEvents(state) : events;
   }
 
   function collabMessagesFor(
@@ -233,7 +249,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
         )
         .map((plan) => plan.planID),
     );
-    const pendingAudits = chatSession.events
+    const pendingAudits = diagnosticStreamFor(exec, chatSession.events)
       .filter(
         (event): event is Extract<RuntimeEvent, { type: "audit.requested" }> =>
           event.type === "audit.requested" && !closedPlans.has(event.planID),
@@ -416,7 +432,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
         ? `Constitution rules: ${rules.map((rule) => rule.ruleID).join(", ")}`
         : "Constitution rules: none",
       ...(() => {
-        const conflicts = chatSession.events
+        const conflicts = diagnosticStreamFor(exec, chatSession.events)
           .filter(
             (
               event,

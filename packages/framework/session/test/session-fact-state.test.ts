@@ -19,6 +19,7 @@ import {
   sessionFactConstitutionOverrides,
   sessionFactConstitutionRules,
   sessionFactDecisionRecords,
+  sessionFactDiagnosticStreamEvents,
   sessionFactDriftFindings,
   sessionFactGoal,
   sessionFactIntelligenceFacts,
@@ -1068,4 +1069,68 @@ test("the goal twin ignores orphans, superseded revisions, and late rounds", () 
   expect(goal.roundsStarted).toBe(1);
   expect(goal.spentGoalTokens).toBe(5);
   expect(goal.goalWallClockMs).toBe(50);
+});
+
+test("the diagnostic slice collects the four judgement families", () => {
+  const events: RuntimeEvent[] = [
+    {
+      type: "invariant.violation",
+      owner: "session-store",
+      invariant: "recovery_index_matches_events",
+      code: "R2",
+      detail: "drifted",
+      at: GOAL_AT,
+    },
+    {
+      type: "context.instructions",
+      id: "context:config:1",
+      kind: "config_reload",
+      at: GOAL_AT,
+      revision: 2,
+      summary: "reloaded",
+    } as RuntimeEvent,
+    {
+      type: "audit.requested",
+      id: "audit:plan_1:1",
+      planID: "plan_1",
+      planVersion: 1,
+      triggerEventID: "status:1",
+      round: 1,
+      scope: "awaiting_audit",
+      at: GOAL_AT,
+    },
+    {
+      type: "constitution.check",
+      id: "check:1",
+      ruleID: "C-001",
+      statement: "never commit",
+      priority: "critical",
+      enforcement: "deny",
+      action: "commit",
+      resource: "git",
+      conflict: true,
+    },
+    // A non-member family rides nothing into the slice.
+    {
+      type: "mailbox.queued",
+      id: "mailbox:x:queued",
+      messageID: "mailbox:x",
+      source: "system",
+      priority: "normal",
+      intent: "clarification",
+      text: "hello",
+      safeSummary: "hello",
+      deliveryPolicy: "before_next_tool",
+      createdAt: GOAL_AT,
+    },
+  ];
+  const oneShot = sessionFactStateFromEvents(events);
+  expect(sessionFactDiagnosticStreamEvents(oneShot)).toEqual(
+    events.slice(0, 4),
+  );
+  const incremental = emptySessionFactState();
+  for (const event of events) applySessionFactEvent(incremental, event);
+  expect(sessionFactDiagnosticStreamEvents(incremental)).toEqual(
+    sessionFactDiagnosticStreamEvents(oneShot),
+  );
 });

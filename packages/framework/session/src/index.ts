@@ -388,6 +388,8 @@ export {
   sessionFactNiaChatMessages,
   sessionFactCollaborationEvents,
   isCollaborationStreamEvent,
+  sessionFactDiagnosticStreamEvents,
+  isDiagnosticStreamEvent,
 } from "./projector";
 export type {
   ProjectedCapability,

@@ -23,6 +23,7 @@ import {
   projectedEvidenceRecords,
   projectedWorkContracts,
   sessionFactConstitutionRules,
+  sessionFactDiagnosticStreamEvents,
   sessionFactEvidenceRecords,
   sessionFactGoal,
   sessionFactWorkContracts,
@@ -126,22 +127,34 @@ export function instructionRevision(events: readonly RuntimeEvent[]): number {
 const lastEvaluatedEpoch = new WeakMap<SessionExecutionState, number>();
 
 /**
- * The drift judgement's constraint inputs: the constitution rules and work
- * contracts from the complete fact state when available, the resident array
- * as the belt. A fast-attach tail cannot hold pre-epoch rules — a judgement
- * made against an empty constraint set is worse than none. Exported pure so
- * the policy is testable without a runtime (the reconcile path's own e2e is
- * full-attach, where belt and fact agree and cannot discriminate).
+ * The drift judge's full read policy: its constraint inputs (the
+ * constitution rules and work contracts it judges against) and its trigger
+ * inputs (the open invariant violations and the instruction epoch that force
+ * a re-evaluation) — all from the complete fact state when available, the
+ * resident array as the belt. A fast-attach tail cannot hold pre-epoch
+ * rules, contracts, violations or instruction notices, so a judgement made
+ * from it alone is made against an empty constraint set and a missed
+ * reference-frame change. Exported pure so the policy is testable without a
+ * runtime (the reconcile path's own e2e is full-attach, where belt and fact
+ * agree and cannot discriminate).
  */
-export function driftConstraintReadsFor(exec?: SessionExecutionState) {
+export function driftJudgeReadsFor(exec?: SessionExecutionState) {
   if (exec?.factStateComplete === true && exec.factState)
     return {
       constitutionRules: sessionFactConstitutionRules(exec.factState),
       workContracts: sessionFactWorkContracts(exec.factState),
+      invariantHits: openInvariantHits(
+        sessionFactDiagnosticStreamEvents(exec.factState),
+      ),
+      instructionRevision: instructionRevision(
+        sessionFactDiagnosticStreamEvents(exec.factState),
+      ),
     };
   return {
     constitutionRules: projectedConstitutionRules(exec?.session.events ?? []),
     workContracts: projectedWorkContracts(exec?.session.events ?? []),
+    invariantHits: openInvariantHits(exec?.session.events ?? []),
+    instructionRevision: instructionRevision(exec?.session.events ?? []),
   };
 }
 
@@ -344,20 +357,20 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
       }
       const activePlan = activePlanForExec(ctx, target);
       const objective = activePlan?.title ?? "";
-      // The judgement's constraint inputs, fact-first: a fast-attach tail
-      // cannot hold pre-epoch rules or contracts, and a judgement against an
-      // empty constraint set is worse than none. One read serves the drift
-      // branch and the goal question channel below.
-      const constraints = driftConstraintReadsFor(target);
+      // The drift judge's read policy, fact-first: one read serves the drift
+      // branch's constraints and triggers and the goal question channel below.
+      const judgeReads = driftJudgeReadsFor(target);
       // EI Phase 2 机制 2: the L4 behaviour signals (no-progress window, failure
       // loop) run every turn-end, even when there were no workspace changes.
       const behavior = deriveDriftBehaviorSignals(target.session.events);
       // Discovery D3's two triggers beyond external edits: open invariant
       // violations (D2's edges folded back as an R6 signal) and an
       // instruction-epoch change (the reference frame moved — force a full
-      // evaluation even with an empty change set).
-      const invariantHits = openInvariantHits(target.session.events);
-      const epoch = instructionRevision(target.session.events);
+      // evaluation even with an empty change set). Both come from the judge's
+      // read policy: a fast-attach tail would otherwise miss a pre-epoch
+      // violation or notice.
+      const invariantHits = judgeReads.invariantHits;
+      const epoch = judgeReads.instructionRevision;
       const epochChanged =
         epoch > 0 && lastEvaluatedEpoch.get(target) !== epoch;
       lastEvaluatedEpoch.set(target, epoch);
@@ -378,7 +391,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           mailboxMessagesFor(target),
         );
         const applicableConstraints = [
-          ...constraints.constitutionRules
+          ...judgeReads.constitutionRules
             .filter((rule) =>
               rule.appliesTo?.paths?.some((pattern) =>
                 confirmed.some((change) => globPathMatch(pattern, change.path)),
@@ -389,7 +402,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         ];
         // EI Phase 2: the same matched rules, carrying enforcement, so a deny
         // hit opens a high constitution_conflict finding.
-        const constitutionHits = constraints.constitutionRules
+        const constitutionHits = judgeReads.constitutionRules
           .filter((rule) =>
             rule.appliesTo?.paths?.some((pattern) =>
               confirmed.some((change) => globPathMatch(pattern, change.path)),
@@ -401,7 +414,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
           }));
         // EI §8.6: the R is the accepted WorkContract — the evaluator judges
         // against the user-tier commitment when one exists.
-        const contract = constraints.workContracts.find(
+        const contract = judgeReads.workContracts.find(
           (candidate) => candidate.status === "current",
         );
         const driftSignal = {
@@ -483,7 +496,7 @@ export function createCollaborationBoundary(ctx: RuntimeContext) {
         goal = undefined;
       }
       if (goal?.phase === "active") {
-        const hasContract = constraints.workContracts.some(
+        const hasContract = judgeReads.workContracts.some(
           (candidate) => candidate.status === "current",
         );
         const narration = hasContract
