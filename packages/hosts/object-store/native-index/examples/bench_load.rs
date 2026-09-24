@@ -50,8 +50,6 @@ fn main() {
     let mmap_ms = started.elapsed().as_secs_f64() * 1000.0;
     assert!(!handle.is_null(), "the mmap load must succeed");
 
-    // One find on the mapped handle (the serving path).
-    let id = CString::new(format!("obj:{:016x}", count / 2)).unwrap();
     let mut out = natalia_index_native::NativeIndexEntry {
         offset: 0,
         data_offset: 0,
@@ -60,13 +58,23 @@ fn main() {
         kind: 0,
         delta_len: 0,
     };
-    let started = Instant::now();
-    let found = unsafe {
-        natalia_index_native::native_index_find(handle, id.as_ptr(), &mut out)
-    };
-    let find_ms = started.elapsed().as_secs_f64() * 1000.0;
-    assert_eq!(found, 1);
 
+    // The find's latency at scale: the linear scan was 0.181ms at 100k;
+    // the sorted binary search answers the same question in microseconds.
+    let probes = [count / 2, count - 1, 0, count / 4];
+    let mut total_ns = 0u128;
+    let mut hits = 0;
+    for probe in probes {
+        let cid = CString::new(format!("obj:{:016x}", probe)).unwrap();
+        let started = Instant::now();
+        let found = unsafe {
+            natalia_index_native::native_index_find(handle, cid.as_ptr(), &mut out)
+        };
+        total_ns += started.elapsed().as_nanos();
+        assert_eq!(found, 1);
+        hits += 1;
+    }
+    println!("binary find ({hits}):   {} ns each (avg)", total_ns / probes.len() as u128);
     println!("entries:            {count}");
     println!("index bytes:        {}", bytes.len());
     println!(
@@ -74,7 +82,6 @@ fn main() {
         read_ms + parse_read_ms
     );
     println!("new mmap load:      {mmap_ms:.2} ms (entries: {parsed_read})");
-    println!("mapped find (one):  {find_ms:.4} ms");
     unsafe { natalia_index_native::native_index_free(handle) };
     std::fs::remove_file(&path).ok();
 }

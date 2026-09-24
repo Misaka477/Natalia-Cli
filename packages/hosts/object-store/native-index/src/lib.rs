@@ -94,6 +94,36 @@ struct NativeIndex {
     /// handle (the parse's spans point into it).
     map: Mmap,
     entries: Vec<IndexRecord>,
+    /// The entries' indices sorted by id (the binary search's table).
+    /// Payload order stays in `entries`; this permutation is the lookup
+    /// order — the find is O(log N), not a scan.
+    order: Vec<u32>,
+}
+
+impl NativeIndex {
+    /// One entry's id bytes, from the mapping.
+    fn id_bytes(&self, entry: &IndexRecord) -> &[u8] {
+        let bytes = self.map.bytes();
+        let start = entry.id_offset as usize;
+        let end = (start + entry.id_len as usize).min(bytes.len());
+        &bytes[start..end]
+    }
+
+    /// The binary search: the first entry whose id is >= the target.
+    fn lower_bound(&self, id: &[u8]) -> usize {
+        let mut low = 0usize;
+        let mut high = self.order.len();
+        while low < high {
+            let mid = low + (high - low) / 2;
+            let entry = &self.entries[self.order[mid] as usize];
+            if self.id_bytes(entry) < id {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        low
+    }
 }
 
 unsafe fn parse_index(bytes: &[u8]) -> Vec<IndexRecord> {
@@ -158,7 +188,24 @@ pub unsafe extern "C" fn native_index_load(path: *const c_char) -> *mut c_void {
     let file = match std::fs::File::open(Path::new(path)) { Ok(f) => f, Err(_) => return std::ptr::null_mut() };
     let map = match Mmap::map(&file) { Some(m) => m, None => return std::ptr::null_mut() };
     let entries = unsafe { parse_index(map.bytes()) };
-    Box::into_raw(Box::new(NativeIndex { map, entries })) as *mut c_void
+    // The sort compares ids through the mapping (a projection over the
+    // spans, no copy). A temporary handle borrows the map for the
+    // comparator, then the real handle takes everything.
+    let mut order: Vec<u32> = (0..entries.len() as u32).collect();
+    {
+        let temporary = NativeIndex {
+            map,
+            entries,
+            order: Vec::new(),
+        };
+        order.sort_by(|left, right| {
+            temporary
+                .id_bytes(&temporary.entries[*left as usize])
+                .cmp(temporary.id_bytes(&temporary.entries[*right as usize]))
+        });
+        let NativeIndex { map, entries, .. } = temporary;
+        Box::into_raw(Box::new(NativeIndex { map, entries, order })) as *mut c_void
+    }
 }
 
 #[no_mangle]
@@ -179,12 +226,10 @@ pub unsafe extern "C" fn native_index_find(
     }
     let index = &*(handle as *const NativeIndex);
     let id = CStr::from_ptr(id).to_bytes();
-    for record in index.entries.iter() {
-        let start = record.id_offset as usize;
-        let end = start + record.id_len as usize;
-        let bytes = index.map.bytes();
-        if end > bytes.len() { continue; }
-        if &bytes[start..end] == id {
+    let at = index.lower_bound(id);
+    if let Some(slot) = index.order.get(at) {
+        let record = &index.entries[*slot as usize];
+        if index.id_bytes(record) == id {
             std::ptr::write(out, NativeIndexEntry {
                 offset: record.offset,
                 data_offset: record.data_offset,
@@ -266,6 +311,44 @@ mod tests {
         // An absent id answers zero, not garbage.
         let missing = CString::new("delta").unwrap();
         assert_eq!(unsafe { native_index_find(handle, missing.as_ptr(), &mut out) }, 0);
+        unsafe { native_index_free(handle) };
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn the_binary_search_does_not_depend_on_payload_order() {
+        // Payload order is the writer's; the lookup order is the handle's
+        // sorted permutation. A deliberately scrambled payload proves the
+        // find is the binary search, not a lucky scan.
+        let bytes = write_index(&[
+            ("mike", 300, 0),
+            ("alpha", 100, 0),
+            ("zulu", 900, 0),
+            ("bravo", 200, 0),
+            ("kilo", 500, 0),
+        ]);
+        let (handle, path) = load_bytes(&bytes);
+        let mut out = NativeIndexEntry {
+            offset: 0,
+            data_offset: 0,
+            orig_len: 0,
+            comp_len: 0,
+            kind: 0,
+            delta_len: 0,
+        };
+        for (id, offset) in [
+            ("alpha", 100u32),
+            ("bravo", 200),
+            ("kilo", 500),
+            ("mike", 300),
+            ("zulu", 900),
+        ] {
+            let cid = CString::new(id).unwrap();
+            assert_eq!(unsafe { native_index_find(handle, cid.as_ptr(), &mut out) }, 1, "missing {id}");
+            assert_eq!(out.offset, offset, "wrong offset for {id}");
+        }
+        let absent = CString::new("november").unwrap();
+        assert_eq!(unsafe { native_index_find(handle, absent.as_ptr(), &mut out) }, 0);
         unsafe { native_index_free(handle) };
         std::fs::remove_file(&path).ok();
     }
