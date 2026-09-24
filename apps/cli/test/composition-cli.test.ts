@@ -62,6 +62,7 @@ const baseRows = [
 test("list shows every registered row with its legal values", () => {
   const rows = compositionRowViews(registry());
   expect(rows.map((row) => row.rowID)).toEqual([
+    "anthelia.cache.response",
     "anthelia.objectstore",
     "anthelia.sandbox",
   ]);

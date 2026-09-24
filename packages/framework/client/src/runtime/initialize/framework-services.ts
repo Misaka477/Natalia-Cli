@@ -104,6 +104,7 @@ import {
   type WorkspaceMutationIdentity,
 } from "@anthelia/workspace";
 import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
+import { responseCacheEnabledFromProfile } from "./response-cache-profile";
 import type { PluginCommandInvocation } from "@anthelia/plugin";
 import {
   localToolsInput,
@@ -614,12 +615,19 @@ export async function wireFrameworkServices(
   // RINA Phase 4's response cache: independent of the fabric (a sampled
   // provider answer is not law-1 deterministic work), default-off, and
   // process-scoped — the study's isolation rule rides its key, not a
-  // per-session instance. An operator opts in per process; disabling
-  // clears it, so a later opt-in never serves an earlier process's
-  // answers.
+  // per-session instance. The opt-in is the composition row
+  // (`anthelia.cache.response`): a user drop-in over the workspace
+  // profile is the operator's enable; absence (or disabled) = false, so
+  // no profile changes behavior until one says otherwise. Disabling
+  // clears the cache, so a later opt-in never serves an earlier
+  // process's answers.
   ctx.state.serviceDirectory.provide(
     rinaResponseCache,
-    createResponseCache({ enabled: false }),
+    createResponseCache({
+      enabled: responseCacheEnabledFromProfile(
+        ctx.state.serviceDirectory.getOptional(compositionProfile),
+      ),
+    }),
   );
   // The telemetry zone (decisions §5): the runtime's own operation log,
   // home-level like the install layout, overridable for isolated hosts

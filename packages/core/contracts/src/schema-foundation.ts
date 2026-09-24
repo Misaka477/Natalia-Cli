@@ -80,6 +80,17 @@ export const confinementConfigSchema = z.object({
  * An empty schema keeps the codegen's config type an honest `{}` (an
  * editor sees no keys, not `unknown`). */
 export const objectStoreConfigSchema = z.object({});
+
+/**
+ * The response-cache row's config (rina Phase 4): the operator's opt-in
+ * for the exact-match provider-response cache. Default false — the cache
+ * is never ambient; a profile (or a user drop-in over it) that says
+ * `enabled: true` is the explicit acceptance that the identical request
+ * may answer with the earlier, identical request's response.
+ */
+export const responseCacheConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+});
 /**
  * The composition-profile row that carries the confinement default
  * (interface spec §6.8's `anthelia.sandbox` row). One name for the
@@ -93,6 +104,12 @@ export const CONFINEMENT_COMPOSITION_ROW_ID = "anthelia.sandbox";
  * the native core with the same honest availability fallback the env
  * seam has). */
 export const OBJECTSTORE_COMPOSITION_ROW_ID = "anthelia.objectstore";
+/**
+ * The response-cache opt-in row (rina Phase 4): the composition-row form
+ * of the default-off switch — a user drop-in over the workspace profile
+ * is the operator's enable, no code change and no restart-time env var.
+ */
+export const RESPONSE_CACHE_COMPOSITION_ROW_ID = "anthelia.cache.response";
 
 /**
  * Wall-clock budget for one subagent run, in milliseconds.
