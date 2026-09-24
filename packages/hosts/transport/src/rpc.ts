@@ -233,6 +233,8 @@ export const RPC_ROUTE_MEMBERS = {
   "eval.external_benchmark": "externalBenchmark",
   "eval.external_run": "recordExternalRun",
   "corrections.patterns": "correctionPatterns",
+  "growth.triggers": "growthTriggers",
+  "eval.joined_tasks": "externalJoinedTasks",
   "workgraph.nodes": "workGraphNodes",
   "workgraph.edges": "workGraphEdges",
   // --- P0-C: the reachability gap closed (audit list in the API plan §8.10) ---
@@ -3944,6 +3946,24 @@ export async function handleRPCMessage(
           skipped: [],
           moves: [],
         },
+      };
+    }
+    if (body.method === "growth.triggers") {
+      optionsGuard(client, "growthTriggers");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.growthTriggers?.(sessionID)) ?? [],
+      };
+    }
+    if (body.method === "eval.joined_tasks") {
+      optionsGuard(client, "externalJoinedTasks");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.externalJoinedTasks?.(sessionID)) ?? [],
       };
     }
     if (body.method === "corrections.patterns") {

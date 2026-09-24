@@ -268,6 +268,8 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "externalBenchmark",
     "recordExternalRun",
     "correctionPatterns",
+    "growthTriggers",
+    "externalJoinedTasks",
     "constitutionOverrides",
     "decisionRecords",
     "recordDecision",

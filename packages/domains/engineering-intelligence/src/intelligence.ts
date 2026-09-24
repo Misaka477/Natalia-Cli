@@ -42,6 +42,7 @@ import { createHash } from "node:crypto";
 import { groupRunsByPrompt, scoreRun, segmentTurns } from "./run-scorer";
 import { loadExternalTask, readExternalBenchmark } from "./eval-reader";
 import { deriveCorrectionPatterns, readCorrections } from "./corrections";
+import { deriveGrowthTriggers } from "./growth-trigger";
 import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
 import type { EpisodeID } from "@anthelia/contracts";
 import { readFile } from "node:fs/promises";
@@ -91,6 +92,8 @@ type Surface = Pick<
   | "externalBenchmark"
   | "recordExternalRun"
   | "correctionPatterns"
+  | "growthTriggers"
+  | "externalJoinedTasks"
   | "promptRunGroups"
   | "growthProposals"
   | "constitutionRules"
@@ -779,6 +782,41 @@ export function createIntelligenceSurface(
      * a skill may auto-apply) is the constitution's table, not this
      * face's.
      */
+    /**
+     * The growth branch's trigger face (the study's "G-d + 触发面"):
+     * the four growth systems' views ASSEMBLED into one answer — which
+     * growth signal deserves the human's attention now. The trigger
+     * applies nothing (growth 默认不自授权): each trigger names its
+     * rule, its evidence (the source's own numbers) and its
+     * destination class, and the NGM proposal interface plus the
+     * constitution's approval policy decide what becomes real.
+     */
+    async growthTriggers(sessionID?: string) {
+      const [groups, joins, corrections, curriculum] = await Promise.all([
+        this.promptRunGroups!(sessionID),
+        this.externalJoinedTasks!(sessionID),
+        this.correctionPatterns!(sessionID),
+        this.growthPropose!(undefined, sessionID),
+      ]);
+      return deriveGrowthTriggers({
+        runGroups: groups,
+        joins,
+        corrections: corrections.suggestions,
+        curriculum: curriculum.suggestions,
+      });
+    },
+    /**
+     * The joined per-task view alone (the trigger's G-c input): the
+     * joins this harness recorded against the external benchmark. Read
+     * separately so the trigger's assembly does not re-read the eval.
+     */
+    async externalJoinedTasks(sessionID?: string) {
+      const dir = process.env.NATALIA_EVAL_DIR;
+      if (!dir) return [];
+      const answer = await this.externalBenchmark!({ dir }, sessionID);
+      if ("reason" in answer) return [];
+      return answer.perTask;
+    },
     async correctionPatterns(sessionID?: string) {
       const exec = await completeIntelligenceExec(sessionID);
       if (!exec?.session)

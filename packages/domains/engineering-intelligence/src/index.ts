@@ -10,3 +10,4 @@ export * from "./feedback";
 export * from "./growth";
 export * from "./eval-reader";
 export * from "./corrections";
+export * from "./growth-trigger";

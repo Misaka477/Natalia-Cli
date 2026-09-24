@@ -4457,6 +4457,39 @@ export type RuntimeClient = {
     considered: { corrections: number };
   }>;
   /**
+   * The growth branch's trigger face (the study's "G-d + 触发面"): the
+   * four growth systems' views assembled into the triggers that deserve
+   * the human's attention — each naming its rule, its evidence (the
+   * source's own numbers) and its destination class. Applies nothing;
+   * the NGM proposal interface and the constitution's approval policy
+   * decide.
+   */
+  growthTriggers?(sessionID?: string): Promise<
+    Array<{
+      rule:
+        | "prompt_success"
+        | "benchmark_gap"
+        | "correction_pattern"
+        | "capability_gap";
+      class: "skill" | "rule" | "policy" | "generation";
+      capability: string;
+      evidence: Record<string, number | string>;
+      reason: string;
+    }>
+  >;
+  /**
+   * The joined per-task view alone (the trigger's G-c input): the joins
+   * this harness recorded against the external benchmark.
+   */
+  externalJoinedTasks?(sessionID?: string): Promise<
+    Array<{
+      externalTaskID: string;
+      baselineSuccessRate: number;
+      ourRuns: number;
+      ourSuccessRate: number;
+    }>
+  >;
+  /**
    * Discovery G-c's join (the adapter layer's record): one of our runs
    * against an external task. The turn's score is READ from the journal
    * (the G-b scorer — no new telemetry); the task's id is the join's

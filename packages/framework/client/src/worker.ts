@@ -49,6 +49,8 @@ export const WORKER_ROUTE_MEMBERS = {
   "eval.external_benchmark": "externalBenchmark",
   "eval.external_run": "recordExternalRun",
   "corrections.patterns": "correctionPatterns",
+  "growth.triggers": "growthTriggers",
+  "eval.joined_tasks": "externalJoinedTasks",
   messages: "messages",
   agents: "agents",
   "model.catalog": "modelCatalog",
@@ -202,6 +204,8 @@ type WorkerRequest = {
     | "eval.external_benchmark"
     | "eval.external_run"
     | "corrections.patterns"
+    | "growth.triggers"
+    | "eval.joined_tasks"
     | "messages"
     | "agents"
     | "model.catalog"
@@ -1133,6 +1137,20 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["workspaceAstMove"]>>
       >;
     },
+    async growthTriggers(sessionID?: string) {
+      return (await request(
+        "growth.triggers",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["growthTriggers"]>>>;
+    },
+    async externalJoinedTasks(sessionID?: string) {
+      return (await request(
+        "eval.joined_tasks",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["externalJoinedTasks"]>>
+      >;
+    },
     async correctionPatterns(sessionID?: string) {
       return (await request(
         "corrections.patterns",
@@ -1440,6 +1458,14 @@ export async function handleWorkerRequest(
       | { paths?: string[]; from?: string }
       | undefined;
     return await client.workspaceAstMove?.(value);
+  }
+  if (request.method === "growth.triggers") {
+    const value = request.value as { sessionID?: string } | undefined;
+    return await client.growthTriggers?.(value?.sessionID);
+  }
+  if (request.method === "eval.joined_tasks") {
+    const value = request.value as { sessionID?: string } | undefined;
+    return await client.externalJoinedTasks?.(value?.sessionID);
   }
   if (request.method === "corrections.patterns") {
     const value = request.value as { sessionID?: string } | undefined;

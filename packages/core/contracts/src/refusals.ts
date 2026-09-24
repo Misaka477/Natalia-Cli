@@ -556,6 +556,14 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure read: the journal's safe corrections clustered into suggestions",
   },
+  growthTriggers: {
+    refusal: "none",
+    note: "pure read: the four growth views assembled into triggers, each with its evidence",
+  },
+  externalJoinedTasks: {
+    refusal: "none",
+    note: "pure read: the recorded joins against the external benchmark",
+  },
   notices: {
     refusal: "none",
     note: "pure read of the projected runtime notices",
