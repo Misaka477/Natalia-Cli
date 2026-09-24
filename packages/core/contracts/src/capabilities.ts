@@ -255,6 +255,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
    */
   intelligence: [
     "constitutionRules",
+    "constitutionOverrides",
     "decisionRecords",
     "recordDecision",
     "evidenceRecords",

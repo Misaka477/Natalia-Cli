@@ -129,6 +129,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "workgraph.integrity": "workGraphIntegrity",
   "workgraph.unattributed": "unattributedChanges",
   "constitution.list": "constitutionRules",
+  "constitution.overrides": "constitutionOverrides",
   "decision.list": "decisionRecords",
   "evidence.list": "evidenceRecords",
   "projections.list": "projectionContributions",
@@ -274,6 +275,7 @@ type WorkerRequest = {
     | "workgraph.integrity"
     | "workgraph.unattributed"
     | "constitution.list"
+    | "constitution.overrides"
     | "decision.list"
     | "evidence.list"
     | "projections.list"
@@ -1007,6 +1009,14 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["constitutionRules"]>>
       >;
     },
+    async constitutionOverrides(sessionID) {
+      return (await request(
+        "constitution.overrides",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["constitutionOverrides"]>>
+      >;
+    },
     async decisionRecords(sessionID) {
       return (await request(
         "decision.list",
@@ -1625,6 +1635,10 @@ export async function handleWorkerRequest(
     );
   if (request.method === "constitution.list")
     return await client.constitutionRules?.(
+      (request.value as { sessionID?: string } | undefined)?.sessionID,
+    );
+  if (request.method === "constitution.overrides")
+    return await client.constitutionOverrides?.(
       (request.value as { sessionID?: string } | undefined)?.sessionID,
     );
   if (request.method === "decision.list")

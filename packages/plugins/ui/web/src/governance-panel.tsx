@@ -107,9 +107,21 @@ export type GovernanceListTab =
   | "completions"
   | "drift";
 
+export type GovernanceOverrideView = {
+  id: string;
+  ruleID: string;
+  reason: string;
+  approvedBy: "user";
+  paths?: string[];
+  taskID?: string;
+  expiresAt?: string;
+};
+
 export type GovernanceSliceBundle = {
   constitution: any[];
   docRules: any[];
+  /** Granted scoped overrides, companion to the constitution slice. */
+  overrides: GovernanceOverrideView[];
   decisions: any[];
   evidence: any[];
   completions: any[];
@@ -267,6 +279,7 @@ export async function loadGovernanceSlices(
   const [
     constitution,
     docRules,
+    overrides,
     decisions,
     evidence,
     completions,
@@ -282,6 +295,10 @@ export async function loadGovernanceSlices(
     loadSlice(
       "ConstitutionDocs",
       () => runtime?.constitutionDocRules?.(sessionID) ?? Promise.resolve([]),
+    ),
+    loadSlice(
+      "ConstitutionOverrides",
+      () => runtime?.constitutionOverrides?.(sessionID) ?? Promise.resolve([]),
     ),
     loadList("decisions"),
     loadList("evidence"),
@@ -307,6 +324,7 @@ export async function loadGovernanceSlices(
   return {
     constitution,
     docRules,
+    overrides: overrides as GovernanceOverrideView[],
     decisions: decisions.items,
     evidence: evidence.items,
     completions: completions.items,
@@ -445,6 +463,26 @@ export async function createConstitutionRuleViaRpc(
   },
 ) {
   return runtime?.createConstitutionRule?.(input, sessionID);
+}
+
+/** The granted overrides for one rule, in journal order. */
+export function overridesForRule(
+  overrides: readonly GovernanceOverrideView[],
+  ruleID: string,
+): GovernanceOverrideView[] {
+  return overrides.filter((override) => override.ruleID === ruleID);
+}
+
+/** One override's summary: the reason, then its scope and expiry when set. */
+export function overrideLine(override: GovernanceOverrideView): string {
+  const scope = [
+    ...(override.paths?.length ? [`paths: ${override.paths.join(", ")}`] : []),
+    ...(override.taskID ? [`task: ${override.taskID}`] : []),
+    ...(override.expiresAt ? [`expires: ${override.expiresAt}`] : []),
+  ];
+  return scope.length
+    ? `${override.reason} (${scope.join("; ")})`
+    : override.reason;
 }
 
 /**
@@ -807,6 +845,42 @@ function DriftCard(props: {
  * transition, in the retiring modal. Cost/dashboard-free: this is the
  * governance surface only.
  */
+/**
+ * A rule's granted overrides: the companion display to the Override action.
+ * The list truncates with a reveal path (the house's collapse discipline —
+ * truncation without a reveal is not allowed), and an absent list renders
+ * nothing rather than an empty section.
+ */
+function RuleOverrides(props: { overrides: GovernanceOverrideView[] }) {
+  const [expanded, setExpanded] = createSignal(false);
+  const view = () => collapseList(props.overrides, expanded());
+  return (
+    <Show when={props.overrides.length > 0}>
+      <div class="constitution-row-overrides">
+        <div class="constitution-row-overrides-title">
+          已授 override ×{props.overrides.length}
+        </div>
+        <For each={view().shown}>
+          {(override) => (
+            <div class="constitution-row-override">
+              {overrideLine(override)}
+            </div>
+          )}
+        </For>
+        <Show when={view().hiddenCount > 0 || expanded()}>
+          <button
+            type="button"
+            class="constitution-btn"
+            onClick={() => setExpanded(!expanded())}
+          >
+            {expanded() ? "收起" : `展开全部 (+${view().hiddenCount})`}
+          </button>
+        </Show>
+      </div>
+    </Show>
+  );
+}
+
 export function GovernancePane(props: {
   state: AppState;
   runtime?: RuntimeClient;
@@ -821,6 +895,9 @@ export function GovernancePane(props: {
   );
   const [liveConstitution, setLiveConstitution] = createSignal<any[]>([]);
   const [liveDocRules, setLiveDocRules] = createSignal<any[]>([]);
+  const [liveOverrides, setLiveOverrides] = createSignal<
+    GovernanceOverrideView[]
+  >([]);
   const [liveDecisions, setLiveDecisions] = createSignal<any[]>([]);
   const [decisionScope, setDecisionScope] = createSignal<
     "session" | "workspace" | "all"
@@ -895,6 +972,7 @@ export function GovernancePane(props: {
     });
     setLiveConstitution(bundle.constitution);
     setLiveDocRules(bundle.docRules);
+    setLiveOverrides(bundle.overrides);
     setLiveDecisions(bundle.decisions);
     setLiveEvidence(bundle.evidence);
     setLiveCompletions(bundle.completions);
@@ -1577,6 +1655,9 @@ export function GovernancePane(props: {
                   <span class="neu-gov-meta">
                     {rule.scope} · {rule.enforcement}
                   </span>
+                  <RuleOverrides
+                    overrides={overridesForRule(liveOverrides(), rule.ruleID)}
+                  />
                 </div>
                 <Show when={constitutionRuleAffordance(rule) === "editable"}>
                   <div class="constitution-row-actions">

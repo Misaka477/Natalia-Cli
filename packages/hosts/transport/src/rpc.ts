@@ -229,6 +229,7 @@ export const RPC_ROUTE_MEMBERS = {
   "nativeTerminal.write": "nativeTerminalWrite",
   "nativeTerminal.resize": "nativeTerminalResize",
   "constitution.rules": "constitutionRules",
+  "constitution.overrides": "constitutionOverrides",
   "constitution.rule.update": "updateConstitutionRule",
   "constitution.rule.create": "createConstitutionRule",
   "constitution.rule.remove": "removeConstitutionRule",
@@ -2130,6 +2131,16 @@ export async function handleRPCMessage(
         jsonrpc: "2.0",
         id: body.id ?? null,
         result: await client.constitutionRules?.(
+          optionalStringParam(body.params, "sessionID"),
+        ),
+      };
+    }
+    if (body.method === "constitution.overrides") {
+      optionsGuard(client, "constitutionOverrides");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: await client.constitutionOverrides?.(
           optionalStringParam(body.params, "sessionID"),
         ),
       };

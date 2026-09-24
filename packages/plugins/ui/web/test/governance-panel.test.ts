@@ -5,7 +5,9 @@ import {
   collapseList,
   constitutionOverrideAffordance,
   constitutionRuleAffordance,
+  overrideLine,
   overrideRequestFromDraft,
+  overridesForRule,
   requestOverrideViaRpc,
   mergeWorkGraphState,
   createConstitutionRuleViaRpc,
@@ -58,6 +60,7 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
   const data = await loadGovernanceSlices(filled, "ses_panel");
   expect(data.constitution).toHaveLength(1);
   expect(data.docRules).toHaveLength(1);
+  expect(data.overrides).toEqual([]);
   expect(data.decisions).toHaveLength(1);
   expect(data.evidence).toHaveLength(1);
   expect(data.completions).toHaveLength(1);
@@ -71,6 +74,7 @@ test("loadGovernanceSlices handles data and all-empty surfaces", async () => {
   expect(empty).toEqual({
     constitution: [],
     docRules: [],
+    overrides: [],
     decisions: [],
     evidence: [],
     completions: [],
@@ -890,4 +894,64 @@ test("an override request goes through the RPC and the approval seam grants it",
       sessionID: "ses_override",
     },
   ]);
+});
+
+test("the overrides slice loads beside the constitution slice", async () => {
+  const runtime = {
+    constitutionRules: async () => [
+      {
+        ruleID: "C-006",
+        statement: "sandbox only",
+        scope: "project",
+        priority: "high",
+        source: "user",
+        enforcement: "approval",
+        overridePolicy: "user_scoped",
+      },
+    ],
+    constitutionOverrides: async () => [
+      {
+        id: "override:C-006:1",
+        ruleID: "C-006",
+        reason: "one-off host write",
+        approvedBy: "user",
+        paths: ["src/parser.ts"],
+      },
+    ],
+  } as unknown as RuntimeClient;
+  const bundle = await loadGovernanceSlices(runtime, "ses_ov");
+  expect(bundle.overrides).toEqual([
+    {
+      id: "override:C-006:1",
+      ruleID: "C-006",
+      reason: "one-off host write",
+      approvedBy: "user",
+      paths: ["src/parser.ts"],
+    },
+  ]);
+  // The slice is per-rule addressable and each override renders its scope.
+  expect(overridesForRule(bundle.overrides, "C-006")).toHaveLength(1);
+  expect(overridesForRule(bundle.overrides, "C-999")).toEqual([]);
+  expect(overrideLine(bundle.overrides[0]!)).toBe(
+    "one-off host write (paths: src/parser.ts)",
+  );
+  expect(
+    overrideLine({
+      id: "o",
+      ruleID: "C-010",
+      reason: "the user asked",
+      approvedBy: "user",
+      taskID: "task_1",
+      expiresAt: "2026-10-01T00:00:00.000Z",
+    }),
+  ).toBe("the user asked (task: task_1; expires: 2026-10-01T00:00:00.000Z)");
+  // No scope fields: the bare reason, nothing invented.
+  expect(
+    overrideLine({
+      id: "o2",
+      ruleID: "C-013",
+      reason: "whole-scope exception",
+      approvedBy: "user",
+    }),
+  ).toBe("whole-scope exception");
 });

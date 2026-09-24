@@ -1,4 +1,5 @@
 import type { RuntimeServiceClient } from "@anthelia/runtime-services";
+import type { RuntimeEvent } from "@anthelia/contracts";
 import { sessionStoreController } from "@anthelia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
 import { type ConstitutionDocRule } from "@anthelia/runtime-services";
@@ -15,6 +16,7 @@ import {
   projectedCollabMessages,
   projectedCompletions,
   projectedConstitutionRules,
+  projectedConstitutionOverrides,
   projectedRuntimeNotices,
   projectedWorkContracts,
   projectedDecisionRecords,
@@ -75,6 +77,7 @@ type ClientSurfaceOptions = {
 type Surface = Pick<
   RuntimeServiceClient,
   | "constitutionRules"
+  | "constitutionOverrides"
   | "decisionRecords"
   | "recordDecision"
   | "evidenceRecords"
@@ -387,6 +390,44 @@ export function createIntelligenceSurface(
         ...(r.proposedBy ? { proposedBy: r.proposedBy } : {}),
         ...(r.approvedBy ? { approvedBy: r.approvedBy } : {}),
       }));
+    },
+    async constitutionOverrides(sessionID?: string) {
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session) return [];
+      const instance = loadInstanceGovernance(
+        resolveGovernanceRoot(ctx.ports.getWorkspaceRoot()),
+      );
+      // The same merge as constitutionRules — workspace-tier grants plus the
+      // session's — deduplicated by event id: an instance grant is published
+      // into the session once, so the naive concatenation would count it
+      // twice (the rule fold dedups by ruleID, the override list does not).
+      // Filtering to the grants first keeps the id key honest (the event
+      // union does not promise every member carries one).
+      const grants = [...instance.events, ...exec.session.events].filter(
+        (
+          event,
+        ): event is Extract<
+          RuntimeEvent,
+          { type: "constitution.override_granted" }
+        > => event.type === "constitution.override_granted",
+      );
+      const merged = new Map<
+        string,
+        Extract<RuntimeEvent, { type: "constitution.override_granted" }>
+      >();
+      for (const grant of grants)
+        if (!merged.has(grant.id)) merged.set(grant.id, grant);
+      return projectedConstitutionOverrides([...merged.values()]).map(
+        (grant) => ({
+          id: grant.id,
+          ruleID: grant.ruleID,
+          reason: grant.reason,
+          approvedBy: grant.approvedBy,
+          ...(grant.paths?.length ? { paths: grant.paths } : {}),
+          ...(grant.taskID ? { taskID: grant.taskID } : {}),
+          ...(grant.expiresAt ? { expiresAt: grant.expiresAt } : {}),
+        }),
+      );
     },
     async decisionRecords(
       input?:

@@ -115,6 +115,7 @@ function controllableClient() {
     "nativeTerminalWrite",
     "nativeTerminalResize",
     "constitutionRules",
+    "constitutionOverrides",
     "decisionRecords",
     "recordDecision",
     "evidenceRecords",

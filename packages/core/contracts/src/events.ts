@@ -3908,6 +3908,25 @@ export type RuntimeClient = {
     }>
   >;
   /**
+   * The granted scoped overrides (ledger plan §3's ScopedOverride), the
+   * companion read to `constitutionRules`: the session's overrides merged
+   * with the workspace-tier ones, time-filtered at read time so an expired
+   * override answers as expired rather than vanishing silently. A rule's
+   * `overridePolicy: "forbidden"` never appears here — the request is
+   * refused before a grant exists.
+   */
+  constitutionOverrides?(sessionID?: string): Promise<
+    Array<{
+      id: string;
+      ruleID: string;
+      reason: string;
+      approvedBy: "user";
+      paths?: string[];
+      taskID?: string;
+      expiresAt?: string;
+    }>
+  >;
+  /**
    * Session-scoped decisions by default. `scope: "workspace"` reads the
    * instance/workspace store explicitly; `"all"` merges both and marks each
    * record's source. A bare string is accepted as the session id for

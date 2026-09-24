@@ -772,3 +772,77 @@ test("Phase -1 E2E: hard-protected rules refuse edits, other release rules stay 
   expect(rules.some((rule) => rule.ruleID === "C-REL-002")).toBe(false);
   await client.dispose?.();
 }, 30_000);
+
+test("Phase -1 E2E: a scoped override round-trips request -> approval -> grant -> read", async () => {
+  const root = await officialPluginWorkspace("governance-e2e-override");
+  const sessionID = "ses_e2e_override" as SessionID;
+  const events: RuntimeEvent[] = [];
+  const client = createRealRuntimeClient({
+    workspaceRoot: root,
+    sessionID,
+    // The interactive mode: the grant is the user's approval, answered
+    // from the event sink exactly the way the UI answers it.
+    permissionMode: "ask",
+    provider: createScriptedProvider({
+      main: [{ text: "standby" }],
+      navi: [{ text: "standby" }],
+      nia: [{ text: "standby" }],
+    }),
+  });
+  client.start((event) => {
+    events.push(event);
+    if (event.type === "approval.request")
+      client.respondApproval({ requestID: event.id, decision: "once" });
+  });
+  await client.sessionAttach!(sessionID);
+
+  const created = await client.createConstitutionRule!(
+    {
+      statement: "default project changes must happen in a sandbox",
+      enforcement: "warn",
+    },
+    sessionID,
+  );
+  expect(created.created).toBe(true);
+  const ruleID = created.ruleID!;
+  // The rule's own policy must permit the request in the first place.
+  const rules = await client.constitutionRules!(sessionID);
+  expect(rules.find((rule) => rule.ruleID === ruleID)?.overridePolicy).not.toBe(
+    "forbidden",
+  );
+
+  const requested = await client.requestOverride!(
+    {
+      ruleID,
+      reason: "one-off host write for the parser fix",
+      paths: ["src/parser.ts"],
+    },
+    sessionID,
+  );
+  expect(requested.requested).toBe(true);
+
+  // The read face answers the grant — with the scope it was granted for.
+  const overrides = await client.constitutionOverrides!(sessionID);
+  expect(overrides).toHaveLength(1);
+  expect(overrides[0]).toMatchObject({
+    ruleID,
+    reason: "one-off host write for the parser fix",
+    approvedBy: "user",
+    paths: ["src/parser.ts"],
+  });
+  // The grant is a durable journal fact (the audit trail), not UI state.
+  expect(
+    events.some((event) => event.type === "constitution.override_granted"),
+  ).toBe(true);
+
+  // A forbidden rule is refused before any grant exists — the plan's
+  // "critical/forbidden 不可 override", enforced at the request.
+  const refused = await client.requestOverride!(
+    { ruleID: "C-TERM-001", reason: "please" },
+    sessionID,
+  );
+  expect(refused.requested).toBe(false);
+  expect(refused.reason).toBe("override forbidden");
+
+  await client.dispose?.();
+}, 30_000);
