@@ -1,5 +1,9 @@
 import { createSignal, Show, onCleanup, onMount, For } from "solid-js";
 import type { AppState, CapabilityView, ToolBlock } from "@natalia/view-store";
+import {
+  newestOperationRecords,
+  operationRecordLine,
+} from "./operation-records";
 import type {
   RuntimeClient,
   RuntimeDiagnostic,
@@ -79,6 +83,9 @@ export function StatusPanel(props: {
     RuntimeStatusSnapshot | undefined
   >();
   const [diagRows, setDiagRows] = createSignal<RuntimeDiagnostic[]>([]);
+  const [opRows, setOpRows] = createSignal<
+    import("@anthelia/contracts").OperationRecord[]
+  >([]);
   const [expandedTool, setExpandedTool] = createSignal<string | undefined>(
     undefined,
   );
@@ -99,6 +106,11 @@ export function StatusPanel(props: {
         .then((value) => {
           if (value) setDiagRows(value);
         });
+      // T3/T4: the operation log's records — the telemetry zone beside the
+      // journal's diagnostics. The runtime face owns the directory.
+      void props.runtime.operationRecords?.({ limit: 60 }).then((value) => {
+        if (value) setOpRows(value);
+      });
     }
   });
 
@@ -208,6 +220,34 @@ export function StatusPanel(props: {
                   )}
                 </For>
               </div>
+              {/*
+                The operation log's records (T3/T4): the telemetry zone
+                beside the journal's diagnostics, read through the runtime
+                face — the same records the debug bundle reads.
+              */}
+              <Show when={opRows().length > 0}>
+                <div class="neu-status-section-title">操作日志</div>
+                <div class="neu-status-diagnostics">
+                  <For each={newestOperationRecords(opRows())}>
+                    {(record) => {
+                      const line = operationRecordLine(record);
+                      return (
+                        <div
+                          class="neu-diagnostic-row"
+                          data-level={line.level}
+                          title={line.title}
+                        >
+                          <span class="neu-diagnostic-level">{line.level}</span>
+                          <span class="neu-diagnostic-message">
+                            {line.component} · {line.message}
+                          </span>
+                          <span class="neu-diagnostic-time">{line.at}</span>
+                        </div>
+                      );
+                    }}
+                  </For>
+                </div>
+              </Show>
             </Show>
             <Show when={tab() === "tools"}>
               <div class="neu-status-tools">
