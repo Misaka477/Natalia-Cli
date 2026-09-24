@@ -1319,7 +1319,7 @@ export function MessageRow(props: MessageRowProps) {
                   }
                 >
                   <Show
-                    when={props.message.streaming}
+                    when={messageTextMode(props.message) === "plain"}
                     fallback={
                       <div
                         class="natalia-message-text"
@@ -1327,9 +1327,16 @@ export function MessageRow(props: MessageRowProps) {
                       />
                     }
                   >
+                    {/*
+                      The ui-performance plan's P1: the streaming tail
+                      renders PLAIN text — every delta used to re-parse the
+                      whole prefix as markdown (O(n²) over the stream, and a
+                      cache entry per prefix). `content.done` flips
+                      `streaming` false and the full parse takes over.
+                    */}
                     <div
                       class="natalia-message-text"
-                      innerHTML={formatContent(props.message.content)}
+                      textContent={props.message.content}
                     />
                     <div class="natalia-streaming-indicator">
                       <div class="natalia-streaming-dot" />
@@ -1345,7 +1352,9 @@ export function MessageRow(props: MessageRowProps) {
                 <span class="natalia-thinking-label">Thinking</span>
                 <div
                   class="natalia-thinking-text"
-                  innerHTML={formatContent(props.message.content)}
+                  {...(messageTextMode(props.message) === "plain"
+                    ? { textContent: props.message.content }
+                    : { innerHTML: formatContent(props.message.content) })}
                 />
               </div>
             </Show>
@@ -1405,6 +1414,20 @@ export function MessageRow(props: MessageRowProps) {
 
 const markdownCache = new Map<string, string>();
 const MARKDOWN_CACHE_LIMIT = 512;
+
+/**
+ * The streaming-tail's render mode (the ui-performance plan's P1): a
+ * streaming row renders PLAIN text — every delta used to re-parse the
+ * whole prefix as markdown (O(n²) over the stream, a cache entry per
+ * prefix) — and `content.done` flips `streaming` false so the full parse
+ * takes over on the confirmed text. `textContent` cannot inject markup,
+ * so the streaming half is also strictly safer than the parse half.
+ */
+export function messageTextMode(message: {
+  streaming?: boolean;
+}): "plain" | "markdown" {
+  return message.streaming ? "plain" : "markdown";
+}
 
 function formatContent(text: string): string {
   const cached = markdownCache.get(text);
