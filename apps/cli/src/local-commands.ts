@@ -45,6 +45,14 @@ import {
   compositionStatusLines,
   switchCompositionRow,
 } from "./composition-cli";
+import { governanceViews } from "@natalia/governance-ledger";
+import {
+  governanceListLines,
+  governanceShow,
+  governanceShowLines,
+  governanceWhy,
+  governanceWhyLines,
+} from "./governance-cli";
 import { captureDebugBundle } from "./debug-bundle";
 import { createInterface } from "node:readline/promises";
 import {
@@ -67,6 +75,7 @@ export async function handleLocalCommands(argv: string[]) {
       "workgraph",
       "doctor",
       "composition",
+      "governance",
       "session",
       "fs",
       "trust",
@@ -381,6 +390,52 @@ export async function handleLocalCommands(argv: string[]) {
             ].join("\n"),
       );
       break;
+    }
+
+    case "governance": {
+      // CST3's read face (constitution/decision ledger plan §5): what the
+      // law is and why. The override grant/approve half runs the live
+      // runtime's approval seam and stays on that face — this one only
+      // explains.
+      const action = argv[1];
+      const workspace = valueAfter(argv, "--workspace") ?? process.cwd();
+      if (action === "list") {
+        console.log(
+          argv.includes("--json")
+            ? JSON.stringify(governanceViews(workspace), null, 2)
+            : governanceListLines(workspace).join("\n"),
+        );
+        break;
+      }
+      if (action === "show") {
+        const ruleID = argv[2];
+        if (!ruleID)
+          throw new Error(
+            "governance show requires a rule id (see: natalia governance list)",
+          );
+        console.log(
+          argv.includes("--json")
+            ? JSON.stringify(governanceShow(workspace, ruleID), null, 2)
+            : governanceShowLines(workspace, ruleID).join("\n"),
+        );
+        break;
+      }
+      if (action === "why") {
+        const decisionID = argv[2];
+        if (!decisionID)
+          throw new Error(
+            "governance why requires a decision id (see: natalia governance list)",
+          );
+        console.log(
+          argv.includes("--json")
+            ? JSON.stringify(governanceWhy(workspace, decisionID), null, 2)
+            : governanceWhyLines(workspace, decisionID).join("\n"),
+        );
+        break;
+      }
+      throw new Error(
+        "governance <list|show|why> (the constitution/decision ledger's read face)",
+      );
     }
 
     case "composition": {

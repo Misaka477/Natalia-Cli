@@ -43,6 +43,7 @@
         "@anthelia/session-store": "workspace:*",
         "@natalia/client": "workspace:*",
         "@natalia/engineering-intelligence": "workspace:*",
+        "@natalia/governance-ledger": "workspace:*",
         "@natalia/installer": "workspace:*",
         "@natalia/transport": "workspace:*",
         "@natalia/ui-host": "workspace:*",
@@ -195,6 +196,7 @@
       "dependencies": {
         "@anthelia/contracts": "workspace:*",
         "@anthelia/runtime-services": "workspace:*",
+        "@anthelia/session": "workspace:*",
       },
     },
     "packages/domains/work-ledger": {
