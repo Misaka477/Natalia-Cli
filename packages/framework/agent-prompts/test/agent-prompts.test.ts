@@ -29,3 +29,27 @@ test("extra static text is appended after the persona", () => {
   const prompt = agentSystemPrompt("nia", "Use the tools for filesystem work.");
   expect(prompt.endsWith("Use the tools for filesystem work.")).toBe(true);
 });
+
+test("Navi and Nia are wired to the read-only context tools (Phase2b-2)", () => {
+  // The RINA study's prompt wiring: both sisters search the structured
+  // memory first and page the transcript only for exact wording. The five
+  // tool names are the contract between the prompt and the registry.
+  for (const agent of ["navi", "nia"] as const) {
+    const prompt = agentSystemPrompt(agent);
+    for (const tool of [
+      "context_search",
+      "context_list",
+      "context_read",
+      "context_history",
+      "context_pack",
+    ])
+      expect(prompt).toContain(tool);
+    // Retrieval-first: the context tools precede the transcript fallback.
+    expect(prompt).toContain("context tools first");
+    // The honest degradation: no vault -> page the log instead.
+    expect(prompt).toContain("vault_unavailable");
+    expect(prompt).toContain("session_history");
+    // The isolation rule the tools enforce is stated to the model too.
+    expect(prompt).toContain("another session is refused");
+  }
+});
