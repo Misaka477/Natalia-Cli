@@ -201,3 +201,52 @@ test("the journal seam is edge-triggered: open once, resolve, re-open", async ()
   expect(published).toHaveLength(3);
   expect(published[2]).toMatchObject({ type: "invariant.violation" });
 });
+
+test("the tick budget is measured over every check (Discovery's unverified item)", async () => {
+  // The interval tick rides the runtime's clock, so its cost is the budget
+  // it must stay inside. The state now carries the measured numbers: the
+  // last tick's wall-clock cost and the worst seen — a number, not an
+  // assumption.
+  const { log } = reporter();
+  // A realistic load: 40 invariants over 40 sessions' windows — the tick
+  // is a fold over the input, so the budget scales with both.
+  const invariants: Invariant[] = Array.from({ length: 40 }, (_, index) => ({
+    id: `test.load${index}`,
+    statement: "a quiet check",
+    check: (input) =>
+      input.sessions.slice(0, 4).map((session) => ({
+        code: "test.trip",
+        detail: `tripped for ${session.sessionID}`,
+      })),
+  }));
+  const diagnostics = createRuntimeDiagnostics({
+    log,
+    sets: [{ owner: "test", invariants }],
+  });
+  const heavy: InvariantCheckInput = {
+    sessions: Array.from({ length: 40 }, (_, index) => ({
+      sessionID: `ses_${index}`,
+      events: Array.from({ length: 200 }, (_, event) => ({
+        type: "agent.selection",
+        id: `e${event}`,
+        name: "main",
+      })) as unknown as RuntimeEvent[],
+      factStateComplete: true,
+    })),
+  };
+  const startedAt = performance.now();
+  diagnostics.tick(heavy);
+  const wall = performance.now() - startedAt;
+  const state = diagnostics.state();
+  expect(state.ticks).toBe(1);
+  expect(state.lastTickMs).toBeGreaterThan(0);
+  expect(state.lastTickMs!).toBeLessThanOrEqual(wall + 1);
+  // The budget: 40 invariants × 4 sessions × 40 windows of folded checks
+  // stay well under a tick interval — measured here so the study's
+  // unverified item is a number.
+  expect(state.lastTickMs!).toBeLessThan(500);
+  // The worst-so-far survives a cheaper second tick.
+  diagnostics.tick({ sessions: [] });
+  expect(diagnostics.state().maxTickMs).toBe(state.maxTickMs);
+  expect(diagnostics.state().lastTickMs!).toBeLessThan(state.maxTickMs! + 1);
+});

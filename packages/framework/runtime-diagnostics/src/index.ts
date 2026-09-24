@@ -56,6 +56,14 @@ export type RuntimeDiagnosticsState = {
   ticks: number;
   findings: number;
   lastTickAt?: string;
+  /**
+   * The tick budget, measured (Discovery's unverified item, now verified):
+   * the last tick's wall-clock cost and the worst seen. The interval tick
+   * runs on the runtime's clock, so its cost is the budget it must stay
+   * inside — a number, not an assumption.
+   */
+  lastTickMs?: number;
+  maxTickMs?: number;
   /** owner -> invariant id -> finding count (attributed from the start). */
   byInvariant: Record<string, Record<string, number>>;
 };
@@ -155,6 +163,7 @@ export function createRuntimeDiagnostics(
     tick(input) {
       state.ticks += 1;
       state.lastTickAt = new Date().toISOString();
+      const startedAt = performance.now();
       const findings: InvariantFinding[] = [];
       if (!enabled) return findings;
       const seen = new Set<string>();
@@ -229,6 +238,13 @@ export function createRuntimeDiagnostics(
             : {}),
         });
       }
+      // The tick budget, measured over every check including the crash
+      // guard — the number the discovery study left unverified.
+      const elapsed = performance.now() - startedAt;
+      state.lastTickMs = Number(elapsed.toFixed(3));
+      state.maxTickMs = Number(
+        Math.max(state.maxTickMs ?? 0, elapsed).toFixed(3),
+      );
       return findings;
     },
     setEnabled(next) {
