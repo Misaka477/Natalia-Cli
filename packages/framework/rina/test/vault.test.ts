@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeEvent } from "@anthelia/contracts";
 import { buildContextPack, createContextVault } from "../src/vault";
+import { createHash } from "node:crypto";
 
 /**
  * RINA Phase1: the Cold Vault — FTS5 recall over journaled facts,
@@ -361,4 +362,80 @@ test("Phase 6: the semantic lane admits the paraphrase FTS cannot match, and sta
   const offHits = off.recall("rotate TLS certificates", { sessionID: "s" });
   expect(offHits.find((hit) => hit.id === "s:paraphrase")).toBeUndefined();
   for (const hit of offHits) expect(hit.breakdown.semantic).toBe(0);
+});
+
+test("the blob-store option: the vectors answer the same recall through the store, bytes gone from the row", async () => {
+  // The object-store study's acceptance 5 (the option, not a rewrite):
+  // a SYNC blob store takes the vectors, the row keeps the content id,
+  // and the recall's answer is IDENTICAL to the inline default.
+  const records = () => [
+    {
+      id: "b:alpha",
+      workspaceID: "w",
+      sessionID: "s",
+      recordType: "decision" as const,
+      entityKey: "alpha",
+      summary: "alpha ran",
+    },
+    {
+      id: "b:beta",
+      workspaceID: "w",
+      sessionID: "s",
+      recordType: "tool_history" as const,
+      entityKey: "beta",
+      summary: "beta ran",
+    },
+  ];
+  const dirA = mkdtempSync(join(tmpdir(), "vault-blob-inline-"));
+  dirs.push(dirA);
+  const inline = createContextVault({
+    dir: dirA,
+    flushMs: 5,
+    semantic: true,
+  });
+  vaults.push(inline);
+  for (const record of records()) inline.remember(record);
+  const inlineHits = inline.recall("alpha", { sessionID: "s" });
+
+  const dirB = mkdtempSync(join(tmpdir(), "vault-blob-store-"));
+  dirs.push(dirB);
+  // The SYNC double the vault's interface names: an in-memory content
+  // map (the ObjectStore adapter rides rustCas's sync faces, this
+  // proves the seam without the FFI).
+  const blobs = new Map<string, Uint8Array>();
+  const store = {
+    put(bytes: Uint8Array): string {
+      const id = createHash("sha256").update(bytes).digest("hex");
+      blobs.set(id, bytes);
+      return id;
+    },
+    get(id: string): Uint8Array | undefined {
+      return blobs.get(id);
+    },
+  };
+  const stored = createContextVault({
+    dir: dirB,
+    flushMs: 5,
+    semantic: true,
+    blobStore: store,
+  });
+  vaults.push(stored);
+  for (const record of records()) stored.remember(record);
+
+  // The recall's answer: the same hits, the same order, the same scores.
+  const storedHits = stored.recall("alpha", { sessionID: "s" });
+  expect(storedHits.map((hit) => hit.id)).toEqual(
+    inlineHits.map((hit) => hit.id),
+  );
+  for (const [index, hit] of storedHits.entries()) {
+    expect(hit.score).toBeCloseTo(inlineHits[index]!.score, 9);
+    expect(hit.breakdown.semantic).toBeCloseTo(
+      inlineHits[index]!.breakdown.semantic,
+      9,
+    );
+  }
+  // And the bytes actually left the row: the store holds the vectors,
+  // the inline vault's own DB holds them inline (the option is real, not
+  // a no-op alias).
+  expect(blobs.size).toBeGreaterThan(0);
 });

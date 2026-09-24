@@ -56,6 +56,8 @@ import {
   rinaMemory,
   createUnavailableRinaMemory,
 } from "@anthelia/rina";
+import { objectStoreVaultBlobStore } from "./rina-blob-store";
+import { resolveWorkspaceObjectsRoot } from "@anthelia/platform";
 import { join } from "node:path";
 import { createOperationLog, operationLog } from "@anthelia/operation-log";
 import { createRuntimeDiagnostics } from "@anthelia/runtime-diagnostics";
@@ -662,9 +664,24 @@ export async function wireFrameworkServices(
     (process.env.NATALIA_HOME
       ? join(process.env.NATALIA_HOME, "vault")
       : contextVaultDir());
+  // The object-store study's acceptance 5: the vault's blob storage OPTION
+  // (the study's "RINA ContextVault 的 blob 存储可选使用 ObjectStore").
+  // Off by default (the inline behaviour byte-identical); the operator's
+  // env switches the semantic lane's vectors to the content-addressed
+  // store through rustCas's SYNC faces (the recall path's shape — an
+  // async blob store could never serve it).
+  const blobStore =
+    process.env.NATALIA_RINA_BLOB_STORE === "1"
+      ? objectStoreVaultBlobStore(
+          resolveWorkspaceObjectsRoot(ctx.ports.getWorkspaceRoot()),
+        )
+      : undefined;
   let vault: import("@anthelia/rina").RinaVaultService;
   try {
-    vault = createContextVault({ dir: vaultDir });
+    vault = createContextVault({
+      dir: vaultDir,
+      ...(blobStore ? { blobStore } : {}),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // NO boot-time diagnostic, deliberately: any read-only home would

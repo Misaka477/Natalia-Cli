@@ -32,6 +32,21 @@ import {
  * test).
  */
 
+/**
+ * The vault's blob storage seam (the object-store study's acceptance 5:
+ * "RINA ContextVault 的 blob 存储可选使用 ObjectStore" — an OPTION, not
+ * a rewrite). The interface is SYNC by the recall path's shape: the
+ * semantic lane's vector scan runs inside a synchronous read, so a
+ * store that answers asynchronously could never serve it (and the
+ * default SQLite-inline behaviour stays byte-identical when absent).
+ */
+export type VaultBlobStore = {
+  /** The blob's bytes, answered by their content id. */
+  put(bytes: Uint8Array): string;
+  /** The blob by its content id, or undefined when absent. */
+  get(id: string): Uint8Array | undefined;
+};
+
 export type VaultRecordType =
   | "plan"
   | "mailbox"
@@ -420,9 +435,17 @@ export function createContextVault(input: {
    * vault. Off = the four-signal behaviour, byte-identical to before.
    */
   semantic?: boolean;
+  /**
+   * The blob store (acceptance 5's option): when present, the semantic
+   * lane's vectors are stored THERE and the row keeps the content id in
+   * `vector_ref`; absent, the bytes stay inline in `vector` exactly as
+   * before (byte-identical default).
+   */
+  blobStore?: VaultBlobStore;
 }): ContextVault {
   // Phase 6's lane: opt-in per vault (off = the four-signal behaviour).
   const semanticEnabled = input.semantic ?? false;
+  const blobStore = input.blobStore;
   mkdirSync(input.dir, { recursive: true, mode: 0o700 });
   const path = join(input.dir, "vault.sqlite");
   const db = new Database(path);
@@ -467,12 +490,16 @@ export function createContextVault(input: {
     .all() as Array<{ name: string }>;
   if (!columns.some((column) => column.name === "vector"))
     db.exec("ALTER TABLE context_records ADD COLUMN vector BLOB");
+  // The blob-store reference column: only used when a blob store is
+  // injected (the vector then lives there); NULL otherwise.
+  if (!columns.some((column) => column.name === "vector_ref"))
+    db.exec("ALTER TABLE context_records ADD COLUMN vector_ref TEXT");
 
   const insert = db.prepare(`
     INSERT OR REPLACE INTO context_records
       (id, workspace_id, session_id, agent_id, record_type, entity_key, summary,
-       content, source_evidence_id, seq, created_at, updated_at, access_count, priority, vector)
-    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 0, 0.5, ?)
+       content, source_evidence_id, seq, created_at, updated_at, access_count, priority, vector, vector_ref)
+    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 0, 0.5, ?, ?)
   `);
   const ftsInsert = db.prepare(
     "INSERT OR REPLACE INTO context_records_fts (id, summary, entity_key) VALUES (?, ?, ?)",
@@ -559,9 +586,25 @@ export function createContextVault(input: {
           record.seq ?? null,
           record.createdAt ?? now,
           now,
-          serializeVector(
-            embedText(embeddableText(record.summary, record.entityKey)),
-          ),
+          // The blob-store option: the vector's bytes go THERE (the row
+          // keeps the content id), or inline exactly as before. The
+          // store is SYNC by the recall path's shape — the semantic
+          // lane's scan runs inside a synchronous read.
+          ...(blobStore
+            ? (() => {
+                const id = blobStore.put(
+                  serializeVector(
+                    embedText(embeddableText(record.summary, record.entityKey)),
+                  ),
+                );
+                return [null, id];
+              })()
+            : [
+                serializeVector(
+                  embedText(embeddableText(record.summary, record.entityKey)),
+                ),
+                null,
+              ]),
         );
         ftsInsert.run(record.id, record.summary, record.entityKey);
         historyInsert.run(
@@ -703,18 +746,27 @@ export function createContextVault(input: {
         const scanned = db
           .query(
             `SELECT r.id, r.record_type, r.entity_key, r.summary, r.session_id, r.seq,
-                    r.created_at, r.source_evidence_id, r.vector
+                    r.created_at, r.source_evidence_id, r.vector, r.vector_ref
              FROM context_records r
              WHERE 1 = 1 ${filters.length ? `AND ${filters.join(" AND ")}` : ""}
              LIMIT ?`,
           )
           .all(...args, VECTOR_SCAN_CAP) as Array<
-          Omit<(typeof rows)[number], "rank">
+          Omit<(typeof rows)[number], "rank"> & { vector_ref?: string | null }
         >;
         const known = new Set(rows.map((row) => row.id));
         const neighbors: Array<{ id: string; similarity: number }> = [];
         for (const row of scanned) {
-          const vector = row.vector ? toVector(row.vector) : undefined;
+          // The blob-store resolution: the ref's bytes through the
+          // store (SYNC, the scan's own shape), else the inline blob.
+          const vector = row.vector
+            ? toVector(row.vector)
+            : blobStore && row.vector_ref
+              ? (() => {
+                  const bytes = blobStore.get(row.vector_ref!);
+                  return bytes ? toVector(bytes) : undefined;
+                })()
+              : undefined;
           if (!vector) continue;
           const similarity = cosine(queryVector, vector);
           if (similarity <= 0) continue;
