@@ -4441,6 +4441,22 @@ export type RuntimeClient = {
       }
   >;
   /**
+   * Discovery G-d — the repeated correction patterns: the human's
+   * corrections across the journal's safe sources, clustered into
+   * 固化 suggestions. A suggestion applies nothing; the destination's
+   * class is the constitution's approval policy's business.
+   */
+  correctionPatterns?(sessionID?: string): Promise<{
+    suggestions: Array<{
+      capability: string;
+      observations: number;
+      destination: "rule" | "skill" | "tool" | "policy";
+      sources: Array<"mailbox" | "human_validation" | "rejected_alternative">;
+      reason: string;
+    }>;
+    considered: { corrections: number };
+  }>;
+  /**
    * Discovery G-c's join (the adapter layer's record): one of our runs
    * against an external task. The turn's score is READ from the journal
    * (the G-b scorer — no new telemetry); the task's id is the join's

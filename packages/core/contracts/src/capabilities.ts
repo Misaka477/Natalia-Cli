@@ -267,6 +267,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "promptRunGroups",
     "externalBenchmark",
     "recordExternalRun",
+    "correctionPatterns",
     "constitutionOverrides",
     "decisionRecords",
     "recordDecision",

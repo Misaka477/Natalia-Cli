@@ -232,6 +232,7 @@ export const RPC_ROUTE_MEMBERS = {
   "prompt.run_groups": "promptRunGroups",
   "eval.external_benchmark": "externalBenchmark",
   "eval.external_run": "recordExternalRun",
+  "corrections.patterns": "correctionPatterns",
   "workgraph.nodes": "workGraphNodes",
   "workgraph.edges": "workGraphEdges",
   // --- P0-C: the reachability gap closed (audit list in the API plan §8.10) ---
@@ -3942,6 +3943,18 @@ export async function handleRPCMessage(
           scanned: 0,
           skipped: [],
           moves: [],
+        },
+      };
+    }
+    if (body.method === "corrections.patterns") {
+      optionsGuard(client, "correctionPatterns");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.correctionPatterns?.(sessionID)) ?? {
+          suggestions: [],
+          considered: { corrections: 0 },
         },
       };
     }

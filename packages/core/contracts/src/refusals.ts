@@ -552,6 +552,10 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "recorded",
     note: "an unknown task or no dir answers false with its reason; the recorded join needs no turn in the journal (the score stays undefined)",
   },
+  correctionPatterns: {
+    refusal: "none",
+    note: "pure read: the journal's safe corrections clustered into suggestions",
+  },
   notices: {
     refusal: "none",
     note: "pure read of the projected runtime notices",

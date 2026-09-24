@@ -41,6 +41,7 @@ import { deriveGrowthCurriculum, type TaskOutcome } from "./growth";
 import { createHash } from "node:crypto";
 import { groupRunsByPrompt, scoreRun, segmentTurns } from "./run-scorer";
 import { loadExternalTask, readExternalBenchmark } from "./eval-reader";
+import { deriveCorrectionPatterns, readCorrections } from "./corrections";
 import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
 import type { EpisodeID } from "@anthelia/contracts";
 import { readFile } from "node:fs/promises";
@@ -89,6 +90,7 @@ type Surface = Pick<
   | "growthPropose"
   | "externalBenchmark"
   | "recordExternalRun"
+  | "correctionPatterns"
   | "promptRunGroups"
   | "growthProposals"
   | "constitutionRules"
@@ -766,6 +768,22 @@ export function createIntelligenceSurface(
         ...(success === undefined ? {} : { success }),
         baselineSuccessRate: task.successRate,
       };
+    },
+    /**
+     * Discovery G-d — the repeated correction patterns: the human's
+     * corrections across the journal's three safe sources (mailbox's
+     * user messages, the completion validations, the rejected
+     * alternatives), clustered, answered as固化 suggestions naming
+     * their destination. A suggestion applies nothing (the study's
+     * growth 默认不自授权); the destination's class (rule needs a human,
+     * a skill may auto-apply) is the constitution's table, not this
+     * face's.
+     */
+    async correctionPatterns(sessionID?: string) {
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session)
+        return { suggestions: [], considered: { corrections: 0 } };
+      return deriveCorrectionPatterns(readCorrections(exec.session.events));
     },
     async promptRunGroups(sessionID?: string) {
       const exec = await completeIntelligenceExec(sessionID);

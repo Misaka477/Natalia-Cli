@@ -48,6 +48,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "prompt.run_groups": "promptRunGroups",
   "eval.external_benchmark": "externalBenchmark",
   "eval.external_run": "recordExternalRun",
+  "corrections.patterns": "correctionPatterns",
   messages: "messages",
   agents: "agents",
   "model.catalog": "modelCatalog",
@@ -200,6 +201,7 @@ type WorkerRequest = {
     | "prompt.run_groups"
     | "eval.external_benchmark"
     | "eval.external_run"
+    | "corrections.patterns"
     | "messages"
     | "agents"
     | "model.catalog"
@@ -1131,6 +1133,14 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["workspaceAstMove"]>>
       >;
     },
+    async correctionPatterns(sessionID?: string) {
+      return (await request(
+        "corrections.patterns",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["correctionPatterns"]>>
+      >;
+    },
     async recordExternalRun(input: {
       dir?: string;
       taskID: string;
@@ -1430,6 +1440,10 @@ export async function handleWorkerRequest(
       | { paths?: string[]; from?: string }
       | undefined;
     return await client.workspaceAstMove?.(value);
+  }
+  if (request.method === "corrections.patterns") {
+    const value = request.value as { sessionID?: string } | undefined;
+    return await client.correctionPatterns?.(value?.sessionID);
   }
   if (request.method === "eval.external_run") {
     const value = request.value as {
