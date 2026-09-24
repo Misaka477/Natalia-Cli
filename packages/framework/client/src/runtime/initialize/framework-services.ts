@@ -52,6 +52,9 @@ import {
   rinaVault,
   createResponseCache,
   rinaResponseCache,
+  createRinaMemory,
+  rinaMemory,
+  createUnavailableRinaMemory,
 } from "@anthelia/rina";
 import { join } from "node:path";
 import { createOperationLog, operationLog } from "@anthelia/operation-log";
@@ -652,15 +655,16 @@ export async function wireFrameworkServices(
   // loud at their call site, and a diagnostic lands in the journal so
   // the loss is observable. Telemetry must never be able to kill the
   // runtime; silence would be the other dishonest direction.
+  // One durable-knowledge root: the vault and the memory store (Phase 7)
+  // are siblings under it, so a runtime's knowledge lives in one place.
+  const vaultDir =
+    options.vaultDir ??
+    (process.env.NATALIA_HOME
+      ? join(process.env.NATALIA_HOME, "vault")
+      : contextVaultDir());
   let vault: import("@anthelia/rina").RinaVaultService;
   try {
-    vault = createContextVault({
-      dir:
-        options.vaultDir ??
-        (process.env.NATALIA_HOME
-          ? join(process.env.NATALIA_HOME, "vault")
-          : contextVaultDir()),
-    });
+    vault = createContextVault({ dir: vaultDir });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // NO boot-time diagnostic, deliberately: any read-only home would
@@ -674,6 +678,22 @@ export async function wireFrameworkServices(
   }
   ctx.state.serviceDirectory.provide(rinaVault, vault);
   closeHandles.push(() => vault.close());
+  // RINA Memory (Phase 7): the durable reusable knowledge, one SQLite
+  // beside the vault's own (the study's 复用冷档存储). The same honest
+  // degrade as the vault: an unopenable store becomes an unavailable
+  // service that says WHY on demand — telemetry must never kill the boot,
+  // and silence would be the other dishonest direction.
+  let memory: import("@anthelia/rina").RinaMemoryService;
+  try {
+    memory = createRinaMemory({ dir: join(vaultDir, "memory") });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    memory = createUnavailableRinaMemory(
+      `memory store will not open: ${message}`,
+    );
+  }
+  ctx.state.serviceDirectory.provide(rinaMemory, memory);
+  closeHandles.push(() => memory.close());
   // The domain-invariant layer (Discovery D1): domains declare their data
   // relations, this ticks them live over the running sessions' event
   // windows — findings report to the operation log with owner attribution

@@ -2,8 +2,12 @@ import type { SessionID } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RuntimeTool } from "@anthelia/tools";
 import { estimateTokens } from "@anthelia/runtime";
+import { workspaceStoreID } from "@anthelia/platform";
 import {
   buildContextPack,
+  recallKnowledge,
+  recallMemoryLanes,
+  rinaMemory,
   rinaVault,
   type VaultPackRole,
   type VaultRecordType,
@@ -77,6 +81,76 @@ export function createRinaContextTools(ctx: RuntimeContext): RuntimeTool[] {
   };
 
   return [
+    {
+      name: "context_recall",
+      description:
+        "Read-only: recall knowledge in the study's priority order — the live session state, this workspace's durable memories, the global memories, then the session's cold vault (RINA Phase 7's memory). Never changes the workspace.",
+      requiresApproval: false,
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description:
+              "Optional terms for the vault's cold lane; without it the answer carries the live and memory lanes only.",
+          },
+          sessionID: {
+            type: "string",
+            description:
+              "The session to recall for — must be this session (cross-session queries are forbidden).",
+          },
+          limit: {
+            type: "number",
+            description: "Per-lane bound (default 10, max 50).",
+          },
+        },
+        additionalProperties: false,
+      },
+      async execute(parsed, context) {
+        await ctx.ports.getReady();
+        const args = parsed as {
+          query?: unknown;
+          limit?: unknown;
+          sessionID?: unknown;
+        };
+        const session = currentSession(args, context);
+        if ("error" in session) return JSON.stringify(session);
+        const limit =
+          typeof args.limit === "number" && Number.isInteger(args.limit)
+            ? Math.max(1, Math.min(args.limit, 50))
+            : 10;
+        const vault = ctx.state.serviceDirectory.getOptional(rinaVault);
+        const memory = ctx.state.serviceDirectory.getOptional(rinaMemory);
+        if (!vault || !memory)
+          return JSON.stringify({
+            error: "knowledge_unavailable",
+            note: "the vault and memory services are not provided",
+          });
+        // The workspace lane's scope: the workspace's STABLE IDENTITY —
+        // the store's own derivation (the canonical path's id), not the
+        // path itself, so a moved checkout keeps one scope.
+        const workspaceID = workspaceStoreID(ctx.ports.getWorkspaceRoot());
+        // Lane 1 (the live state), lanes 2-3 (the memories), lane 4 (the
+        // vault) — the face orders them; each lane's own discipline
+        // decides what it has to say.
+        const recall = recallKnowledge({
+          state: vault.state(session.sessionID),
+          ...recallMemoryLanes(memory, workspaceID, limit),
+          ...(typeof args.query === "string" && args.query.trim()
+            ? {
+                vaultHits: vault.recall(args.query, {
+                  sessionID: session.sessionID,
+                  limit,
+                }),
+              }
+            : {}),
+        });
+        return JSON.stringify({
+          order: recall.sections.map((section) => section.source),
+          sections: recall.sections,
+        });
+      },
+    },
     {
       name: "context_search",
       description:

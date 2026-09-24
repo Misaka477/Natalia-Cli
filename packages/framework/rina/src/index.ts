@@ -17,6 +17,13 @@ export {
   toolGlobKind,
   toolSearchKind,
 } from "./tool-kinds";
-export { rinaCache, rinaResponseCache, rinaVault } from "./service-tokens";
+export {
+  rinaCache,
+  rinaMemory,
+  rinaResponseCache,
+  rinaVault,
+} from "./service-tokens";
 export * from "./response-cache";
 export * from "./embedding";
+export * from "./memory";
+export * from "./knowledge";

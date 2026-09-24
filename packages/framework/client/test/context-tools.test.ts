@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { rinaVault } from "@anthelia/rina";
 import { createTestContext } from "@anthelia/runtime-services";
 import type { RuntimeContext } from "@anthelia/substrate";
-import { createContextVault } from "@anthelia/rina";
+import {
+  createContextVault,
+  createRinaMemory,
+  rinaMemory,
+} from "@anthelia/rina";
+import { workspaceStoreID } from "@anthelia/platform";
 import { createRinaContextTools } from "../src/runtime/context-tools";
 
 /**
@@ -216,4 +221,81 @@ test("with no vault provided, every face says so (honest, not empty)", async () 
   const response = await run(byName, "context_search", { query: "anything" });
   expect(response.error).toBe("vault_unavailable");
   expect(String(response.note)).toContain("not provided");
+});
+
+test("Phase 7's context_recall: the priority order, the isolation rule, the honest absence", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-recall-"));
+  dirs.push(dir);
+  const vault = createContextVault({ dir, flushMs: 1 });
+  vaults.push(vault);
+  const memory = createRinaMemory({ dir: join(dir, "memory") });
+  const withServices = {
+    state: {
+      serviceDirectory: createTestContext([
+        rinaVault.mock(vault as never),
+        rinaMemory.mock(memory as never),
+      ]),
+    },
+    ports: {
+      getReady: () => Promise.resolve(),
+      getSessionID: () => CURRENT,
+      getWorkspaceRoot: () => "/tmp/x",
+    },
+  } as unknown as RuntimeContext;
+  const byName = new Map(
+    createRinaContextTools(withServices).map(
+      (tool) => [tool.name, tool] as const,
+    ),
+  );
+  expect(byName.has("context_recall")).toBe(true);
+
+  // The isolation rule: an arg naming another session is refused.
+  const refused = await run(byName, "context_recall", { sessionID: OTHER });
+  expect(refused.error).toBe("cross_session_forbidden");
+
+  // The lanes: nothing yet -> an empty answer in the study's order.
+  const empty = await run(byName, "context_recall", {});
+  expect(empty.order).toEqual([]);
+
+  // A workspace memory and a vault hit: the order is State -> Workspace
+  // Memory -> Global -> Vault, and the vault lane rides the query.
+  memory.remember({
+    scope: `workspace:${workspaceStoreID("/tmp/x")}`,
+    content: "the composer writes next-step by default",
+    evidenceID: "ev:1",
+    status: "active",
+  });
+  vault.remember({
+    id: "v:1",
+    workspaceID: "w",
+    sessionID: CURRENT,
+    recordType: "decision",
+    entityKey: "composer-key",
+    summary: "composer default decided",
+  });
+  const answered = await run(byName, "context_recall", { query: "composer" });
+  expect(answered.order).toEqual(["workspace_memory", "vault"]);
+  const sections = answered.sections as Array<{
+    source: string;
+    items: Array<Record<string, unknown>>;
+  }>;
+  expect(sections[0]!.items[0]).toMatchObject({
+    content: "the composer writes next-step by default",
+  });
+  expect(sections[1]!.items[0]).toMatchObject({ id: "v:1" });
+
+  // Without the services the answer says so (no guessed path, no throw).
+  const bare = new Map(
+    createRinaContextTools({
+      state: { serviceDirectory: createTestContext([]) },
+      ports: {
+        getReady: () => Promise.resolve(),
+        getSessionID: () => CURRENT,
+        getWorkspaceRoot: () => "/tmp/x",
+      },
+    } as unknown as RuntimeContext).map((tool) => [tool.name, tool] as const),
+  );
+  const unavailable = await run(bare, "context_recall", {});
+  expect(unavailable.error).toBe("knowledge_unavailable");
+  memory.close();
 });

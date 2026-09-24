@@ -100,6 +100,30 @@ const LEGAL_TRANSITIONS: Record<MemoryStatus, readonly MemoryStatus[]> = {
   superseded: [],
 };
 
+/**
+ * The unavailable twin (the vault's discipline): a store that will not
+ * open becomes a service whose recalls are EMPTY and whose writes fail
+ * LOUD with the reason — availability is queried, never announced at
+ * birth, and telemetry must never be able to kill the boot.
+ */
+export function createUnavailableRinaMemory(reason: string): RinaMemoryService {
+  const unavailable = {
+    ok: false as const,
+    reason: `memory unavailable: ${reason}`,
+  };
+  return {
+    remember: () => {
+      throw new Error(`memory unavailable: ${reason}`);
+    },
+    transition: () => unavailable,
+    recall: () => [],
+    get: () => undefined,
+    history: () => [],
+    stats: () => ({ draft: 0, active: 0, stale: 0, superseded: 0 }),
+    close: () => {},
+  };
+}
+
 export function createRinaMemory(
   options: RinaMemoryOptions,
 ): RinaMemoryService {
