@@ -323,7 +323,10 @@ export function createSessionExecution(
         (() => {
           const config = ctx.ports.getTsRuntimeConfig();
           return config?.defaultModel
-            ? providerForModel(config, config.defaultModel)
+            ? providerForModel(config, config.defaultModel, undefined, {
+                // T3: the adapter's diagnostics ride the operation log.
+                log: logOf(ctx.state.serviceDirectory),
+              })
             : undefined;
         })(),
       runtimeContextConfig: getRuntimeContextConfig(),

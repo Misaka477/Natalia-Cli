@@ -4,6 +4,7 @@ import type {
   RuntimeContext,
   ToolPolicyService,
 } from "@anthelia/substrate";
+import { logOf } from "@anthelia/operation-log";
 import { collaborationWaiter } from "@natalia/collaboration";
 import { createInitializeRuntime } from "./runtime";
 import { perfLog } from "@anthelia/runtime-services";
@@ -87,7 +88,12 @@ export async function configureRuntime(
       // the provider's cache shard. Per-session rather than global, so a
       // subagent or collaborator stream does not evict the main one. Sent only
       // when the endpoint declares it accepts a key.
-      { sessionID: ctx.state.sessionID },
+      {
+        sessionID: ctx.state.sessionID,
+        // T3: the adapter's diagnostics ride the operation log (the runtime
+        // zone's channel), not an env-gated console.
+        log: logOf(ctx.state.serviceDirectory),
+      },
     );
     if (configured) {
       scope.provider = configured;

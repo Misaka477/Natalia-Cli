@@ -7,6 +7,7 @@
  * state through `RuntimeContext` ports.
  */
 import { agentsFromConfig } from "@anthelia/agent";
+import { logOf } from "@anthelia/operation-log";
 import { compositionProfile } from "@anthelia/composition";
 import { renderSubagentTypes } from "@anthelia/subagents";
 import { resolveConfig } from "@anthelia/config";
@@ -366,6 +367,10 @@ export function createConfigReload(
           tsConfig.config,
           getSelectedAgent()?.model ?? tsConfig.config.defaultModel,
           getSelectedAgent()?.variant,
+          {
+            // T3: the adapter's diagnostics ride the operation log.
+            log: logOf(ctx.state.serviceDirectory),
+          },
         );
         if (configured) {
           setProvider(configured);

@@ -11,6 +11,7 @@ import {
   modelSelectionStatus,
   resolveEffectiveModel,
 } from "@anthelia/config";
+import { logOf } from "@anthelia/operation-log";
 import { modelRefKey, parseModelRef, type ModelRef } from "@anthelia/contracts";
 import {
   assertContextBudgetInvariants,
@@ -287,7 +288,11 @@ export function createProviderSelection(
       tsRuntimeConfig,
       ref,
       agent?.variant ?? model?.variant,
-      { reasoningEffort: exec?.reasoningEffort },
+      {
+        reasoningEffort: exec?.reasoningEffort,
+        // T3: the adapter's diagnostics ride the operation log.
+        log: logOf(ctx.state.serviceDirectory),
+      },
     );
     if (!next) {
       const status = modelSelectionStatus(tsRuntimeConfig, ref);

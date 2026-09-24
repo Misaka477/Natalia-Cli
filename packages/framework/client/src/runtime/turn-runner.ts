@@ -105,7 +105,10 @@ export function createTurnRunner(
         if (exec.provider) return exec.provider;
         const config = ctx.ports.getTsRuntimeConfig();
         const fallback = config?.defaultModel
-          ? providerForModel(config, config.defaultModel)
+          ? providerForModel(config, config.defaultModel, undefined, {
+              // T3: the adapter's diagnostics ride the operation log.
+              log: logOf(ctx.state.serviceDirectory),
+            })
           : undefined;
         if (fallback) exec.provider = fallback;
         return exec.provider;

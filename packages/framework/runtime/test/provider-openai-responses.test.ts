@@ -322,3 +322,65 @@ test("Responses retention none suppresses every cache parameter", async () => {
   expect(body).not.toHaveProperty("prompt_cache_retention");
   expect(body).not.toHaveProperty("prompt_cache_options");
 });
+
+test("the adapter's SSE diagnostics ride the injected log, silent without it (T3)", async () => {
+  // The env gate (NATALIA_DEBUG_PROVIDER) is retired: the transport layer
+  // stays context-free, the runtime injects the operation-log channel, and
+  // the log's level gate decides what lands.
+  const records: Array<{
+    component: string;
+    message: string;
+    fields: Record<string, unknown>;
+  }> = [];
+  const provider = new OpenAIResponsesProvider({
+    apiKey: "test-key",
+    model: "gpt-test",
+    log: {
+      debug: (component, message, fields) =>
+        records.push({ component, message, fields: fields ?? {} }),
+    },
+    fetch: Object.assign(
+      async () =>
+        new Response(
+          SSE([
+            JSON.stringify({ type: "response.output_text.delta", delta: "ok" }),
+          ]),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+      { preconnect: () => {} },
+    ) as unknown as typeof fetch,
+  });
+  for await (const chunk of provider.stream({
+    messages: [{ role: "user", content: "hi" }],
+  }))
+    void chunk;
+  expect(records.length).toBeGreaterThan(0);
+  expect(records[0]).toMatchObject({
+    component: "[provider]",
+    message: "responses SSE",
+  });
+  expect(records[0]!.fields).toMatchObject({
+    type: "response.output_text.delta",
+  });
+  // Without the channel (a bare adapter): silence, and no throw.
+  const bare = new OpenAIResponsesProvider({
+    apiKey: "test-key",
+    model: "gpt-test",
+    fetch: Object.assign(
+      async () =>
+        new Response(
+          SSE([
+            JSON.stringify({ type: "response.output_text.delta", delta: "ok" }),
+          ]),
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        ),
+      { preconnect: () => {} },
+    ) as unknown as typeof fetch,
+  });
+  for await (const chunk of bare.stream({
+    messages: [{ role: "user", content: "hi" }],
+  }))
+    void chunk;
+});

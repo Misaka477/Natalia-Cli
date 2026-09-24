@@ -405,13 +405,10 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
         for await (const chunk of finalOnly
           ? raw
           : requireNativeToolCallProtocol(normalizeRawToolCallProtocol(raw))) {
-          if (process.env.NATALIA_DEBUG_PROVIDER === "1")
-            logOf(ctx.state.serviceDirectory).info("nia-chat-turn", "chunk", {
-              args: [
-                chunk.type,
-                "text" in chunk ? String(chunk.text?.length ?? "") : "",
-              ],
-            });
+          logOf(ctx.state.serviceDirectory).debug("nia-chat-turn", "chunk", {
+            type: chunk.type,
+            textLength: "text" in chunk ? String(chunk.text?.length ?? "") : "",
+          });
           if (chunk.type === "thinking") {
             setPhase("thinking");
             if (chunk.text) {

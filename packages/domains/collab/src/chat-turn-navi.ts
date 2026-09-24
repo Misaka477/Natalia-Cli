@@ -86,13 +86,14 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         level: "warning",
         message,
       });
-    if (process.env.NATALIA_DEBUG_PROVIDER === "1")
-      logOf(ctx.state.serviceDirectory).info("navi-chat-turn", "provider", {
-        sessionID: input.exec.session.id,
-        adapter: activeProvider.constructor.name,
-        provider: activeProvider.provider,
-        model: activeProvider.model,
-      });
+    // Was an env gate; now the log's level gate — debug stays silent at
+    // the default level and lands in the rotated channel when raised.
+    logOf(ctx.state.serviceDirectory).debug("navi-chat-turn", "provider", {
+      sessionID: input.exec.session.id,
+      adapter: activeProvider.constructor.name,
+      provider: activeProvider.provider,
+      model: activeProvider.model,
+    });
     const {
       publishForSession,
       nextChatSequence,
@@ -381,13 +382,10 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
         for await (const chunk of finalOnly
           ? raw
           : requireNativeToolCallProtocol(normalizeRawToolCallProtocol(raw))) {
-          if (process.env.NATALIA_DEBUG_PROVIDER === "1")
-            logOf(ctx.state.serviceDirectory).info("navi-chat-turn", "chunk", {
-              args: [
-                chunk.type,
-                "text" in chunk ? String(chunk.text?.length ?? "") : "",
-              ],
-            });
+          logOf(ctx.state.serviceDirectory).debug("navi-chat-turn", "chunk", {
+            type: chunk.type,
+            textLength: "text" in chunk ? String(chunk.text?.length ?? "") : "",
+          });
           if (chunk.type === "thinking") {
             setPhase("thinking");
             if (chunk.text) {

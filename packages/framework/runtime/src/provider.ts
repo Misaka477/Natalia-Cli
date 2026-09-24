@@ -681,6 +681,8 @@ export type AnthropicProviderOptions = {
   provider?: string;
   fetch?: typeof fetch;
   version?: string;
+  /** The T3 telemetry channel; absent means diagnostic silence. */
+  log?: ProviderDebugLog;
   timeoutMs?: number;
   streamIdleTimeoutMs?: number;
   maxTokens?: number;
@@ -731,9 +733,25 @@ function openAICacheKeyParams(
   return { [field]: sessionID };
 }
 
+/**
+ * The operation-log channel an adapter may carry (T3): the transport layer
+ * stays context-free by design, so the runtime injects the channel at
+ * construction. Optional everywhere — a bare adapter (tests, the SDK's own
+ * construction) simply records nothing.
+ */
+export type ProviderDebugLog = {
+  debug(
+    component: string,
+    message: string,
+    fields?: Record<string, unknown>,
+  ): void;
+};
+
 export type OpenAIResponsesProviderOptions = {
   apiKey: string;
   model: string;
+  /** The T3 telemetry channel; absent means diagnostic silence. */
+  log?: ProviderDebugLog;
   baseURL?: string;
   provider?: string;
   fetch?: typeof fetch;
@@ -869,6 +887,8 @@ type ResponsesSSEState = {
 function parseResponsesSSEPart(
   part: string,
   state: ResponsesSSEState,
+  /** The T3 telemetry channel (T3: a context-free parser takes it in). */
+  log?: ProviderDebugLog,
 ): ProviderStreamChunk[] {
   const chunks: ProviderStreamChunk[] = [];
   for (const line of part.split(/\r?\n/u)) {
@@ -883,8 +903,8 @@ function parseResponsesSSEPart(
       delta?: string;
       arguments?: string;
     };
-    if (process.env.NATALIA_DEBUG_PROVIDER === "1")
-      console.debug("[provider] responses SSE", event.type);
+    // Was an env gate; now the log's level gate (T3).
+    log?.debug("[provider]", "responses SSE", { type: event.type });
 
     switch (event.type) {
       case "response.created":
@@ -993,6 +1013,8 @@ function responsesUsageChunk(usage: ResponsesUsage): ProviderStreamChunk {
 async function* streamResponsesSSE(
   body: ReadableStream<Uint8Array>,
   streamIdleTimeoutMs?: number,
+  /** The T3 telemetry channel, threaded down to the SSE parser. */
+  log?: ProviderDebugLog,
 ): AsyncIterable<ProviderStreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -1008,10 +1030,10 @@ async function* streamResponsesSSE(
     buffer += decoder.decode(next.value, { stream: true });
     const parts = buffer.split(/\r?\n\r?\n/u);
     buffer = parts.pop() ?? "";
-    for (const part of parts) yield* parseResponsesSSEPart(part, state);
+    for (const part of parts) yield* parseResponsesSSEPart(part, state, log);
   }
   buffer += decoder.decode();
-  if (buffer) yield* parseResponsesSSEPart(buffer, state);
+  if (buffer) yield* parseResponsesSSEPart(buffer, state, log);
   if (state.toolCalls.size)
     yield { type: "tool_call", calls: [...state.toolCalls.values()] };
   yield { type: "done", finishReason: state.finishReason };
@@ -1041,12 +1063,14 @@ export class OpenAIResponsesProvider implements StreamingProvider {
   private readonly reasoningEffort?: string;
   private readonly timeoutMs?: number;
   private readonly streamIdleTimeoutMs?: number;
+  private readonly log?: ProviderDebugLog;
   private readonly capabilities?: EndpointCapabilities;
   private readonly sessionID?: string;
   private readonly cacheRetention?: CacheRetention;
 
   constructor(options: OpenAIResponsesProviderOptions) {
     this.apiKey = options.apiKey;
+    this.log = options.log;
     this.model = options.model;
     this.baseURL = (options.baseURL ?? "https://api.openai.com/v1").replace(
       /\/+$/u,
@@ -1140,7 +1164,11 @@ export class OpenAIResponsesProvider implements StreamingProvider {
       });
     if (!response.body)
       throw new Error("OpenAI Responses response body unavailable");
-    yield* streamResponsesSSE(response.body, this.streamIdleTimeoutMs);
+    yield* streamResponsesSSE(
+      response.body,
+      this.streamIdleTimeoutMs,
+      this.log,
+    );
   }
 }
 
@@ -1162,6 +1190,7 @@ export class OpenAICompatibleProvider implements StreamingProvider {
   private readonly interleavedReasoningField?: OpenAICompatibleReasoningField;
   private readonly timeoutMs?: number;
   private readonly streamIdleTimeoutMs?: number;
+  private readonly log?: ProviderDebugLog;
   private readonly capabilities?: EndpointCapabilities;
   private readonly sessionID?: string;
   private readonly cacheRetention?: CacheRetention;
@@ -1381,6 +1410,7 @@ export class AnthropicProvider implements StreamingProvider {
   private readonly thinkingEnabled?: boolean;
   private readonly thinkingBudgetTokens?: number;
   private readonly streamIdleTimeoutMs?: number;
+  private readonly log?: ProviderDebugLog;
   private readonly capabilities?: EndpointCapabilities;
   private readonly sessionID?: string;
   private readonly cacheRetention?: CacheRetention;
@@ -1395,6 +1425,7 @@ export class AnthropicProvider implements StreamingProvider {
 
   constructor(options: AnthropicProviderOptions) {
     this.apiKey = options.apiKey;
+    this.log = options.log;
     this.model = options.model;
     this.provider = options.provider ?? "anthropic";
     this.baseURL = (options.baseURL ?? "https://api.anthropic.com/v1").replace(
@@ -1532,7 +1563,11 @@ export class AnthropicProvider implements StreamingProvider {
         message: await safeResponseText(response),
       });
     if (!response.body) throw new Error("Anthropic response body unavailable");
-    yield* streamAnthropicSSE(response.body, this.streamIdleTimeoutMs);
+    yield* streamAnthropicSSE(
+      response.body,
+      this.streamIdleTimeoutMs,
+      this.log,
+    );
   }
 
   async listModels() {
@@ -1917,6 +1952,8 @@ export function providerFromKind(
     sessionID?: string;
     /** How long this endpoint's prompt cache should be retained. */
     cacheRetention?: CacheRetention;
+    /** The T3 telemetry channel; travels into the adapter's options. */
+    log?: ProviderDebugLog;
   },
 ) {
   const { format } = resolveEndpointProtocol({
@@ -1978,6 +2015,8 @@ export function providerForModel(
   _variantName?: string,
   requestOverride?: {
     reasoningEffort?: string;
+    /** The T3 telemetry channel for this provider's diagnostics. */
+    log?: ProviderDebugLog;
     /**
      * Stable session id, used only when the endpoint declares a cache key.
      * Per-session rather than global: each session, subagent and collaborator
@@ -2011,6 +2050,7 @@ export function providerForModel(
     capabilities: providerConfig.protocol?.capabilities,
     cacheRetention: providerConfig.protocol?.cacheRetention,
     sessionID: requestOverride?.sessionID,
+    log: requestOverride?.log,
     apiKey: providerConfig.connection.apiKey,
     model: effective.ref.model,
     baseURL: providerConfig.connection.baseURL,
@@ -2313,6 +2353,8 @@ async function* streamOpenAISSE(
 async function* streamAnthropicSSE(
   body: ReadableStream<Uint8Array>,
   streamIdleTimeoutMs?: number,
+  /** The T3 telemetry channel, threaded down to the SSE parser. */
+  log?: ProviderDebugLog,
 ): AsyncIterable<ProviderStreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -2328,11 +2370,11 @@ async function* streamAnthropicSSE(
     buffer += decoder.decode(next.value, { stream: true });
     const parts = buffer.split(/\r?\n\r?\n/u);
     buffer = parts.pop() ?? "";
-    for (const part of parts) yield* parseAnthropicSSEPart(part, state);
+    for (const part of parts) yield* parseAnthropicSSEPart(part, state, log);
   }
   buffer += decoder.decode();
   if (buffer) {
-    yield* parseAnthropicSSEPart(buffer, state);
+    yield* parseAnthropicSSEPart(buffer, state, log);
   }
   if (state.toolCalls.size)
     yield { type: "tool_call", calls: [...state.toolCalls.values()] };
@@ -2350,6 +2392,8 @@ type AnthropicSSEState = {
 function parseAnthropicSSEPart(
   part: string,
   state: AnthropicSSEState,
+  /** The T3 telemetry channel, threaded to the SSE debug record. */
+  log?: ProviderDebugLog,
 ): ProviderStreamChunk[] {
   const chunks: ProviderStreamChunk[] = [];
   for (const line of part.split(/\r?\n/u)) {
@@ -2357,7 +2401,16 @@ function parseAnthropicSSEPart(
     const data = line.slice("data:".length).trim();
     if (!data || data === "[DONE]") continue;
     const parsed = JSON.parse(data) as AnthropicStreamChunk;
-    debugAnthropicSSE(parsed);
+    // Was an env gate; now the log's level gate (T3).
+    log?.debug("[provider]", "anthropic SSE", {
+      eventType: parsed.type,
+      index: parsed.index,
+      contentBlockType: parsed.content_block?.type,
+      contentBlockKeys: Object.keys(parsed.content_block ?? {}),
+      deltaKeys: Object.keys(parsed.delta ?? {}),
+      choiceDeltaKeys: Object.keys(parsed.choices?.[0]?.delta ?? {}),
+      usageKeys: Object.keys(parsed.usage ?? parsed.message?.usage ?? {}),
+    });
     if (parsed.delta?.stop_reason)
       state.finishReason = normalizeAnthropicFinishReason(
         parsed.delta.stop_reason,
@@ -2445,19 +2498,6 @@ function parseAnthropicSSEPart(
       });
   }
   return chunks;
-}
-
-function debugAnthropicSSE(parsed: AnthropicStreamChunk) {
-  if (process.env.NATALIA_DEBUG_PROVIDER !== "1") return;
-  console.debug("[provider] anthropic SSE", {
-    eventType: parsed.type,
-    index: parsed.index,
-    contentBlockType: parsed.content_block?.type,
-    contentBlockKeys: Object.keys(parsed.content_block ?? {}),
-    deltaKeys: Object.keys(parsed.delta ?? {}),
-    choiceDeltaKeys: Object.keys(parsed.choices?.[0]?.delta ?? {}),
-    usageKeys: Object.keys(parsed.usage ?? parsed.message?.usage ?? {}),
-  });
 }
 
 async function* streamGeminiSSE(
