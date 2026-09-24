@@ -90,3 +90,42 @@ test("a full record round-trips through the TS inflate path, and a small object 
     idx.free();
   }
 });
+
+test("the Phase B multi-pack table answers across packs with the pack numbering", async () => {
+  if (!nativePackIndexAvailable()) return; // the .so is a build artifact
+  const { NativePackIndexSet } = await import("../src/native-index");
+  const storeRoot = await mkdtempSync(join(tmpdir(), "pack-table-"));
+  const packDir = join(storeRoot, "packs");
+  await mkdir(packDir, { recursive: true });
+  // Three packs written by the REAL frame writer (the oracle, not a
+  // synthetic fixture): ids are content hashes, spread one/two per pack.
+  const alpha = Buffer.from("alpha payload");
+  const bravo = Buffer.from("bravo payload");
+  const charlie = Buffer.from("charlie payload");
+  const alphaFrame = rustCas.compactFrame([
+    { id: sha256(alpha), data: alpha },
+    {
+      id: sha256(Buffer.from("delta payload")),
+      data: Buffer.from("delta payload"),
+    },
+  ]);
+  await writeFile(join(packDir, "pack-a.idx"), alphaFrame.idx);
+  const bravoFrame = rustCas.compactFrame([{ id: sha256(bravo), data: bravo }]);
+  await writeFile(join(packDir, "pack-b.idx"), bravoFrame.idx);
+  const charlieFrame = rustCas.compactFrame([
+    { id: sha256(charlie), data: charlie },
+  ]);
+  await writeFile(join(packDir, "pack-c.idx"), charlieFrame.idx);
+  // A non-idx file in the same directory is ignored.
+  await writeFile(join(packDir, "notes.txt"), "not an index");
+  const table = new NativePackIndexSet(packDir);
+  expect(table.count()).toBe(3);
+  // The pack numbering follows the sorted names (a, b, c).
+  expect(table.find(sha256(alpha))?.pack).toBe(0);
+  expect(table.find(sha256(Buffer.from("delta payload")))?.pack).toBe(0);
+  expect(table.find(sha256(bravo))?.pack).toBe(1);
+  expect(table.find(sha256(charlie))?.pack).toBe(2);
+  // An absent id answers undefined, never garbage.
+  expect(table.find(sha256(Buffer.from("absent")))).toBeUndefined();
+  table.free();
+});

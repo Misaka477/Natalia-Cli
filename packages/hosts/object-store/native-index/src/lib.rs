@@ -244,6 +244,110 @@ pub unsafe extern "C" fn native_index_find(
     0
 }
 
+// ---------------------------------------------------------------------------
+// Phase B block 3: the multi-pack table. A runtime's durable knowledge is
+// MANY pack indexes, and the daemon's lookup faces all of them. The table
+// owns one mapped index per `.idx` in a directory; a find runs each pack's
+// binary search. The single-index faces above stay exactly as they were —
+// this is the layer that holds many of them, with the same honest empties
+// (no directory, no indexes) and the same drop-unmaps-everything life.
+// ---------------------------------------------------------------------------
+
+struct IndexTable {
+    indexes: Vec<NativeIndex>,
+}
+
+/// The table's answer for one find: which pack answered, and its record.
+#[repr(C)]
+pub struct NativeIndexTableHit {
+    pub pack: u32,
+    pub offset: u32,
+    pub data_offset: u32,
+    pub orig_len: u32,
+    pub comp_len: u32,
+    pub kind: u8,
+    pub delta_len: u32,
+}
+
+fn load_one_index(path: &Path) -> Option<NativeIndex> {
+    let file = std::fs::File::open(path).ok()?;
+    let map = Mmap::map(&file)?;
+    let entries = unsafe { parse_index(map.bytes()) };
+    let mut order: Vec<u32> = (0..entries.len() as u32).collect();
+    let temporary = NativeIndex {
+        map,
+        entries,
+        order: Vec::new(),
+    };
+    order.sort_by(|left, right| {
+        temporary
+            .id_bytes(&temporary.entries[*left as usize])
+            .cmp(temporary.id_bytes(&temporary.entries[*right as usize]))
+    });
+    let NativeIndex { map, entries, .. } = temporary;
+    Some(NativeIndex { map, entries, order })
+}
+
+pub unsafe extern "C" fn native_index_open_dir(path: *const c_char) -> *mut c_void {
+    if path.is_null() { return std::ptr::null_mut(); }
+    let path = match CStr::from_ptr(path).to_str() { Ok(p) => p, Err(_) => return std::ptr::null_mut() };
+    let entries = match std::fs::read_dir(Path::new(path)) { Ok(e) => e, Err(_) => return std::ptr::null_mut() };
+    let mut paths: Vec<std::path::PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "idx"))
+        .collect();
+    // Deterministic order (the walk's is not): the pack numbering must not
+    // depend on the filesystem's mood.
+    paths.sort();
+    let indexes: Vec<NativeIndex> = paths.iter().filter_map(|path| load_one_index(path)).collect();
+    Box::into_raw(Box::new(IndexTable { indexes })) as *mut c_void
+}
+
+pub unsafe extern "C" fn native_index_find_dir(
+    handle: *mut c_void,
+    id: *const c_char,
+    out: *mut NativeIndexTableHit,
+) -> i32 {
+    if handle.is_null() || id.is_null() || out.is_null() {
+        return 0;
+    }
+    let table = &*(handle as *const IndexTable);
+    let id = CStr::from_ptr(id).to_bytes();
+    for (pack, index) in table.indexes.iter().enumerate() {
+        let at = index.lower_bound(id);
+        if let Some(slot) = index.order.get(at) {
+            let record = &index.entries[*slot as usize];
+            if index.id_bytes(record) == id {
+                std::ptr::write(out, NativeIndexTableHit {
+                    pack: pack as u32,
+                    offset: record.offset,
+                    data_offset: record.data_offset,
+                    orig_len: record.orig_len,
+                    comp_len: record.comp_len,
+                    kind: record.kind,
+                    delta_len: record.delta_len,
+                });
+                return 1;
+            }
+        }
+    }
+    0
+}
+
+/// How many packs the table holds (its own observability).
+pub unsafe extern "C" fn native_index_table_count(handle: *mut c_void) -> i32 {
+    if handle.is_null() { return 0; }
+    let table = &*(handle as *const IndexTable);
+    table.indexes.len() as i32
+}
+
+pub unsafe extern "C" fn native_index_free_dir(handle: *mut c_void) {
+    if !handle.is_null() {
+        drop(Box::from_raw(handle as *mut IndexTable));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,6 +455,78 @@ mod tests {
         assert_eq!(unsafe { native_index_find(handle, absent.as_ptr(), &mut out) }, 0);
         unsafe { native_index_free(handle) };
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn the_table_answers_across_many_packs_with_the_pack_numbering() {
+        // Three packs: the ids are spread across them (a pack holds what
+        // the writer put there — the find runs each pack's binary search).
+        let dir = std::env::temp_dir().join(format!("ndx-table-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let specs: [(&str, &[(&str, u32, u8)]); 3] = [
+            ("pack-a", &[("alpha", 10, 0), ("delta", 40, 0)]),
+            ("pack-b", &[("bravo", 20, 0), ("echo", 50, 1)]),
+            ("pack-c", &[("charlie", 30, 0)]),
+        ];
+        for (name, entries) in specs {
+            std::fs::write(dir.join(format!("{name}.idx")), write_index(entries)).unwrap();
+        }
+        // A non-idx file in the same directory is ignored.
+        std::fs::write(dir.join("notes.txt"), b"not an index").unwrap();
+        let cdir = CString::new(dir.to_str().unwrap()).unwrap();
+        let table = unsafe { native_index_open_dir(cdir.as_ptr()) };
+        assert!(!table.is_null(), "the table must open");
+        assert_eq!(unsafe { native_index_table_count(table) }, 3);
+        let mut out = NativeIndexTableHit {
+            pack: 999,
+            offset: 0,
+            data_offset: 0,
+            orig_len: 0,
+            comp_len: 0,
+            kind: 0,
+            delta_len: 0,
+        };
+        // The pack numbering follows the sorted names (the walk's order
+        // is not the FS's mood): a, b, c.
+        for (id, pack, offset) in [
+            ("alpha", 0u32, 10u32),
+            ("delta", 0, 40),
+            ("bravo", 1, 20),
+            ("echo", 1, 50),
+            ("charlie", 2, 30),
+        ] {
+            let cid = CString::new(id).unwrap();
+            let found = unsafe { native_index_find_dir(table, cid.as_ptr(), &mut out) };
+            assert_eq!(found, 1, "missing {id}");
+            assert_eq!((out.pack, out.offset), (pack, offset), "wrong hit for {id}");
+            // The delta entry keeps its arithmetic through the table.
+            if id == "echo" {
+                assert_eq!(
+                    (out.kind, out.delta_len),
+                    (1, 99),
+                    "the delta entry lost its arithmetic"
+                );
+            }
+        }
+        // An absent id answers zero across all packs.
+        let absent = CString::new("zulu").unwrap();
+        assert_eq!(unsafe { native_index_find_dir(table, absent.as_ptr(), &mut out) }, 0);
+        unsafe { native_index_free_dir(table) };
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_table_is_null_for_a_missing_or_indexless_directory() {
+        let cpath = CString::new("/nonexistent/packs").unwrap();
+        assert!(unsafe { native_index_open_dir(cpath.as_ptr()) }.is_null());
+        let dir = std::env::temp_dir().join(format!("ndx-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cdir = CString::new(dir.to_str().unwrap()).unwrap();
+        let table = unsafe { native_index_open_dir(cdir.as_ptr()) };
+        assert!(!table.is_null(), "an existing directory opens even with no indexes");
+        assert_eq!(unsafe { native_index_table_count(table) }, 0);
+        unsafe { native_index_free_dir(table) };
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
