@@ -7,6 +7,9 @@
   "include": ["src", "test"],
   "references": [
     {
+      "path": "../../framework/rina"
+    },
+    {
       "path": "../../framework/attachments"
     },
     {

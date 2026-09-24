@@ -129,6 +129,7 @@
         "@anthelia/contracts": "workspace:*",
         "@anthelia/operation-log": "workspace:*",
         "@anthelia/provider-model": "workspace:*",
+        "@anthelia/rina": "workspace:*",
         "@anthelia/runtime": "workspace:*",
         "@anthelia/runtime-services": "workspace:*",
         "@anthelia/session": "workspace:*",

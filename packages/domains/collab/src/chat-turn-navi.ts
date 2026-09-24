@@ -11,6 +11,7 @@ import {
 import type {
   ProviderFinishReason,
   ProviderMessage,
+  ProviderStreamChunk,
   ProviderToolCall,
   StreamingProvider,
 } from "@anthelia/runtime";
@@ -20,6 +21,7 @@ import type {
 } from "@anthelia/substrate";
 import { ensureCompleteSessionFactState } from "@anthelia/substrate";
 import { logOf } from "@anthelia/operation-log";
+import { rinaResponseCache } from "@anthelia/rina";
 import {
   type ConcreteRuntimeEvent,
   naviChatHistory,
@@ -371,14 +373,59 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
               cacheReadInputTokens?: number;
             }
           | undefined;
-        const raw = activeProvider.stream({
-          messages: finalOnly
-            ? [...messages, { role: "assistant", content: MAX_STEPS_PROMPT }]
-            : messages,
-          tools: finalOnly ? undefined : toolSchemas,
-          toolChoice: finalOnly ? "none" : undefined,
-          signal,
-        });
+        const requestMessages: ProviderMessage[] = finalOnly
+          ? [
+              ...messages,
+              {
+                role: "assistant",
+                content: MAX_STEPS_PROMPT,
+              } as ProviderMessage,
+            ]
+          : messages;
+        const requestTools = finalOnly ? undefined : toolSchemas;
+        // RINA Phase 4 (first cut): the non-main-path response cache. A hit
+        // answers the identical request from the cache — the stream is
+        // synthesized from the stored answer, the provider is never called.
+        // The cache is default-off; an enabled cache is an operator's
+        // explicit acceptance that the identical request may answer with
+        // the earlier, identical request's response.
+        const responseCache =
+          ctx.state.serviceDirectory.getOptional(rinaResponseCache);
+        const cacheKey = responseCache?.enabled()
+          ? responseCache.key({
+              provider: activeProvider.provider,
+              model: activeProvider.model,
+              role: "navi",
+              sessionID: input.exec.session.id,
+              system:
+                messages[0]?.role === "system"
+                  ? messages[0].content
+                  : undefined,
+              messages: requestMessages,
+              tools: requestTools,
+            })
+          : undefined;
+        const cacheHit =
+          cacheKey === undefined ? undefined : responseCache!.lookup(cacheKey);
+        const raw: AsyncIterable<ProviderStreamChunk> = cacheHit
+          ? (async function* cached() {
+              yield { type: "content" as const, text: cacheHit.text };
+              // The usage rides its own chunk in the stream union, so the
+              // token meter sees the cached answer's recorded cost.
+              if (cacheHit.usage)
+                yield {
+                  type: "usage" as const,
+                  inputTokens: cacheHit.usage.inputTokens ?? 0,
+                  outputTokens: cacheHit.usage.outputTokens ?? 0,
+                };
+              yield { type: "done" as const };
+            })()
+          : activeProvider.stream({
+              messages: requestMessages,
+              tools: requestTools,
+              toolChoice: finalOnly ? "none" : undefined,
+              signal,
+            });
         for await (const chunk of finalOnly
           ? raw
           : requireNativeToolCallProtocol(normalizeRawToolCallProtocol(raw))) {
@@ -466,6 +513,24 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
           });
           publishTokenSnapshot();
         }
+        // Phase 4's store: a complete answer (the loop finished without
+        // throwing) that was NOT served from the cache. A partial stream
+        // is never stored — an aborted turn has no answer to cache.
+        if (responseCache?.enabled() && cacheKey && !cacheHit)
+          responseCache.store(cacheKey, {
+            text: output,
+            ...(providerUsage
+              ? {
+                  usage: {
+                    inputTokens: providerUsage.inputTokens,
+                    ...(providerUsage.outputTokens === undefined
+                      ? {}
+                      : { outputTokens: providerUsage.outputTokens }),
+                  },
+                }
+              : {}),
+            at: new Date().toISOString(),
+          });
         usedTools ||= calls.length > 0;
         if (
           finishReason === "length" ||

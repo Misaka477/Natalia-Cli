@@ -11,7 +11,13 @@
   "dependencies": {
     "@anthelia/attachments": "workspace:*",
     "@anthelia/compaction": "workspace:*",
+    "@anthelia/config": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
+    "@anthelia/operation-log": "workspace:*",
     "@anthelia/provider-model": "workspace:*",
+    "@anthelia/rina": "workspace:*",
+    "@anthelia/runtime": "workspace:*",
+    "@anthelia/runtime-services": "workspace:*",
     "@anthelia/session": "workspace:*",
     "@anthelia/session-store": "workspace:*",
     "@anthelia/substrate": "workspace:*",
@@ -19,14 +25,9 @@
     "@anthelia/workspace": "workspace:*",
     "@natalia/agent-prompts": "workspace:*",
     "@natalia/collaboration": "workspace:*",
-    "@anthelia/config": "workspace:*",
     "@natalia/context-ledger": "workspace:*",
-    "@anthelia/contracts": "workspace:*",
     "@natalia/goal": "workspace:*",
     "@natalia/governance-ledger": "workspace:*",
-    "@anthelia/operation-log": "workspace:*",
-    "@anthelia/runtime": "workspace:*",
-    "@anthelia/runtime-services": "workspace:*",
     "@natalia/work-ledger": "workspace:*"
   }
 }

@@ -50,6 +50,8 @@ import {
   L1_CACHE_KINDS,
   rinaCache,
   rinaVault,
+  createResponseCache,
+  rinaResponseCache,
 } from "@anthelia/rina";
 import { join } from "node:path";
 import { createOperationLog, operationLog } from "@anthelia/operation-log";
@@ -609,6 +611,16 @@ export async function wireFrameworkServices(
   });
   for (const kind of L1_CACHE_KINDS) cacheFabric.registerKind(kind);
   ctx.state.serviceDirectory.provide(rinaCache, cacheFabric);
+  // RINA Phase 4's response cache: independent of the fabric (a sampled
+  // provider answer is not law-1 deterministic work), default-off, and
+  // process-scoped — the study's isolation rule rides its key, not a
+  // per-session instance. An operator opts in per process; disabling
+  // clears it, so a later opt-in never serves an earlier process's
+  // answers.
+  ctx.state.serviceDirectory.provide(
+    rinaResponseCache,
+    createResponseCache({ enabled: false }),
+  );
   // The telemetry zone (decisions §5): the runtime's own operation log,
   // home-level like the install layout, overridable for isolated hosts
   // and tests — and closed with the runtime, so records drain on

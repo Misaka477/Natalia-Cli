@@ -1,5 +1,6 @@
 import { defineService } from "@anthelia/runtime-services";
 import type { CacheFabric } from "./cache";
+import type { ResponseCache } from "./response-cache";
 import type { RinaVaultService } from "./vault";
 
 /**
@@ -21,3 +22,17 @@ export const rinaVault = defineService<RinaVaultService>("rina.vault", {
   scope: "process",
   capability: "services",
 });
+
+/**
+ * The Phase 4 response cache: process-scoped, one per runtime, its own
+ * metrics and default-off switch. The study's isolation rule rides the
+ * key (sessionID is a key part), so a single process-wide cache never
+ * spills one session's answers into another's.
+ */
+export const rinaResponseCache = defineService<ResponseCache>(
+  "rina.response-cache",
+  {
+    scope: "process",
+    capability: "services",
+  },
+);
