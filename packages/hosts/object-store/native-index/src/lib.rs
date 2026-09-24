@@ -288,6 +288,10 @@ fn load_one_index(path: &Path) -> Option<NativeIndex> {
     Some(NativeIndex { map, entries, order })
 }
 
+/// Exported to the cdylib: `#[no_mangle]` is what the dynamic loader
+/// sees (a bare `pub extern "C"` fn is invisible to dlopen — the block-3
+/// lesson).
+#[no_mangle]
 pub unsafe extern "C" fn native_index_open_dir(path: *const c_char) -> *mut c_void {
     if path.is_null() { return std::ptr::null_mut(); }
     let path = match CStr::from_ptr(path).to_str() { Ok(p) => p, Err(_) => return std::ptr::null_mut() };
@@ -304,6 +308,10 @@ pub unsafe extern "C" fn native_index_open_dir(path: *const c_char) -> *mut c_vo
     Box::into_raw(Box::new(IndexTable { indexes })) as *mut c_void
 }
 
+/// Exported to the cdylib: `#[no_mangle]` is what the dynamic loader
+/// sees (a bare `pub extern "C"` fn is invisible to dlopen — the block-3
+/// lesson).
+#[no_mangle]
 pub unsafe extern "C" fn native_index_find_dir(
     handle: *mut c_void,
     id: *const c_char,
@@ -336,12 +344,20 @@ pub unsafe extern "C" fn native_index_find_dir(
 }
 
 /// How many packs the table holds (its own observability).
+/// Exported to the cdylib: `#[no_mangle]` is what the dynamic loader
+/// sees (a bare `pub extern "C"` fn is invisible to dlopen — the block-3
+/// lesson).
+#[no_mangle]
 pub unsafe extern "C" fn native_index_table_count(handle: *mut c_void) -> i32 {
     if handle.is_null() { return 0; }
     let table = &*(handle as *const IndexTable);
     table.indexes.len() as i32
 }
 
+/// Exported to the cdylib: `#[no_mangle]` is what the dynamic loader
+/// sees (a bare `pub extern "C"` fn is invisible to dlopen — the block-3
+/// lesson).
+#[no_mangle]
 pub unsafe extern "C" fn native_index_free_dir(handle: *mut c_void) {
     if !handle.is_null() {
         drop(Box::from_raw(handle as *mut IndexTable));
