@@ -493,3 +493,56 @@ test("a goal with no budget never blocks on a figure it cannot observe", async (
   const goal = service.current("s1", events);
   expect(goal?.phase).toBe("active");
 });
+
+test("a durable view answers on a fast-attach tail the fold cannot", () => {
+  const at = "2026-01-01T00:00:00.000Z";
+  const service = new GoalService({
+    now: () => at,
+    nextEventId: () => "evt_d",
+    nextGoalId: () => "goal_d",
+  });
+  // The durable view is the engine fact state's goal slice: complete (paged
+  // from the durable log, hence holding pre-epoch goals) and disarmed.
+  const durable = {
+    goalID: "goal_d",
+    revision: 2,
+    objective: "resume the plan",
+    phase: "paused" as const,
+    maxGoalRounds: 256,
+    maxGoalTokens: 0,
+    maxGoalWallClockMs: 0,
+    spentGoalTokens: 42,
+    goalWallClockMs: 1000,
+    roundsStarted: 2,
+    createdAt: at,
+    updatedAt: at,
+    activation: "disarmed" as const,
+  };
+  // The fast-attach tail: the goal's mutations predate the epoch baseline, so
+  // only newer events are resident.
+  const tail: RuntimeEvent[] = [
+    {
+      type: "turn.submitted",
+      id: "turn_tail",
+      text: "keep going",
+      byteLength: 10,
+      lineCount: 1,
+      sha256: "tail",
+    },
+  ];
+  // Without the durable view the tail fold answers "no goal" — the debt.
+  expect(service.current("s1", tail)).toBeUndefined();
+  // With it, the service answers the durable view and keeps its live
+  // activation discipline (process-local, never from the fold).
+  const view = service.current("s1", tail, durable)!;
+  expect(view.goalID).toBe("goal_d");
+  expect(view.spentGoalTokens).toBe(42);
+  expect(view.activation).toBe("disarmed");
+  service.arm("s1");
+  expect(service.current("s1", tail, durable)?.activation).toBe("armed");
+  // A live mutation makes the cache the authority: from then on the durable
+  // view is not consulted, and the bare tail call serves the cached phase.
+  service.resume("s1", view);
+  expect(service.current("s1", tail, durable)?.phase).toBe("active");
+  expect(service.current("s1", tail)?.phase).toBe("active");
+});

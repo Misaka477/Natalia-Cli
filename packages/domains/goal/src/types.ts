@@ -1,23 +1,14 @@
-import type { GoalOperation, GoalSnapshot } from "@anthelia/contracts";
+import type { GoalOperation } from "@anthelia/contracts";
 
 /**
- * Live goal projection: the durable snapshot plus facts derived from the
- * session log. `activation` is process-local: a projection folded from the log
- * (restart, resume, fork, replay) is always `disarmed`, so opening a session
- * never starts work by itself.
+ * The live goal projection lives in the contract vocabulary (the fact state in
+ * `@anthelia/session` folds the same shape engine-side); the domain re-exports
+ * it so consumers keep one import site.
  */
-export type GoalView = GoalSnapshot & {
-  /** Highest admitted goal round. */
-  roundsStarted: number;
-  /** ISO timestamp of the create mutation. */
-  createdAt: string;
-  /** ISO timestamp of the latest mutation. */
-  updatedAt: string;
-  /** Process-local continuation eligibility; never persisted. */
-  activation: "armed" | "disarmed";
-};
+export type { GoalView } from "@anthelia/contracts";
 
 /** Mutations accepted by the domain (the `clear` tombstone is its own event). */
 export type GoalMutation = Exclude<GoalOperation, "clear">;
 
-export type { GoalSnapshot };
+/** The durable goal state after one accepted mutation. */
+export type { GoalSnapshot } from "@anthelia/contracts";

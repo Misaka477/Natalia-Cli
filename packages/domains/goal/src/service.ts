@@ -147,13 +147,23 @@ export class GoalService {
     };
   }
 
-  /** Current goal for the session, from the cache, journal, or recovery seed. */
+  /**
+   * Current goal for the session, from the cache, journal, or recovery seed.
+   *
+   * `durable` is the engine fact state's goal slice when the caller has one:
+   * a complete projection (paged from the durable log, `disarmed`), which the
+   * no-cache path prefers over folding `events` — a fast-attach tail would
+   * otherwise hide an older goal and answer "there is no goal". The cache path
+   * is the live authority (it charges settled rounds/costs incrementally) and
+   * never consults it.
+   */
   current(
     sessionID: string,
     events: readonly RuntimeEvent[],
+    durable?: GoalView,
   ): GoalView | undefined {
     if (!this.views.has(sessionID))
-      return this.withActivation(sessionID, foldGoal(events));
+      return this.withActivation(sessionID, durable ?? foldGoal(events));
     // Mutable because settled costs are charged into it below.
     let cached = this.views.get(sessionID) ?? undefined;
     if (!cached) return undefined;

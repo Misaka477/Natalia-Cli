@@ -20,6 +20,7 @@ import {
   sessionFactConstitutionRules,
   sessionFactDecisionRecords,
   sessionFactDriftFindings,
+  sessionFactGoal,
   sessionFactIntelligenceFacts,
   sessionFactLatestSnapshot,
   sessionFactMailboxMessages,
@@ -897,4 +898,174 @@ test("context.instructions notices project to the latest revision per kind", () 
       },
     ]).find((notice) => notice.kind === "config_reload"),
   ).toMatchObject({ noticeID: "context:config:2" });
+});
+
+// --- the goal slice (the last fold-direct family's fact twin) ---------------
+
+const GOAL_AT = "2026-01-01T00:00:00.000Z";
+
+function goalSnapshot(
+  revision: number,
+  goalID = "goal_1",
+  phase: "active" | "paused" | "complete" = "active",
+) {
+  return {
+    goalID,
+    revision,
+    objective: "ship the thing",
+    phase,
+    maxGoalRounds: 256,
+    maxGoalTokens: 0,
+    maxGoalWallClockMs: 0,
+    spentGoalTokens: 0,
+    goalWallClockMs: 0,
+  };
+}
+
+function goalChanged(
+  operation: "create" | "edit" | "pause" | "resume" | "complete",
+  snapshot: ReturnType<typeof goalSnapshot>,
+  roundsStarted: number,
+  at = GOAL_AT,
+): RuntimeEvent {
+  return {
+    type: "goal.changed",
+    id: `goal:${operation}:${snapshot.revision}`,
+    operation,
+    snapshot,
+    roundsStarted,
+    at,
+  } as RuntimeEvent;
+}
+
+test("goal facts fold identically in the state and from events", () => {
+  // The edit/pause/resume snapshots carry the accumulated cost forward, as
+  // the builders do — a mutation's snapshot is the whole durable state.
+  const spent = { spentGoalTokens: 10, goalWallClockMs: 100 };
+  const events: RuntimeEvent[] = [
+    goalChanged("create", goalSnapshot(1), 0),
+    {
+      type: "goal.round",
+      id: "goal:round:1",
+      goalID: "goal_1",
+      revision: 1,
+      round: 1,
+      at: GOAL_AT,
+    },
+    {
+      type: "goal.round.cost",
+      id: "goal:cost:1",
+      goalID: "goal_1",
+      revision: 1,
+      round: 1,
+      at: GOAL_AT,
+      tokens: 10,
+      durationMs: 100,
+    },
+    goalChanged("edit", { ...goalSnapshot(2), ...spent }, 1),
+    goalChanged("pause", { ...goalSnapshot(3), phase: "paused", ...spent }, 1),
+    goalChanged("resume", { ...goalSnapshot(4), ...spent }, 1),
+  ];
+  const state = sessionFactStateFromEvents(events);
+  expect(sessionFactGoal(state)).toEqual({
+    ...goalSnapshot(4),
+    ...spent,
+    roundsStarted: 1,
+    createdAt: GOAL_AT,
+    updatedAt: GOAL_AT,
+    activation: "disarmed",
+  });
+});
+
+test("the goal twin keeps create times, tombstones, and resurrect identity", () => {
+  const later = "2026-01-02T00:00:00.000Z";
+  const state = emptySessionFactState();
+  const feed = (event: RuntimeEvent) => applySessionFactEvent(state, event);
+  feed(goalChanged("create", goalSnapshot(1), 0));
+  feed(goalChanged("edit", goalSnapshot(2), 0, later));
+  // An edit keeps the create time and advances the mutation time.
+  expect(sessionFactGoal(state)?.createdAt).toBe(GOAL_AT);
+  expect(sessionFactGoal(state)?.updatedAt).toBe(later);
+  feed({
+    type: "goal.changed",
+    id: "goal:clear:2",
+    operation: "clear",
+    cleared: { goalID: "goal_1", revision: 2 },
+    roundsStarted: 0,
+    at: later,
+  } as RuntimeEvent);
+  expect(sessionFactGoal(state)).toBeUndefined();
+  // A new goalID is a new goal: its own create time.
+  feed(goalChanged("create", goalSnapshot(1, "goal_2"), 0, later));
+  expect(sessionFactGoal(state)?.goalID).toBe("goal_2");
+  expect(sessionFactGoal(state)?.createdAt).toBe(later);
+});
+
+test("the goal twin ignores orphans, superseded revisions, and late rounds", () => {
+  const state = emptySessionFactState();
+  const feed = (event: RuntimeEvent) => applySessionFactEvent(state, event);
+  // Orphans: rounds/costs with no current goal are ignored, never thrown —
+  // the sink feeds every durable event, so a strict twin would crash it.
+  feed({
+    type: "goal.round",
+    id: "goal:round:orphan",
+    goalID: "goal_1",
+    revision: 1,
+    round: 1,
+    at: GOAL_AT,
+  });
+  feed({
+    type: "goal.round.cost",
+    id: "goal:cost:orphan",
+    goalID: "goal_1",
+    revision: 1,
+    round: 1,
+    at: GOAL_AT,
+    tokens: 99,
+    durationMs: 99,
+  });
+  expect(sessionFactGoal(state)).toBeUndefined();
+  feed(goalChanged("create", goalSnapshot(1), 0));
+  feed({
+    type: "goal.round",
+    id: "goal:round:1",
+    goalID: "goal_1",
+    revision: 1,
+    round: 1,
+    at: GOAL_AT,
+  });
+  feed({
+    type: "goal.round.cost",
+    id: "goal:cost:1",
+    goalID: "goal_1",
+    revision: 1,
+    round: 1,
+    at: GOAL_AT,
+    tokens: 5,
+    durationMs: 50,
+  });
+  // A superseded revision's cost is ignored, not charged.
+  feed({
+    type: "goal.round.cost",
+    id: "goal:cost:superseded",
+    goalID: "goal_1",
+    revision: 0,
+    round: 1,
+    at: GOAL_AT,
+    tokens: 99,
+    durationMs: 99,
+  });
+  // A late/out-of-sequence round is ignored.
+  feed({
+    type: "goal.round",
+    id: "goal:round:late",
+    goalID: "goal_1",
+    revision: 1,
+    round: 5,
+    at: GOAL_AT,
+  });
+  const goal = sessionFactGoal(state)!;
+  expect(goal.roundsStarted).toBe(1);
+  expect(goal.spentGoalTokens).toBe(5);
+  expect(goal.goalWallClockMs).toBe(50);
 });

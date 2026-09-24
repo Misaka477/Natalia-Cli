@@ -373,6 +373,7 @@ export {
   sessionFactDriftFindings,
   sessionFactEvidenceRecords,
   sessionFactCompletions,
+  sessionFactGoal,
   sessionFactHumanValidation,
   evictTerminalFacts,
   FACT_TERMINAL_LIMIT,

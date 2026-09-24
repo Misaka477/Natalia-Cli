@@ -7,6 +7,7 @@
  * complete/blocked additionally accept the exact current goal round.
  */
 import type { GoalBlockReason, SessionID } from "@anthelia/contracts";
+import { sessionFactGoal } from "@anthelia/session";
 import type { RuntimeTool } from "@anthelia/tools";
 import type {
   RuntimeContext,
@@ -73,7 +74,18 @@ export function goalTools(
   }
 
   function currentView(exec: SessionExecutionState) {
-    return goalRuntime.service.current(exec.session.id, exec.session.events);
+    // The engine fact state's goal slice when complete: a fast-attach tail
+    // cannot hide an older goal from the tool face. The belt (the service's
+    // journal fold) stays for the incomplete case.
+    const durable =
+      exec.factStateComplete === true && exec.factState
+        ? sessionFactGoal(exec.factState)
+        : undefined;
+    return goalRuntime.service.current(
+      exec.session.id,
+      exec.session.events,
+      durable,
+    );
   }
 
   function publish(exec: SessionExecutionState, event: unknown) {

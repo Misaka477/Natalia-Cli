@@ -10,7 +10,7 @@ import { GoalRoundDriver } from "@natalia/goal";
 import type { GoalRoundHost, GoalRoundStop } from "@natalia/goal";
 import { GoalService } from "@natalia/goal";
 import type { GoalView } from "@natalia/goal";
-import { admittedInputs } from "@anthelia/session";
+import { admittedInputs, sessionFactGoal } from "@anthelia/session";
 import type { SessionStoreController } from "@anthelia/session-store";
 import { sessionStoreController } from "@anthelia/session-store";
 import type {
@@ -75,6 +75,18 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
   const execFor = (sessionID: string) =>
     ctx.ports.getExecutionBySession().get(sessionID as SessionID);
 
+  /**
+   * The engine fact state's goal slice when it is complete (paged from the
+   * durable log, so it holds pre-epoch goals a fast-attach tail cannot see).
+   * Passed to the service as the durable view; absent or incomplete leaves
+   * the service's journal fold as the belt. The service's cache, when warm,
+   * remains the live authority either way.
+   */
+  const durableGoal = (exec: SessionExecutionState) =>
+    exec.factStateComplete === true && exec.factState
+      ? sessionFactGoal(exec.factState)
+      : undefined;
+
   const service = new GoalService({
     now,
     nextEventId,
@@ -86,7 +98,7 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
     current: (sessionID) => {
       const exec = execFor(sessionID);
       if (!exec) return undefined;
-      return service.current(sessionID, exec.session.events);
+      return service.current(sessionID, exec.session.events, durableGoal(exec));
     },
     isIdle: (sessionID) => {
       const exec = execFor(sessionID);
@@ -217,7 +229,11 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
   const control: GoalRuntime["control"] = async (action, sessionID) => {
     const exec = execFor(sessionID);
     if (!exec) return { ok: false, action, message: "session not found" };
-    const current = service.current(sessionID, exec.session.events);
+    const current = service.current(
+      sessionID,
+      exec.session.events,
+      durableGoal(exec),
+    );
     if (!current) return { ok: false, action, message: "there is no goal" };
     try {
       if (action === "pause") {
@@ -238,7 +254,11 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
         // If our pause cancelled a round that is still winding down, let it
         // settle first or its `settle(cancelled)` would re-pause this resume.
         await waitForGoalRoundToSettle(exec);
-        const latest = service.current(sessionID, exec.session.events);
+        const latest = service.current(
+          sessionID,
+          exec.session.events,
+          durableGoal(exec),
+        );
         if (!latest) return { ok: false, action, message: "there is no goal" };
         const result = service.resume(sessionID, latest);
         ctx.ports.publishForSession(exec, result.event);
@@ -326,7 +346,7 @@ export function createGoalRuntime(ctx: RuntimeContext): GoalRuntime {
     if (!exec) return;
     let goal: ReturnType<GoalService["current"]>;
     try {
-      goal = service.current(sessionID, exec.session.events);
+      goal = service.current(sessionID, exec.session.events, durableGoal(exec));
     } catch {
       // A mid-history journal tail cannot be folded. The recovery seed (when
       // present) already won above, so leave the current UI state untouched.

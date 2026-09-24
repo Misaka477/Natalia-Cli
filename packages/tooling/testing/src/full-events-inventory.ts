@@ -69,13 +69,13 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
   },
   "packages/domains/goal-runtime/src/goal-runtime.ts": {
     count: 5,
-    cls: "fold-direct",
-    note: "DEBT: a pre-facts domain — the goal service folds the resident journal; correctness under fast attach awaits a goal fact in SessionFactState (the next domain)",
+    cls: "state-first",
+    note: "the service reads take the durable view from the completed fact state (pre-epoch goals visible under a fast attach); the resident array is the belt",
   },
   "packages/domains/goal-runtime/src/goal-tools.ts": {
     count: 1,
-    cls: "fold-direct",
-    note: "DEBT: the same goal fold exposed to a tool face",
+    cls: "state-first",
+    note: "the tool face reads the same durable view; the belt rides along",
   },
   "packages/framework/client/src/runtime/tool-execution/execute-calls.ts": {
     count: 2,

@@ -1,6 +1,7 @@
 import type {
   ChatChannel,
   CollaborationMessage,
+  GoalView,
   RuntimeEvent,
   RuntimeMessagePage,
   RuntimeProjectedMessage,
@@ -1873,6 +1874,75 @@ export function sessionDecisionRecordsFrom(
 }
 
 /**
+ * The goal slice of the hot fact state.
+ *
+ * The same step the goal domain folds strictly (`foldGoalStep`), minus its
+ * write-time validation: the event sink feeds EVERY durable event here, so an
+ * orphan or out-of-sequence round/cost is ignored, never thrown — a strict
+ * twin would make one malformed history crash the sink. On a well-formed
+ * journal the two folds agree exactly (the cross-package equivalence test in
+ * the client tree pins that). Replay never arms continuation, so `activation`
+ * is always `disarmed` here.
+ */
+function applySessionGoalFact(
+  state: SessionFactState,
+  event: RuntimeEvent,
+): void {
+  if (event.type === "goal.changed") {
+    if (event.operation === "clear") {
+      state.goal = undefined;
+      return;
+    }
+    const snapshot = event.snapshot;
+    if (snapshot === undefined) return;
+    const previous = state.goal;
+    const sameGoal =
+      previous !== undefined && previous.goalID === snapshot.goalID;
+    state.goal = {
+      ...snapshot,
+      roundsStarted: event.roundsStarted,
+      createdAt: sameGoal ? previous!.createdAt : event.at,
+      updatedAt: event.at,
+      // Replay never arms continuation.
+      activation: "disarmed",
+    };
+    return;
+  }
+  if (event.type === "goal.round") {
+    const current = state.goal;
+    if (
+      current === undefined ||
+      event.goalID !== current.goalID ||
+      event.revision !== current.revision ||
+      event.round !== current.roundsStarted + 1
+    )
+      return;
+    state.goal = { ...current, roundsStarted: event.round };
+    return;
+  }
+  if (event.type === "goal.round.cost") {
+    const current = state.goal;
+    if (
+      current === undefined ||
+      event.goalID !== current.goalID ||
+      event.revision !== current.revision ||
+      event.round !== current.roundsStarted
+    )
+      return;
+    state.goal = {
+      ...current,
+      spentGoalTokens: current.spentGoalTokens + event.tokens,
+      goalWallClockMs: current.goalWallClockMs + event.durationMs,
+    };
+  }
+}
+
+/** The goal slice from the hot fact state: the durable live projection. */
+export function sessionFactGoal(state: SessionFactState): GoalView | undefined {
+  return state.goal;
+}
+
+/**
  * Work contracts keyed by planID (EI §8.2): the latest accepted contract
  * ("current" — the R drift is judged against) or, when none was accepted, the
  * latest draft. A draft is marked stale when the plan document changed after
@@ -2080,6 +2150,14 @@ export type SessionFactState = {
   mailbox: SessionMailboxFactState;
   decisions: SessionDecisionFactState;
   intelligence: SessionIntelligenceFactState;
+  /**
+   * The live goal projection folded from the log: the durable snapshot plus
+   * rounds-start/cost facts. `activation` is always `disarmed` here — replay
+   * never arms continuation; the live process holds that authority in the goal
+   * service's cache, which is why the consumers read this as the durable view
+   * and the service as the live one.
+   */
+  goal?: GoalView;
   latestSnapshot?: SessionSnapshotEvent;
   /**
    * Every event the collaboration projections consume: `collab.*`,
@@ -2150,6 +2228,7 @@ export function applySessionFactEvent(
   applySessionMailboxFact(state.mailbox, event);
   applySessionDecisionFact(state.decisions, event);
   applySessionIntelligenceFact(state.intelligence, event);
+  applySessionGoalFact(state, event);
   if (event.type === "session.snapshot") state.latestSnapshot = event;
   if (isCollaborationStreamEvent(event)) state.collaborationEvents.push(event);
   if (naviChatStreamEvent(event)) state.naviChatEvents.push(event);
