@@ -58,6 +58,9 @@ export const EVENT_MODES: EventModeTable = {
   invariant: "emit",
   // D4: a background review is observation — emit, never flow-stopping.
   self_review: "emit",
+  // G-c: an external run's join is a recorded fact — emit, and the
+  // comparison it unlocks is a read, not a flow gate.
+  external_run: "emit",
   // G-a: a growth proposal is a recorded fact — emit, never flow-stopping
   // (the proposal applies nothing by itself; the approval policy gates).
   growth: "emit",

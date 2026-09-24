@@ -1,4 +1,13 @@
 import { expect, test } from "bun:test";
+import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
+import { sessionFactStateFromEvents } from "@anthelia/session";
+import { createTestContext } from "@anthelia/runtime-services";
+import type {
+  RuntimeContext,
+  SessionExecutionState,
+} from "@anthelia/substrate";
+import { sessionStoreController } from "@anthelia/session-store";
+import { createIntelligenceSurface } from "../src/intelligence";
 import { resolve } from "node:path";
 import { readExternalBenchmark } from "../src/eval-reader";
 
@@ -91,4 +100,97 @@ test("no dir answers the no_eval_dir shape, and a named dir reads the frozen dat
   expect(named.internal).toMatchObject({ promptGroups: 0, runs: 0 });
   // The note's own words: the two sides measure different task sets.
   expect(named.note).toContain("different task sets");
+});
+
+function joinHarness(events: RuntimeEvent[]) {
+  const { mkdtempSync } = require("node:fs") as {
+    mkdtempSync: (p: string) => string;
+  };
+  const { tmpdir } = require("node:os") as { tmpdir: () => string };
+  const { join } = require("node:path") as { join: (...p: string[]) => string };
+  const dir = mkdtempSync(join(tmpdir(), "eval-join-"));
+  const sessionID = "ses_join" as SessionID;
+  const exec = {
+    session: { id: sessionID, events } as never,
+    factStateComplete: true,
+    factState: sessionFactStateFromEvents(events),
+  } as unknown as SessionExecutionState;
+  const ctx = {
+    ports: {
+      getReady: async () => undefined,
+      getSessionID: () => sessionID,
+      getExecutionBySession: () => new Map([[sessionID, exec]]) as never,
+      getActiveExec: () => exec,
+      getSessionPersistenceForSession: () => Promise.resolve(undefined),
+      planDocRuntime: {
+        planDocActive: async () => undefined,
+        planDocRead: async () => ({ content: "" }),
+      },
+      publishForSession: (_: unknown, event: RuntimeEvent) => {
+        events.push(event);
+        exec.factState = sessionFactStateFromEvents(events);
+        return undefined;
+      },
+      nextCompletionSequence: () => 1,
+    },
+    state: {
+      pluginStoreRoot: dir,
+      serviceDirectory: createTestContext([
+        sessionStoreController.mock({
+          history: (_id: `ses_${string}`, fallback: RuntimeEvent[]) =>
+            Promise.resolve({
+              events: fallback.map((event, seq) => ({ seq, event })),
+              hasMore: false,
+            }),
+          flush: () => Promise.resolve(),
+        } as unknown as Parameters<typeof sessionStoreController.mock>[0]),
+      ]),
+    },
+  } as unknown as RuntimeContext;
+  return { surface: createIntelligenceSurface(ctx, {}), sessionID };
+}
+
+test("a recorded join answers the per-task comparison: our rate beside the baseline", async () => {
+  const events: RuntimeEvent[] = [];
+  const { surface, sessionID } = joinHarness(events);
+  // No joins yet: the answer states the absence, unbridged.
+  const before = await surface.externalBenchmark!({ dir: EVAL_DIR }, sessionID);
+  expect(before.joined).toBe(false);
+  if ("reason" in before) throw new Error("unreachable");
+  expect(before.perTask).toEqual([]);
+  expect(before.note).toContain("different task sets");
+
+  // The task's instruction is what a submit would carry (the adapter's
+  // prompt half).
+  const { loadExternalTask } = await import("../src/eval-reader");
+  const detail = await loadExternalTask(EVAL_DIR, "terminal-bench/regex-log");
+  expect(detail).toBeDefined();
+  expect(detail!.instruction.length).toBeGreaterThan(50);
+
+  // One of OUR runs against the task: the record reads the journal
+  // (the turn scored from its own window) and writes the join fact.
+  const recorded = await surface.recordExternalRun!(
+    { dir: EVAL_DIR, taskID: "terminal-bench/regex-log", turnID: "turn_x" },
+    sessionID,
+  );
+  // The baseline rides the reader's documented rounding (11/12 → 0.917).
+  expect(recorded).toMatchObject({
+    recorded: true,
+    externalTaskID: "terminal-bench/regex-log",
+    turnID: "turn_x",
+    baselineSuccessRate: 0.917,
+  });
+
+  // And the per-task view unlocks: the join's task with our runs beside
+  // the frozen baseline.
+  const after = await surface.externalBenchmark!({ dir: EVAL_DIR }, sessionID);
+  if ("reason" in after) throw new Error("unreachable");
+  expect(after.joined).toBe(true);
+  expect(after.perTask).toHaveLength(1);
+  expect(after.perTask[0]).toMatchObject({
+    externalTaskID: "terminal-bench/regex-log",
+    baselineSuccessRate: 0.917,
+    ourRuns: 1,
+  });
+  expect(after.note).toContain("per-task comparison");
 });

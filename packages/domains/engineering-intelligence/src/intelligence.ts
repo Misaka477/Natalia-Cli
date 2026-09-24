@@ -9,7 +9,9 @@ import { applyConstitutionDocEdit } from "./constitution-doc";
 import { writeWorkspaceFile } from "@anthelia/workspace";
 import type { SessionFactState } from "@anthelia/session";
 import {
+  projectedExternalRuns,
   projectedGrowthProposals,
+  sessionFactExternalRuns,
   sessionFactGrowthProposals,
 } from "@anthelia/session";
 import {
@@ -38,7 +40,7 @@ import type { PlanLifecycleState } from "@anthelia/runtime-services";
 import { deriveGrowthCurriculum, type TaskOutcome } from "./growth";
 import { createHash } from "node:crypto";
 import { groupRunsByPrompt, scoreRun, segmentTurns } from "./run-scorer";
-import { readExternalBenchmark } from "./eval-reader";
+import { loadExternalTask, readExternalBenchmark } from "./eval-reader";
 import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
 import type { EpisodeID } from "@anthelia/contracts";
 import { readFile } from "node:fs/promises";
@@ -86,6 +88,7 @@ type Surface = Pick<
   RuntimeServiceClient,
   | "growthPropose"
   | "externalBenchmark"
+  | "recordExternalRun"
   | "promptRunGroups"
   | "growthProposals"
   | "constitutionRules"
@@ -642,8 +645,42 @@ export function createIntelligenceSurface(
         (sum, group) => sum + group.successes,
         0,
       );
+      // The joins recorded for this benchmark (G-c's outer half): each
+      // task's own runs beside its baseline — the explicit-key
+      // comparison the study's adapter layer unlocks.
+      const exec = await completeIntelligenceExec(sessionID);
+      const joins = exec
+        ? readFactSlice(exec, sessionFactExternalRuns, () =>
+            projectedExternalRuns(exec.session.events),
+          )
+        : [];
+      const byTask = new Map<string, { runs: number; successes: number }>();
+      for (const join of joins) {
+        if (join.benchmark !== benchmark.name) continue;
+        const bucket = byTask.get(join.externalTaskID) ?? {
+          runs: 0,
+          successes: 0,
+        };
+        bucket.runs += 1;
+        if (join.success) bucket.successes += 1;
+        byTask.set(join.externalTaskID, bucket);
+      }
+      const perTask = benchmark.tasks
+        .map((task) => {
+          const runs = byTask.get(task.id);
+          return runs
+            ? {
+                externalTaskID: task.id,
+                baselineSuccessRate: task.successRate,
+                ourRuns: runs.runs,
+                ourSuccessRate:
+                  Math.round((runs.successes / runs.runs) * 1000) / 1000,
+              }
+            : undefined;
+        })
+        .filter((entry) => entry !== undefined);
       return {
-        joined: false,
+        joined: perTask.length > 0,
         benchmark,
         external: {
           tasks: benchmark.taskCount,
@@ -663,8 +700,72 @@ export function createIntelligenceSurface(
             ? Math.round((internalSuccesses / internalRuns) * 1000) / 1000
             : 0,
         },
-        note: "the two sides measure different task sets until the external tasks run through this harness; the join's absence is stated, not bridged",
+        perTask,
+        note:
+          perTask.length > 0
+            ? "the joins this harness recorded answer the per-task comparison"
+            : "the two sides measure different task sets until the external tasks run through this harness; the join's absence is stated, not bridged",
       } as const;
+    },
+    /**
+     * Discovery G-c's join (the adapter layer's record): one of OUR runs
+     * against an external task. The turn's score is READ from the
+     * journal (the G-b scorer over its window — no new telemetry), the
+     * task's baseline rate rides the record, and the record is the
+     * `external_run.recorded` fact whose explicit task id unlocks the
+     * per-task comparison (the study's outer half).
+     */
+    async recordExternalRun(
+      input: { dir?: string; taskID: string; turnID: string },
+      sessionID?: string,
+    ) {
+      const dir = input.dir ?? process.env.NATALIA_EVAL_DIR;
+      if (!dir) return { recorded: false as const, reason: "no_eval_dir" };
+      const benchmark = await readExternalBenchmark(dir);
+      const task = benchmark.tasks.find((entry) => entry.id === input.taskID);
+      const detail = await loadExternalTask(dir, input.taskID);
+      if (!task || !detail)
+        return { recorded: false as const, reason: "unknown_task" as const };
+      const exec = await completeIntelligenceExec(sessionID);
+      // The turn's own score from the journal (the same fold G-b reads).
+      let success: boolean | undefined;
+      let stopReason: string | undefined;
+      let durationMs: number | undefined;
+      if (exec?.session) {
+        const windows = segmentTurns(exec.session.events);
+        const window = windows.find((entry) => entry.turnID === input.turnID);
+        if (window) {
+          const score = scoreRun(window);
+          success = score.success;
+          stopReason = score.stopReason;
+          durationMs = score.durationMs;
+        }
+      }
+      const at = new Date().toISOString();
+      const event = {
+        type: "external_run.recorded" as const,
+        id: `xrun:${createHash("sha256")
+          .update(`${input.taskID}:${input.turnID}`)
+          .digest("hex")
+          .slice(0, 16)}`,
+        at,
+        ...(exec?.session?.id ? { sessionID: exec.session.id } : {}),
+        externalTaskID: input.taskID,
+        benchmark: benchmark.name,
+        turnID: input.turnID,
+        ...(success === undefined ? {} : { success }),
+        ...(stopReason ? { stopReason } : {}),
+        ...(durationMs === undefined ? {} : { durationMs }),
+        baselineSuccessRate: task.successRate,
+      };
+      if (exec) ctx.ports.publishForSession(exec, event);
+      return {
+        recorded: true as const,
+        externalTaskID: input.taskID,
+        turnID: input.turnID,
+        ...(success === undefined ? {} : { success }),
+        baselineSuccessRate: task.successRate,
+      };
     },
     async promptRunGroups(sessionID?: string) {
       const exec = await completeIntelligenceExec(sessionID);

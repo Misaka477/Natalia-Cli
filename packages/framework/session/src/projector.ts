@@ -860,6 +860,18 @@ export function projectedEvidenceRecords(events: RuntimeEvent[]) {
   );
 }
 
+/** External-run joins (Discovery G-c), newest first. */
+export function projectedExternalRuns(events: RuntimeEvent[]) {
+  return events
+    .filter(
+      (
+        event,
+      ): event is Extract<RuntimeEvent, { type: "external_run.recorded" }> =>
+        event.type === "external_run.recorded",
+    )
+    .reverse();
+}
+
 /** Growth proposals (Discovery G-a), newest first (each derives the whole
  * curriculum, so the latest is the current state of the question). */
 export function projectedGrowthProposals(events: RuntimeEvent[]) {
@@ -2056,6 +2068,7 @@ export type SessionIntelligenceFactState = {
     | Extract<RuntimeEvent, { type: "evidence.recorded" }>
     | Extract<RuntimeEvent, { type: "completion.recorded" }>
     | Extract<RuntimeEvent, { type: "growth.proposed" }>
+    | Extract<RuntimeEvent, { type: "external_run.recorded" }>
   >;
   /**
    * EI Phase 0: the latest human validation note per completion taskID. The
@@ -2123,6 +2136,10 @@ export function applySessionIntelligenceFact(
     return;
   }
   if (event.type === "growth.proposed") {
+    state.journalEvents.push(event);
+    return;
+  }
+  if (event.type === "external_run.recorded") {
     state.journalEvents.push(event);
     return;
   }
@@ -2370,6 +2387,18 @@ export function sessionFactCompletions(
   return state.intelligence.journalEvents.filter(
     (event): event is Extract<RuntimeEvent, { type: "completion.recorded" }> =>
       event.type === "completion.recorded",
+  );
+}
+
+/** The external-run joins from the hot fact state (B6 / G-c). */
+export function sessionFactExternalRuns(
+  state: SessionFactState,
+): Array<Extract<RuntimeEvent, { type: "external_run.recorded" }>> {
+  return state.intelligence.journalEvents.filter(
+    (
+      event,
+    ): event is Extract<RuntimeEvent, { type: "external_run.recorded" }> =>
+      event.type === "external_run.recorded",
   );
 }
 

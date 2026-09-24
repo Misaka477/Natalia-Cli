@@ -138,3 +138,39 @@ export async function readExternalBenchmark(
     source: evalDir,
   };
 }
+
+/** One external task's full face: the cells plus its instruction. */
+export type ExternalTaskDetail = ExternalTask & {
+  /** The task's instruction — what a submit would carry as its prompt. */
+  instruction: string;
+  description?: string;
+};
+
+/**
+ * One task's detail (G-c's adapter layer, the study's "外基准任务格式与
+ * 我们 journal 轨迹的适配层"): the instruction read beside the outcome
+ * cells, so a harness can submit the prompt and score the run.
+ */
+export async function loadExternalTask(
+  evalDir: string,
+  taskID: string,
+): Promise<ExternalTaskDetail | undefined> {
+  const benchmark = await readExternalBenchmark(evalDir);
+  const task = benchmark.tasks.find((entry) => entry.id === taskID);
+  if (!task) return undefined;
+  const taskDir = taskID.split("/").pop() ?? "";
+  const [instruction, toml] = await Promise.all([
+    readFile(join(evalDir, "tasks", taskDir, "instruction.md"), "utf8").catch(
+      () => "",
+    ),
+    readFile(join(evalDir, "tasks", taskDir, "task.toml"), "utf8").catch(
+      () => "",
+    ),
+  ]);
+  const description = toml.match(/^description\s*=\s*"([^"]*)"/mu)?.[1];
+  return {
+    ...task,
+    instruction,
+    ...(description ? { description } : {}),
+  };
+}

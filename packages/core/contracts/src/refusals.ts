@@ -547,6 +547,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     expressedBy: "external",
     note: "a named dir reads (the files throw as a read error); NO dir answers the no_eval_dir shape",
   },
+  recordExternalRun: {
+    refusal: "value",
+    expressedBy: "recorded",
+    note: "an unknown task or no dir answers false with its reason; the recorded join needs no turn in the journal (the score stays undefined)",
+  },
   notices: {
     refusal: "none",
     note: "pure read of the projected runtime notices",

@@ -231,6 +231,7 @@ export const RPC_ROUTE_MEMBERS = {
   "workspace.ast_move": "workspaceAstMove",
   "prompt.run_groups": "promptRunGroups",
   "eval.external_benchmark": "externalBenchmark",
+  "eval.external_run": "recordExternalRun",
   "workgraph.nodes": "workGraphNodes",
   "workgraph.edges": "workGraphEdges",
   // --- P0-C: the reachability gap closed (audit list in the API plan §8.10) ---
@@ -395,6 +396,8 @@ export const RPC_WRITE_METHODS: ReadonlySet<string> = new Set([
   "cache.response",
   // growth.propose journals the proposal fact (proposals are records).
   "growth.propose",
+  // eval.external_run journals the join fact.
+  "eval.external_run",
   "checkpoint.rollback",
   "checkpoint.rename",
   "sandbox.merge",
@@ -3940,6 +3943,24 @@ export async function handleRPCMessage(
           skipped: [],
           moves: [],
         },
+      };
+    }
+    if (body.method === "eval.external_run") {
+      optionsGuard(client, "recordExternalRun");
+      const record = (body.params ?? {}) as Record<string, unknown>;
+      const taskID = optionalStringParam(body.params, "taskID");
+      const turnID = optionalStringParam(body.params, "turnID");
+      if (!taskID || !turnID)
+        throw invalidParams("invalid_parameters: taskID and turnID");
+      const dir = optionalStringParam(body.params, "dir");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.recordExternalRun?.({
+          taskID,
+          turnID,
+          ...(dir ? { dir } : {}),
+        })) ?? { recorded: false, reason: "no_eval_dir" },
       };
     }
     if (body.method === "eval.external_benchmark") {

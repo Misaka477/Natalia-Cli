@@ -2233,6 +2233,31 @@ type RuntimeEventData =
       };
     }
   | {
+      /**
+       * Discovery G-c's join: one of OUR runs against an external
+       * benchmark task (the study's adapter layer). The turn's score is
+       * read from the journal (the G-b scorer — no new telemetry); the
+       * task id is the join's explicit key, so the per-task comparison
+       * is a fact, not a hash coincidence.
+       */
+      type: "external_run.recorded";
+      id: string;
+      at: string;
+      sessionID?: SessionID;
+      /** The external task (the eval's own id, e.g. terminal-bench/x). */
+      externalTaskID: string;
+      /** The benchmark's name the task belongs to. */
+      benchmark: string;
+      /** The turn that ran the task's instruction. */
+      turnID: string;
+      /** The scored outcome (the journal's own fold). */
+      success?: boolean;
+      stopReason?: string;
+      durationMs?: number;
+      /** The external task's baseline rate at record time. */
+      baselineSuccessRate: number;
+    }
+  | {
       type: "feedback.recorded";
       /**
        * D6a: human feedback about the OUTPUT, recorded without ever
@@ -4372,7 +4397,8 @@ export type RuntimeClient = {
   ): Promise<
     | { joined: false; reason: "no_eval_dir"; note: string }
     | {
-        joined: false;
+        /** The joins this harness recorded (the per-task comparison). */
+        joined: boolean;
         benchmark: {
           name: string;
           status?: string;
@@ -4405,7 +4431,33 @@ export type RuntimeClient = {
           successes: number;
           successRate: number;
         };
+        perTask: Array<{
+          externalTaskID: string;
+          baselineSuccessRate: number;
+          ourRuns: number;
+          ourSuccessRate: number;
+        }>;
         note: string;
+      }
+  >;
+  /**
+   * Discovery G-c's join (the adapter layer's record): one of our runs
+   * against an external task. The turn's score is READ from the journal
+   * (the G-b scorer — no new telemetry); the task's id is the join's
+   * explicit key, so the per-task comparison is a fact, not a hash
+   * coincidence.
+   */
+  recordExternalRun?(
+    input: { dir?: string; taskID: string; turnID: string },
+    sessionID?: string,
+  ): Promise<
+    | { recorded: false; reason: "no_eval_dir" | "unknown_task" }
+    | {
+        recorded: true;
+        externalTaskID: string;
+        turnID: string;
+        success?: boolean;
+        baselineSuccessRate: number;
       }
   >;
   /**

@@ -47,6 +47,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "workspace.ast_move": "workspaceAstMove",
   "prompt.run_groups": "promptRunGroups",
   "eval.external_benchmark": "externalBenchmark",
+  "eval.external_run": "recordExternalRun",
   messages: "messages",
   agents: "agents",
   "model.catalog": "modelCatalog",
@@ -198,6 +199,7 @@ type WorkerRequest = {
     | "workspace.ast_move"
     | "prompt.run_groups"
     | "eval.external_benchmark"
+    | "eval.external_run"
     | "messages"
     | "agents"
     | "model.catalog"
@@ -1129,6 +1131,15 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["workspaceAstMove"]>>
       >;
     },
+    async recordExternalRun(input: {
+      dir?: string;
+      taskID: string;
+      turnID: string;
+    }) {
+      return (await request("eval.external_run", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["recordExternalRun"]>>
+      >;
+    },
     async externalBenchmark(input?: { dir?: string }) {
       return (await request("eval.external_benchmark", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["externalBenchmark"]>>
@@ -1419,6 +1430,14 @@ export async function handleWorkerRequest(
       | { paths?: string[]; from?: string }
       | undefined;
     return await client.workspaceAstMove?.(value);
+  }
+  if (request.method === "eval.external_run") {
+    const value = request.value as {
+      dir?: string;
+      taskID: string;
+      turnID: string;
+    };
+    return await client.recordExternalRun?.(value);
   }
   if (request.method === "eval.external_benchmark") {
     const value = request.value as { dir?: string } | undefined;
