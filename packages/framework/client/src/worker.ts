@@ -44,6 +44,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "diagnostics.operations": "operationRecords",
   "growth.propose": "growthPropose",
   "growth.proposals": "growthProposals",
+  "ast.move": "astMove",
   "workspace.ast_move": "workspaceAstMove",
   "prompt.run_groups": "promptRunGroups",
   "eval.external_benchmark": "externalBenchmark",
@@ -199,6 +200,7 @@ type WorkerRequest = {
     | "diagnostics.operations"
     | "growth.propose"
     | "growth.proposals"
+    | "ast.move"
     | "workspace.ast_move"
     | "prompt.run_groups"
     | "eval.external_benchmark"
@@ -1132,6 +1134,14 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["operationRecords"]>>
       >;
     },
+    async astMove(input: {
+      before: Array<{ path?: string; source: string; language: string }>;
+      after: Array<{ path?: string; source: string; language: string }>;
+    }) {
+      return (await request("ast.move", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["astMove"]>>
+      >;
+    },
     async workspaceAstMove(input?: { paths?: string[]; from?: string }) {
       return (await request("workspace.ast_move", input)) as Awaited<
         ReturnType<NonNullable<RuntimeClient["workspaceAstMove"]>>
@@ -1452,6 +1462,13 @@ export async function handleWorkerRequest(
       value.id,
       value.sessionID,
     );
+  }
+  if (request.method === "ast.move") {
+    const value = request.value as {
+      before: Array<{ path?: string; source: string; language: string }>;
+      after: Array<{ path?: string; source: string; language: string }>;
+    };
+    return await client.astMove?.(value);
   }
   if (request.method === "workspace.ast_move") {
     const value = request.value as

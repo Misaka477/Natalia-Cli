@@ -895,7 +895,7 @@ Deployment notes:
 | attachments    | `uploadAttachment` · `attachmentDataUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | chat           | `naviChat` · `niaChat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
-### RPC route table (210 methods → members)
+### RPC route table (211 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -1007,6 +1007,7 @@ Deployment notes:
 | `diagnostics.operations`             | `operationRecords`                  | observability    | read  |
 | `growth.propose`                     | `growthPropose`                     | intelligence     | write |
 | `growth.proposals`                   | `growthProposals`                   | intelligence     | read  |
+| `ast.move`                           | `astMove`                           | workspace        | read  |
 | `workspace.ast_move`                 | `workspaceAstMove`                  | workspace        | read  |
 | `prompt.run_groups`                  | `promptRunGroups`                   | intelligence     | read  |
 | `eval.external_benchmark`            | `externalBenchmark`                 | intelligence     | read  |
@@ -2303,7 +2304,7 @@ createRuntimeHttpServer({
 | attachments    | `uploadAttachment` · `attachmentDataUrl`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | chat           | `naviChat` · `niaChat`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
-### RPC route table (210 methods → members)
+### RPC route table (211 methods → members)
 
 | RPC method                           | RuntimeClient member                | Capability group | Write |
 | ------------------------------------ | ----------------------------------- | ---------------- | ----- |
@@ -2415,6 +2416,7 @@ createRuntimeHttpServer({
 | `diagnostics.operations`             | `operationRecords`                  | observability    | read  |
 | `growth.propose`                     | `growthPropose`                     | intelligence     | write |
 | `growth.proposals`                   | `growthProposals`                   | intelligence     | read  |
+| `ast.move`                           | `astMove`                           | workspace        | read  |
 | `workspace.ast_move`                 | `workspaceAstMove`                  | workspace        | read  |
 | `prompt.run_groups`                  | `promptRunGroups`                   | intelligence     | read  |
 | `eval.external_benchmark`            | `externalBenchmark`                 | intelligence     | read  |

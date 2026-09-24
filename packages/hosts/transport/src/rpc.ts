@@ -228,6 +228,7 @@ export const RPC_ROUTE_MEMBERS = {
   "diagnostics.operations": "operationRecords",
   "growth.propose": "growthPropose",
   "growth.proposals": "growthProposals",
+  "ast.move": "astMove",
   "workspace.ast_move": "workspaceAstMove",
   "prompt.run_groups": "promptRunGroups",
   "eval.external_benchmark": "externalBenchmark",
@@ -3929,6 +3930,22 @@ export async function handleRPCMessage(
           typeof limit === "number" ? limit : undefined,
           optionalStringParam(body.params, "sessionID"),
         ),
+      };
+    }
+    if (body.method === "ast.move") {
+      optionsGuard(client, "astMove");
+      const record = (body.params ?? {}) as Record<string, unknown>;
+      const before = record.before;
+      const after = record.after;
+      if (!Array.isArray(before) || !Array.isArray(after))
+        throw invalidParams("invalid_parameters: before and after");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.astMove?.({
+          before: before as never,
+          after: after as never,
+        })) ?? { moves: [] },
       };
     }
     if (body.method === "workspace.ast_move") {
