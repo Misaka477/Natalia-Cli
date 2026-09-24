@@ -447,6 +447,83 @@ export async function createConstitutionRuleViaRpc(
   return runtime?.createConstitutionRule?.(input, sessionID);
 }
 
+/**
+ * Which override affordance a constitution rule gets (ledger plan §3:
+ * "critical/forbidden 规则不可 override"). The rule's own overridePolicy is
+ * the authority — and the RPC refuses a forbidden rule anyway, so the panel
+ * must not offer an action the backend will reject. Pure so it is
+ * unit-testable without a DOM.
+ */
+export function constitutionOverrideAffordance(rule: {
+  overridePolicy?: string;
+}): "requestable" | "forbidden" {
+  return rule.overridePolicy === "forbidden" ? "forbidden" : "requestable";
+}
+
+/**
+ * The override request from the panel's draft (ledger plan §3's
+ * ScopedOverride). The reason is the only required field — the backend
+ * refuses an empty one too, so the panel says it first rather than
+ * round-tripping a refusal. Scope fields are optional and omitted when
+ * empty: an absent path list means "the rule's whole scope", not "no
+ * scope". Pure so the validation is unit-testable without a DOM.
+ */
+export function overrideRequestFromDraft(draft: {
+  ruleID: string;
+  reason: string;
+  paths: string;
+  taskID: string;
+  expiresAt: string;
+}):
+  | {
+      ok: true;
+      input: {
+        ruleID: string;
+        reason: string;
+        paths?: string[];
+        taskID?: string;
+        expiresAt?: string;
+      };
+    }
+  | { ok: false; reason: string } {
+  const reason = draft.reason.trim();
+  if (!reason) return { ok: false, reason: "override requires a reason" };
+  const paths = splitActivityRefs(draft.paths);
+  const taskID = draft.taskID.trim();
+  const expiresAt = draft.expiresAt.trim();
+  return {
+    ok: true,
+    input: {
+      ruleID: draft.ruleID,
+      reason,
+      ...(paths.length ? { paths } : {}),
+      ...(taskID ? { taskID } : {}),
+      ...(expiresAt ? { expiresAt } : {}),
+    },
+  };
+}
+
+/**
+ * The RPC action behind an override request. The request publishes an
+ * `approval.request` (scope `constitution_override`) through the same
+ * interactive seam every plan acceptance uses — the approval prompt the
+ * user already knows IS the grant, and the granted event lands in the
+ * journal and the governance store. This face only STARTS the request.
+ */
+export async function requestOverrideViaRpc(
+  runtime: RuntimeClient | undefined,
+  sessionID: string | undefined,
+  input: {
+    ruleID: string;
+    reason: string;
+    paths?: string[];
+    taskID?: string;
+    expiresAt?: string;
+  },
+) {
+  return runtime?.requestOverride?.(input, sessionID);
+}
+
 /** The RPC action behind a constitution rule [编辑] (tighten/edit) click. */
 export async function editConstitutionRuleViaRpc(
   runtime: RuntimeClient | undefined,
@@ -782,6 +859,19 @@ export function GovernancePane(props: {
       }
     | undefined
   >();
+  // The scoped-override requester (ledger plan §3): a reason plus the
+  // optional scope fields, submitted through the approval seam — the grant
+  // is the approval prompt, not this dialog.
+  const [overrideEditor, setOverrideEditor] = createSignal<
+    | {
+        ruleID: string;
+        reason: string;
+        paths: string;
+        taskID: string;
+        expiresAt: string;
+      }
+    | undefined
+  >();
   // The constitution document-rule editor (EI §3.8 P-1.c 软规则): edits a soft
   // section's prose + enforcement/appliesTo and writes the document back.
   const [docRuleEditor, setDocRuleEditor] = createSignal<
@@ -1050,6 +1140,51 @@ export function GovernancePane(props: {
           : `失败：${outcome?.reason ?? "未知原因"}`,
       );
       if (ok) setRuleEditor(undefined);
+      await load();
+    } catch (error) {
+      setActionNotice(
+        `失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  function openOverrideEditor(rule: { ruleID: string }) {
+    setActionNotice(undefined);
+    setOverrideEditor({
+      ruleID: rule.ruleID,
+      reason: "",
+      paths: "",
+      taskID: "",
+      expiresAt: "",
+    });
+  }
+
+  async function submitOverride() {
+    const editor = overrideEditor();
+    if (!editor) return;
+    const draft = overrideRequestFromDraft(editor);
+    if (!draft.ok) {
+      setActionNotice(`失败：${draft.reason}`);
+      return;
+    }
+    setActionBusy(true);
+    setActionNotice(undefined);
+    try {
+      const result = (await requestOverrideViaRpc(
+        props.runtime,
+        props.sessionID,
+        draft.input,
+      )) as
+        | { requested?: boolean; requestID?: string; reason?: string }
+        | undefined;
+      if (result?.requested)
+        setActionNotice(
+          `已提交 override 请求（${draft.input.ruleID}）——审批通过即生效；拒绝则记录在案`,
+        );
+      else setActionNotice(`失败：${result?.reason ?? "未知原因"}`);
+      if (result?.requested) setOverrideEditor(undefined);
       await load();
     } catch (error) {
       setActionNotice(
@@ -1353,6 +1488,78 @@ export function GovernancePane(props: {
               </div>
             )}
           </Show>
+          <Show when={overrideEditor()}>
+            {(editor) => (
+              <div class="constitution-editor">
+                <div class="neu-gov-title">
+                  申请 override：{editor().ruleID}
+                </div>
+                <input
+                  class="constitution-input"
+                  placeholder="理由（必填）——为什么这次可以破例"
+                  value={editor().reason}
+                  onInput={(event) =>
+                    setOverrideEditor({
+                      ...editor(),
+                      reason: event.currentTarget.value,
+                    })
+                  }
+                />
+                <div class="constitution-editor-row">
+                  <input
+                    class="constitution-input"
+                    placeholder="paths（逗号分隔，可空）"
+                    value={editor().paths}
+                    onInput={(event) =>
+                      setOverrideEditor({
+                        ...editor(),
+                        paths: event.currentTarget.value,
+                      })
+                    }
+                  />
+                  <input
+                    class="constitution-input"
+                    placeholder="taskID（可空）"
+                    value={editor().taskID}
+                    onInput={(event) =>
+                      setOverrideEditor({
+                        ...editor(),
+                        taskID: event.currentTarget.value,
+                      })
+                    }
+                  />
+                  <input
+                    class="constitution-input"
+                    placeholder="过期时间 ISO（可空）"
+                    value={editor().expiresAt}
+                    onInput={(event) =>
+                      setOverrideEditor({
+                        ...editor(),
+                        expiresAt: event.currentTarget.value,
+                      })
+                    }
+                  />
+                </div>
+                <div class="constitution-editor-actions">
+                  <button
+                    type="button"
+                    class="constitution-btn"
+                    disabled={actionBusy()}
+                    onClick={() => void submitOverride()}
+                  >
+                    提交审批
+                  </button>
+                  <button
+                    type="button"
+                    class="constitution-btn"
+                    onClick={() => setOverrideEditor(undefined)}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+          </Show>
           <For
             each={
               liveConstitution().length
@@ -1381,6 +1588,20 @@ export function GovernancePane(props: {
                     >
                       编辑
                     </button>
+                    <Show
+                      when={
+                        constitutionOverrideAffordance(rule) === "requestable"
+                      }
+                    >
+                      <button
+                        type="button"
+                        class="constitution-btn"
+                        disabled={actionBusy()}
+                        onClick={() => openOverrideEditor(rule)}
+                      >
+                        Override
+                      </button>
+                    </Show>
                     <button
                       type="button"
                       class="constitution-btn"

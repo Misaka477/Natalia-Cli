@@ -3,7 +3,10 @@ import type { RuntimeClient } from "@anthelia/contracts";
 import {
   acknowledgeDriftFindingViaRpc,
   collapseList,
+  constitutionOverrideAffordance,
   constitutionRuleAffordance,
+  overrideRequestFromDraft,
+  requestOverrideViaRpc,
   mergeWorkGraphState,
   createConstitutionRuleViaRpc,
   DRIFT_COLLAPSE_LIMIT,
@@ -786,4 +789,105 @@ test("drift six interactions (explained/disputed/dismissed/corrected/detour_decl
   expect(
     (await loadGovernanceSlices(runtime, "ses_six")).drift[0],
   ).toMatchObject({ status: "open", reopenedCount: 1 });
+});
+
+test("the override affordance follows the rule's own overridePolicy", () => {
+  // Ledger plan §3: critical/forbidden rules cannot be overridden — and the
+  // RPC refuses them anyway, so the panel must not offer the action.
+  expect(constitutionOverrideAffordance({ overridePolicy: "forbidden" })).toBe(
+    "forbidden",
+  );
+  expect(
+    constitutionOverrideAffordance({ overridePolicy: "user_scoped" }),
+  ).toBe("requestable");
+  expect(
+    constitutionOverrideAffordance({ overridePolicy: "user_explicit" }),
+  ).toBe("requestable");
+  expect(constitutionOverrideAffordance({})).toBe("requestable");
+});
+
+test("the override draft validates the reason and omits empty scope fields", () => {
+  // The reason is the only required field; the backend refuses an empty one
+  // too, so the panel says it first.
+  expect(
+    overrideRequestFromDraft({
+      ruleID: "C-006",
+      reason: "  ",
+      paths: "",
+      taskID: "",
+      expiresAt: "",
+    }),
+  ).toEqual({ ok: false, reason: "override requires a reason" });
+
+  expect(
+    overrideRequestFromDraft({
+      ruleID: "C-006",
+      reason: " one-off host write ",
+      paths: " src/parser.ts , , src/lexer.ts ",
+      taskID: "",
+      expiresAt: "2026-10-01T00:00:00.000Z",
+    }),
+  ).toEqual({
+    ok: true,
+    input: {
+      ruleID: "C-006",
+      reason: "one-off host write",
+      paths: ["src/parser.ts", "src/lexer.ts"],
+      expiresAt: "2026-10-01T00:00:00.000Z",
+    },
+  });
+  // No scope fields at all: the rule's whole scope, not "no scope".
+  expect(
+    overrideRequestFromDraft({
+      ruleID: "C-010",
+      reason: "the user asked directly",
+      paths: "",
+      taskID: " task_1 ",
+      expiresAt: "",
+    }),
+  ).toEqual({
+    ok: true,
+    input: {
+      ruleID: "C-010",
+      reason: "the user asked directly",
+      taskID: "task_1",
+    },
+  });
+});
+
+test("an override request goes through the RPC and the approval seam grants it", async () => {
+  const seen: Array<{ input: unknown; sessionID?: string }> = [];
+  const runtime = {
+    requestOverride: async (input: unknown, sessionID?: string) => {
+      seen.push({ input, sessionID });
+      // The seam's grant path answers requested:true after the user's
+      // approval; a refusal answers with the reason.
+      return { requested: true, requestID: "override:C-006:1" };
+    },
+  } as unknown as RuntimeClient;
+
+  const draft = overrideRequestFromDraft({
+    ruleID: "C-006",
+    reason: "one-off host write for the parser fix",
+    paths: "src/parser.ts",
+    taskID: "",
+    expiresAt: "",
+  });
+  if (!draft.ok) throw new Error("unreachable");
+  const result = await requestOverrideViaRpc(
+    runtime,
+    "ses_override",
+    draft.input,
+  );
+  expect(result).toEqual({ requested: true, requestID: "override:C-006:1" });
+  expect(seen).toEqual([
+    {
+      input: {
+        ruleID: "C-006",
+        reason: "one-off host write for the parser fix",
+        paths: ["src/parser.ts"],
+      },
+      sessionID: "ses_override",
+    },
+  ]);
 });
