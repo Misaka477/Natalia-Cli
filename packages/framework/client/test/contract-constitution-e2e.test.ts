@@ -23,6 +23,7 @@ test("plan_propose refuses a scope naming a deny-covered path before the gate", 
   const events: RuntimeEvent[] = [];
   let planID = "";
   let approvals = 0;
+  let contractPreview = "";
   const client = createRealRuntimeClient({
     workspaceRoot: root,
     sessionID,
@@ -82,6 +83,12 @@ test("plan_propose refuses a scope naming a deny-covered path before the gate", 
           yield { type: "done" as const };
           return;
         }
+        // Ledger plan §5: the proposal displays its conflict-check result
+        // at the user's decision point — the gate's preview names the deny
+        // rules it was checked against and the verdict.
+        expect(contractPreview).toContain(
+          "constitution: checked against 1 deny rule(s) with path anchors — no conflict",
+        );
         yield { type: "content" as const, text: "contract accepted" };
         yield { type: "done" as const };
       },
@@ -91,6 +98,7 @@ test("plan_propose refuses a scope naming a deny-covered path before the gate", 
     events.push(event);
     if (event.type === "approval.request" && event.scope === "work_contract") {
       approvals += 1;
+      contractPreview = event.preview ?? "";
       client.respondApproval({ requestID: event.id, decision: "once" });
     }
   });

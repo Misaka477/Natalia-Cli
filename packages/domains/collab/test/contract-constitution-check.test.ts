@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@anthelia/contracts";
-import { checkContractAgainstConstitution } from "../src/contract-constitution-check";
+import {
+  checkContractAgainstConstitution,
+  constitutionDenyAnchoredRules,
+} from "../src/contract-constitution-check";
 
 type RuleAdded = Extract<RuntimeEvent, { type: "constitution.rule_added" }>;
 
@@ -131,4 +134,36 @@ test("no deny rules means no work and no conflicts", () => {
     rules: [denyRule("C-WARN-001", ["src/**"], { enforcement: "warn" })],
   });
   expect(conflicts).toEqual([]);
+});
+
+test("the consulted rule set is exactly the deny rules with path anchors", () => {
+  // The proposal's gate states this set (ledger plan §5: the conflict-check
+  // result is displayed), so its membership is part of the contract.
+  const rule = (
+    ruleID: string,
+    enforcement: "deny" | "approval" | "warn",
+    paths?: string[],
+  ) => ({
+    type: "constitution.rule_added" as const,
+    id: `rule:${ruleID}`,
+    ruleID,
+    statement: ruleID,
+    scope: "project" as const,
+    priority: "critical" as const,
+    source: "user" as const,
+    enforcement,
+    overridePolicy: "forbidden" as const,
+    ...(paths ? { appliesTo: { paths } } : {}),
+  });
+  const rules = [
+    rule("C-DENY-PATHS", "deny", ["secrets/**"]),
+    rule("C-DENY-NOANCHOR", "deny"),
+    rule("C-APPROVAL-PATHS", "approval", ["src/**"]),
+    rule("C-WARN-PATHS", "warn", ["docs/**"]),
+  ];
+  expect(
+    constitutionDenyAnchoredRules(rules).map((entry) => entry.ruleID),
+  ).toEqual(["C-DENY-PATHS"]);
+  // An empty set is honest: nothing was consulted, so nothing can conflict.
+  expect(constitutionDenyAnchoredRules([])).toEqual([]);
 });

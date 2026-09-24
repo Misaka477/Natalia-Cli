@@ -89,13 +89,25 @@ function entryPathTokens(entry: string): string[] {
  * lives under its literal prefix — the declared scope then covers the deny
  * path even if the token is broader.
  */
+/**
+ * The rules a contract check consults: deny rules with a path anchor. The
+ * proposal's user gate states this set, so the approval decision shows the
+ * conflict-check result the proposal was judged against (ledger plan §5:
+ * "每个 plan proposal 显示冲突检查结果").
+ */
+export function constitutionDenyAnchoredRules(
+  rules: readonly ConstitutionRule[],
+): readonly ConstitutionRule[] {
+  return rules.filter(
+    (rule) => rule.enforcement === "deny" && rule.appliesTo?.paths?.length,
+  );
+}
+
 export function checkContractAgainstConstitution(input: {
   entries: readonly string[];
   rules: readonly ConstitutionRule[];
 }): ConstitutionConflict[] {
-  const denyRules = input.rules.filter(
-    (rule) => rule.enforcement === "deny" && rule.appliesTo?.paths?.length,
-  );
+  const denyRules = constitutionDenyAnchoredRules(input.rules);
   if (!denyRules.length) return [];
   const conflicts: ConstitutionConflict[] = [];
   const seen = new Set<string>();

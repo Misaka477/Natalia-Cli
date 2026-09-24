@@ -21,7 +21,10 @@ import {
 } from "@anthelia/session";
 import { ensureCompleteSessionFactState } from "@anthelia/substrate";
 import { targetDriftAbsorbedByScope } from "@natalia/work-ledger";
-import { checkContractAgainstConstitution } from "./contract-constitution-check";
+import {
+  checkContractAgainstConstitution,
+  constitutionDenyAnchoredRules,
+} from "./contract-constitution-check";
 import {} from "@anthelia/runtime-services";
 import { workLedgerController } from "@natalia/work-ledger";
 import { governanceLedgerController } from "@natalia/governance-ledger";
@@ -181,9 +184,10 @@ export function createPlanProposeTool(ctx: RuntimeContext): RuntimeTool {
       // the runtime will never allow to execute; refuse it here, inside the
       // existing re-propose loop, so the user gate never fires for a contract
       // that cannot be carried out (and the handoff never dead-ends on it).
+      const constitutionRules = await sessionConstitutionRules(ctx, exec);
       const constitutionConflicts = checkContractAgainstConstitution({
         entries: fields.scope ?? [],
-        rules: await sessionConstitutionRules(ctx, exec),
+        rules: constitutionRules,
       });
       if (constitutionConflicts.length)
         return JSON.stringify({
@@ -217,10 +221,18 @@ export function createPlanProposeTool(ctx: RuntimeContext): RuntimeTool {
           draftedAt: now,
         }),
       );
+      // Ledger plan §5: the proposal displays its conflict-check result at
+      // the user's decision point — the rules it was checked against, and
+      // the verdict (a conflict never reaches here: it refuses above).
+      const denyAnchored = constitutionDenyAnchoredRules(constitutionRules);
+      const constitutionLine = denyAnchored.length
+        ? `constitution: checked against ${denyAnchored.length} deny rule(s) with path anchors — no conflict`
+        : "constitution: no deny rules with path anchors to check against";
       const previewLines = [
         `scope: ${(fields.scope ?? []).join("; ") || "(unverifiable)"}`,
         `verification: ${(fields.verification ?? []).join("; ") || "(unverifiable)"}`,
         `constraints: ${(fields.constraints ?? []).join("; ") || "(unverifiable)"}`,
+        constitutionLine,
       ];
       // R3 (EI §8.8): the gate is always available for a mid-run contract
       // extension — an already-accepted plan can add committed verification
