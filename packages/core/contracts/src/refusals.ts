@@ -542,6 +542,11 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure read: the journal folded into per-prompt distributions",
   },
+  externalBenchmark: {
+    refusal: "value",
+    expressedBy: "external",
+    note: "a named dir reads (the files throw as a read error); NO dir answers the no_eval_dir shape",
+  },
   notices: {
     refusal: "none",
     note: "pure read of the projected runtime notices",

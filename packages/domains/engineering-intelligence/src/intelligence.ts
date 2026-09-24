@@ -38,6 +38,7 @@ import type { PlanLifecycleState } from "@anthelia/runtime-services";
 import { deriveGrowthCurriculum, type TaskOutcome } from "./growth";
 import { createHash } from "node:crypto";
 import { groupRunsByPrompt, scoreRun, segmentTurns } from "./run-scorer";
+import { readExternalBenchmark } from "./eval-reader";
 import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
 import type { EpisodeID } from "@anthelia/contracts";
 import { readFile } from "node:fs/promises";
@@ -84,6 +85,7 @@ type ClientSurfaceOptions = {
 type Surface = Pick<
   RuntimeServiceClient,
   | "growthPropose"
+  | "externalBenchmark"
   | "promptRunGroups"
   | "growthProposals"
   | "constitutionRules"
@@ -604,6 +606,66 @@ export function createIntelligenceSurface(
      * the scorer reports what it can see (missing numbers stay undefined,
      * never zero-invented).
      */
+    /**
+     * Discovery G-c — the external baseline (the study's "读 devref/eval
+     * 的任务格式；先内后外"). The face reads the frozen eval's directory
+     * (the caller names it, or NATALIA_EVAL_DIR does) and answers the
+     * baseline BESIDE the internal position — no per-task delta: our
+     * journal's runs have no key joining them to the external tasks, so
+     * the gap is answered as the two positions, with the join's absence
+     * stated (the same honesty as G-a's dropped prompt-group link). The
+     * per-task comparison unlocks when the external tasks actually run
+     * through our harness — the study's "先内后外" sequencing.
+     */
+    async externalBenchmark(input?: { dir?: string }, sessionID?: string) {
+      const dir = input?.dir ?? process.env.NATALIA_EVAL_DIR;
+      if (!dir)
+        return {
+          joined: false,
+          reason: "no_eval_dir",
+          note: "name the frozen eval's directory (or set NATALIA_EVAL_DIR)",
+        } as const;
+      const benchmark = await readExternalBenchmark(dir);
+      const cells = benchmark.tasks.reduce(
+        (sum, task) => sum + task.expected,
+        0,
+      );
+      const successes = benchmark.tasks.reduce(
+        (sum, task) => sum + task.successful,
+        0,
+      );
+      // The internal side: the same journal, aggregated across prompts
+      // (G-b's groups) — one honest number beside the baseline.
+      const groups = await this.promptRunGroups!(sessionID);
+      const internalRuns = groups.reduce((sum, group) => sum + group.runs, 0);
+      const internalSuccesses = groups.reduce(
+        (sum, group) => sum + group.successes,
+        0,
+      );
+      return {
+        joined: false,
+        benchmark,
+        external: {
+          tasks: benchmark.taskCount,
+          harnesses: benchmark.harnessCount,
+          configurations: benchmark.configurationCount,
+          cells,
+          successes,
+          successRate: cells
+            ? Math.round((successes / cells) * 1000) / 1000
+            : 0,
+        },
+        internal: {
+          promptGroups: groups.length,
+          runs: internalRuns,
+          successes: internalSuccesses,
+          successRate: internalRuns
+            ? Math.round((internalSuccesses / internalRuns) * 1000) / 1000
+            : 0,
+        },
+        note: "the two sides measure different task sets until the external tasks run through this harness; the join's absence is stated, not bridged",
+      } as const;
+    },
     async promptRunGroups(sessionID?: string) {
       const exec = await completeIntelligenceExec(sessionID);
       if (!exec?.session) return [];

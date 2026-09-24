@@ -230,6 +230,7 @@ export const RPC_ROUTE_MEMBERS = {
   "growth.proposals": "growthProposals",
   "workspace.ast_move": "workspaceAstMove",
   "prompt.run_groups": "promptRunGroups",
+  "eval.external_benchmark": "externalBenchmark",
   "workgraph.nodes": "workGraphNodes",
   "workgraph.edges": "workGraphEdges",
   // --- P0-C: the reachability gap closed (audit list in the API plan §8.10) ---
@@ -3938,6 +3939,21 @@ export async function handleRPCMessage(
           scanned: 0,
           skipped: [],
           moves: [],
+        },
+      };
+    }
+    if (body.method === "eval.external_benchmark") {
+      optionsGuard(client, "externalBenchmark");
+      const dir = optionalStringParam(body.params, "dir");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.externalBenchmark?.(
+          dir ? { dir } : undefined,
+        )) ?? {
+          joined: false,
+          reason: "no_eval_dir",
+          note: "name the frozen eval's directory",
         },
       };
     }

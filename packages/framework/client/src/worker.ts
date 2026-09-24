@@ -46,6 +46,7 @@ export const WORKER_ROUTE_MEMBERS = {
   "growth.proposals": "growthProposals",
   "workspace.ast_move": "workspaceAstMove",
   "prompt.run_groups": "promptRunGroups",
+  "eval.external_benchmark": "externalBenchmark",
   messages: "messages",
   agents: "agents",
   "model.catalog": "modelCatalog",
@@ -196,6 +197,7 @@ type WorkerRequest = {
     | "growth.proposals"
     | "workspace.ast_move"
     | "prompt.run_groups"
+    | "eval.external_benchmark"
     | "messages"
     | "agents"
     | "model.catalog"
@@ -1127,6 +1129,11 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["workspaceAstMove"]>>
       >;
     },
+    async externalBenchmark(input?: { dir?: string }) {
+      return (await request("eval.external_benchmark", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["externalBenchmark"]>>
+      >;
+    },
     async promptRunGroups(sessionID?: string) {
       return (await request(
         "prompt.run_groups",
@@ -1412,6 +1419,10 @@ export async function handleWorkerRequest(
       | { paths?: string[]; from?: string }
       | undefined;
     return await client.workspaceAstMove?.(value);
+  }
+  if (request.method === "eval.external_benchmark") {
+    const value = request.value as { dir?: string } | undefined;
+    return await client.externalBenchmark?.(value);
   }
   if (request.method === "prompt.run_groups") {
     const value = request.value as { sessionID?: string } | undefined;

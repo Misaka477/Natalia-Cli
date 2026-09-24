@@ -4360,6 +4360,55 @@ export type RuntimeClient = {
     }>
   >;
   /**
+   * Discovery G-c — the external baseline: the frozen eval's directory
+   * (named by the caller or NATALIA_EVAL_DIR) read into its typed shape,
+   * answered BESIDE the internal position (G-b's aggregate). No per-task
+   * delta: our journal's runs have no key joining them to the external
+   * tasks, and the join's absence is stated, not bridged.
+   */
+  externalBenchmark?(
+    input?: { dir?: string },
+    sessionID?: string,
+  ): Promise<
+    | { joined: false; reason: "no_eval_dir"; note: string }
+    | {
+        joined: false;
+        benchmark: {
+          name: string;
+          status?: string;
+          model?: string;
+          taskCount: number;
+          harnessCount: number;
+          configurationCount: number;
+          tasks: Array<{
+            id: string;
+            title: string;
+            expected: number;
+            successful: number;
+            successRate: number;
+            difficulty?: string;
+            category?: string;
+          }>;
+          source: string;
+        };
+        external: {
+          tasks: number;
+          harnesses: number;
+          configurations: number;
+          cells: number;
+          successes: number;
+          successRate: number;
+        };
+        internal: {
+          promptGroups: number;
+          runs: number;
+          successes: number;
+          successRate: number;
+        };
+        note: string;
+      }
+  >;
+  /**
    * Discovery G-b — the internal-evaluation read: the same prompt's
    * success/cost distribution, scored from the journal (a replay fold —
    * the fork/duplicate turns a prompt replayed through show up sharing
