@@ -21,5 +21,10 @@ export {
   reconcilePlugins,
   type PluginDoctorFinding,
 } from "./maintenance";
+export {
+  RETIRED_PLUGIN_PACKAGES,
+  retiredPluginPackageReason,
+  specPackageName,
+} from "./retired";
 export * from "./update";
 export * from "./channel";

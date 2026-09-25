@@ -16,6 +16,7 @@ import {
 } from "./closure";
 import { validateStagedPackage } from "./package-metadata";
 import { packageSource, sourceSpec } from "./package-metadata";
+import { retiredPluginPackageReason } from "./retired";
 
 const workspaceOperations = new Map<string, Promise<void>>();
 
@@ -55,6 +56,11 @@ export async function installPlugin(input: {
   seams?: LifecycleSeams;
 }) {
   return await serialized(input.pluginStoreRoot, async () => {
+    // The kill list asks FIRST — before paths, before the package manager,
+    // before anything is staged: a retired package is a door, not a cleanup,
+    // so a refusal leaves no trace on disk.
+    const retired = retiredPluginPackageReason(input.spec);
+    if (retired) throw new Error(retired);
     const paths = pluginClosurePaths(input.pluginStoreRoot);
     const run = input.runPackageManager ?? runNpm;
     const [beforeLock, beforeDependencies] = await Promise.all([
