@@ -271,10 +271,7 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "growthTriggers",
     "promoteGrowthTrigger",
     "growthPromotions",
-    "promoteGrowthTrigger",
-    "growthPromotions",
-    "promoteGrowthTrigger",
-    "growthPromotions",
+
     "externalJoinedTasks",
     "constitutionOverrides",
     "decisionRecords",
