@@ -346,6 +346,13 @@ export type ProviderRunnerInput = {
    */
   confinementMode?(): import("@anthelia/contracts").ConfinementMode;
   /**
+   * The deterministic pre-execution's command (the spec study's §2.2 with
+   * the predictor removed: edit→verify is a rule). Undefined when the
+   * host did not configure one — the note still invalidates but nothing
+   * runs, which is what makes the whole thing off-able by the host.
+   */
+  precheckCommand?(): string | undefined;
+  /**
    * The operation-log channel (T3): the runtime zone passes its logger, a
    * bare context (tests) leaves it out and the call sites degrade to
    * silence — telemetry never crashes the turn. Structural so the kit
