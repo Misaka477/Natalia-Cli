@@ -2019,3 +2019,77 @@ test("turn telemetry rides the injected log, and degrades to silence without it"
   await bare.runner.runTurn(turn);
   expect(records).toEqual([]);
 });
+
+test("the provider prefix is stable across turns whose dynamic state differs (the prefix cache's condition)", async () => {
+  // The prefix-cache assembly's invariant: the STATIC system prompt is
+  // the first message and byte-identical across turns; every dynamic
+  // difference (plan, documents, confinement) arrives AFTER it as an
+  // appended <runtime_context> user message, never inside the static
+  // block. A provider's prefix cache keys off those leading bytes —
+  // one differing byte in the static block and every turn re-bills the
+  // whole persona.
+  const shapes: Array<Array<{ role: string; content: string }>> = [];
+  const record = {
+    provider: "scripted",
+    model: "m1",
+    async *stream(request: ProviderStreamRequest) {
+      shapes.push(
+        request.messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+      );
+      yield content("ok");
+    },
+  };
+  await makeHarness(record, { permissionMode: "ask" }).runner.runTurn({
+    ...turn,
+  });
+  await makeHarness(record, {
+    permissionMode: "auto",
+    activePlan: {
+      planID: "plan:1",
+      version: 1,
+      title: "a plan the other turn never had",
+      objective: "the objective only this turn carries",
+      steps: [
+        {
+          id: "s1",
+          title: "a step",
+          detail: "the detail",
+          verification: "verify",
+        },
+      ],
+      constraints: ["a constraint"],
+      verification: ["a verification"],
+      riskNotes: ["a risk"],
+    },
+    confinementMode: "danger-full-access",
+  }).runner.runTurn({ ...turn });
+
+  console.log(
+    "FREI shapes:",
+    shapes.length,
+    JSON.stringify(shapes[1] ?? null)?.slice(0, 80),
+  );
+  const plain = shapes[0]!;
+  const rich = shapes[1]!;
+  // The static system prompt is the first message, byte-identical.
+  expect(plain[0]!.role).toBe("system");
+  expect(rich[0]!.content).toBe(plain[0]!.content);
+  // And the dynamic state lives only in the appended context blocks: the
+  // plan's objective and the confinement are NOT in the static block but
+  // ARE in the later context message.
+  expect(rich[0]!.content).not.toContain(
+    "the objective only this turn carries",
+  );
+  expect(rich[0]!.content).not.toContain("dangerous");
+  const richContext = rich.find(
+    (message) =>
+      message.role === "user" && message.content.includes("<runtime_context"),
+  );
+  expect(richContext).toBeDefined();
+  expect(richContext!.content).toContain(
+    "the objective only this turn carries",
+  );
+});
