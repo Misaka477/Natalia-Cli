@@ -66,6 +66,7 @@ function desiredEntry(
     enabled: true,
     fingerprint: JSON.stringify({ manifest, path }),
     manifest,
+    path,
     onError: (error) => input.onError(manifest.id, error),
     async load(cacheBust) {
       const modulePath = validatePluginPath(

@@ -2673,7 +2673,7 @@ export type RuntimeSkillCatalogEntry = {
   name: string;
   qualifiedName: string;
   description: string;
-  source: "project" | "user" | "remote";
+  source: "project" | "user" | "remote" | "plugin";
   requireApproval: boolean;
   sandboxRequired: boolean;
 };

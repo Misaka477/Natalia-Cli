@@ -7,6 +7,13 @@ export type DesiredPluginEntry = {
   enabled: boolean;
   fingerprint: string;
   manifest?: PluginManifest;
+  /**
+   * The package's `natalia.plugin.json` path — the anchor a declared
+   * skills directory resolves against (absent for injected host entries,
+   * which ship no skills). Carried so the skills input can discover a
+   * plugin's shipped skills without re-reading the store.
+   */
+  path?: string;
   prepare?(): Promise<Plugin>;
   load(cacheBust?: string): Promise<Plugin | undefined>;
   onError?(error: unknown): void;

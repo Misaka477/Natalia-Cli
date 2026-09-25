@@ -73,6 +73,20 @@ export const pluginUiManifestSchema = z.object({
   panels: z.array(uiPanelMetaSchema).optional(),
 });
 
+/**
+ * A plugin's shipped skills: the package-relative directory holding
+ * SKILL.md files (the CU fit study's missing base surface — a plugin
+ * used to have to smuggle skill docs through workspace directories,
+ * a remote index, or its own tool). Declared, like facets, because
+ * content ships in the package; the skills plugin discovers the
+ * declared directory like any other root.
+ */
+export const pluginSkillsDeclarationSchema = z
+  .object({
+    dir: z.string().min(1).default("skills"),
+  })
+  .strict();
+
 export const pluginManifestV2Schema = z.object({
   apiVersion: z.literal(PLUGIN_API_VERSION),
   id: pluginIDSchema,
@@ -89,6 +103,7 @@ export const pluginManifestV2Schema = z.object({
   hooks: pluginLifecycleHooksSchema,
   integrationPoints: z.array(pluginIntegrationPointSchema).default([]),
   ui: pluginUiManifestSchema.optional(),
+  skills: pluginSkillsDeclarationSchema.optional(),
 });
 
 /**
@@ -139,6 +154,7 @@ export const pluginManifestV3Schema = z
     hooks: pluginLifecycleHooksSchema,
     integrationPoints: z.array(pluginIntegrationPointSchema).default([]),
     facets: z.record(z.string(), pluginFacetSchema).optional(),
+    skills: pluginSkillsDeclarationSchema.optional(),
   })
   .strict();
 
@@ -173,6 +189,16 @@ export function pluginFacetFor(
     return env === "web" ? (manifest.ui as PluginFacet) : undefined;
   if (manifest.apiVersion === 3) return manifest.facets?.[env];
   return undefined;
+}
+
+/**
+ * The declared skills directory, or undefined when the plugin ships
+ * none. `skills: {}` (or a bare `skills`) means the default
+ * `skills/` directory — the declaration is present, the dir defaulted.
+ */
+export function pluginSkillDir(manifest: PluginManifest): string | undefined {
+  const declared = (manifest as { skills?: { dir?: string } }).skills;
+  return declared ? (declared.dir ?? "skills") : undefined;
 }
 
 export type { PluginPackageSource } from "@anthelia/contracts";

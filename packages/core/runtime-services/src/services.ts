@@ -84,6 +84,13 @@ export type SkillsInput = {
   workspaceRoot: string;
   userRoot?: string;
   remoteURLs?: string[];
+  /**
+   * The declared skills directories of the loaded plugins (absolute), read
+   * live at each discovery so an install/uninstall lands on the next
+   * reload. Plugin skills are the LOWEST precedence: a project or user
+   * root with the same name overrides the package's.
+   */
+  pluginDirs?: () => readonly string[];
   onLoad?(
     skill: SkillMetadata,
     output: string,
@@ -108,7 +115,7 @@ export type SkillMetadata = {
   qualifiedName: string;
   root: string;
   body: string;
-  source: "project" | "user" | "remote";
+  source: "project" | "user" | "remote" | "plugin";
   /**
    * The sha256 (hex) of the SKILL.md bytes the skill was discovered from —
    * the content's identity, computed by discovery for every source

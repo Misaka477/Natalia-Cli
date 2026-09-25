@@ -1,8 +1,10 @@
 import type { PluginPackageConfig, RuntimeEvent } from "@anthelia/contracts";
 import type { CapabilityRegistryHost } from "@anthelia/capability";
+import { dirname, resolve } from "node:path";
 import {
   createDesiredPluginController,
   createPluginRegistry,
+  pluginSkillDir,
   resolveDesiredPluginCatalog,
   type DesiredPluginEntry,
   type PluginManifest,
@@ -24,6 +26,25 @@ import {
 
 /** The fabric's service name — the token in `@anthelia/rina` is `rina.cache`. */
 const RINA_CACHE_SERVICE = "rina.cache";
+
+/**
+ * The loaded plugins' declared skills directories (absolute), resolved
+ * against each package's manifest path. Pure over the resolved catalog
+ * so the resolution is testable without a live controller. A plugin
+ * without a declaration, or without a package path (the injected host
+ * entries), contributes nothing.
+ */
+export function pluginSkillDirsFrom(
+  entries: readonly DesiredPluginEntry[],
+): string[] {
+  const dirs: string[] = [];
+  for (const entry of entries) {
+    if (!entry.manifest || !entry.path) continue;
+    const dir = pluginSkillDir(entry.manifest);
+    if (dir) dirs.push(resolve(dirname(entry.path), dir));
+  }
+  return dirs;
+}
 
 const HOST_INPUT_SERVICES = new Set([
   localToolsInput.id,
@@ -166,6 +187,11 @@ export function createPluginsController(input: {
     return registry?.list() ?? [];
   }
 
+  /** The loaded plugins' declared skills directories (absolute). */
+  function skillDirs(): string[] {
+    return pluginSkillDirsFrom(lastCatalog);
+  }
+
   async function close() {
     if (closed) return;
     const current = controller;
@@ -191,6 +217,7 @@ export function createPluginsController(input: {
       })),
     get,
     list,
+    skillDirs,
     status: (id: string) => registry?.status(id),
     active: (id: string) => registry?.active(id) ?? false,
     load: (entry: DesiredPluginEntry, settings?: unknown) =>

@@ -356,3 +356,59 @@ test("a remote index's declared digests are verified before the swap", async () 
     server.stop(true);
   }
 });
+
+test("a plugin's shipped skills are discovered with the plugin source", async () => {
+  // The base-gap closure: a plugin ships skills in its package (here a
+  // scratch dir standing in for the package's declared skills dir), and
+  // discovery walks it like any other root — source, qualified name,
+  // digest, resources against the package dir.
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-skill-"));
+  const packageDir = join(root, "packages", "natalia-tool-example");
+  const skillRoot = join(packageDir, "skills", "example");
+  await mkdir(skillRoot, { recursive: true });
+  const content =
+    "---\nname: example\ndescription: Example\n---\nExample guidance";
+  await writeFile(join(skillRoot, "SKILL.md"), content);
+  await writeFile(join(skillRoot, "notes.txt"), "package-resource");
+  const registry = await discoverSkills({
+    workspaceRoot: root,
+    pluginDirs: [join(packageDir, "skills")],
+  });
+  const skill = registry.resolve("example");
+  expect(skill.qualifiedName).toBe("plugin:example");
+  expect(skill.source).toBe("plugin");
+  expect(skill.digest).toBe(skillDigest(content));
+  expect(await readSkillResource(skill, "notes.txt")).toBe("package-resource");
+});
+
+test("a project root overrides a plugin skill of the same name", async () => {
+  // Precedence: plugin skills are the LOWEST source — the project root
+  // still wins a name collision, exactly as it does over user and remote.
+  const root = await mkdtemp(join(tmpdir(), "natalia-plugin-skill-override-"));
+  const packageDir = join(root, "packages", "natalia-tool-example");
+  const shipped = join(packageDir, "skills", "shared");
+  await mkdir(shipped, { recursive: true });
+  await writeFile(
+    join(shipped, "SKILL.md"),
+    "---\nname: shared\ndescription: Shipped\n---\nFrom the package",
+  );
+  const project = join(root, ".natalia", "skills", "shared");
+  await mkdir(project, { recursive: true });
+  await writeFile(
+    join(project, "SKILL.md"),
+    "---\nname: shared\ndescription: Project\n---\nFrom the project",
+  );
+  const registry = await discoverSkills({
+    workspaceRoot: root,
+    pluginDirs: [join(packageDir, "skills")],
+  });
+  // Both are registered (distinct qualified names); resolve() picks the
+  // project one — the later source wins, the precedence rule.
+  expect(
+    registry
+      .list()
+      .map((skill) => skill.qualifiedName)
+      .sort(),
+  ).toEqual(["plugin:shared", "project:shared"]);
+  expect(registry.resolve("shared").source).toBe("project");
+});

@@ -56,6 +56,12 @@ export type SkillDiscoverInput = {
   remoteURLs?: string[];
   cacheRoot?: string;
   fetch?: typeof fetch;
+  /**
+   * The loaded plugins' declared skills directories (absolute). Walked
+   * FIRST so a project or user root with the same name overrides the
+   * package's (the same precedence the other sources enjoy).
+   */
+  pluginDirs?: readonly string[];
 };
 
 export class SkillRegistry implements SkillService {
@@ -126,6 +132,7 @@ export class SkillRegistry implements SkillService {
     remoteURLs?: string[];
     cacheRoot?: string;
     fetch?: typeof fetch;
+    pluginDirs?: readonly string[];
   }) {
     const next = await discoverSkills(input);
     this.skills = next.skills;
@@ -149,14 +156,10 @@ export class SkillRegistry implements SkillService {
   }
 }
 
-export async function discoverSkills(input: {
-  workspaceRoot: string;
-  userRoot?: string;
-  remoteURLs?: string[];
-  cacheRoot?: string;
-  fetch?: typeof fetch;
-}) {
+export async function discoverSkills(input: SkillDiscoverInput) {
   const registry = new SkillRegistry();
+  for (const dir of input.pluginDirs ?? [])
+    await discoverRoot(registry, resolve(dir), "plugin");
   for (const url of input.remoteURLs ?? []) {
     const roots = await pullRemoteSkills({
       url,
@@ -180,7 +183,7 @@ export async function discoverSkills(input: {
 
 export function parseSkill(
   content: string,
-  input: { root: string; source: "project" | "user" | "remote" },
+  input: { root: string; source: "project" | "user" | "remote" | "plugin" },
 ) {
   // Windows editors and PowerShell's `Set-Content -Encoding UTF8` prepend a
   // UTF-8 BOM, which would keep `^---` from matching and surface only as
@@ -332,7 +335,7 @@ export async function runSkillScript(
 async function discoverRoot(
   registry: SkillRegistry,
   root: string,
-  source: "project" | "user" | "remote",
+  source: "project" | "user" | "remote" | "plugin",
 ) {
   const entries = await readSkillDirectories(root);
   for (const entry of entries) {

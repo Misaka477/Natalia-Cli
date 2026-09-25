@@ -142,3 +142,70 @@ test("with no fabric the port fails loud, never silently uncached", async () => 
     /cache is not available/u,
   );
 });
+
+test("plugin skill dirs resolve from the catalog, per package", async () => {
+  // The controller's skillDirs(): each entry's declared dir resolves
+  // against its package manifest path; no declaration or no path (the
+  // injected host entries) contributes nothing.
+  const { pluginSkillDirsFrom } = await import("../src/plugins-controller");
+  const dirs = pluginSkillDirsFrom([
+    {
+      id: "a",
+      enabled: true,
+      fingerprint: "x",
+      path: "/store/node_modules/@natalia/plugin-a/natalia.plugin.json",
+      load: async () => undefined as never,
+      manifest: {
+        apiVersion: 2,
+        id: "a",
+        version: "1.0.0",
+        name: "A",
+        skills: {},
+      } as never,
+    },
+    {
+      id: "b",
+      enabled: true,
+      fingerprint: "y",
+      path: "/store/node_modules/@natalia/plugin-b/natalia.plugin.json",
+      load: async () => undefined as never,
+      manifest: {
+        apiVersion: 2,
+        id: "b",
+        version: "1.0.0",
+        name: "B",
+        skills: { dir: "agent/skills" },
+      } as never,
+    },
+    {
+      id: "c",
+      enabled: true,
+      fingerprint: "z",
+      path: "/store/node_modules/@natalia/plugin-c/natalia.plugin.json",
+      load: async () => undefined as never,
+      manifest: {
+        apiVersion: 2,
+        id: "c",
+        version: "1.0.0",
+        name: "C",
+      } as never,
+    },
+    {
+      id: "host",
+      enabled: true,
+      fingerprint: "h",
+      load: async () => undefined as never,
+      manifest: {
+        apiVersion: 2,
+        id: "host",
+        version: "1.0.0",
+        name: "Host",
+        skills: {},
+      } as never,
+    },
+  ]);
+  expect(dirs.sort()).toEqual([
+    "/store/node_modules/@natalia/plugin-a/skills",
+    "/store/node_modules/@natalia/plugin-b/agent/skills",
+  ]);
+});

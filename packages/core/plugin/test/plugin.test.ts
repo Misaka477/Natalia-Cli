@@ -12,6 +12,7 @@ import {
   pluginManifestSchema,
   manifestIntegrationPoints,
   pluginFacetFor,
+  pluginSkillDir,
   PLUGIN_FACET_ENVS,
   resolvePluginDependencies,
   resolvePluginConfig,
@@ -2291,4 +2292,52 @@ test("v3's integration points and dependencies load like v2's", () => {
   // The env registry: web wired, tui reserved (a consumer checks this,
   // the schema never restricts keys).
   expect(PLUGIN_FACET_ENVS).toEqual(["web", "tui"]);
+});
+
+test("a plugin declares its shipped skills directory (v2 and v3)", () => {
+  // The CU fit study's missing base surface: a plugin ships skills in
+  // its package, declared like facets. Default is `skills/`; absent
+  // means the plugin ships none; the dir stays package-relative.
+  const bare = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "fixture.skills.bare",
+    version: "1.0.0",
+    name: "Bare",
+    skills: {},
+  });
+  expect(pluginSkillDir(bare)).toBe("skills");
+  const custom = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "fixture.skills.custom",
+    version: "1.0.0",
+    name: "Custom",
+    skills: { dir: "agent/skills" },
+  });
+  expect(pluginSkillDir(custom)).toBe("agent/skills");
+  const none = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "fixture.skills.none",
+    version: "1.0.0",
+    name: "None",
+  });
+  expect(pluginSkillDir(none)).toBeUndefined();
+  const v3 = pluginManifestSchema.parse({
+    apiVersion: 3,
+    id: "fixture.skills.v3",
+    version: "1.0.0",
+    name: "V3",
+    facets: { web: { entry: "ui/plugin.js" } },
+    skills: { dir: "skills" },
+  });
+  expect(pluginSkillDir(v3)).toBe("skills");
+  // An unknown key in the declaration is a hard error (strict), like facets.
+  expect(() =>
+    pluginManifestSchema.parse({
+      apiVersion: 2,
+      id: "fixture.skills.bad",
+      version: "1.0.0",
+      name: "Bad",
+      skills: { dirs: "skills" },
+    }),
+  ).toThrow();
 });

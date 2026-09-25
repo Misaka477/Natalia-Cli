@@ -43,6 +43,11 @@ export function createPluginAssembly(
       workspaceRoot,
       userRoot: getUserSkillRoot(),
       remoteURLs: config.skills.urls,
+      // The loaded plugins' shipped skills: read live at each discovery,
+      // so an install or uninstall lands on this plugin's next reload
+      // (the fingerprint mechanism reloads it on every catalog change —
+      // skillsInput is one of the controller's host-input services).
+      pluginDirs: () => ctx.ports.getPluginsController().skillDirs(),
       commandSession: {
         active: (sessionID: SessionID) =>
           getExecutionBySession().get(sessionID)?.activeSkill,

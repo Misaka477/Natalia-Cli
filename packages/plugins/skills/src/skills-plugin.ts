@@ -44,6 +44,12 @@ export function createSkillsPlugin(input: {
   workspaceRoot: string;
   userRoot?: string;
   remoteURLs?: string[];
+  /**
+   * The loaded plugins' declared skills directories, read live at each
+   * discovery (the controller's catalog is the source; the fingerprint
+   * mechanism reloads this plugin when it changes).
+   */
+  pluginDirs?: () => readonly string[];
   onLoad?: (
     skill: Skill,
     output: string,
@@ -54,14 +60,20 @@ export function createSkillsPlugin(input: {
     activate(sessionID: SessionID, skill: Skill): void;
   };
 }): Plugin {
+  // One discovery shape for setup and every reload: the plugin dirs are
+  // read live so an install/uninstall lands on the next discovery.
+  async function discover() {
+    return await discoverSkills({
+      workspaceRoot: input.workspaceRoot,
+      ...(input.userRoot ? { userRoot: input.userRoot } : {}),
+      ...(input.remoteURLs ? { remoteURLs: input.remoteURLs } : {}),
+      ...(input.pluginDirs ? { pluginDirs: input.pluginDirs() } : {}),
+    });
+  }
   return {
     manifest: SKILLS_PLUGIN_MANIFEST,
     async setup(api) {
-      const skills = await discoverSkills({
-        workspaceRoot: input.workspaceRoot,
-        ...(input.userRoot ? { userRoot: input.userRoot } : {}),
-        ...(input.remoteURLs ? { remoteURLs: input.remoteURLs } : {}),
-      });
+      const skills = await discover();
       api.services.provide(skillService.id, skills);
       api.tools.register(
         createSkillLoadTool({ registry: () => skills, onLoad: input.onLoad }),
@@ -93,6 +105,7 @@ export function createSkillsPlugin(input: {
             workspaceRoot: input.workspaceRoot,
             ...(input.userRoot ? { userRoot: input.userRoot } : {}),
             ...(input.remoteURLs ? { remoteURLs: input.remoteURLs } : {}),
+            ...(input.pluginDirs ? { pluginDirs: input.pluginDirs() } : {}),
           });
           return `installed skill${result.installed === 1 ? "" : "s"}: ${result.names.join(", ")}`;
         },
