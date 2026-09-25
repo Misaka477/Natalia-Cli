@@ -26,6 +26,23 @@ import { daemonDir } from "./command-helpers";
  * where a live provider and the runtime live; the CLI only drives it.
  */
 
+/** How long one task's submit may wait before the batch moves on. */
+const SUBMIT_TIMEOUT_MS = 45_000;
+
+/**
+ * The submit's failure named for an operator: the timeout (no provider
+ * answering?), the unparseable answer, or the message as it stands.
+ * Pure — the CLI's wiring names, the loop carries.
+ */
+export function submitFailureReason(error: unknown): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  if (reason.includes("timed out") || reason.includes("aborted"))
+    return `submit timed out after ${SUBMIT_TIMEOUT_MS}ms (no provider answering?)`;
+  if (reason.includes("null is not an object"))
+    return "the daemon answered nothing that could be parsed";
+  return `submit failed: ${reason}`;
+}
+
 /** The eval dir: the flag, the env, or the repo's own devref checkout. */
 function evalDir(argv: string[]): string {
   const flag = valueOf(argv, "--dir");
@@ -129,20 +146,22 @@ export async function evalRun(argv: string[]): Promise<{
           reason: "no_daemon: start one with `natalia daemon`",
         };
       try {
+        // A bounded wait: without a provider configured the daemon's
+        // submitAndWait waits for a turn that can never finish, and an
+        // unbounded wait would hang the batch. The timeout is the honest
+        // bound — the task's reason says exactly that.
         const turn = await callRuntimeRPC<{ turnID?: string }>({
           url: registration.url,
           token,
           method: "submit.andWait",
           params: { text: prompt },
+          signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),
         });
         return turn.turnID
           ? { ok: true as const, turnID: turn.turnID }
           : { ok: false as const, reason: "submit returned no turn" };
       } catch (error) {
-        return {
-          ok: false as const,
-          reason: `submit failed: ${error instanceof Error ? error.message : String(error)}`,
-        };
+        return { ok: false as const, reason: submitFailureReason(error) };
       }
     },
     recordJoin: async ({ taskID, turnID }) => {
