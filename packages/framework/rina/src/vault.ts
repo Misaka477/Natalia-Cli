@@ -200,6 +200,12 @@ export type RinaVaultService = {
    * one bound; the eviction is unobservable by design because get()
    * falls through to the store). */
   hotStats(): { size: number };
+  /** Phase 6's semantic lane's state (the constructor's opt-in, fixed
+   * per vault): the recall's breakdown reads `semantic: 0` both when the
+   * lane is off and when it found no neighbour — this is what tells the
+   * two apart, so a consumer never reads an absent lane as an empty
+   * corpus. */
+  semanticLane(): boolean;
   /** Delete by scope (the study's invalidation scopes). Returns count. */
   invalidate(scope: {
     sessionID?: string;
@@ -333,6 +339,7 @@ export function createUnavailableVault(reason: string): RinaVaultService {
     list: () => [],
     history: () => [],
     hotStats: () => ({ size: 0 }),
+    semanticLane: () => false,
     invalidate: () => 0,
     rebuild: () => 0,
     state: () => absent,
@@ -943,6 +950,9 @@ export function createContextVault(input: {
     },
     hotStats(): { size: number } {
       return { size: hot.size };
+    },
+    semanticLane(): boolean {
+      return semanticEnabled;
     },
     invalidate(scope): number {
       const { sql, args } = invalidateSelect(scope);

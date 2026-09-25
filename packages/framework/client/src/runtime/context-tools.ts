@@ -234,7 +234,16 @@ export function createRinaContextTools(ctx: RuntimeContext): RuntimeTool[] {
           ...(window.after ? { createdAfter: window.after } : {}),
           ...(window.before ? { createdBefore: window.before } : {}),
         });
-        return JSON.stringify({ data: hits });
+        // Phase 6's closure: the semantic lane's state rides the answer.
+        // A `semantic: 0` in a hit's breakdown means two different
+        // things — the lane is off, or it found no neighbour — and the
+        // model reading the tool's answer must be able to tell them
+        // apart (an absent lane read as an empty corpus is the kind of
+        // quiet misreading this whole house exists to refuse).
+        return JSON.stringify({
+          data: hits,
+          semanticLane: vault.semanticLane(),
+        });
       },
     },
     {
