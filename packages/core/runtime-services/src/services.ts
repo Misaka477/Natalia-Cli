@@ -109,6 +109,13 @@ export type SkillMetadata = {
   root: string;
   body: string;
   source: "project" | "user" | "remote";
+  /**
+   * The sha256 (hex) of the SKILL.md bytes the skill was discovered from —
+   * the content's identity, computed by discovery for every source
+   * (2026-09-25: the fingerprint catalog's first field; the remote index's
+   * per-file declarations verify against it before use, cua's discipline).
+   */
+  digest: string;
 };
 export type SkillPolicy = {
   mode: "default" | "restricted" | "sandbox" | "full";

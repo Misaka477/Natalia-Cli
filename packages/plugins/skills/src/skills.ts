@@ -27,6 +27,29 @@ import type {
 
 export type Skill = SkillMetadata;
 
+/**
+ * An integrity failure (a declared digest did not match the bytes) is not
+ * a transient fetch failure: it never degrades silently, even with a
+ * cached skill present. The pull's catch keeps the old skill for network
+ * failures; this error class is the one it re-throws unconditionally —
+ * availability over alerting is the network's rule, never integrity's.
+ */
+export class RemoteSkillIntegrityError extends Error {}
+
+/**
+ * A skill file's content identity: the sha256 of its exact bytes. The
+ * fingerprint catalog's atom (cua's model: every file carries its digest,
+ * the client verifies before use) — local discovery stamps it, a remote
+ * index's declaration is verified against it.
+ */
+export function skillDigest(content: string | Uint8Array): string {
+  return createHash("sha256")
+    .update(
+      typeof content === "string" ? Buffer.from(content, "utf8") : content,
+    )
+    .digest("hex");
+}
+
 export type SkillDiscoverInput = {
   workspaceRoot: string;
   userRoot?: string;
@@ -182,6 +205,7 @@ export function parseSkill(
     root: resolve(input.root),
     body: match[2]!.trim(),
     source: input.source,
+    digest: skillDigest(content),
   } satisfies Skill;
 }
 
@@ -375,10 +399,30 @@ export async function pullRemoteSkills(input: {
       !Array.isArray(skill.files)
     )
       continue;
-    const files = skill.files.filter(
-      (file): file is string => typeof file === "string",
-    );
-    if (!files.includes("SKILL.md") || !files.every(safeRelativePath)) continue;
+    // The index's file entries: bare strings (the legacy shape) or objects
+    // carrying an optional sha256 declaration. A declaration is verified
+    // against the downloaded bytes before the staging swap (cua's
+    // client-verifies-before-use); an undeclared file is accepted — the
+    // index chose not to pin it, which is the index's call, not ours.
+    const files = skill.files
+      .map((file) => {
+        if (typeof file === "string")
+          return safeRelativePath(file) ? ({ path: file } as const) : undefined;
+        if (!file || typeof file !== "object") return undefined;
+        const record = file as { path?: unknown; sha256?: unknown };
+        if (typeof record.path !== "string" || !safeRelativePath(record.path))
+          return undefined;
+        return {
+          path: record.path,
+          ...(typeof record.sha256 === "string" && record.sha256
+            ? { sha256: record.sha256 }
+            : {}),
+        } as { path: string; sha256?: string };
+      })
+      .filter(
+        (file): file is { path: string; sha256?: string } => file !== undefined,
+      );
+    if (!files.some((file) => file.path === "SKILL.md")) continue;
     const root = join(sourceRoot, skill.name);
     const versionPath = join(root, ".natalia-version");
     const version =
@@ -397,7 +441,7 @@ export async function pullRemoteSkills(input: {
     try {
       for (const file of files) {
         const resource = new URL(
-          file,
+          file.path,
           new URL(`${encodeURIComponent(skill.name)}/`, base),
         );
         if (resource.origin !== base.origin)
@@ -405,13 +449,17 @@ export async function pullRemoteSkills(input: {
         const downloaded = await fetchImpl(resource);
         if (!downloaded.ok)
           throw new Error(`remote skill file failed: ${downloaded.status}`);
-        const destination = join(staging, file);
+        const bytes = new Uint8Array(await downloaded.arrayBuffer());
+        // The declared digest is checked BEFORE the staging swap: the
+        // catch below restores the previous skill, so a tampered or
+        // truncated download never replaces a good one.
+        if (file.sha256 && skillDigest(bytes) !== file.sha256)
+          throw new RemoteSkillIntegrityError(
+            `remote skill file digest mismatch: ${skill.name}/${file.path}`,
+          );
+        const destination = join(staging, file.path);
         await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
-        await writeFile(
-          destination,
-          new Uint8Array(await downloaded.arrayBuffer()),
-          { mode: 0o600 },
-        );
+        await writeFile(destination, bytes, { mode: 0o600 });
       }
       if (version)
         await writeFile(join(staging, ".natalia-version"), version, {
@@ -428,6 +476,10 @@ export async function pullRemoteSkills(input: {
       roots.push(root);
     } catch (error) {
       await rm(staging, { recursive: true, force: true });
+      // Integrity failures propagate even when a cached skill survives: the
+      // operator must be able to tell "network hiccup" from "the index
+      // lied" — the second one is never silent.
+      if (error instanceof RemoteSkillIntegrityError) throw error;
       // The previous skill was moved aside but the swap did not complete.
       // Without restoring it the skill is lost and the backup is orphaned.
       // Directory renames fail far more readily on Windows (an open handle,

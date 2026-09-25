@@ -7,10 +7,11 @@ import {
   createSkillLoadTool,
   discoverSkills,
   formatSkillForModel,
+  pullRemoteSkills,
   readSkillResource,
   resolveSkillResource,
   runSkillScript,
-  pullRemoteSkills,
+  skillDigest,
 } from "../src/skills";
 
 test("discovers native project skills and enforces policy", async () => {
@@ -264,4 +265,94 @@ test("upsertSkill writes under the project root, reloads, and reports created vs
     registry.upsertSkill({ kind: "rm", name: "d4-review-skill" }),
   ).rejects.toThrow(/whitelisted/u);
   expect(readFileSync(file, "utf8")).toContain("Updated body");
+});
+
+test("discovery stamps every skill with its content digest", async () => {
+  // The fingerprint catalog's first field: a skill's sha256 identity,
+  // computed by discovery for every source — a content change moves it,
+  // an identical re-read does not.
+  const root = await mkdtemp(join(tmpdir(), "natalia-skill-digest-"));
+  const skillRoot = join(root, ".natalia", "skills", "review");
+  await mkdir(skillRoot, { recursive: true });
+  const content = "---\nname: review\ndescription: Review\n---\nBody";
+  await writeFile(join(skillRoot, "SKILL.md"), content);
+  const registry = await discoverSkills({ workspaceRoot: root });
+  const skill = registry.resolve("review");
+  expect(skill.digest).toBe(skillDigest(content));
+  expect(skill.digest).toMatch(/^[0-9a-f]{64}$/u);
+  await writeFile(join(skillRoot, "SKILL.md"), `${content} changed`);
+  await registry.reload({ workspaceRoot: root });
+  expect(registry.resolve("review").digest).not.toBe(skill.digest);
+  expect(registry.resolve("review").digest).toBe(
+    skillDigest(`${content} changed`),
+  );
+});
+
+test("parseSkill computes the digest it stamps (pure)", () => {
+  const content = "---\nname: pure\ndescription: Pure\n---\nBody";
+  const parsed = parseSkill(content, { root: "/tmp/x", source: "project" });
+  expect(parsed.digest).toBe(skillDigest(content));
+});
+
+test("a remote index's declared digests are verified before the swap", async () => {
+  // cua's client-verifies-before-use: the index pins each file's sha256;
+  // a tampered or truncated download is refused NAMED, and the previously
+  // cached skill survives (the staging swap never happens).
+  const root = await mkdtemp(join(tmpdir(), "natalia-skill-digest-remote-"));
+  const good = "---\nname: remote\ndescription: Remote\n---\nFirst";
+  const goodDigest = skillDigest(good);
+  const guide = "guide-v1";
+  let serveBody = good;
+  let declared: string | undefined = goodDigest;
+  let version = "1";
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname === "/skills/index.json")
+        return Response.json({
+          skills: [
+            {
+              name: "remote",
+              version,
+              files: [{ path: "SKILL.md", sha256: declared }, "refs/guide.md"],
+            },
+          ],
+        });
+      if (url.pathname === "/skills/remote/SKILL.md")
+        return new Response(serveBody);
+      if (url.pathname === "/skills/remote/refs/guide.md")
+        return new Response(guide);
+      return new Response("missing", { status: 404 });
+    },
+  });
+  try {
+    const input = {
+      url: `${server.url}skills/`,
+      cacheRoot: join(root, "cache"),
+    };
+    // A matching declaration installs (and the declared bytes are what land).
+    const first = await pullRemoteSkills(input);
+    expect(await readFile(join(first[0]!, "SKILL.md"), "utf8")).toBe(good);
+    // A tampered download under a bumped version: refused by name, old kept.
+    serveBody = "---\nname: remote\ndescription: Remote\n---\nEvil";
+    version = "2";
+    declared = skillDigest(serveBody).slice(0, 63);
+    await expect(pullRemoteSkills(input)).rejects.toThrow(
+      /remote skill file digest mismatch: remote\/SKILL.md/u,
+    );
+    // The swap never happened: the cached skill from the first (verified)
+    // pull is still on disk, byte for byte.
+    expect(await readFile(join(first[0]!, "SKILL.md"), "utf8")).toBe(good);
+    // A missing declaration is the index's choice, not a refusal.
+    declared = undefined;
+    version = "3";
+    serveBody = "---\nname: remote\ndescription: Remote\n---\nUnpinned";
+    const unpinned = await pullRemoteSkills(input);
+    expect(await readFile(join(unpinned[0]!, "SKILL.md"), "utf8")).toContain(
+      "Unpinned",
+    );
+  } finally {
+    server.stop(true);
+  }
 });
