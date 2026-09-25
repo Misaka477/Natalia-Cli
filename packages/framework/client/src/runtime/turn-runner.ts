@@ -259,11 +259,6 @@ export function createTurnRunner(
           profile: ctx.state.serviceDirectory.getOptional(compositionProfile),
           configMode: getTsRuntimeConfig()?.confinement?.mode,
         }),
-      // The deterministic pre-execution's command (edit→verify): the env
-      // is the host's knob, the port is how the tool-execution's note
-      // reaches it. Undefined by default — the note still invalidates,
-      // nothing runs.
-      precheckCommand: () => process.env.NATALIA_PRECHECK_COMMAND,
       // T3: the turn's telemetry rides the operation log, not the console.
       // The ALS scope the runtime zone wraps the turn body in carries the
       // correlation, so the kit's records need no call-site discipline.

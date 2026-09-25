@@ -52,7 +52,6 @@ export const WORKER_ROUTE_MEMBERS = {
   "corrections.patterns": "correctionPatterns",
   "growth.promote": "promoteGrowthTrigger",
   "growth.promotions": "growthPromotions",
-  "spec.prefetch_report": "specPrefetchReport",
   "growth.triggers": "growthTriggers",
   "eval.joined_tasks": "externalJoinedTasks",
   messages: "messages",
@@ -211,7 +210,6 @@ type WorkerRequest = {
     | "corrections.patterns"
     | "growth.promote"
     | "growth.promotions"
-    | "spec.prefetch_report"
     | "growth.triggers"
     | "eval.joined_tasks"
     | "messages"
@@ -1158,11 +1156,6 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["promoteGrowthTrigger"]>>
       >;
     },
-    async specPrefetchReport(input?: { maxDepth?: number }) {
-      return (await request("spec.prefetch_report", input ?? {})) as Awaited<
-        ReturnType<NonNullable<RuntimeClient["specPrefetchReport"]>>
-      >;
-    },
     async growthPromotions(sessionID?: string) {
       return (await request(
         "growth.promotions",
@@ -1501,10 +1494,6 @@ export async function handleWorkerRequest(
   if (request.method === "growth.promote") {
     const value = request.value as { capability: string };
     return await client.promoteGrowthTrigger?.(value);
-  }
-  if (request.method === "spec.prefetch_report") {
-    const value = request.value as { maxDepth?: number } | undefined;
-    return await client.specPrefetchReport?.(value);
   }
   if (request.method === "growth.promotions") {
     const value = request.value as { sessionID?: string } | undefined;

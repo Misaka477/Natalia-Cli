@@ -4593,48 +4593,6 @@ export type RuntimeClient = {
     }>
   >;
   /**
-   * The spec-exec pillar's prefetch experiment (the study's §2.1):
-   * replay the session's journal through the online-statistics
-   * predictor and answer its per-position acceptance curve with the
-   * verdict (the depth it justifies). A pure read of the journal.
-   */
-  specPrefetchReport?(
-    input?: { maxDepth?: number },
-    sessionID?: string,
-  ): Promise<{
-    rounds: number;
-    justifiedDepth: number;
-    topHitRate: number;
-    perPosition: Array<{
-      position: number;
-      offered: number;
-      hits: number;
-      rate: number;
-    }>;
-    verdict: string;
-  }>;
-  /**
-   * The spec-exec pillar's prefetch experiment (the study's §2.1):
-   * replay the session's journal through the online-statistics
-   * predictor and answer its per-position acceptance curve with the
-   * verdict (the depth it justifies). A pure read of the journal.
-   */
-  specPrefetchReport?(
-    input?: { maxDepth?: number },
-    sessionID?: string,
-  ): Promise<{
-    rounds: number;
-    justifiedDepth: number;
-    topHitRate: number;
-    perPosition: Array<{
-      position: number;
-      offered: number;
-      hits: number;
-      rate: number;
-    }>;
-    verdict: string;
-  }>;
-  /**
    * Discovery G-d — the repeated correction patterns: the human's
    * corrections across the journal's safe sources, clustered into
    * 固化 suggestions. A suggestion applies nothing; the destination's

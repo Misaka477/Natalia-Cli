@@ -569,10 +569,6 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure read: the journaled promotions",
   },
-  specPrefetchReport: {
-    refusal: "none",
-    note: "pure read: the journal replayed through the prefetch predictor",
-  },
   externalJoinedTasks: {
     refusal: "none",
     note: "pure read: the recorded joins against the external benchmark",

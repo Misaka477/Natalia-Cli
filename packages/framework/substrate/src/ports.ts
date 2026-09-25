@@ -40,12 +40,6 @@ export type RuntimePorts = {
     event: RuntimeEvent,
   ) => void;
   scheduleRuntimeStatusSnapshot: () => void;
-  /**
-   * The deterministic pre-execution's command (edit→verify, the spec
-   * study's §2.2 without the predictor). Absent = the note still
-   * invalidates but nothing runs — the whole thing off-able by the host.
-   */
-  precheckCommand?: () => string | undefined;
   runtimeStatusSnapshot: () => Promise<
     Extract<RuntimeEvent, { type: "status.snapshot" }>
   >;

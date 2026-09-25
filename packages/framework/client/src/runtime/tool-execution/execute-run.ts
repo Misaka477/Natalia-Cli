@@ -9,7 +9,6 @@
  * `execute-one.ts` stays within the source line limit.
  */
 import type { ProviderToolCall } from "@anthelia/runtime";
-import { noteWorkspaceWrite, setPrecheckCommand } from "../precheck";
 import {
   requiresForcedGitApprovalAst,
   timeoutSecOr,
@@ -347,20 +346,6 @@ export async function runExecuteStage(
       // trusted: the study's invalidate-on-write for the writer the
       // mutation declarations cannot see into.
       if (OPAQUE_WORKSPACE_WRITERS.has(tool.name)) rina?.markTreeChanged();
-      // The deterministic pre-execution's note: a workspace write
-      // invalidates any in-flight check and schedules the next — the
-      // rule (edit→verify) is the predictor-free half of the spec
-      // study's §2.2, and its only real risk is staleness, which the
-      // machine's state makes impossible.
-      const wroteWorkspace =
-        writePath || OPAQUE_WORKSPACE_WRITERS.has(tool.name);
-      if (wroteWorkspace) {
-        // The host's command rides the context port (the env's shape);
-        // the note is inert until one is configured, which is what makes
-        // the whole thing off-able by configuration.
-        setPrecheckCommand(ctx.ports.precheckCommand?.());
-        noteWorkspaceWrite(workspaceRoot);
-      }
     });
     // A declared output shape is a contract for the tools whose result is JSON.
     // One that has drifted from its implementation fails here, naming the paths,

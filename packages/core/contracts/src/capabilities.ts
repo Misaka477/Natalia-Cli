@@ -271,7 +271,6 @@ export const RUNTIME_CAPABILITY_GROUPS = {
     "growthTriggers",
     "promoteGrowthTrigger",
     "growthPromotions",
-    "specPrefetchReport",
 
     "externalJoinedTasks",
     "constitutionOverrides",

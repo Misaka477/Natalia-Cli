@@ -236,7 +236,6 @@ export const RPC_ROUTE_MEMBERS = {
   "corrections.patterns": "correctionPatterns",
   "growth.promote": "promoteGrowthTrigger",
   "growth.promotions": "growthPromotions",
-  "spec.prefetch_report": "specPrefetchReport",
   "growth.triggers": "growthTriggers",
   "eval.joined_tasks": "externalJoinedTasks",
   "workgraph.nodes": "workGraphNodes",
@@ -3978,24 +3977,6 @@ export async function handleRPCMessage(
         result: (await client.promoteGrowthTrigger?.({ capability })) ?? {
           promoted: false,
           reason: "no_session",
-        },
-      };
-    }
-    if (body.method === "spec.prefetch_report") {
-      optionsGuard(client, "specPrefetchReport");
-      const record = (body.params ?? {}) as Record<string, unknown>;
-      const maxDepth = optionalStringParam(body.params, "maxDepth");
-      return {
-        jsonrpc: "2.0",
-        id: body.id ?? null,
-        result: (await client.specPrefetchReport?.(
-          maxDepth === undefined ? undefined : { maxDepth: Number(maxDepth) },
-        )) ?? {
-          rounds: 0,
-          justifiedDepth: 0,
-          topHitRate: 0,
-          perPosition: [],
-          verdict: "no_session",
         },
       };
     }
