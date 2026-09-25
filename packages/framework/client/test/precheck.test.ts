@@ -1,4 +1,8 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createPrecheckMachine,
   readPrecheck,
@@ -85,4 +89,35 @@ test("the output's summary is bounded and never the body", () => {
   expect(big).toContain("… (88 more lines)");
   expect(big).toContain("line 99");
   expect(big.split("\n").length).toBeLessThanOrEqual(14);
+});
+
+test("the service is inert until a command is configured, then it runs once per write", async () => {
+  const {
+    noteWorkspaceWrite,
+    precheckMachine,
+    setPrecheckCommand,
+    readPrecheck,
+  } = await import("../src/runtime/precheck");
+  setPrecheckCommand(undefined);
+  const dir = mkdtempSync(join(tmpdir(), "precheck-svc-"));
+  const marker = join(dir, "ran");
+  noteWorkspaceWrite(dir);
+  // Inert: the note still invalidates (that IS the note's job — the
+  // previous check's result no longer speaks for this workspace), but
+  // nothing runs: no command, no spawn, no fresh result.
+  expect(precheckMachine().state()).toEqual({
+    kind: "stale",
+    invalidations: 1,
+  });
+  expect(existsSync(marker)).toBe(false);
+
+  setPrecheckCommand(`touch "${marker}"`);
+  noteWorkspaceWrite(dir);
+  await Bun.sleep(400);
+  expect(existsSync(marker)).toBe(true);
+  expect(readPrecheck(precheckMachine())).toMatchObject({
+    fresh: true,
+    result: { exitCode: 0 },
+  });
+  setPrecheckCommand(undefined);
 });

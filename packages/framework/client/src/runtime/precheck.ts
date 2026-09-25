@@ -131,3 +131,72 @@ export function summarizeOutput(output: string, head = 8, tail = 4): string {
     ...lines.slice(-tail),
   ].join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// The process-scoped service (the wiring): ONE machine, ONE configured
+// command, and the note a workspace write calls. Off by default: with no
+// command configured the note is a no-op (a runtime that never opted in
+// never spawns anything), which keeps the whole thing off-able by the
+// host's configuration, not by the model's hope.
+// ---------------------------------------------------------------------------
+
+let machine: PrecheckMachine | undefined;
+let command: string | undefined;
+let inFlight: Promise<void> | undefined;
+
+/** The command the host configures (the env's shape, like the other knobs). */
+export function setPrecheckCommand(next: string | undefined): void {
+  command = next?.trim() ? next.trim() : undefined;
+}
+
+/** The current machine (created on first use; never before). */
+export function precheckMachine(): PrecheckMachine {
+  machine ??= createPrecheckMachine();
+  return machine;
+}
+
+/**
+ * A workspace write landed: the machine notes it, and ONE background run
+ * starts (a run already in flight is not restarted — the note it will
+ * carry invalidates its result). The run uses the workspace's own
+ * runtime (the same shape the validation runner uses).
+ */
+export function noteWorkspaceWrite(workspaceRoot?: string): void {
+  const active = precheckMachine();
+  active.noteWrite();
+  if (!command || !workspaceRoot) return;
+  if (active.state().kind === "running") return;
+  inFlight = runPrecheck(command, active, workspaceRoot).finally(() => {
+    inFlight = undefined;
+  });
+}
+
+async function runPrecheck(
+  cmd: string,
+  active: PrecheckMachine,
+  workspaceRoot: string,
+): Promise<void> {
+  if (!active.begin(Date.now())) return;
+  const startedAt = performance.now();
+  const child = Bun.spawn(["/bin/bash", "-c", cmd], {
+    cwd: workspaceRoot,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  const exitCode = await child.exited;
+  active.complete(
+    {
+      command: cmd,
+      exitCode,
+      summary: summarizeOutput([stdout, stderr].filter(Boolean).join("\n")),
+      finishedAt: Date.now(),
+      durationMs: performance.now() - startedAt,
+    },
+    Date.now(),
+  );
+}
