@@ -233,6 +233,13 @@ export const approvalPresenter: PendingPresenter<ApprovalResponse> = {
       ...(request.allowSession === false
         ? []
         : [{ id: "allow-session", label: "允许本次会话" }]),
+      // The project tier (the CU fit study's ask): a standing grant for
+      // the whole project. A forced approval (git writes, safety rules)
+      // carries allowProject:false — never offer what the runtime would
+      // refuse to record anyway.
+      ...(request.allowProject === false
+        ? []
+        : [{ id: "allow-project", label: "总是允许在本项目" }]),
       { id: "reject", label: "拒绝", tone: "danger", requiresInput: true },
     ];
   },
@@ -243,7 +250,9 @@ export const approvalPresenter: PendingPresenter<ApprovalResponse> = {
         ? "once"
         : action === "allow-session"
           ? "session"
-          : "reject";
+          : action === "allow-project"
+            ? "project"
+            : "reject";
     const feedback =
       typeof draft.feedback === "string" && draft.feedback.trim()
         ? draft.feedback.trim()

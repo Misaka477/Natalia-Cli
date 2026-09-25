@@ -59,6 +59,36 @@ test("approval presenter maps actions to decisions", () => {
       feedback: "no",
     }),
   ).toEqual({ requestID: "turn_a:call_1", decision: "reject", feedback: "no" });
+  expect(
+    approvalPresenter.buildResponse(item, { action: "allow-project" }),
+  ).toEqual({ requestID: "turn_a:call_1", decision: "project" });
+});
+
+test("the project tier is offered unless the approval is forced", () => {
+  // The forced gate: a request carrying allowProject:false (git writes,
+  // rule-class changes) never offers the standing grant — the same shape
+  // the session tier has always had.
+  const offered = normalizePendingItems({
+    approvals: [{ id: "a", title: "t", preview: "p" }],
+  })[0]!;
+  expect(approvalPresenter.actions(offered).map((action) => action.id)).toEqual(
+    ["allow-once", "allow-session", "allow-project", "reject"],
+  );
+  const forced = normalizePendingItems({
+    approvals: [
+      {
+        id: "b",
+        title: "t",
+        preview: "p",
+        allowProject: false,
+        allowSession: false,
+      },
+    ],
+  })[0]!;
+  expect(approvalPresenter.actions(forced).map((action) => action.id)).toEqual([
+    "allow-once",
+    "reject",
+  ]);
 });
 
 test("question presenter keeps selections and custom text separate", () => {

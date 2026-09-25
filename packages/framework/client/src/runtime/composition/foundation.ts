@@ -84,6 +84,16 @@ export function wireFoundation(ctx: ProductRuntimeContext) {
     },
     publishForSession: (sessionID, event) =>
       ports.publishForSession(state.executionBySession.get(sessionID), event),
+    // The project-grant restore fold's source: the collab slice when the
+    // fact state is complete, the fast-attach tail when it is not — the
+    // same accessor the collaboration snapshot path uses.
+    sessionEvents: (sessionID) => {
+      const exec = state.executionBySession.get(sessionID);
+      if (!exec) return undefined;
+      return exec.factStateComplete === true && exec.factState
+        ? exec.factState.collaborationEvents
+        : exec.session.events;
+    },
   };
 
   ports.isDisposed = () => state.runtimeDisposed;

@@ -261,6 +261,14 @@ export interface InteractiveWaiter {
     scope: string;
     revoked: boolean;
   };
+  /**
+   * The project-wide standing grants (the "always allow in this project"
+   * tier). Merged here by a caller that already folded the journal (the
+   * waiter also folds the opening session itself, lazily).
+   */
+  restoreProjectGrants(families: Iterable<string>): void;
+  /** The granted family ids — the observable face of the standing grants. */
+  projectGrantedFamilies(): string[];
   hasPendingWaiters(): boolean;
   requirePlanAcceptance(input: {
     approvalID: string;
@@ -293,6 +301,13 @@ export type InteractiveWaiterDeps = {
   publishForSession(sessionID: SessionID, event: RuntimeEvent): void;
   capabilityOwnerForTool?(toolName: string): string | undefined;
   workLedger(): WorkLedgerController;
+  /**
+   * The session's journal events, for the project-grant restore fold (the
+   * durable `approval.response {decision:"project"}` records). The
+   * fast-attach tail when the fact state is incomplete, the collab slice
+   * when it is — the same accessor the snapshot path uses.
+   */
+  sessionEvents?(sessionID: SessionID): readonly RuntimeEvent[] | undefined;
 };
 
 export type ProviderRunnerInput = {

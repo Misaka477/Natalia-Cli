@@ -102,6 +102,11 @@ export const FULL_READ_INVENTORY: Readonly<Record<string, InventoryEntry>> = {
     cls: "state-first",
     note: "resident-defaults and a telemetry field pass in the wire",
   },
+  "packages/framework/client/src/runtime/composition/foundation.ts": {
+    count: 1,
+    cls: "state-first",
+    note: "the project-grant restore fold's source: the collab fact slice when complete, the resident tail as the belt (the collaborationEventsFor accessor, one layer over)",
+  },
   "packages/framework/client/src/runtime/terminal-runtime/native-terminal.ts": {
     count: 1,
     cls: "state-first",

@@ -47,6 +47,7 @@ import {
   readOnlyToolMessage,
   terminalApprovalScope,
 } from "@anthelia/runtime-services";
+import { projectGrantFamilies } from "./project-grants";
 
 /**
  * The waiter's service token. The id is the wire name the runtime has always
@@ -72,6 +73,13 @@ export function createInteractiveWaiter(
   // session B, and a background turn of A keeps its grants when the UI
   // attaches to B.
   const sessionApprovedFamilies = new Map<SessionID, Set<string>>();
+  // The project-wide grants: a human's standing "always allow in this
+  // project" for a permission family. Runtime-wide (the project is the
+  // workspace, not the session), seeded from the journal's durable
+  // approval.response {decision:"project"} records — the restore fold runs
+  // once per session, lazily, before the first approval of that session.
+  const projectApprovedFamilies = new Set<string>();
+  const projectRestoredSessions = new Set<SessionID>();
   const approvalFamilyByID = new Map<
     string,
     ReturnType<typeof classifyPermissionFamily>
@@ -114,11 +122,12 @@ export function createInteractiveWaiter(
       tool.name,
       deps.capabilityOwnerForTool?.(tool.name),
     );
-    if (
-      !options?.force &&
-      sessionApprovedFamilies.get(session)?.has(permissionFamily.id)
-    )
-      return undefined;
+    if (!options?.force) {
+      if (sessionApprovedFamilies.get(session)?.has(permissionFamily.id))
+        return undefined;
+      restoreProjectGrantsForSession(session);
+      if (projectApprovedFamilies.has(permissionFamily.id)) return undefined;
+    }
     const terminalApproval = terminalApprovalScope(tool.name, call.arguments);
     const presentation = approvalPresentation(tool.name, call.arguments);
     const expiresAt =
@@ -152,7 +161,7 @@ export function createInteractiveWaiter(
       scope: terminalApproval?.scope,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
       revocable: terminalApproval ? true : undefined,
-      ...(options?.force ? { allowSession: false } : {}),
+      ...(options?.force ? { allowSession: false, allowProject: false } : {}),
       permissionFamily,
       agentID,
     });
@@ -501,6 +510,12 @@ export function createInteractiveWaiter(
         sessionApprovedFamilies.set(session, approved);
       }
     }
+    if (response.decision === "project") {
+      // The standing grant. The response event published above is its
+      // durable record — the restore fold reads exactly that.
+      const family = approvalFamilyByID.get(response.requestID);
+      if (family) projectApprovedFamilies.add(family.id);
+    }
     pendingApprovals.set(response.requestID, response);
     pendingApprovalRequests.delete(response.requestID);
     approvalSessionByID.delete(response.requestID);
@@ -700,6 +715,21 @@ export function createInteractiveWaiter(
     }
   }
 
+  /**
+   * The project-grant restore, once per session: fold the journal's
+   * durable `approval.response {decision:"project"}` records and merge
+   * the granted families. Idempotent per session; a later session's
+   * journal can only add grants (a revoke is a separate explicit act).
+   */
+  function restoreProjectGrantsForSession(session: SessionID): void {
+    if (projectRestoredSessions.has(session)) return;
+    projectRestoredSessions.add(session);
+    const events = deps.sessionEvents?.(session);
+    if (!events) return;
+    for (const family of projectGrantFamilies(events))
+      projectApprovedFamilies.add(family);
+  }
+
   return {
     requireApproval,
     requireQuestion,
@@ -712,6 +742,12 @@ export function createInteractiveWaiter(
     restoreRecoveredInteractiveState,
     revokeTerminalApprovalScope,
     hasPendingWaiters,
+    restoreProjectGrants(families: Iterable<string>) {
+      for (const family of families) projectApprovedFamilies.add(family);
+    },
+    projectGrantedFamilies() {
+      return [...projectApprovedFamilies];
+    },
   };
 }
 

@@ -6,7 +6,7 @@
  * them from here rather than the reverse (audit A-03, contracts -> ui-model).
  */
 
-export type ApprovalDecision = "once" | "session" | "reject";
+export type ApprovalDecision = "once" | "session" | "project" | "reject";
 
 export type ApprovalRequest = {
   id: string;
@@ -21,6 +21,8 @@ export type ApprovalRequest = {
   revocable?: boolean;
   /** False hides the session-wide grant action for forced approvals. */
   allowSession?: boolean;
+  /** False hides the project-wide grant action for forced approvals. */
+  allowProject?: boolean;
 };
 
 export type ApprovalResponse = {

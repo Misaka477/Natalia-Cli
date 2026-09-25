@@ -1967,6 +1967,8 @@ type RuntimeEventData =
       revocable?: boolean;
       /** False when the approval cannot be granted for the whole session. */
       allowSession?: boolean;
+      /** False when the approval cannot be granted for the whole project. */
+      allowProject?: boolean;
       permissionFamily?: import("./permission-families").PermissionFamily;
     }
   | {
