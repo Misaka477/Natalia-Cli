@@ -1054,6 +1054,20 @@ type RuntimeEventData =
           string,
           { hits: number; misses: number; evictions: number }
         >;
+        /**
+         * The provider prefix-cache tier (RINA Phase 5's observable): the
+         * session's steps and how much of their input the provider served
+         * from its prefix cache. Absent when the session has run no step —
+         * the fabric's law is that EVERY cache tier is independently
+         * observable, and a tier with no use rides nothing, not zeros.
+         */
+        provider?: {
+          steps: number;
+          inputTokens: number;
+          cacheReadTokens: number;
+          /** cacheReadTokens / inputTokens, 0 when no input was billed. */
+          hitShare: number;
+        };
       };
       currentStep?: string;
       activeTool?: string;

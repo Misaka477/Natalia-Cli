@@ -42,6 +42,18 @@ export type SessionExecutionState = {
   reasoningEffort?: RuntimeReasoningEffort;
   lastProviderUsage?: { inputTokens: number; outputTokens: number };
   /**
+   * The provider prefix-cache tier's session total (RINA Phase 5's
+   * observable): accumulated per step, separate from lastProviderUsage —
+   * which stays per-step BY DESIGN (the ledger checkpoint reads it, and a
+   * summed value made small turns look like 1M+ prompts once). The share
+   * is derived at read time (rina's providerCacheShare), never stored.
+   */
+  providerCacheUsage?: {
+    steps: number;
+    inputTokens: number;
+    cacheReadTokens: number;
+  };
+  /**
    * Calendar date this session's execution state was first built, fixed for the
    * session's life. It is snapshotted rather than read per request so the model
    * never sees two contradictory dates for when the session began.

@@ -102,6 +102,17 @@ export function StatusPanel(props: {
       title: perKind || "无分类计数",
     };
   };
+  // The provider prefix-cache tier (RINA Phase 5): the share of the
+  // session's billed input the provider served from its prefix cache.
+  const providerCacheLine = () => {
+    const provider = props.state.intelligence?.cache?.provider;
+    if (!provider) return undefined;
+    const percent = Math.round(provider.hitShare * 1000) / 10;
+    return {
+      text: `命中 ${percent}%（${provider.cacheReadTokens}/${provider.inputTokens}）`,
+      title: `${provider.steps} 步的 provider 前缀缓存（静态前缀稳定是其命中前提）`,
+    };
+  };
   const [opRows, setOpRows] = createSignal<
     import("@anthelia/contracts").OperationRecord[]
   >([]);
@@ -229,6 +240,19 @@ export function StatusPanel(props: {
                   {(line) => (
                     <div class="neu-status-card">
                       <span class="neu-status-card-label">读缓存 L1</span>
+                      <span class="neu-status-card-value" title={line().title}>
+                        {line().text}
+                      </span>
+                    </div>
+                  )}
+                </Show>
+                {/* The provider's own prefix cache (Phase 5): a tier
+                    independent of the fabric — present whenever the
+                    session has run steps, with or without an L1. */}
+                <Show when={providerCacheLine()}>
+                  {(line) => (
+                    <div class="neu-status-card">
+                      <span class="neu-status-card-label">前缀缓存</span>
                       <span class="neu-status-card-value" title={line().title}>
                         {line().text}
                       </span>

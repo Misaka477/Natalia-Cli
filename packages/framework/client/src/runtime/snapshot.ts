@@ -10,7 +10,7 @@ import {
   sessionFactActiveTurnIDs,
   sessionFactIntelligenceFacts,
 } from "@anthelia/session";
-import { rinaCache } from "@anthelia/rina";
+import { providerCachePosture, rinaCache } from "@anthelia/rina";
 import {
   buildSessionIntelligenceSnapshot,
   buildSessionIntelligenceSnapshotFromFacts,
@@ -162,13 +162,24 @@ export function createSnapshot(ctx: RuntimeContext) {
           return { hits, misses, byKind };
         })()
       : undefined;
+    // The provider prefix-cache tier (RINA Phase 5): the session's
+    // accumulated steps, independent of the fabric — a runtime with no
+    // fabric still reports how much input the provider cached.
+    const provider = providerCachePosture(exec.providerCacheUsage);
+    // Built explicitly (not spread) so the posture's required shape holds
+    // even when the L1 half is absent.
+    const cachePosture = cache
+      ? { ...cache, ...(provider ? { provider } : {}) }
+      : provider
+        ? { hits: 0, misses: 0, byKind: {}, provider }
+        : undefined;
     const live = {
       agentStatus,
       ...(active ? { currentStep: `step ${step}` } : {}),
       ...(activeTool ? { activeTool } : {}),
       ...(liveOutput ? { recentOutput: liveOutput } : {}),
       confinementMode,
-      ...(cache ? { cache } : {}),
+      ...(cachePosture ? { cache: cachePosture } : {}),
     };
     return facts
       ? buildSessionIntelligenceSnapshotFromFacts({ id, facts, live })

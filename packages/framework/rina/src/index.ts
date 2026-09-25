@@ -23,6 +23,12 @@ export {
   rinaResponseCache,
   rinaVault,
 } from "./service-tokens";
+export {
+  foldProviderCacheUsage,
+  providerCachePosture,
+  providerCacheShare,
+  type ProviderCacheUsage,
+} from "./provider-cache";
 export * from "./response-cache";
 export * from "./embedding";
 export * from "./memory";

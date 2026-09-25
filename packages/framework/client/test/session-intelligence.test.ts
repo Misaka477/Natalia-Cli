@@ -274,3 +274,44 @@ test("the snapshot carries the L1 fabric's counters, and stays silent without th
   });
   expect(bare.cache).toBeUndefined();
 });
+
+test("the snapshot carries the provider prefix-cache tier beside the L1", () => {
+  // RINA Phase 5's observable: the provider's own prefix cache is a tier
+  // independent of the fabric (present with or without an L1), and an
+  // absent tier stays absent rather than riding zeros.
+  const snapshot = buildSessionIntelligenceSnapshot({
+    id: "snap:provider",
+    events: [],
+    live: {
+      agentStatus: "idle",
+      confinementMode: "workspace-write",
+      cache: {
+        hits: 1,
+        misses: 1,
+        byKind: {},
+        provider: {
+          steps: 5,
+          inputTokens: 500,
+          cacheReadTokens: 485,
+          hitShare: 0.97,
+        },
+      },
+    },
+  });
+  expect(snapshot.cache?.provider).toEqual({
+    steps: 5,
+    inputTokens: 500,
+    cacheReadTokens: 485,
+    hitShare: 0.97,
+  });
+  const without = buildSessionIntelligenceSnapshot({
+    id: "snap:provider-off",
+    events: [],
+    live: {
+      agentStatus: "idle",
+      confinementMode: "workspace-write",
+      cache: { hits: 1, misses: 1, byKind: {} },
+    },
+  });
+  expect(without.cache?.provider).toBeUndefined();
+});

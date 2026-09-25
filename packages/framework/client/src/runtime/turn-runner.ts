@@ -9,6 +9,7 @@
  * call time.
  */
 import { providerForModel } from "@anthelia/runtime";
+import { foldProviderCacheUsage } from "@anthelia/rina";
 import { staticSystemPrompt } from "@natalia/agent-prompts";
 import {
   claimNextSteps,
@@ -265,8 +266,27 @@ export function createTurnRunner(
       log: logOf(ctx.state.serviceDirectory),
       retry: retry,
       lastProviderUsage: () => exec.lastProviderUsage,
-      setLastProviderUsage: (usage) => {
+      setLastProviderUsage: (usage: {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadInputTokens?: number;
+      }) => {
         exec.lastProviderUsage = usage;
+        // The provider prefix-cache tier's session total (RINA Phase 5):
+        // every step adds to the accumulator. Separate from
+        // lastProviderUsage, which stays per-step by design — the ledger
+        // checkpoint reads it, and a summed value once made small turns
+        // look like 1M+ prompts.
+        if (usage) {
+          exec.providerCacheUsage = foldProviderCacheUsage(
+            exec.providerCacheUsage ?? {
+              steps: 0,
+              inputTokens: 0,
+              cacheReadTokens: 0,
+            },
+            usage,
+          );
+        }
       },
       publish: (event) => publishForSession(exec, event),
       applyAgentPolicy: () => {

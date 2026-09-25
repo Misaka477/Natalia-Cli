@@ -50,6 +50,13 @@ export type SessionIntelligenceLive = {
     hits: number;
     misses: number;
     byKind: Record<string, { hits: number; misses: number; evictions: number }>;
+    /** The provider prefix-cache tier (Phase 5), derived at read time. */
+    provider?: {
+      steps: number;
+      inputTokens: number;
+      cacheReadTokens: number;
+      hitShare: number;
+    };
   };
 };
 
@@ -131,6 +138,11 @@ export function buildSessionIntelligenceSnapshotFromFacts(input: {
             hits: input.live.cache.hits,
             misses: input.live.cache.misses,
             byKind: input.live.cache.byKind,
+            // The provider prefix-cache tier (Phase 5): it rides beside
+            // the L1 counters, absent when the session ran no step.
+            ...(input.live.cache.provider
+              ? { provider: input.live.cache.provider }
+              : {}),
           },
         }
       : {}),
