@@ -53,6 +53,30 @@ export default defineConfig({
   resolve: {
     dedupe: ["solid-js", "solid-js/web"],
     alias: {
+      // The browser graph hashes with node:crypto in five modules (the
+      // session inbox's facts, the composition profile, the plugin
+      // package hash, the store-path id, the hash-tree) — Vite externalizes
+      // the builtin and a NAMED import from the stub is a hard build
+      // failure. The platform's pure sha256 (cross-checked against
+      // node:crypto in its tests) answers exactly that surface; anything
+      // beyond sha256/hex fails loud inside it.
+      "node:crypto": resolve(
+        workspace,
+        "packages/hosts/platform/src/content-hash.ts",
+      ),
+      // The session package's node-free entry: the barrel re-exports the
+      // two stores (node:fs / bun:sqlite), and a browser consumer never
+      // writes a session store — it talks to the daemon over RPC. The
+      // browser build gets facts-without-stores; the node entry stays
+      // whole at ./index.
+      "@anthelia/session": resolve(
+        workspace,
+        "packages/framework/session/src/browser.ts",
+      ),
+      "@natalia/governance-ledger": resolve(
+        workspace,
+        "packages/domains/governance-ledger/src/browser.ts",
+      ),
       "solid-js/web": resolve(solidJs, "web"),
       "solid-js/jsx-runtime": resolve(solidJs, "dist/solid.js"),
       "solid-js/jsx-dev-runtime": resolve(solidJs, "dist/solid.js"),
