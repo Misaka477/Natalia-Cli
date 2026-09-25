@@ -32,8 +32,18 @@ export type TurnReads = {
   files: string[];
 };
 
-/** The read tools whose arguments carry a `path`. */
-const READ_TOOLS = new Set(["workspaceRead", "read", "readFile", "fs"]);
+/**
+ * The read tools whose arguments carry a `path`. The names are the
+ * MODEL-FACING ones the runtime journals on `tool.update` — the
+ * fs-read plugin's family (`packages/plugins/tools/fs-read/src/
+ * fs-read-tools.ts`): `read_file`, `read_media_file`, `image_read`.
+ * The first draft's aliases (`workspaceRead`/`read`/`readFile`/`fs`)
+ * were never real event names — they are the RPC-side method
+ * spellings, which never ride a tool call — so against a real
+ * journal the predictor read ZERO files. The drift is fixed here;
+ * the tests pin the real names.
+ */
+const READ_TOOLS = new Set(["read_file", "read_media_file", "image_read"]);
 
 /**
  * The journal's file reads per turn. The tool.update events carry NO

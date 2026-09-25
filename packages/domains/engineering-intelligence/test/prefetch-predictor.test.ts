@@ -21,11 +21,15 @@ import {
  */
 
 /** A read tool's call: streamed args + a terminal status. */
-function readCall(callID: string, path: string): RuntimeEvent {
+function readCall(
+  callID: string,
+  path: string,
+  name = "read_file",
+): RuntimeEvent {
   return {
     type: "tool.update",
     id: `u_${callID}`,
-    name: "workspaceRead",
+    name,
     callID,
     status: "succeeded",
     summary: "read",
@@ -73,7 +77,7 @@ test("the journal's reads are reconstructed per turn from the streamed arguments
       {
         type: "tool.update",
         id: "u_partial",
-        name: "workspaceRead",
+        name: "read_file",
         callID: "c_partial",
         status: "succeeded",
         summary: "read",
@@ -81,6 +85,34 @@ test("the journal's reads are reconstructed per turn from the streamed arguments
       } as unknown as RuntimeEvent,
     ]),
   ).toEqual([{ turnID: "t0", files: [] }]);
+});
+
+test("the whole read family counts (read_file, read_media_file, image_read)", () => {
+  // The real journal's tool names — the first draft's aliases never
+  // ride a tool.update, so against a real journal the predictor read
+  // zero files. The family is the fs-read plugin's three readers.
+  const turns = readTurnReads([
+    {
+      type: "turn.started",
+      id: "t0",
+      at: new Date().toISOString(),
+    } as unknown as RuntimeEvent,
+    readCall("c1", "src/a.ts", "read_file"),
+    readCall("c2", "assets/logo.png", "read_media_file"),
+    readCall("c3", "assets/shot.jpg", "image_read"),
+    {
+      type: "tool.update",
+      id: "u_shell",
+      name: "run_shell",
+      callID: "c4",
+      status: "succeeded",
+      summary: "shell",
+      argumentsDelta: JSON.stringify({ command: "ls" }),
+    } as unknown as RuntimeEvent,
+  ]);
+  expect(turns).toEqual([
+    { turnID: "t0", files: ["src/a.ts", "assets/logo.png", "assets/shot.jpg"] },
+  ]);
 });
 
 test("the experiment's leave-one-out loop measures the per-position curve", () => {

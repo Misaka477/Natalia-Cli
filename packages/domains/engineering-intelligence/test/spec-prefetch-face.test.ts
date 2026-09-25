@@ -29,7 +29,7 @@ function readCall(callID: string, path: string): RuntimeEvent {
   return {
     type: "tool.update",
     id: `u_${callID}`,
-    name: "workspaceRead",
+    name: "read_file",
     callID,
     status: "succeeded",
     summary: "read",
