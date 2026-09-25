@@ -433,8 +433,42 @@ export async function createUiPluginHost<TContext = unknown>(
     const mountedKeys = new Set(
       rows.map((row) => `${row.pluginId}:${row.panel.id}`),
     );
-    for (const [key, armed] of armedPanels)
-      if (!mountedKeys.has(key)) rows.push(armed);
+    for (const [key, armed] of armedPanels) {
+      if (mountedKeys.has(key)) continue;
+      // An armed catalog row is metadata (the manifest's panel), and the
+      // rail lists only panels it can mount — a metadata row would vanish
+      // from it (exactly the bug this mount fixes). So the armed row
+      // carries a REAL mount: load the bundle through the activation seam,
+      // then delegate to the loaded panel's own mount. Listing a panel and
+      // mounting it are separate acts; this makes the listed one mountable
+      // without changing any consumer's filter.
+      rows.push({
+        pluginId: armed.pluginId,
+        panel: {
+          ...armed.panel,
+          // The declared mount type is sync (a lifecycle), but a
+          // load-then-delegate mount is async by nature — and every
+          // caller awaits it (the host's own mountPanel does). The cast
+          // states that contract instead of lying with a sync wrapper
+          // that drops the ordering.
+          mount: (async (
+            ctx: import("./protocol").UiPluginContext,
+            container: HTMLElement,
+          ) => {
+            await ensureLoaded(armed.pluginId);
+            const entry = mounted.get(armed.pluginId);
+            const panel = entry?.record.panels.find(
+              (item) => item.id === armed.panel.id,
+            );
+            if (!panel?.mount)
+              throw new Error(
+                `ui panel has no mount: ${armed.pluginId}:${armed.panel.id}`,
+              );
+            return await panel.mount(ctx, container);
+          }) as unknown as typeof armed.panel.mount,
+        },
+      });
+    }
     return rows;
   }
 

@@ -439,12 +439,13 @@ test("arming the catalog lists declared panels without loading bundles", async (
   const host = await createUiPluginHost({ root, runtime });
   const armed = await host.armPanelsFromCatalog();
   expect(armed).toBe(1);
-  expect(host.listPanels()).toEqual([
-    {
-      pluginId: "settings.plugin",
-      panel: { id: "skills-settings", title: "Skills", region: "settings" },
-    },
-  ]);
+  const listed = host.listPanels();
+  expect(listed).toHaveLength(1);
+  expect(listed[0]!.pluginId).toBe("settings.plugin");
+  expect(listed[0]!.panel.id).toBe("skills-settings");
+  // The armed row carries a working mount (the rail lists only mountable
+  // panels): a metadata row whose mount LOADS the bundle on demand.
+  expect(typeof listed[0]!.panel.mount).toBe("function");
   // Nothing loaded: the arm is a declaration, not an activation.
   expect(host.loaded()).toHaveLength(0);
   await host.close();
@@ -503,6 +504,60 @@ test("a panel mount activates the unloaded plugin through the seam", async () =>
   expect(host.loaded().map((entry) => entry.plugin.id)).toEqual([
     "lazy.plugin",
   ]);
+  await host.close();
+});
+
+test("an armed row's mount loads the bundle and delegates (the rail regression)", async () => {
+  // The bug this pins: the rail lists only panels whose mount is a
+  // function, so an armed metadata row (no mount) vanished from it and
+  // the plugin's tab disappeared. The armed row now carries a mount that
+  // loads through the seam and delegates to the real panel.
+  const root = fakeRoot();
+  const runtime = catalogRuntimeFixture([
+    {
+      id: "lazy.rail",
+      ui: { panels: [{ id: "rail", title: "Rail", region: "side" }] },
+    },
+  ]);
+  const activations: string[] = [];
+  let host: Awaited<ReturnType<typeof createUiPluginHost>>;
+  host = await createUiPluginHost({
+    root,
+    runtime,
+    ensurePluginLoaded: async (pluginID) => {
+      activations.push(pluginID);
+      await host.load(
+        defineUiPlugin({
+          id: pluginID,
+          name: "Lazy",
+          version: "1.0.0",
+          mount() {},
+          panels: [
+            {
+              id: "rail",
+              title: "Rail",
+              region: "side",
+              mount(_ctx, container) {
+                container.textContent = "rail-mounted";
+              },
+            },
+          ],
+        }),
+      );
+    },
+  });
+  await host.armPanelsFromCatalog();
+  // The rail's own filter: a listed panel must have a mount.
+  const row = host
+    .listPanels()
+    .find((item) => item.panel.id === "rail" && item.pluginId === "lazy.rail");
+  expect(row).toBeDefined();
+  const container = fakeRoot();
+  // The fixture's panel mount ignores its ctx, so a minimal stand-in is
+  // the honest argument.
+  await row!.panel.mount!({ root } as never, container);
+  expect(activations).toEqual(["lazy.rail"]);
+  expect(container.textContent).toBe("rail-mounted");
   await host.close();
 });
 
