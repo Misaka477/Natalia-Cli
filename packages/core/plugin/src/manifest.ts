@@ -35,6 +35,7 @@ export const pluginIntegrationPointSchema = z.enum([
   "settingsSchema",
   "adapters",
   "schedulerJobs",
+  "cache",
 ]);
 
 export const pluginDependencySchema = z.object({

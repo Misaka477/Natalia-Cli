@@ -300,6 +300,9 @@ all remaining disposers in reverse registration order during unload.
 | `adapters`       | `api.adapters.register({ name, adapterType, create })` | Registers a lazy adapter factory whose instance has `dispose()`.                                                       |
 | `adapters`       | `api.adapters.registerUi({ kind, mount, dispose })`    | Convenience API for a UI adapter; the contribution name is `kind`.                                                     |
 | `schedulerJobs`  | `api.scheduler.add({ name, ... })`                     | Registers a host-defined named scheduler job.                                                                          |
+| `cache`          | `api.cache.registerKind(kind)`                         | Registers a deterministic cache kind; the disposer unregisters it and drops its entries.                               |
+| `cache`          | `api.cache.compute(kindID, key, compute)`              | Looks up `key` in the kind, else runs `compute` once (single-flight). Unknown kinds fail loudly.                       |
+| `cache`          | `api.cache.metrics(kindID?)`                           | Per-kind cost observability (hits, misses, invalidations, bytes).                                                      |
 
 `resources`, `projections`, `workflows`, `settingsSchema`, and scheduler jobs
 share only the stable `{ name: string }` ownership contract. Their additional

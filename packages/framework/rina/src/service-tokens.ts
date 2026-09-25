@@ -10,9 +10,13 @@ import type { RinaVaultService } from "./vault";
  * token).
  *
  * Consumed engine-side today — the L1 read-cache wrap in the tool pipeline
- * and the workspace write hooks. The plugin-facing `ctx.cache` port arrives
- * with the first plugin consumer, not before: a port nothing can call yet
- * is scaffolding.
+ * and the workspace write hooks. The plugin-facing `ctx.cache` port is
+ * BUILT (2026-09-25, the master plan's closure round): the base-completeness
+ * criterion — a future capability must land as a plugin with zero base
+ * edits — makes the port a base surface, not a consumer-gated feature. The
+ * substrate's plugin controller builds the port over this token's fabric;
+ * the plugin kernel declares the surface structurally and gates it by the
+ * `cache` integration point.
  */
 /**
  * RINA Memory (Phase 7): the durable reusable knowledge store, one per

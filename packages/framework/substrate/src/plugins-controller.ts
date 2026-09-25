@@ -17,6 +17,13 @@ import {
 import { discoverDesiredPluginEntries } from "./plugin-discovery";
 import { registerPluginOwner } from "./plugin-owner";
 import { snapshotProjectionContributions } from "./projection-contributions";
+import {
+  createPluginCachePort,
+  type CacheFabricLike,
+} from "./plugin-cache-port";
+
+/** The fabric's service name — the token in `@anthelia/rina` is `rina.cache`. */
+const RINA_CACHE_SERVICE = "rina.cache";
 
 const HOST_INPUT_SERVICES = new Set([
   localToolsInput.id,
@@ -62,6 +69,12 @@ export function createPluginsController(input: {
       registerOwner: (manifest) =>
         registerPluginOwner(manifest, input.capabilityRegistry),
       runtimeConfig: () => input.capabilityRegistry.service("runtime.config"),
+      // The plugin cache port over the engine's fabric (the base closure
+      // round). Resolved lazily through the service directory, so the
+      // wiring order between services and this controller cannot strand it.
+      cache: createPluginCachePort(() =>
+        input.capabilityRegistry.service<CacheFabricLike>(RINA_CACHE_SERVICE),
+      ),
       service: <T>(name: string) => input.capabilityRegistry.service<T>(name),
       serviceProvider: (name) =>
         input.capabilityRegistry.ownerOf("services", name),

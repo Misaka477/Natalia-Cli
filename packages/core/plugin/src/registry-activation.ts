@@ -10,6 +10,17 @@ import type {
   PluginContributionOwner,
 } from "./types";
 
+/**
+ * The host wired no fabric: the port fails loud at use. A silent
+ * uncached path would hand plugins the Map+TTL sin with extra steps
+ * (the RINA admission rule's whole point), so there is no fallback.
+ */
+function missingCache(): Error {
+  return new Error(
+    "cache is not available in this host (the runtime wires the fabric as the rina.cache service)",
+  );
+}
+
 export async function activatePlugin(
   state: RegistryState,
   entry: MountedPlugin,
@@ -239,6 +250,34 @@ export async function activatePlugin(
         effects.add(task);
         void task.finally(() => effects.delete(task)).catch(() => undefined);
         return task;
+      },
+    },
+    // The cache port: capability-gated like every other surface, and loud
+    // when the host wired no fabric (an uncached silent path would be the
+    // Map+TTL sin with extra steps).
+    cache: {
+      registerKind(kind) {
+        state.assertCapability(manifest, "cache");
+        const host = state.input.cache;
+        if (!host) throw missingCache();
+        const dispose = host.registerKind(kind);
+        // The port's registration joins the activation's cleanup: a
+        // plugin's kind dies with the plugin, and the reverse cleanup
+        // runs these in registration order (the same promise as tools).
+        disposers.push(dispose);
+        return dispose;
+      },
+      compute<T>(kindID: string, key: string, compute: () => T | Promise<T>) {
+        state.assertCapability(manifest, "cache");
+        const host = state.input.cache;
+        if (!host) return Promise.reject(missingCache());
+        return host.compute<T>(kindID, key, compute);
+      },
+      metrics(kindID) {
+        state.assertCapability(manifest, "cache");
+        const host = state.input.cache;
+        if (!host) throw missingCache();
+        return host.metrics(kindID);
       },
     },
     ...(state.input.runtimeConfig

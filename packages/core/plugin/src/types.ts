@@ -34,6 +34,61 @@ export type Plugin = {
   dispose?(): void | Promise<void>;
 };
 
+/**
+ * The plugin-facing cache kind — the engine fabric's law 1 (only
+ * explicitly classified deterministic work may register), declared
+ * structurally so the plugin kernel never depends on the engine's
+ * fabric module. `deterministic: true` is a typed promise, not a
+ * boolean a plugin can flip: a clock-reading or sampling "cache" is
+ * not a cache.
+ */
+export type PluginCacheKind = {
+  readonly id: string;
+  readonly deterministic: true;
+  /** `path` kinds revalidate evidence per hit; `tree` kinds drop on any write. */
+  readonly invalidation: "path" | "tree";
+  /** Both hooks or neither: a capture without a validator freezes values forever. */
+  readonly captureEvidence?: (key: string) => unknown | Promise<unknown>;
+  readonly validEvidence?: (
+    evidence: unknown,
+    key: string,
+  ) => boolean | Promise<boolean>;
+  /** How much budget an entry costs; strings count their UTF-8 bytes. */
+  readonly sizeOf?: (value: unknown) => number;
+};
+
+/** Per-kind cost observability, the fabric's platform principle. */
+export type PluginCacheMetrics = {
+  hits: number;
+  misses: number;
+  invalidations: number;
+  evictions: number;
+  entries: number;
+  bytes: number;
+  bytesServed: number;
+};
+
+/**
+ * The cache port (`ctx.cache`): a plugin that caches calls this and
+ * NEVER hand-rolls a Map+TTL — a self-maintained cache misses the
+ * invalidation discipline (writes), the metrics, and the generation
+ * scope, which is exactly the RINA study's admission rule. Optional
+ * on the type by the freshness gate (additions enter optional; the
+ * natalia runtime always provides it — the `runtimeConfig` pattern),
+ * gated by the `cache` integration point at activation.
+ */
+export type PluginCachePort = {
+  /** Register a kind; the disposer unregisters it and drops its entries. */
+  registerKind(kind: PluginCacheKind): () => void;
+  /** Look up `key`, else run `compute` once (single-flight). Unknown kinds throw. */
+  compute<T>(
+    kindID: string,
+    key: string,
+    compute: () => T | Promise<T>,
+  ): Promise<T>;
+  metrics(kindID?: string): Record<string, PluginCacheMetrics>;
+};
+
 export type PluginAPI = {
   config: unknown;
   runtimeConfig?: () => unknown;
@@ -61,6 +116,7 @@ export type PluginAPI = {
     signal: AbortSignal;
     run<T>(effect: (signal: AbortSignal) => Promise<T>): Promise<T>;
   };
+  cache?: PluginCachePort;
 };
 
 export type PluginNamedContribution = { name: string; [key: string]: unknown };

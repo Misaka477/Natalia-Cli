@@ -226,3 +226,25 @@ test("the kinds are deterministic by type (law 1, compile-enforced)", () => {
   expect(toolFsReadKind.invalidation).toBe("path");
   expect(toolSearchKind.invalidation).toBe("tree");
 });
+
+test("unregisterKind drops the kind's entries and its record", async () => {
+  // The plugin port's ownership promise: a kind dies WITH its owner — a
+  // definition unloaded with its plugin must not keep answering, and its
+  // record must not linger in the metrics surface answering with zeros.
+  const instance = fabric();
+  const { key } = file("gone.txt", "content");
+  await instance.compute("tool.glob", key, () => "listing");
+  expect(instance.hasKind("tool.glob")).toBe(true);
+  const dropped = instance.unregisterKind("tool.glob");
+  expect(dropped).toBe(1);
+  expect(instance.hasKind("tool.glob")).toBe(false);
+  // Recomputing through a dropped kind is impossible (unknown kinds throw),
+  // which is the point: the definition left with its owner.
+  expect(() => instance.compute("tool.glob", key, () => "again")).toThrow(
+    /unknown cache kind/u,
+  );
+  expect(instance.metrics()["tool.glob"]).toBeUndefined();
+  // The other kinds are untouched, and a second unregister answers 0.
+  expect(instance.hasKind("tool.fs-read")).toBe(true);
+  expect(instance.unregisterKind("tool.glob")).toBe(0);
+});

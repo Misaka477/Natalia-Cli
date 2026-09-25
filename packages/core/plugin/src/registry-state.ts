@@ -4,6 +4,7 @@ import type {
   Plugin,
   PluginActivationStatus,
   PluginAudit,
+  PluginCachePort,
   PluginCommand,
   PluginContributionOwner,
 } from "./types";
@@ -39,6 +40,13 @@ export type PluginRegistryInput = {
     | Promise<PluginContributionOwner | undefined>
     | undefined;
   runtimeConfig?: () => unknown;
+  /**
+   * The cache port's host seam (the engine fabric behind it). Absent =
+   * this host wires no fabric, and a plugin's cache call fails loud at
+   * use ("cache is not available in this host") rather than silently
+   * degrading into an uncached path.
+   */
+  cache?: PluginCachePort;
   service?: <T>(name: string) => T | undefined;
   serviceProvider?: (name: string) => unknown;
   onServiceUpdate?: (

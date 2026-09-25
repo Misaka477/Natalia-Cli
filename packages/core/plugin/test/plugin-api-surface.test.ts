@@ -73,6 +73,10 @@ const PLUGIN_API_GOLDEN: readonly string[] = [
   "adapters",
   "scheduler",
   "effects",
+  // 2026-09-25: the cache port (the master plan's closure round). Optional
+  // on the type — the freshness gate's rule for additions — while the
+  // natalia runtime always provides it (the runtimeConfig pattern).
+  "cache",
 ];
 
 test("the PluginAPI surface only grows, and every growth is optional", () => {

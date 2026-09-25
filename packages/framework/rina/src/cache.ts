@@ -70,6 +70,15 @@ export interface CacheFabric {
   registerKind(kind: CacheKindDefinition): void;
   hasKind(kindID: string): boolean;
   /**
+   * Drop a kind and every entry it holds. The ownership discipline: the
+   * plugin port's `registerKind` disposer calls this, so a plugin's kind
+   * dies with the plugin (a kind whose definition unloaded with the
+   * plugin would otherwise keep answering under a definition nobody
+   * maintains). Engine kinds are safe from it: a duplicate id cannot be
+   * registered by a plugin in the first place. Returns the dropped count.
+   */
+  unregisterKind(kindID: string): number;
+  /**
    * Look up `key`, else run `compute` once (single-flight: concurrent
    * callers of the same slot share one computation). Unknown kinds throw —
    * silently running through an unclassified kind would make law 1
@@ -227,6 +236,18 @@ export function createCacheFabric(options: CacheFabricOptions = {}) {
 
     hasKind(kindID) {
       return kinds.has(kindID);
+    },
+
+    unregisterKind(kindID) {
+      if (!kinds.has(kindID)) return 0;
+      const prefix = `${kindID}\u0000`;
+      const ids = [...store.keys()].filter((id) => id.startsWith(prefix));
+      for (const id of ids) drop(kindID, id);
+      kinds.delete(kindID);
+      // The kind's record leaves with it: a disposed plugin's kind must
+      // not linger in the metrics surface answering with zeros.
+      stats.delete(kindID);
+      return ids.length;
     },
 
     setGeneration(hash) {
