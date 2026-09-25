@@ -87,6 +87,24 @@ export const pluginSkillsDeclarationSchema = z
   })
   .strict();
 
+/**
+ * A plugin's logging declaration (interface spec §2.4): the package's
+ * own logs land in this directory — a CONVENTION, not a gate: the
+ * runtime never reads, journals, or enforces it (decisions §8.3
+ * "约定优于实现"; a plugin's logs never enter the runtime journal). The
+ * declaration exists so a plugin author has somewhere to say it, and so
+ * the installer can refuse a directory that escapes the package (the
+ * same escape discipline the facet entries get at load).
+ */
+export const pluginLoggingDeclarationSchema = z
+  .object({
+    dir: z.string().min(1).default("logs").refine(safeDeclaredDir, {
+      message:
+        "the logging directory must be a package-relative path (no absolute paths, no ..)",
+    }),
+  })
+  .strict();
+
 export const pluginManifestV2Schema = z.object({
   apiVersion: z.literal(PLUGIN_API_VERSION),
   id: pluginIDSchema,
@@ -104,6 +122,7 @@ export const pluginManifestV2Schema = z.object({
   integrationPoints: z.array(pluginIntegrationPointSchema).default([]),
   ui: pluginUiManifestSchema.optional(),
   skills: pluginSkillsDeclarationSchema.optional(),
+  logging: pluginLoggingDeclarationSchema.optional(),
 });
 
 /**
@@ -155,6 +174,7 @@ export const pluginManifestV3Schema = z
     integrationPoints: z.array(pluginIntegrationPointSchema).default([]),
     facets: z.record(z.string(), pluginFacetSchema).optional(),
     skills: pluginSkillsDeclarationSchema.optional(),
+    logging: pluginLoggingDeclarationSchema.optional(),
   })
   .strict();
 
@@ -196,9 +216,33 @@ export function pluginFacetFor(
  * none. `skills: {}` (or a bare `skills`) means the default
  * `skills/` directory — the declaration is present, the dir defaulted.
  */
+/**
+ * A declared package-relative directory: POSIX-shaped, inside the
+ * package. The escape boundary for every package-relative declaration
+ * (logging's home today; skills' dir checks at its own consumer).
+ */
+export function safeDeclaredDir(dir: string): boolean {
+  if (!dir) return false;
+  if (dir.includes("\\") || dir.includes("\0")) return false;
+  if (dir.startsWith("/")) return false;
+  if (/^[A-Za-z]:/u.test(dir)) return false;
+  return dir.split("/").every((segment) => segment !== ".." && segment !== "");
+}
+
 export function pluginSkillDir(manifest: PluginManifest): string | undefined {
   const declared = (manifest as { skills?: { dir?: string } }).skills;
   return declared ? (declared.dir ?? "skills") : undefined;
+}
+
+/**
+ * The declared logging directory, or undefined when the plugin ships no
+ * declaration. `logging: {}` means the default `logs/` — the convention
+ * stated, the override absent. The runtime never reads it: the path is
+ * the plugin package's own business (its logs never enter the journal).
+ */
+export function pluginLogDir(manifest: PluginManifest): string | undefined {
+  const declared = (manifest as { logging?: { dir?: string } }).logging;
+  return declared ? (declared.dir ?? "logs") : undefined;
 }
 
 export type { PluginPackageSource } from "@anthelia/contracts";

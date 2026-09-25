@@ -12,7 +12,9 @@ import {
   pluginManifestSchema,
   manifestIntegrationPoints,
   pluginFacetFor,
+  pluginLogDir,
   pluginSkillDir,
+  safeDeclaredDir,
   PLUGIN_FACET_ENVS,
   resolvePluginDependencies,
   resolvePluginConfig,
@@ -2338,6 +2340,73 @@ test("a plugin declares its shipped skills directory (v2 and v3)", () => {
       version: "1.0.0",
       name: "Bad",
       skills: { dirs: "skills" },
+    }),
+  ).toThrow();
+});
+
+test("the logging declaration is the spec's shape: optional, defaulted, boxed", () => {
+  // Interface spec §2.4: a CONVENTION field, never a gate — the runtime
+  // never reads a plugin's logs. The declaration is optional; the dir
+  // defaults to `logs/`; the shape is strict; an escaping directory is
+  // refused at the declaration boundary (the same discipline facets'
+  // entries get at load).
+  const none = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "fixture.logging.none",
+    version: "1.0.0",
+    name: "None",
+  });
+  expect(pluginLogDir(none)).toBeUndefined();
+  const bare = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "fixture.logging.bare",
+    version: "1.0.0",
+    name: "Bare",
+    logging: {},
+  });
+  expect(pluginLogDir(bare)).toBe("logs");
+  const custom = pluginManifestSchema.parse({
+    apiVersion: 2,
+    id: "fixture.logging.custom",
+    version: "1.0.0",
+    name: "Custom",
+    logging: { dir: "var/log" },
+  });
+  expect(pluginLogDir(custom)).toBe("var/log");
+  const v3 = pluginManifestSchema.parse({
+    apiVersion: 3,
+    id: "fixture.logging.v3",
+    version: "1.0.0",
+    name: "V3",
+    facets: { web: { entry: "ui/plugin.js" } },
+    logging: { dir: "logs" },
+  });
+  expect(pluginLogDir(v3)).toBe("logs");
+  // The escape boundary, at the declaration: absolute, parent, drive.
+  expect(safeDeclaredDir("logs")).toBe(true);
+  expect(safeDeclaredDir("var/log")).toBe(true);
+  expect(safeDeclaredDir("/etc")).toBe(false);
+  expect(safeDeclaredDir("../escape")).toBe(false);
+  expect(safeDeclaredDir("C:\\Windows")).toBe(false);
+  for (const bad of ["/etc", "../escape", "C:\\Windows"]) {
+    expect(() =>
+      pluginManifestSchema.parse({
+        apiVersion: 2,
+        id: "fixture.logging.bad",
+        version: "1.0.0",
+        name: "Bad",
+        logging: { dir: bad },
+      }),
+    ).toThrow();
+  }
+  // Strict: an unknown key is a hard error, like every declaration here.
+  expect(() =>
+    pluginManifestSchema.parse({
+      apiVersion: 2,
+      id: "fixture.logging.bad2",
+      version: "1.0.0",
+      name: "Bad",
+      logging: { dirs: "logs" },
     }),
   ).toThrow();
 });
