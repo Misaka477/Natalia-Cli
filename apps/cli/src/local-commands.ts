@@ -17,6 +17,7 @@ import {
   segmentTurns,
 } from "@natalia/engineering-intelligence";
 import { createLocalSessionService } from "@anthelia/session-store";
+import { evalListLines, evalRun } from "./eval-cli";
 import { createRecordedFetch, readCassette } from "@natalia/transport";
 import {
   deleteLocalSession,
@@ -84,6 +85,7 @@ export async function handleLocalCommands(argv: string[]) {
       "purge",
       "store",
       "debug-bundle",
+      "bench",
       "runs",
       "update",
     ]).has(subcommand ?? "")
@@ -264,6 +266,54 @@ export async function handleLocalCommands(argv: string[]) {
           (result.receiptPath ? `\nreceipt: ${result.receiptPath}` : ""),
       );
       process.exit(result.exitCode);
+    }
+    case "bench": {
+      // G-c's outer half (the object-store study's batch): the frozen
+      // benchmark's tasks listed offline, and RUN through the daemon's
+      // live turn machinery. No daemon answers no_daemon per task —
+      // nothing is recorded, nothing faked. (The subcommand is `bench`:
+      // `eval` is the runtime's own REPL face.)
+      const action = argv[1];
+      if (action !== "list" && action !== "run") {
+        console.error(
+          "usage: natalia bench list|run [--dir <path>] [--task <id>]... [--limit N] [--json]",
+        );
+        process.exit(1);
+      }
+      if (action === "list") {
+        const lines = await evalListLines(argv);
+        console.log(
+          argv.includes("--json")
+            ? JSON.stringify({ lines }, null, 2)
+            : lines.join("\n"),
+        );
+        break;
+      }
+      const result = await evalRun(argv);
+      console.log(
+        argv.includes("--json")
+          ? JSON.stringify(result, null, 2)
+          : [
+              `eval run: ${result.scanned} scanned, ${result.recorded} recorded, ${result.failed} failed`,
+              ...result.outcomes.map((outcome) => {
+                const entry = outcome as {
+                  taskID: string;
+                  recorded: boolean;
+                  success?: boolean;
+                  reason?: string;
+                };
+                const verb = entry.recorded
+                  ? entry.success === undefined
+                    ? "recorded (unscored)"
+                    : entry.success
+                      ? "recorded (success)"
+                      : "recorded (failed)"
+                  : `skipped (${entry.reason ?? "unknown"})`;
+                return `${entry.taskID} — ${verb}`;
+              }),
+            ].join("\n"),
+      );
+      break;
     }
     case "runs": {
       // G-b's internal-evaluation report: score every turn from the
