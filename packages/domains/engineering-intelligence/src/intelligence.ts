@@ -46,6 +46,15 @@ import { loadExternalTask, readExternalBenchmark } from "./eval-reader";
 import { deriveCorrectionPatterns, readCorrections } from "./corrections";
 import { deriveGrowthTriggers } from "./growth-trigger";
 import { deriveGrowthPromotion } from "./growth-promotion";
+import {
+  buildCurve,
+  emptyStats,
+  foldTurn,
+  measureAcceptance,
+  predictPrefetch,
+  readTurnReads,
+} from "./prefetch-predictor";
+
 import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
 import type { EpisodeID } from "@anthelia/contracts";
 import { readFile } from "node:fs/promises";
@@ -98,6 +107,8 @@ type Surface = Pick<
   | "growthTriggers"
   | "promoteGrowthTrigger"
   | "growthPromotions"
+  | "specPrefetchReport"
+  | "specPrefetchReport"
   | "promoteGrowthTrigger"
   | "growthPromotions"
   | "externalJoinedTasks"
@@ -910,6 +921,62 @@ export function createIntelligenceSurface(
         next: event.next,
         reason: event.reason,
       }));
+    },
+    /**
+     * The spec-exec pillar's prefetch experiment (the study's §2.1):
+     * replay the session's journal through the online-statistics
+     * predictor and answer its PER-POSITION ACCEPTANCE CURVE. The
+     * experiment is a read (the journal is the only input) and its
+     * three iron laws hold by construction: no persistent state (the
+     * stats live in this call), read-only admission (the journal's
+     * completed reads), and the verdict names the depth the curve
+     * justifies (a depth whose rate falls under the floor is not
+     * offered — the predictor is off-able by its own evidence).
+     */
+    async specPrefetchReport(
+      input?: { maxDepth?: number },
+      sessionID?: string,
+    ) {
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session)
+        return {
+          rounds: 0,
+          justifiedDepth: 0,
+          topHitRate: 0,
+          perPosition: [],
+          verdict: "no_session",
+        };
+      const turns = readTurnReads(exec.session.events);
+      const maxDepth = Math.max(1, Math.min(input?.maxDepth ?? 3, 8));
+      let stats = emptyStats();
+      const measurements = [];
+      for (const [index, turn] of turns.entries()) {
+        if (index > 0 && turn.files.length) {
+          const predictions = predictPrefetch(
+            stats,
+            turns[index - 1]!.files,
+            maxDepth,
+          );
+          measurements.push(
+            measureAcceptance(turn.turnID, predictions, turn.files),
+          );
+        }
+        stats = foldTurn(stats, turn);
+      }
+      const curve = buildCurve(measurements);
+      // The verdict: the depth the curve justifies, and the honest
+      // statement of what that means for the runtime (off = the curve
+      // never justified a depth; anything else offers exactly that
+      // many warm files).
+      return {
+        ...curve,
+        verdict:
+          curve.rounds === 0
+            ? "no_reads_to_measure"
+            : curve.justifiedDepth === 0
+              ? "off: the curve justifies no depth"
+              : `on: offer ${curve.justifiedDepth} file(s)`,
+      };
     },
     async correctionPatterns(sessionID?: string) {
       const exec = await completeIntelligenceExec(sessionID);
