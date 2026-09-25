@@ -134,6 +134,12 @@ export type UiPluginContext<TContext = unknown> = {
       pluginId: string;
       panel: UiPanelDefinition;
     }>;
+    /**
+     * Arms the catalog's declared panels without loading bundles (spec
+     * §2.3 stage 1): the shell lists from the catalog, the mount
+     * activates. Returns the armed count.
+     */
+    armPanelsFromCatalog?(): Promise<number>;
     mountPanel(
       pluginId: string,
       panelId: string,

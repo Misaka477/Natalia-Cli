@@ -27,6 +27,14 @@ export type UiPluginHostOptions<TContext = unknown> = {
   t?: (text: string) => string;
   extra?: TContext;
   replay?: "all" | "none";
+  /**
+   * The lazy activation seam (interface spec §2.3's second stage): when a
+   * panel mount arrives for a plugin whose UI bundle is not loaded, the
+   * host asks this to activate it BEFORE failing. The web loader wires it
+   * to the per-plugin bundle load; a host without it keeps the old
+   * behaviour (a mount of an unloaded plugin is an error).
+   */
+  ensurePluginLoaded?: (pluginID: string) => Promise<void>;
 };
 
 export type LoadedUiPlugin = {
@@ -43,6 +51,12 @@ export type UiPluginHost = {
     pluginId: string;
     panel: import("./protocol").UiPanelDefinition;
   }>;
+  /**
+   * Arms the catalog's declared panels WITHOUT loading any bundle (the
+   * first stage of §2.3's lazy loading): the shell lists panels from the
+   * catalog, and the mount activates. Re-arming replaces the armed set.
+   */
+  armPanelsFromCatalog(): Promise<number>;
   mountPanel(
     pluginId: string,
     panelId: string,
@@ -78,6 +92,11 @@ export async function createUiPluginHost<TContext = unknown>(
   const projectionListeners = new Set<(next: viewStore.AppState) => void>();
   const mounted = new Map<string, MountedPlugin>();
   const mountedPanels = new Map<string, MountedPanel>();
+  /** Catalog-declared panels awaiting activation (spec §2.3 stage 1). */
+  const armedPanels = new Map<
+    string,
+    { pluginId: string; panel: import("./protocol").UiPanelDefinition }
+  >();
   const presenters = new Map<
     string,
     { pluginId: string; presenter: PendingPresenter }
@@ -321,14 +340,10 @@ export async function createUiPluginHost<TContext = unknown>(
       },
       extra: options.extra,
       host: {
-        listPanels: () =>
-          [...mounted.values()].flatMap((entry) =>
-            entry.record.panels.map((panel) => ({
-              pluginId: entry.record.plugin.id,
-              panel,
-            })),
-          ),
+        listPanels: () => listPanelRows(),
+        armPanelsFromCatalog: () => armCatalogPanels(),
         mountPanel: async (pluginId, panelId, container) => {
+          await ensureLoaded(pluginId);
           const entry = mounted.get(pluginId);
           if (!entry) throw new Error(`ui plugin not loaded: ${pluginId}`);
           const panel = entry.record.panels.find((item) => item.id === panelId);
@@ -401,6 +416,50 @@ export async function createUiPluginHost<TContext = unknown>(
     return record;
   }
 
+  /**
+   * The panel rows the shell lists: mounted plugins' panels UNION the
+   * armed catalog's (declared, not yet loaded) — the lazy listing.
+   */
+  function listPanelRows(): Array<{
+    pluginId: string;
+    panel: import("./protocol").UiPanelDefinition;
+  }> {
+    const rows = [...mounted.values()].flatMap((entry) =>
+      entry.record.panels.map((panel) => ({
+        pluginId: entry.record.plugin.id,
+        panel,
+      })),
+    );
+    const mountedKeys = new Set(
+      rows.map((row) => `${row.pluginId}:${row.panel.id}`),
+    );
+    for (const [key, armed] of armedPanels)
+      if (!mountedKeys.has(key)) rows.push(armed);
+    return rows;
+  }
+
+  /** Arms the catalog's declared panels without loading any bundle. */
+  async function armCatalogPanels(): Promise<number> {
+    const catalog = (await options.runtime.pluginCatalog?.()) ?? [];
+    armedPanels.clear();
+    for (const entry of catalog) {
+      if (!entry.enabled || !entry.installed) continue;
+      for (const panel of entry.ui?.panels ?? [])
+        armedPanels.set(`${entry.id}:${panel.id}`, {
+          pluginId: entry.id,
+          panel,
+        });
+    }
+    for (const listener of panelListeners) listener();
+    return armedPanels.size;
+  }
+
+  /** The activation event's answer: the seam loads, or nothing does. */
+  async function ensureLoaded(pluginId: string): Promise<void> {
+    if (mounted.get(pluginId) || !options.ensurePluginLoaded) return;
+    await options.ensurePluginLoaded(pluginId);
+  }
+
   return {
     projection,
     async load(plugin) {
@@ -413,18 +472,20 @@ export async function createUiPluginHost<TContext = unknown>(
       return [...mounted.values()].map((entry) => entry.record);
     },
     listPanels() {
-      return [...mounted.values()].flatMap((entry) =>
-        entry.record.panels.map((panel) => ({
-          pluginId: entry.record.plugin.id,
-          panel,
-        })),
-      );
+      return listPanelRows();
+    },
+    armPanelsFromCatalog() {
+      return armCatalogPanels();
     },
     async mountPanel(
       pluginId: string,
       panelId: string,
       container: HTMLElement,
     ): Promise<void> {
+      // The mount is the activation event (spec §2.3 stage 2): load the
+      // plugin through the seam, then proceed. Without the seam the loud
+      // failure below stands — a silent no-op would hide the gap.
+      await ensureLoaded(pluginId);
       const entry = mounted.get(pluginId);
       if (!entry) throw new Error(`ui plugin not loaded: ${pluginId}`);
       const panel = entry.record.panels.find((item) => item.id === panelId);

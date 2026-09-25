@@ -87,6 +87,29 @@ export async function loadPluginUiBundles(
 }
 
 /**
+ * The lazy activation's second stage (spec §2.3): load ONE plugin's UI
+ * bundle on demand — the host's mountPanel calls this through its
+ * ensurePluginLoaded seam when a panel of a not-yet-loaded plugin is
+ * requested. Idempotent by the same loaded-set the reconcile path uses,
+ * so a second request for the same plugin is a no-op.
+ */
+export async function activatePluginUi(
+  host: UiPluginHost,
+  runtime: RuntimeClient,
+  runtimeURL: string,
+  token: string | undefined,
+  pluginID: string,
+): Promise<boolean> {
+  const loaded = new Set(uiSourceByPluginId.values());
+  if (loaded.has(pluginID)) return false;
+  const catalog = (await runtime.pluginCatalog?.()) ?? [];
+  const entry = catalog.find((plugin) => plugin.id === pluginID);
+  if (!entry) return false;
+  await loadOnePluginUi(host, runtimeURL, entry, token);
+  return true;
+}
+
+/**
  * Reconciles the UI host with the current plugin catalog:
  *
  * - loads UI for newly enabled plugins

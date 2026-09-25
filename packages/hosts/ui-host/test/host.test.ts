@@ -395,3 +395,131 @@ test("remounting the same panel key disposes the previous panel first", async ()
   expect(seen).toEqual(["mount", "dispose", "mount"]);
   await host.close();
 });
+
+/** A runtime whose catalog declares panels (the arm source). */
+function catalogRuntimeFixture(
+  catalog: Array<{
+    id: string;
+    ui?: { panels: Array<{ id: string; title: string; region: string }> };
+  }>,
+) {
+  const runtime = {
+    start() {
+      return () => undefined;
+    },
+    pluginCatalog: async () =>
+      catalog.map((entry) => ({
+        id: entry.id,
+        name: entry.id,
+        version: "1.0.0",
+        enabled: true,
+        installed: true,
+        packageName: null,
+        ...(entry.ui ? { ui: entry.ui } : {}),
+      })),
+  } as unknown as RuntimeClient;
+  return runtime;
+}
+
+test("arming the catalog lists declared panels without loading bundles", async () => {
+  // Spec §2.3 stage 1: the shell renders the region from the catalog;
+  // not a single bundle is fetched until a mount asks for one.
+  const root = fakeRoot();
+  const runtime = catalogRuntimeFixture([
+    {
+      id: "settings.plugin",
+      ui: {
+        panels: [
+          { id: "skills-settings", title: "Skills", region: "settings" },
+        ],
+      },
+    },
+    { id: "no.ui.plugin" },
+  ]);
+  const host = await createUiPluginHost({ root, runtime });
+  const armed = await host.armPanelsFromCatalog();
+  expect(armed).toBe(1);
+  expect(host.listPanels()).toEqual([
+    {
+      pluginId: "settings.plugin",
+      panel: { id: "skills-settings", title: "Skills", region: "settings" },
+    },
+  ]);
+  // Nothing loaded: the arm is a declaration, not an activation.
+  expect(host.loaded()).toHaveLength(0);
+  await host.close();
+});
+
+test("a panel mount activates the unloaded plugin through the seam", async () => {
+  // Stage 2: the mount IS the activation event — the host asks the
+  // seam to load the plugin, then mounts normally.
+  const root = fakeRoot();
+  const runtime = catalogRuntimeFixture([
+    {
+      id: "lazy.plugin",
+      ui: { panels: [{ id: "main", title: "Main", region: "settings" }] },
+    },
+  ]);
+  const activations: string[] = [];
+  const host = await createUiPluginHost({
+    root,
+    runtime,
+    ensurePluginLoaded: async (pluginID) => {
+      activations.push(pluginID);
+      await host2.load(
+        defineUiPlugin({
+          id: pluginID,
+          name: "Lazy",
+          version: "1.0.0",
+          mount() {},
+          panels: [
+            {
+              id: "main",
+              title: "Main",
+              region: "settings",
+              mount(_ctx, container) {
+                container.textContent = "lazy-mounted";
+              },
+            },
+          ],
+        }),
+      );
+    },
+  });
+  const host2 = host;
+  await host.armPanelsFromCatalog();
+  const container = fakeRoot();
+  await host.mountPanel("lazy.plugin", "main", container);
+  expect(activations).toEqual(["lazy.plugin"]);
+  expect(container.textContent).toBe("lazy-mounted");
+  // The armed row did not duplicate beside the mounted one: one row, and
+  // the loaded plugin's panel (with its mount) is what answers.
+  expect(
+    host.listPanels().map((row) => ({
+      pluginId: row.pluginId,
+      id: row.panel.id,
+    })),
+  ).toEqual([{ pluginId: "lazy.plugin", id: "main" }]);
+  expect(host.loaded().map((entry) => entry.plugin.id)).toEqual([
+    "lazy.plugin",
+  ]);
+  await host.close();
+});
+
+test("without the seam a mount of an unloaded plugin fails loud", async () => {
+  // The degradation is not silent: a host that wires no activation hook
+  // keeps the old behaviour, named.
+  const root = fakeRoot();
+  const runtime = catalogRuntimeFixture([
+    {
+      id: "eager.plugin",
+      ui: { panels: [{ id: "main", title: "Main", region: "settings" }] },
+    },
+  ]);
+  const host = await createUiPluginHost({ root, runtime });
+  await host.armPanelsFromCatalog();
+  await expect(
+    host.mountPanel("eager.plugin", "main", fakeRoot()),
+  ).rejects.toThrow("ui plugin not loaded: eager.plugin");
+  await host.close();
+});
