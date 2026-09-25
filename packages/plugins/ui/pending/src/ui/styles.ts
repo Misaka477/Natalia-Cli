@@ -1,6 +1,9 @@
 /**
- * Pending inbox styles. Injected once per document by the panel mount, keyed by
- * `data-natalia-pending` so a remount does not duplicate it.
+ * Pending inbox PANEL styles. Injected once per document by the panel mount,
+ * keyed by `data-natalia-pending` so a remount does not duplicate it. The tab
+ * badge's rule is NOT here: it lives in the ui-kit beside its component
+ * (lazy loading means this sheet may never load, and the rail's badge must
+ * not depend on it).
  */
 export const pendingInboxStyles = `
 .natalia-pending-panel { display:flex; flex-direction:column; gap:10px; height:100%; overflow:hidden; padding:8px; }
@@ -11,7 +14,6 @@ export const pendingInboxStyles = `
 .natalia-pending-row-kind { font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--neu-muted); flex-shrink:0; }
 .natalia-pending-row-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .natalia-pending-dismiss { flex-shrink:0; padding:4px 8px; background:transparent; border:1px solid var(--neu-hairline); border-radius:8px; color:var(--neu-muted); font-size:11px; cursor:pointer; }
-.natalia-pending-badge { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px; margin-left:6px; border-radius:8px; background:var(--neu-accent); color:var(--neu-bg); font-size:10px; font-weight:600; }
 .natalia-pending-detail { flex:1; display:flex; flex-direction:column; gap:10px; min-height:0; overflow-y:auto; }
 .natalia-pending-detail-header { display:flex; align-items:flex-start; gap:8px; }
 .natalia-pending-detail-title { flex:1; font-size:13px; font-weight:600; color:var(--neu-text); }

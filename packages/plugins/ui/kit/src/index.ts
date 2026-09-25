@@ -54,6 +54,10 @@ export {
   PendingList,
   PendingPanel,
 } from "./pending";
+export {
+  ensurePendingBadgeStyles,
+  PENDING_BADGE_STYLES,
+} from "./pending-styles";
 export { renderMarkdownHtml } from "./markdown";
 export {
   evaluateTailScroll,

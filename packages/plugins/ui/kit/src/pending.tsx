@@ -6,6 +6,12 @@ import type {
   PendingItem,
   PendingPresenter,
 } from "@natalia/ui-model";
+import { ensurePendingBadgeStyles } from "./pending-styles";
+
+// The badge's style rides with the component: the rail renders it before
+// any panel exists, so the sheet is injected when THIS module loads —
+// not when some plugin that happens to own a stylesheet loads.
+ensurePendingBadgeStyles();
 
 /** Small count badge for a side tab. */
 export function PendingBadge(props: { count: number }) {
