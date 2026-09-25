@@ -11,6 +11,21 @@ WEB_PORT="${NATALIA_WEB_PORT:-5178}"
 RUNTIME_PID=""
 WEB_PID=""
 
+# bun is a global runtime (the house standard: plain `bun`, never npx —
+# the P5 closure's documented trap). A shell whose PATH lacks it (conda
+# base, non-login terminals) used to die at `exec env … bun …` with an
+# unreadable `env: "bun": 没有那个文件` AFTER both "starting" lines,
+# leaving a CEF window with nothing to talk to. Resolve it the way bun's
+# own installer lays it out, and fail with the named path if it is truly
+# nowhere — a missing runtime is a sentence, not a stack of env noise.
+if ! command -v bun >/dev/null 2>&1; then
+  export PATH="${BUN_INSTALL:-$HOME/.bun}/bin:$PATH"
+fi
+if ! command -v bun >/dev/null 2>&1; then
+  echo "[cef-desktop] bun not found — expected at ${BUN_INSTALL:-$HOME/.bun}/bin/bun (install from https://bun.sh)" >&2
+  exit 1
+fi
+
 cleanup() {
   local status=$?
   # Drop every trap first so an INT followed by EXIT cannot run cleanup twice.
