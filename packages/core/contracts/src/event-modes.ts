@@ -61,8 +61,9 @@ export const EVENT_MODES: EventModeTable = {
   // G-c: an external run's join is a recorded fact — emit, and the
   // comparison it unlocks is a read, not a flow gate.
   external_run: "emit",
-  // G-a: a growth proposal is a recorded fact — emit, never flow-stopping
-  // (the proposal applies nothing by itself; the approval policy gates).
+  // G-a's growth.proposed and block ②'s growth.promoted share this key:
+  // both are recorded facts that apply nothing — emit, never
+  // flow-stopping (the approval policy gates what becomes real).
   growth: "emit",
   // D6a: feedback is observation — emit, never flow-stopping.
   feedback: "emit",

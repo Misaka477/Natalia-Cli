@@ -860,6 +860,16 @@ export function projectedEvidenceRecords(events: RuntimeEvent[]) {
   );
 }
 
+/** Growth promotions (block ②), newest first. */
+export function projectedGrowthPromotions(events: RuntimeEvent[]) {
+  return events
+    .filter(
+      (event): event is Extract<RuntimeEvent, { type: "growth.promoted" }> =>
+        event.type === "growth.promoted",
+    )
+    .reverse();
+}
+
 /** External-run joins (Discovery G-c), newest first. */
 export function projectedExternalRuns(events: RuntimeEvent[]) {
   return events
@@ -2069,6 +2079,7 @@ export type SessionIntelligenceFactState = {
     | Extract<RuntimeEvent, { type: "completion.recorded" }>
     | Extract<RuntimeEvent, { type: "growth.proposed" }>
     | Extract<RuntimeEvent, { type: "external_run.recorded" }>
+    | Extract<RuntimeEvent, { type: "growth.promoted" }>
   >;
   /**
    * EI Phase 0: the latest human validation note per completion taskID. The
@@ -2140,6 +2151,10 @@ export function applySessionIntelligenceFact(
     return;
   }
   if (event.type === "external_run.recorded") {
+    state.journalEvents.push(event);
+    return;
+  }
+  if (event.type === "growth.promoted") {
     state.journalEvents.push(event);
     return;
   }
@@ -2387,6 +2402,16 @@ export function sessionFactCompletions(
   return state.intelligence.journalEvents.filter(
     (event): event is Extract<RuntimeEvent, { type: "completion.recorded" }> =>
       event.type === "completion.recorded",
+  );
+}
+
+/** The growth promotions from the hot fact state (block ②). */
+export function sessionFactGrowthPromotions(
+  state: SessionFactState,
+): Array<Extract<RuntimeEvent, { type: "growth.promoted" }>> {
+  return state.intelligence.journalEvents.filter(
+    (event): event is Extract<RuntimeEvent, { type: "growth.promoted" }> =>
+      event.type === "growth.promoted",
   );
 }
 

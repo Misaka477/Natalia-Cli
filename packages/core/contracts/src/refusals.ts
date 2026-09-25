@@ -560,6 +560,15 @@ export const RUNTIME_MEMBER_REFUSAL_SEMANTICS = {
     refusal: "none",
     note: "pure read: the four growth views assembled into triggers, each with its evidence",
   },
+  promoteGrowthTrigger: {
+    refusal: "value",
+    expressedBy: "promoted",
+    note: "no session or an unknown trigger answers false with its reason; the promotion records, it never applies",
+  },
+  growthPromotions: {
+    refusal: "none",
+    note: "pure read: the journaled promotions",
+  },
   externalJoinedTasks: {
     refusal: "none",
     note: "pure read: the recorded joins against the external benchmark",

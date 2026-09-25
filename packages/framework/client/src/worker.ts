@@ -50,6 +50,8 @@ export const WORKER_ROUTE_MEMBERS = {
   "eval.external_benchmark": "externalBenchmark",
   "eval.external_run": "recordExternalRun",
   "corrections.patterns": "correctionPatterns",
+  "growth.promote": "promoteGrowthTrigger",
+  "growth.promotions": "growthPromotions",
   "growth.triggers": "growthTriggers",
   "eval.joined_tasks": "externalJoinedTasks",
   messages: "messages",
@@ -206,6 +208,8 @@ type WorkerRequest = {
     | "eval.external_benchmark"
     | "eval.external_run"
     | "corrections.patterns"
+    | "growth.promote"
+    | "growth.promotions"
     | "growth.triggers"
     | "eval.joined_tasks"
     | "messages"
@@ -1147,6 +1151,17 @@ export function createWorkerRuntimeClient(
         ReturnType<NonNullable<RuntimeClient["workspaceAstMove"]>>
       >;
     },
+    async promoteGrowthTrigger(input: { capability: string }) {
+      return (await request("growth.promote", input)) as Awaited<
+        ReturnType<NonNullable<RuntimeClient["promoteGrowthTrigger"]>>
+      >;
+    },
+    async growthPromotions(sessionID?: string) {
+      return (await request(
+        "growth.promotions",
+        sessionID ? { sessionID } : undefined,
+      )) as Awaited<ReturnType<NonNullable<RuntimeClient["growthPromotions"]>>>;
+    },
     async growthTriggers(sessionID?: string) {
       return (await request(
         "growth.triggers",
@@ -1475,6 +1490,14 @@ export async function handleWorkerRequest(
       | { paths?: string[]; from?: string }
       | undefined;
     return await client.workspaceAstMove?.(value);
+  }
+  if (request.method === "growth.promote") {
+    const value = request.value as { capability: string };
+    return await client.promoteGrowthTrigger?.(value);
+  }
+  if (request.method === "growth.promotions") {
+    const value = request.value as { sessionID?: string } | undefined;
+    return await client.growthPromotions?.(value?.sessionID);
   }
   if (request.method === "growth.triggers") {
     const value = request.value as { sessionID?: string } | undefined;

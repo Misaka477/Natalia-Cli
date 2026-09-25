@@ -2234,6 +2234,35 @@ type RuntimeEventData =
     }
   | {
       /**
+       * Block ②: a growth trigger promoted to a PROPOSAL through the
+       * constitution's class policy. The fact records where it lands
+       * and what approval it needs; it APPLIES NOTHING — the
+       * composition's apply_generation keeps its own approval floor
+       * (the study's growth 默认不自授权).
+       */
+      type: "growth.promoted";
+      id: string;
+      at: string;
+      sessionID?: SessionID;
+      workspaceID?: string;
+      /** The trigger it came from (its provenance, verbatim). */
+      trigger: {
+        rule: string;
+        capability: string;
+        evidence: Record<string, number | string>;
+        reason: string;
+      };
+      /** Where the proposal lands (the class policy's destination). */
+      destination: "skill" | "policy" | "generation";
+      /** What the approval requires (the study's class policy). */
+      approval: "auto" | "human" | "human_plus_verification";
+      /** The face that applies it (named, never this one). */
+      appliedBy: string;
+      next: string;
+      reason: string;
+    }
+  | {
+      /**
        * Discovery G-c's join: one of OUR runs against an external
        * benchmark task (the study's adapter layer). The turn's score is
        * read from the journal (the G-b scorer — no new telemetry); the
@@ -4439,6 +4468,129 @@ export type RuntimeClient = {
         }>;
         note: string;
       }
+  >;
+  /**
+   * Block ②'s writer: promote ONE growth trigger to a proposal through
+   * the constitution's class policy. Records the `growth.promoted`
+   * fact; **applies nothing** — the composition's apply_generation
+   * keeps its own approval floor (growth 默认不自授权).
+   */
+  promoteGrowthTrigger?(
+    input: { capability: string },
+    sessionID?: string,
+  ): Promise<
+    | { promoted: false; reason: "no_session" | "unknown_trigger" }
+    | {
+        promoted: true;
+        destination: "skill" | "policy" | "generation";
+        approval: "auto" | "human" | "human_plus_verification";
+        appliedBy: string;
+        next: string;
+        reason: string;
+      }
+  >;
+  /**
+   * Block ②'s reader: the journaled promotions, each naming its
+   * destination, approval and next step (the audit trail).
+   */
+  growthPromotions?(sessionID?: string): Promise<
+    Array<{
+      promotionID: string;
+      at: string;
+      trigger: {
+        rule: string;
+        capability: string;
+        evidence: Record<string, number | string>;
+        reason: string;
+      };
+      destination: "skill" | "policy" | "generation";
+      approval: "auto" | "human" | "human_plus_verification";
+      appliedBy: string;
+      next: string;
+      reason: string;
+    }>
+  >;
+  /**
+   * Block ②'s writer: promote ONE growth trigger to a proposal through
+   * the constitution's class policy. Records the `growth.promoted`
+   * fact; **applies nothing** — the composition's apply_generation
+   * keeps its own approval floor (growth 默认不自授权).
+   */
+  promoteGrowthTrigger?(
+    input: { capability: string },
+    sessionID?: string,
+  ): Promise<
+    | { promoted: false; reason: "no_session" | "unknown_trigger" }
+    | {
+        promoted: true;
+        destination: "skill" | "policy" | "generation";
+        approval: "auto" | "human" | "human_plus_verification";
+        appliedBy: string;
+        next: string;
+        reason: string;
+      }
+  >;
+  /**
+   * Block ②'s reader: the journaled promotions, each naming its
+   * destination, approval and next step (the audit trail).
+   */
+  growthPromotions?(sessionID?: string): Promise<
+    Array<{
+      promotionID: string;
+      at: string;
+      trigger: {
+        rule: string;
+        capability: string;
+        evidence: Record<string, number | string>;
+        reason: string;
+      };
+      destination: "skill" | "policy" | "generation";
+      approval: "auto" | "human" | "human_plus_verification";
+      appliedBy: string;
+      next: string;
+      reason: string;
+    }>
+  >;
+  /**
+   * Block ②'s writer: promote ONE growth trigger to a proposal through
+   * the constitution's class policy. Records the `growth.promoted`
+   * fact; **applies nothing** — the composition's apply_generation
+   * keeps its own approval floor (growth 默认不自授权).
+   */
+  promoteGrowthTrigger?(
+    input: { capability: string },
+    sessionID?: string,
+  ): Promise<
+    | { promoted: false; reason: "no_session" | "unknown_trigger" }
+    | {
+        promoted: true;
+        destination: "skill" | "policy" | "generation";
+        approval: "auto" | "human" | "human_plus_verification";
+        appliedBy: string;
+        next: string;
+        reason: string;
+      }
+  >;
+  /**
+   * Block ②'s reader: the journaled promotions, each naming its
+   * destination, approval and next step (the audit trail).
+   */
+  growthPromotions?(sessionID?: string): Promise<
+    Array<{
+      promotionID: string;
+      at: string;
+      trigger: {
+        rule: string;
+        capability: string;
+        evidence: Record<string, number | string>;
+        reason: string;
+      };
+      destination: "skill" | "policy" | "generation";
+      approval: "auto" | "human" | "human_plus_verification";
+      appliedBy: string;
+      next: string;
+      reason: string;
+    }>
   >;
   /**
    * Discovery G-d — the repeated correction patterns: the human's

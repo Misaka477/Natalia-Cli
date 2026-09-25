@@ -12,3 +12,4 @@ export * from "./eval-reader";
 export * from "./corrections";
 export * from "./growth-trigger";
 export * from "./external-bench-run";
+export * from "./growth-promotion";

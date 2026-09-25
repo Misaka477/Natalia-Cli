@@ -234,6 +234,8 @@ export const RPC_ROUTE_MEMBERS = {
   "eval.external_benchmark": "externalBenchmark",
   "eval.external_run": "recordExternalRun",
   "corrections.patterns": "correctionPatterns",
+  "growth.promote": "promoteGrowthTrigger",
+  "growth.promotions": "growthPromotions",
   "growth.triggers": "growthTriggers",
   "eval.joined_tasks": "externalJoinedTasks",
   "workgraph.nodes": "workGraphNodes",
@@ -3963,6 +3965,28 @@ export async function handleRPCMessage(
           skipped: [],
           moves: [],
         },
+      };
+    }
+    if (body.method === "growth.promote") {
+      optionsGuard(client, "promoteGrowthTrigger");
+      const capability = optionalStringParam(body.params, "capability");
+      if (!capability) throw invalidParams("invalid_parameters: capability");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.promoteGrowthTrigger?.({ capability })) ?? {
+          promoted: false,
+          reason: "no_session",
+        },
+      };
+    }
+    if (body.method === "growth.promotions") {
+      optionsGuard(client, "growthPromotions");
+      const sessionID = optionalStringParam(body.params, "sessionID");
+      return {
+        jsonrpc: "2.0",
+        id: body.id ?? null,
+        result: (await client.growthPromotions?.(sessionID)) ?? [],
       };
     }
     if (body.method === "growth.triggers") {

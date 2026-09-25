@@ -9,9 +9,11 @@ import { applyConstitutionDocEdit } from "./constitution-doc";
 import { writeWorkspaceFile } from "@anthelia/workspace";
 import type { SessionFactState } from "@anthelia/session";
 import {
+  projectedGrowthPromotions,
   projectedExternalRuns,
   projectedGrowthProposals,
   sessionFactExternalRuns,
+  sessionFactGrowthPromotions,
   sessionFactGrowthProposals,
 } from "@anthelia/session";
 import {
@@ -43,6 +45,7 @@ import { groupRunsByPrompt, scoreRun, segmentTurns } from "./run-scorer";
 import { loadExternalTask, readExternalBenchmark } from "./eval-reader";
 import { deriveCorrectionPatterns, readCorrections } from "./corrections";
 import { deriveGrowthTriggers } from "./growth-trigger";
+import { deriveGrowthPromotion } from "./growth-promotion";
 import { isHardProtectedConstitutionRule } from "@anthelia/contracts";
 import type { EpisodeID } from "@anthelia/contracts";
 import { readFile } from "node:fs/promises";
@@ -93,6 +96,10 @@ type Surface = Pick<
   | "recordExternalRun"
   | "correctionPatterns"
   | "growthTriggers"
+  | "promoteGrowthTrigger"
+  | "growthPromotions"
+  | "promoteGrowthTrigger"
+  | "growthPromotions"
   | "externalJoinedTasks"
   | "promptRunGroups"
   | "growthProposals"
@@ -816,6 +823,93 @@ export function createIntelligenceSurface(
       const answer = await this.externalBenchmark!({ dir }, sessionID);
       if ("reason" in answer) return [];
       return answer.perTask;
+    },
+    /**
+     * Block ②'s writer: promote ONE growth trigger to a proposal. The
+     * trigger is selected by its capability (exact), the promotion is
+     * derived through the constitution's class policy, and the
+     * `growth.promoted` fact records where it lands and what approval
+     * it needs. **This face applies nothing** — the composition's
+     * apply_generation keeps its own approval floor; the promotion's
+     * `next` names who acts.
+     */
+    async promoteGrowthTrigger(
+      input: { capability: string },
+      sessionID?: string,
+    ) {
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session)
+        return { promoted: false as const, reason: "no_session" };
+      const triggers = await this.growthTriggers!(sessionID);
+      const trigger = triggers.find(
+        (entry) => entry.capability === input.capability,
+      );
+      if (!trigger)
+        return { promoted: false as const, reason: "unknown_trigger" };
+      const promotion = deriveGrowthPromotion(trigger);
+      const at = new Date().toISOString();
+      const id = `promo:${createHash("sha256")
+        .update(`${trigger.rule}:${trigger.capability}`)
+        .digest("hex")
+        .slice(0, 16)}`;
+      // Idempotence is the WRITER's job (the journal's events table is
+      // seq-keyed with no id dedup — the same lesson as the growth
+      // proposal's writer): a repeat promotion of the same trigger
+      // appends nothing and answers the recorded fact.
+      const already = readFactSlice(exec, sessionFactGrowthPromotions, () =>
+        projectedGrowthPromotions(exec.session.events),
+      ).some((entry) => entry.id === id);
+      if (already)
+        return {
+          promoted: true as const,
+          destination: promotion.destination,
+          approval: promotion.approval,
+          appliedBy: promotion.appliedBy,
+          next: promotion.next,
+          reason: promotion.reason,
+        };
+      const event = {
+        type: "growth.promoted" as const,
+        id,
+        at,
+        ...(exec.session.id ? { sessionID: exec.session.id } : {}),
+        trigger: promotion.trigger,
+        destination: promotion.destination,
+        approval: promotion.approval,
+        appliedBy: promotion.appliedBy,
+        next: promotion.next,
+        reason: promotion.reason,
+      };
+      ctx.ports.publishForSession(exec, event);
+      return {
+        promoted: true as const,
+        destination: promotion.destination,
+        approval: promotion.approval,
+        appliedBy: promotion.appliedBy,
+        next: promotion.next,
+        reason: promotion.reason,
+      };
+    },
+    /**
+     * Block ②'s reader: the journaled promotions (the audit trail), each
+     * naming its destination, its approval and its next step. A read —
+     * the promotion's application stays the destination face's.
+     */
+    async growthPromotions(sessionID?: string) {
+      const exec = await completeIntelligenceExec(sessionID);
+      if (!exec?.session) return [];
+      return readFactSlice(exec, sessionFactGrowthPromotions, () =>
+        projectedGrowthPromotions(exec.session.events),
+      ).map((event) => ({
+        promotionID: event.id,
+        at: event.at,
+        trigger: event.trigger,
+        destination: event.destination,
+        approval: event.approval,
+        appliedBy: event.appliedBy,
+        next: event.next,
+        reason: event.reason,
+      }));
     },
     async correctionPatterns(sessionID?: string) {
       const exec = await completeIntelligenceExec(sessionID);
