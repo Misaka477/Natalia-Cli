@@ -196,7 +196,7 @@ export function collaborationTools(
       "Ask Navi, the Live Work Chat collaborator, for a second opinion on an approach, risk, or tradeoff. " +
       "Use proactively when you need expert technical advice on architecture, test strategy, implementation detail, " +
       "or a difficult decision — not only after an error. " +
-      "The tool WAITS for her answer (up to about two minutes) and returns it as its result, so a consult informs the same step; " +
+      "The tool WAITS for her answer and returns it as its result, so a consult informs the same step (her answer or her turn ending ends the wait; a wedged advisor is cut off at ten minutes); " +
       "her guidance is an input, not a command — when your own evidence contradicts it, surface the conflict. " +
       "If no answer arrives in time the result says unavailable and you continue without it.",
     requiresApproval: false,

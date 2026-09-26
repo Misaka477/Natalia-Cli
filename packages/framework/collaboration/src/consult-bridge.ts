@@ -30,12 +30,18 @@ type PendingConsult = {
 const pending = new Map<string, PendingConsult>();
 
 /**
- * One advisor round is a full LLM turn; a main-agent turn already
- * tolerates minutes (the human question seam waits as long). Two
- * minutes is the v1 bound — long enough for a navi round, short
- * enough that a wedged advisor never costs a whole turn.
+ * The DEAD-MAN'S SWITCH, not the normal path's bound. The normal ends
+ * are the answer arriving (resolveConsult) or the advisor's turn ending
+ * (expireSessionConsults — both fast, both tested). This constant fires
+ * only when neither happens: the wake never fired, or the advisor's
+ * provider stream is wedged. Ten minutes is deliberately generous — a
+ * navi round reads a large live context and may run protocol
+ * corrections, and at real model speeds that legitimately exceeds
+ * minutes; the bound exists so a wedged advisor cannot cost a turn
+ * forever, not to cut a slow advisor short. The user's review caught
+ * the first version (120s) reading this switch as a normal-path bound.
  */
-export const DEFAULT_CONSULT_WAIT_MS = 120_000;
+export const DEFAULT_CONSULT_WAIT_MS = 600_000;
 
 /**
  * Waits (bounded) for the advisor's answer to `questionMessageID`.
