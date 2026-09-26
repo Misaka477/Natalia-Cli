@@ -239,6 +239,11 @@ export type RuntimePorts = {
     notice: import("@anthelia/contracts").SettlementNotice,
     options?: { sessionID?: string },
   ) => boolean;
+  /** A subagent's mid-run message to its parent session. */
+  deliverSubagentMessage: (
+    exec: import("./session-execution-state").SessionExecutionState,
+    message: { agentId: string; text: string },
+  ) => boolean;
   requestNaviWake: (exec: SessionExecutionState) => void;
   requestNiaWake: (exec: SessionExecutionState) => void;
   wakeNia: (exec: SessionExecutionState) => Promise<void>;

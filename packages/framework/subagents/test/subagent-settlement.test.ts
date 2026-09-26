@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SubagentRegistry, subagentSettlementReason } from "../src";
-import type { RunnerCallback } from "../src";
+import type { RunnerCallback, RunnerContext } from "../src";
 
 /**
  * The settlement spine's subagent adopter (the Natalia settlement plan's
@@ -113,5 +113,68 @@ test("a registry without the hook behaves exactly as before", async () => {
   });
   const record = await registry.spawn("do the thing");
   await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(registry.status(record.id)).toBe("completed");
+});
+
+test("a child sends findings to its parent mid-run, and still settles", async () => {
+  const workDir = await mkdtemp(join(tmpdir(), "subagent-sendmid-"));
+  const messages: Array<{ agentId: string; text: string }> = [];
+  const settled: Array<{ status: string }> = [];
+  const registry = new SubagentRegistry({
+    workDir,
+    runner: (async (_task: string, ctx: RunnerContext) => {
+      // A finding mid-run — the parent hears it live, before the end.
+      ctx.sendToParent("the first decomposed task is done");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      ctx.sendToParent("the second one failed on the schema");
+    }) as never,
+    onChildMessage: (message) => messages.push(message),
+    onSettled: (record) => settled.push(record) as never,
+  });
+  await registry.spawn("decompose and build");
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  expect(messages.map((entry) => entry.text)).toEqual([
+    "the first decomposed task is done",
+    "the second one failed on the schema",
+  ]);
+  // The live messages are ALSO the run's durable record …
+  const record = [...(registry.list() as never[])] as Array<{
+    outputs: Array<{ text: string }>;
+  }>;
+  expect(record[0]!.outputs.map((entry) => entry.text)).toContain(
+    "the first decomposed task is done",
+  );
+  // … and the settlement still fires at the end: the message channel
+  // never replaces the ending.
+  expect(settled).toHaveLength(1);
+  expect(settled[0]!.status).toBe("completed");
+});
+
+test("a child's message never fails its run (the hook's degrade)", async () => {
+  const workDir = await mkdtemp(join(tmpdir(), "subagent-sendthrow-"));
+  const registry = new SubagentRegistry({
+    workDir,
+    runner: (async (_task: string, ctx: RunnerContext) => {
+      ctx.sendToParent("a report to a broken channel");
+    }) as never,
+    onChildMessage: () => {
+      throw new Error("the parent cannot be reached");
+    },
+  });
+  const record = await registry.spawn("decompose and build");
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(registry.status(record.id)).toBe("completed");
+});
+
+test("a bare registry's sendToParent is a silent no-op", async () => {
+  const workDir = await mkdtemp(join(tmpdir(), "subagent-sendbare-"));
+  const registry = new SubagentRegistry({
+    workDir,
+    runner: (async (_task: string, ctx: RunnerContext) => {
+      ctx.sendToParent("nobody is listening");
+    }) as never,
+  });
+  const record = await registry.spawn("decompose and build");
+  await new Promise((resolve) => setTimeout(resolve, 30));
   expect(registry.status(record.id)).toBe("completed");
 });

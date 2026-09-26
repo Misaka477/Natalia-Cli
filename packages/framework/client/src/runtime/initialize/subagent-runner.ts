@@ -239,6 +239,29 @@ export async function installSubagents(
           !excluded.has(tool.name) &&
           (!allowed.length || allowed.includes(tool.name)),
       );
+      // The child's own channel to its parent, as a tool: the model can
+      // only call tools, and a mid-run finding must be reportable while
+      // it is being found (the dsh study's send_result). Always visible,
+      // never approval-gated — it is a message, not an action.
+      visibleTools.push({
+        name: "send_to_parent",
+        description:
+          "Send a message to the session that spawned you (and to the user watching it), live: a finding worth hearing NOW — one decomposed task done, a blocker, the result. Never wait for your whole run to end to report. One fact per message.",
+        requiresApproval: false,
+        parameters: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
+        async execute(parsed) {
+          const args = parsed as { text?: string };
+          if (typeof args.text !== "string" || !args.text.trim())
+            return "send_to_parent requires a non-empty text";
+          runner.sendToParent(args.text.trim());
+          return JSON.stringify({ sent: true });
+        },
+      });
       if (isLastStep)
         ledger.add({
           id: `${runner.agentId}:${step}:max-steps`,
@@ -340,7 +363,7 @@ export async function installSubagents(
       const ledger = adoptSubagentLedger(runner, record, () =>
         createSubagentContext(
           agentTypeSystemPrompt(scope, record.agentType) ??
-            "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. When a tool is needed, call it through the provider's native structured tool-calling interface; never write XML, JSON, Markdown, or prose that imitates a tool call in assistant content. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
+            "You are a focused Natalia TS/Bun subagent. Use the provided native tools for filesystem work. When a tool is needed, call it through the provider's native structured tool-calling interface; never write XML, JSON, Markdown, or prose that imitates a tool call in assistant content. Send findings to the session that spawned you as they happen with send_to_parent — one discovered fact per message, never waiting for the whole run to end; it hears you live and can steer. Return a concise factual final result. Never claim a tool action you did not run. Do not reveal private reasoning.",
           task,
           subagentPlanPointer(ctx, exec),
           // A fork inherits the parent's completed turns; a fresh subagent gets

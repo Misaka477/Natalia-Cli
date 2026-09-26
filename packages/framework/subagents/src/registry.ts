@@ -75,6 +75,10 @@ export class SubagentRegistry {
   private readonly stallThresholdMs: number;
   private readonly wallClockBudgetMs: number;
   private readonly onSettled?: (record: SubagentRecord) => void;
+  private readonly onChildMessage?: (message: {
+    agentId: string;
+    text: string;
+  }) => void;
   /** One deadline timer per running subagent, cleared when its run settles. */
   private readonly budgetTimers = new Map<
     SubagentID,
@@ -99,6 +103,7 @@ export class SubagentRegistry {
     this.stallThresholdMs = opts.stallThresholdMs ?? DEFAULT_STALL_MS;
     this.wallClockBudgetMs = opts.wallClockBudgetMs ?? 0;
     this.onSettled = opts.onSettled;
+    this.onChildMessage = opts.onChildMessage;
     this.store = new SubagentStore(opts.workDir, opts.sessionID);
   }
 
@@ -410,6 +415,17 @@ export class SubagentRegistry {
       signal: anySignal(abortController.signal, signal),
       reportActivity: (phase, detail) => {
         this.reportActivity(id, phase, detail);
+      },
+      sendToParent: (text: string) => {
+        // Also a log entry: the message belongs to the run's durable
+        // record as well as the parent's live view.
+        ctx.log(text);
+        if (!this.onChildMessage) return;
+        try {
+          this.onChildMessage({ agentId: id, text });
+        } catch {
+          // The run must not die on a report that could not fly.
+        }
       },
     };
 

@@ -251,6 +251,18 @@ export async function wireFrameworkServices(
         sourceKind: SETTLEMENT_SOURCE_KINDS.subagentSettled,
       });
     },
+    // The child's mid-run channel (the dsh study's send_result, built on
+    // Natalia's spine): a finding reaches the parent live, and the
+    // terminal settlement still fires at the end.
+    onChildMessage: (message) => {
+      const sessionID = ctx.ports.getSessionID();
+      if (!sessionID) return;
+      const exec = ctx.ports
+        .getExecutionBySession()
+        .get(sessionID as import("@anthelia/contracts").SessionID);
+      if (!exec) return;
+      ctx.ports.deliverSubagentMessage(exec, message);
+    },
   });
   ctx.state.serviceDirectory.provide(subagentsService, subagents);
   // The configured subagent-mode agents are the spawnable types. Advertising

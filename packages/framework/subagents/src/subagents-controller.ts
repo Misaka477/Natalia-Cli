@@ -16,6 +16,8 @@ export function createSubagentsController(input: {
   wallClockBudgetMs?: number;
   /** The settlement hook, bound by the composition to the spine. */
   onSettled?: (record: import("./types").SubagentRecord) => void;
+  /** The child's mid-run message hook, bound by the composition. */
+  onChildMessage?: (message: { agentId: string; text: string }) => void;
 }): SubagentsController {
   let registry: SubagentRegistry | undefined;
 
@@ -26,6 +28,7 @@ export function createSubagentsController(input: {
       sessionID: input.sessionID?.(),
       wallClockBudgetMs: input.wallClockBudgetMs,
       onSettled: input.onSettled,
+      onChildMessage: input.onChildMessage,
     });
     await next.load();
     registry = next;

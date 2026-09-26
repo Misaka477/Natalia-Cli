@@ -117,6 +117,16 @@ export interface RunnerContext {
   setStatus(status: string): void;
   signal: AbortSignal;
   reportActivity(phase: SubagentPhase, detail: string): void;
+  /**
+   * The child's channel to its parent, live during the run: a finding the
+   * parent should hear NOW (one decomposed task done, a blocker, the
+   * result) instead of waiting for the whole run to end. Delivered to the
+   * spawning session as a `subagent.message` fact; the terminal
+   * settlement still fires at the end, so a child that says nothing is
+   * covered. Absent a bound hook, the call is a no-op — never a throw
+   * (the run must not die on a report that could not fly).
+   */
+  sendToParent(text: string): void;
 }
 
 export type RunnerCallback = (
@@ -145,4 +155,10 @@ export interface SubagentRegistryOptions {
    * no behavior change.
    */
   onSettled?: (record: SubagentRecord) => void;
+  /**
+   * Fires when a child sends a message to its parent mid-run. The
+   * composition binds it to the spine, so the parent is told live instead
+   * of polling or waiting for the settlement. Absent in a bare registry.
+   */
+  onChildMessage?: (message: { agentId: string; text: string }) => void;
 }

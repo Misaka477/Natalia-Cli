@@ -26,6 +26,8 @@ export type SessionProjection = {
   permissionProfile?: string;
   /** The settlement notices this session was told (the spine's durable face). */
   settlements: SettlementNoticeRecord[];
+  /** The subagents' mid-run messages this session was told. */
+  subagentMessages: Array<{ agentId: string; text: string; at: string }>;
 };
 
 /**
@@ -85,6 +87,7 @@ export function projectSession(session: SessionRecord): SessionProjection {
     permissionMode: permissionModeFromEvents(replayable),
     permissionProfile: permissionProfileFromEvents(replayable),
     settlements: settlementRecordsFromEvents(replayable),
+    subagentMessages: subagentMessageRecordsFromEvents(replayable),
   };
 }
 
@@ -110,11 +113,31 @@ export function settlementRecordsFromEvents(
 }
 
 /**
+ * The child's mid-run messages a session was told, oldest first — the same
+ * replayability a settlement gets: a fact the journal holds is a fact the
+ * projection can re-read.
+ */
+export function subagentMessageRecordsFromEvents(
+  events: readonly RuntimeEvent[],
+): Array<{ agentId: string; text: string; at: string }> {
+  return events
+    .filter(
+      (event): event is Extract<RuntimeEvent, { type: "subagent.message" }> =>
+        event.type === "subagent.message",
+    )
+    .map((event) => ({
+      agentId: event.agentId,
+      text: event.text,
+      at: event.at,
+    }));
+}
+
+/**
  * Version of the durable projection fold. Bump this whenever the fold's state
  * shape or semantics change so a persisted checkpoint from an older build is
  * discarded rather than mis-replayed.
  */
-export const PROJECTION_STATE_VERSION = 1;
+export const PROJECTION_STATE_VERSION = 2;
 
 /**
  * Foldable session projection state. The same shape can be advanced one event
@@ -179,6 +202,7 @@ export function viewProjection(
     permissionMode: permissionModeFromEvents(replayable),
     permissionProfile: permissionProfileFromEvents(replayable),
     settlements: settlementRecordsFromEvents(replayable),
+    subagentMessages: subagentMessageRecordsFromEvents(replayable),
   };
 }
 

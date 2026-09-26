@@ -3,8 +3,10 @@ import type { RuntimeEvent, SettlementNotice } from "@anthelia/contracts";
 import {
   buildSettlementNotice,
   deliverSettlement,
+  deliverSubagentMessage,
   SETTLEMENT_SOURCE_KINDS,
   settlementNoticeText,
+  subagentMessageText,
 } from "../src";
 
 /**
@@ -136,5 +138,47 @@ test("a disposed runtime publishes nothing and reports false", () => {
   ports.isDisposed = () => true;
   expect(deliverSettlement(ports, exec, notice)).toBe(false);
   expect(published).toHaveLength(0);
+  expect(woken).toHaveLength(0);
+});
+
+test("a child's mid-run message is a fact and a wake, not a settlement", () => {
+  const { ports, published, woken } = harness();
+  const delivered = deliverSubagentMessage(ports as never, exec, {
+    agentId: "a7",
+    text: "the API slice is done",
+  });
+  expect(delivered).toBe(true);
+  // The durable fact first: its own event kind, the reason set untouched.
+  expect(published).toHaveLength(1);
+  expect(published[0]).toMatchObject({
+    type: "subagent.message",
+    agentId: "a7",
+    text: "the API slice is done",
+  });
+  expect((published[0] as { at?: string }).at).toBeString();
+  // The wake: notice-shaped (reading it is the parent's choice), and it
+  // says who spoke.
+  expect(woken).toHaveLength(1);
+  expect(woken[0]!.text).toBe(
+    subagentMessageText("a7", "the API slice is done"),
+  );
+  expect(woken[0]!.text).toContain("internal subagent message");
+  expect(woken[0]!.text).toContain("this is not a user message");
+});
+
+test("a child's message degrades like any notice's", () => {
+  const { ports, published, woken, logs } = harness();
+  ports.deliverInternalWake = () => {
+    throw new Error("the wake channel is gone");
+  };
+  expect(
+    deliverSubagentMessage(ports as never, exec, {
+      agentId: "a7",
+      text: "a late finding",
+    }),
+  ).toBe(false);
+  expect(logs.some((entry) => entry.level === "warn")).toBe(true);
+  // The fact is still durable — only the delivery degraded.
+  expect(published).toHaveLength(1);
   expect(woken).toHaveLength(0);
 });

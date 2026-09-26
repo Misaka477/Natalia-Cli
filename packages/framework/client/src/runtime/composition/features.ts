@@ -75,14 +75,16 @@ export function wireFeatures(
   ports.wakeNia = collaborationWake.wakeNia;
   ports.requestNiaWake = collaborationWake.requestNiaWake;
   ports.scheduleInternalWake = collaborationWake.scheduleInternalWake;
-  ports.deliverSettlement = createSettlement({
+  const settlement = createSettlement({
     isDisposed: () => ctx.ports.isDisposed(),
     publishForSession: (exec, event) =>
       ctx.ports.publishForSession(exec, event),
     deliverInternalWake: collaborationWake.deliverInternalWake,
     nextSettlementSequence: () => state.settlementSequence++,
     serviceDirectory: ctx.state.serviceDirectory,
-  }).deliver;
+  });
+  ports.deliverSettlement = settlement.deliver;
+  ports.deliverSubagentMessage = settlement.deliverChildMessage;
   const mailboxPlans = createMailboxPlans(ctx);
   ports.createCollabChatTool = mailboxPlans.createCollabChatTool;
   ports.enqueueMailboxMessage = mailboxPlans.enqueueMailboxMessage;

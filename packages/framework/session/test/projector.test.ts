@@ -3,6 +3,7 @@ import type { RuntimeEvent } from "@anthelia/contracts";
 import {
   admitInput,
   appendSessionEvent,
+  PROJECTION_STATE_VERSION,
   createSessionRecord,
   deserializeProjectionState,
   latestSessionSnapshot,
@@ -1709,7 +1710,7 @@ test("deserializeProjectionState round-trips a serialized state", () => {
   };
   const restored = deserializeProjectionState(
     JSON.stringify({
-      version: 1,
+      version: PROJECTION_STATE_VERSION,
       events: [],
       activeTurnIDs: ["turn_1"],
       completedTurnIDs: [],
@@ -1717,9 +1718,19 @@ test("deserializeProjectionState round-trips a serialized state", () => {
   );
   expect(restored?.activeTurnIDs).toEqual(new Set(["turn_1"]));
   expect(restored?.completedTurnIDs).toEqual(new Set());
+  // a stale fold version is discarded, never mis-replayed
+  const stale = deserializeProjectionState(
+    JSON.stringify({
+      version: PROJECTION_STATE_VERSION - 1,
+      events: [],
+      activeTurnIDs: ["turn_1"],
+      completedTurnIDs: [],
+    }),
+  );
+  expect(stale).toBeUndefined();
   // absent set fields are tolerated (default empty)
   const partial = deserializeProjectionState(
-    JSON.stringify({ version: 1, events: [] }),
+    JSON.stringify({ version: PROJECTION_STATE_VERSION, events: [] }),
   );
   expect(partial?.activeTurnIDs).toEqual(new Set());
 });

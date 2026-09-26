@@ -682,6 +682,21 @@ export type SettlementReason =
   | "unknown";
 
 /**
+ * A subagent's mid-run message to its spawning session: a finding the
+ * parent should hear NOW, delivered through the spine. It is NOT a
+ * settlement — the child has not ended — so it travels its own event
+ * and the settlement reason set stays what it is.
+ */
+export type SubagentMessageEventData = {
+  type: "subagent.message";
+  id: string;
+  /** The child that sent it. */
+  agentId: string;
+  text: string;
+  at: string;
+};
+
+/**
  * A settlement notice: a long-running thing (a managed process, a
  * terminal pane, a subagent, a team PR) reached a boundary, and the
  * main agent is TOLD instead of left polling. The notice is an input,
@@ -2177,6 +2192,7 @@ type RuntimeEventData =
     }
   | NamespacedCollabMessageEventData
   | SettlementNoticeEventData
+  | SubagentMessageEventData
   | {
       type: "settings.updated";
       scope: "global" | "project";

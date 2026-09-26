@@ -121,6 +121,8 @@ export type SubagentRunnerContext = {
   setStatus(status: string): void;
   signal: AbortSignal;
   reportActivity(phase: SubagentPhaseView, detail: string): void;
+  /** The child's live channel to its spawning session. */
+  sendToParent(text: string): void;
 };
 
 /** Operational subagent surface consumed by tools and hosts. */

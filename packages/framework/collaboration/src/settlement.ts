@@ -37,6 +37,15 @@ export type SettlementExec = { session: { id: string } };
 
 export type { SettlementNotice, SettlementReason } from "@anthelia/contracts";
 
+/**
+ * The model-facing internal message for a child's mid-run report. The
+ * same notice-is-an-input shape as a settlement: it says who spoke and
+ * what, and reading it is the model's choice. It never orders an action.
+ */
+export function subagentMessageText(agentId: string, text: string): string {
+  return `(internal subagent message: ${agentId} reported mid-run. ${text} Read it with the matching tool when you choose; this is not a user message and needs no acknowledgement.)`;
+}
+
 /** The registry token for the settlement service (adapters resolve it). */
 export const SETTLEMENT_SERVICE = "natalia.settlement.service";
 
@@ -97,6 +106,47 @@ export function settlementNoticeText(notice: SettlementNotice): string {
  * team fan-out) call `deliver` at their boundaries; the spine owns the
  * event, the text and the degrade.
  */
+/**
+ * Publish a child's mid-run message and deliver it through the same
+ * wake core the settlements use (a running turn steered at its next
+ * step / an idle session a queued turn). A failed delivery degrades
+ * like any notice's.
+ */
+export function deliverSubagentMessage<E extends SettlementExec>(
+  ports: SettlementDeliveryPorts<E>,
+  exec: E,
+  message: { agentId: string; text: string },
+): boolean {
+  if (ports.isDisposed()) return false;
+  try {
+    const id = `submsg:${message.agentId}:${ports.nextSettlementSequence()}`;
+    ports.publishForSession(exec, {
+      type: "subagent.message",
+      id,
+      agentId: message.agentId,
+      text: message.text,
+      at: new Date().toISOString(),
+    });
+    ports.deliverInternalWake(
+      exec,
+      `turn_submsg_${id.replace(/[^a-zA-Z0-9]/gu, "_")}`,
+      subagentMessageText(message.agentId, message.text),
+    );
+    return true;
+  } catch (error) {
+    logOf(ports.serviceDirectory).warn(
+      "subagent-message",
+      "delivery degraded",
+      {
+        sessionID: exec.session.id,
+        agentId: message.agentId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
+    return false;
+  }
+}
+
 export function createSettlement<E extends SettlementExec>(input: {
   isDisposed(): boolean;
   publishForSession(exec: E, event: RuntimeEvent): void;
@@ -121,6 +171,22 @@ export function createSettlement<E extends SettlementExec>(input: {
         exec,
         notice,
         options,
+      );
+    },
+    deliverChildMessage(
+      exec: E,
+      message: { agentId: string; text: string },
+    ): boolean {
+      return deliverSubagentMessage(
+        {
+          isDisposed: input.isDisposed,
+          publishForSession: input.publishForSession,
+          deliverInternalWake: input.deliverInternalWake,
+          nextSettlementSequence: input.nextSettlementSequence,
+          serviceDirectory: input.serviceDirectory,
+        },
+        exec,
+        message,
       );
     },
     settlementNoticeText,
