@@ -17,7 +17,7 @@ import { join, resolve } from "node:path";
  * step.
  */
 
-// src -> object-store -> hosts -> packages -> object-store-rust
+// src -> object-store -> hosts -> packages (the crate sits at native/)
 /**
  * The backend a store should use (the object-store-rust plan's "TS
  * keeps its implementation as the fallback"):
@@ -67,13 +67,12 @@ export function objectStoreBackendStatus():
   }
 }
 
-const CRATE_DIR = resolve(
-  import.meta.dir,
-  "..",
-  "..",
-  "..",
-  "object-store-rust",
-);
+// The native CAS core lives beside its sibling (native-index) under the
+// package that owns it — the confinement precedent. It used to sit at
+// packages/object-store-rust, a root directory that conformed to no
+// layer; the architecture assigns the store to the engine, and a native
+// module belongs to its owning package.
+const CRATE_DIR = resolve(import.meta.dir, "..", "native");
 let LIB_PATH = join(
   CRATE_DIR,
   "target",
