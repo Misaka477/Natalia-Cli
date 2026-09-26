@@ -287,6 +287,14 @@ export async function wireFrameworkServices(
       if (!exec) return;
       const recipient = request?.recipient ?? "live_chat";
       if (recipient === "live_chat") {
+        // The advisor path's missing writer (the Navi advisor plan's block
+        // C): the wake branch has read `advisorPending` since it was
+        // written and NOTHING ever set it — the expert profile, the
+        // advisor-request message and the advisor model route were all
+        // unreachable. A question from the main agent is a consult; mark
+        // it, and the wake routes through the advisor path.
+        if (request?.kind === "question" && request?.source === "main_agent")
+          exec.advisorPending = true;
         ctx.ports.requestNaviWake(exec);
       } else if (recipient === "nia") {
         ctx.ports.requestNiaWake(exec);

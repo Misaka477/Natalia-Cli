@@ -184,6 +184,17 @@ export const runtimeConfigSchema = z.object({
        * delivered; this limit only prevents another automatic follow-up.
        */
       maxAutoRounds: z.number().int().min(1).max(10).default(3),
+      /**
+       * The model Navi consults with when Natalia asks her mid-task (the
+       * advisor path). ABSENT by default: a consult runs on Navi's chat
+       * model — the same family as the main agent's — because the
+       * advisor's value is an INDEPENDENT second read (a fresh context
+       * with no sunk-cost commitment, adversarial framing), not a
+       * capability tier. Set it only when a second provider or tier is
+       * worth the difference. A session's own expert-profile selection
+       * (the model command) overrides this default.
+       */
+      advisorModel: z.string().min(1).optional(),
     })
     .default({}),
   timeouts: timeoutSchema.default({}),

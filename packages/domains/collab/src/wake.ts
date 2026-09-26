@@ -20,6 +20,28 @@ import type { SessionExecutionState } from "@anthelia/substrate";
 import { streamEvent } from "./chat-turn-common";
 import { logOf } from "@anthelia/operation-log";
 
+/**
+ * The advisor model for a consult: the session's own expert profile
+ * first, the config's advisorModel second, and NOTHING — Navi's chat
+ * model, the same family as the main agent's — when neither is set.
+ * That last case is the default by design: the advisor's value is an
+ * independent second read, not a capability tier (the user's amendment:
+ * the advisor is not required to differ from the main model).
+ */
+export function advisorModelFor(
+  expertProfile:
+    | import("@anthelia/contracts").ChatModelProfile["expert"]
+    | undefined,
+  configAdvisorModel: string | undefined,
+): { modelID: string; variant?: string } | undefined {
+  const modelID = expertProfile?.modelID ?? configAdvisorModel;
+  if (!modelID) return undefined;
+  return {
+    modelID,
+    ...(expertProfile?.variant ? { variant: expertProfile.variant } : {}),
+  };
+}
+
 export function createCollaborationWake(ctx: ProductRuntimeContext) {
   return {
     wakeMainForCollaboration,
@@ -166,6 +188,10 @@ export function createCollaborationWake(ctx: ProductRuntimeContext) {
     const responseMessageID = `chat:${Date.now().toString(36)}:${nextChatSequence()}`;
     const expert = exec.advisorPending === true;
     const expertProfile = exec.naviChatModelProfile?.expert;
+    const advisorModel = advisorModelFor(
+      expertProfile,
+      ctx.ports.getTsRuntimeConfig?.()?.runtime?.collaboration?.advisorModel,
+    );
     if (expert) {
       publishForSession(
         exec,
@@ -174,7 +200,7 @@ export function createCollaborationWake(ctx: ProductRuntimeContext) {
           id: `${responseMessageID}:advisor`,
           messageID: responseMessageID,
           role: "user",
-          text: "(internal advisor request: Natalia hit a problem and needs expert guidance. Read the Main context and give concise technical advice.)",
+          text: "(internal advisor request: Natalia consults you at a decision point. Read the Main context and give concise technical advice per the advisor contract; declining is legitimate when the question is outside your remit.)",
           at: new Date().toISOString(),
         }),
       );
@@ -186,14 +212,7 @@ export function createCollaborationWake(ctx: ProductRuntimeContext) {
         text: "",
         responseMessageID,
         internal: true,
-        ...(expert && expertProfile?.modelID
-          ? {
-              model: {
-                modelID: expertProfile.modelID,
-                variant: expertProfile.variant,
-              },
-            }
-          : {}),
+        ...(expert && advisorModel ? { model: advisorModel } : {}),
         reasoningEffort: expert ? expertProfile?.reasoningEffort : undefined,
       });
     } catch (cause) {

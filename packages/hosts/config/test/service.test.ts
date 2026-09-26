@@ -67,6 +67,30 @@ test("collaboration auto rounds default to three and accept project overrides", 
   ).toBe(7);
 });
 
+test("the advisor model defaults to absent — the advisor is not required to differ from main", async () => {
+  // The user's amendment (block C): an absent advisorModel means the
+  // consult runs on Navi's chat model — the same family as the main
+  // agent's — because the advisor's value is an independent second read,
+  // not a capability tier.
+  const root = await mkdtemp(join(tmpdir(), "natalia-advisor-config-"));
+  const globalPath = join(root, "global.json");
+  expect(
+    (await resolveConfig({ workspaceRoot: root, globalPath })).config.runtime
+      .collaboration.advisorModel,
+  ).toBeUndefined();
+
+  await updateConfigAtScope(
+    root,
+    { runtime: { collaboration: { advisorModel: "gpt-5.1-codex" } } },
+    "project",
+    { globalPath },
+  );
+  expect(
+    (await resolveConfig({ workspaceRoot: root, globalPath })).config.runtime
+      .collaboration.advisorModel,
+  ).toBe("gpt-5.1-codex");
+});
+
 test("legacy project model settings migrate once without moving other settings", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-model-migration-"));
   const globalPath = join(root, "global.json");
