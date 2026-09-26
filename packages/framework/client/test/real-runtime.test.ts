@@ -12868,6 +12868,15 @@ test("an idle Navi answers Natalia's question immediately without a user chat", 
     message: { kind: "answer", text: "yes, echo is safe" },
   });
   expect(
+    events.some(
+      (event) =>
+        event.type === "navi.chat.message.new" &&
+        String((event as { text?: string }).text).includes(
+          "internal advisor request",
+        ),
+    ),
+  ).toBe(true);
+  expect(
     firstNaviMessages.filter((message) => message.role !== "system"),
   ).toEqual([
     // ADR D2: the live work context is an appended `<runtime_context>` user
