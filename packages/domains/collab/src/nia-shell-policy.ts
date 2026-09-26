@@ -133,6 +133,21 @@ function gitReadOnly(tokens: string[]) {
     case "status":
     case "whatchanged":
       return true;
+    // Inherently read-only ref/history walks an audit reads:
+    case "diff-tree":
+    case "for-each-ref":
+    case "ls-remote":
+    case "merge-base":
+    case "rev-list":
+    case "symbolic-ref":
+      return true;
+    // `list`-only subcommands of stateful features: the mutating
+    // siblings (pop/drop/apply, add/prune/remove) are denied by shape.
+    case "worktree":
+      return tokens[2] === "list";
+    // `stash list` / `stash show` read the stash without touching it.
+    case "stash":
+      return tokens[2] === "list" || tokens[2] === "show";
     case "branch": {
       const args = tokens.slice(2);
       if (args.some((arg) => !arg.startsWith("-"))) return false;
@@ -154,24 +169,36 @@ function gitReadOnly(tokens: string[]) {
       return hasFlag(tokens.slice(2), "-l", "--list");
     case "remote":
       return hasFlag(tokens.slice(2), "-v", "--verbose");
-    case "config":
-      return hasFlag(
-        tokens.slice(2),
-        "-l",
-        "--list",
-        "--get",
-        "--get-all",
-        "--get-regexp",
-      );
+    case "config": {
+      const args = tokens.slice(2);
+      if (hasFlag(args, "-l", "--list", "--get", "--get-all", "--get-regexp"))
+        return true;
+      // The positional read (`git config user.name`) carries no flag; a
+      // write needs a value, so exactly one non-flag arg is a read.
+      return args.filter((arg) => !arg.startsWith("-")).length === 1;
+    }
     default:
       return false;
   }
 }
 
+/** Read-only dependency-state subcommands (installed tree, staleness,
+ * advisories, why-a-package-is-here). The install family is denied by
+ * default: anything not in this set falls through to the run-script
+ * gate. */
+const READ_ONLY_PACKAGE_COMMANDS = new Set([
+  "audit",
+  "list",
+  "ls",
+  "outdated",
+  "why",
+]);
+
 function packageManagerReadOnly(tokens: string[]) {
   const first = tokens[1];
   if (first === "test") return true;
   if (first === "--version" || first === "-v") return true;
+  if (READ_ONLY_PACKAGE_COMMANDS.has(first ?? "")) return true;
   if (first !== "run") return false;
   let index = 2;
   while (tokens[index]?.startsWith("-")) index += 1;
@@ -182,6 +209,9 @@ function bunReadOnly(tokens: string[]) {
   const first = tokens[1];
   if (first === "test") return true;
   if (first === "--version" || first === "-v") return true;
+  if (first === "outdated") return true;
+  // `bun pm ls` / `bun pm outdated` are the read-only dependency state.
+  if (first === "pm") return READ_ONLY_PACKAGE_COMMANDS.has(tokens[2] ?? "");
   if (first !== "run") return false;
   let index = 2;
   while (tokens[index]?.startsWith("-")) index += 1;

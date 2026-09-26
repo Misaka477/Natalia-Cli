@@ -30,8 +30,37 @@ test("Nia shell policy allows read-only inspection and verification commands", a
     "curl -s --max-time=5 -i http://127.0.0.1:5178/",
     "ps aux",
     "jq .dependencies packages/framework/session/package.json",
+    // The audit's read-only ref/history/dependency surfaces:
+    "git stash list",
+    "git stash show",
+    "git worktree list",
+    "git ls-remote origin",
+    "git merge-base HEAD main",
+    "git config user.name",
+    "npm ls --depth=0",
+    "npm outdated",
+    "npm audit",
+    "bun outdated",
+    "bun pm ls",
   ])
     await expect(niaShellPolicyDenial(command)).resolves.toBeUndefined();
+});
+
+test("the audit's new read surfaces deny their mutating siblings", async () => {
+  // Every allowance is a subcommand, and its siblings stay denied by
+  // shape — the gate is the subcommand, not the tool name.
+  for (const command of [
+    "git stash pop",
+    "git stash drop",
+    "git worktree add ../x HEAD",
+    "git worktree remove ../x",
+    "git config user.name someone-else",
+    "npm install",
+    "npm ci",
+    "bun add left-pad",
+    "bun pm add left-pad",
+  ])
+    await expect(niaShellPolicyDenial(command)).resolves.toMatch(/read-only/u);
 });
 
 test("a leading cd does not launder the command it chains", async () => {
