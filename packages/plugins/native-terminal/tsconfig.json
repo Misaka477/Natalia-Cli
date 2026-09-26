@@ -12,6 +12,9 @@
       "path": "../../core/contracts"
     },
     {
+      "path": "../../framework/collaboration"
+    },
+    {
       "path": "../../hosts/platform"
     },
     {

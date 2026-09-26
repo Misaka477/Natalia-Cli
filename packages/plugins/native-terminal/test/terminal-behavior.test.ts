@@ -12,6 +12,59 @@ import {
 } from "../src";
 import { terminalController } from "@anthelia/runtime-services";
 import {
+  createPtyTerminalController,
+  type PtyFactory,
+  type PtyProcess,
+} from "../src";
+
+function fakePtyForBehavior() {
+  const processes: PtyProcess[] = [];
+  let nextPid = 2000;
+  const factory: PtyFactory = () => {
+    const dataListeners = new Set<(data: string) => void>();
+    const exitListeners = new Set<(event: { exitCode: number }) => void>();
+    const process: PtyProcess & {
+      emit(data: string): void;
+      exit(code?: number): void;
+    } = {
+      pid: nextPid++,
+      write(data) {
+        for (const listener of dataListeners)
+          listener(data.replace(/\n/g, "\r\n"));
+      },
+      resize() {},
+      kill() {
+        process.exit(0);
+      },
+      onData(listener) {
+        dataListeners.add(listener);
+        return {
+          dispose() {
+            dataListeners.delete(listener);
+          },
+        };
+      },
+      onExit(listener) {
+        exitListeners.add(listener);
+        return {
+          dispose() {
+            exitListeners.delete(listener);
+          },
+        };
+      },
+      emit(data) {
+        for (const listener of dataListeners) listener(data);
+      },
+      exit(code = 0) {
+        for (const listener of exitListeners) listener({ exitCode: code });
+      },
+    };
+    processes.push(process);
+    return process;
+  };
+  return { factory, processes };
+}
+import {
   encodeTerminalKey,
   nativeTerminalReadPage,
   nativeTerminalSearchPage,
@@ -741,4 +794,57 @@ test("terminal_observe latest reports a point-in-time read, not a wait outcome",
   expect(repeated.reason).toBe("latest");
   expect(repeated.changed).toBe(false);
   expect(repeated.text).toContain("screen contents");
+});
+
+test("observe without afterRevision waits for what changed since last look", async () => {
+  // The screenshot's lesson: with the old default (0) every observe
+  // returned instantly with a full frame, and the model's only strategy
+  // was to spin. Omitted afterRevision now means "since I last looked".
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-default-"));
+  const { factory, processes } = fakePtyForBehavior();
+  const controller = createPtyTerminalController({
+    workspaceRoot: root,
+    publish: () => undefined,
+    onPerformance: () => undefined,
+    runtimeID: () => "rt",
+    userRuntimeHome: () => undefined,
+    windowMode: () => "windowless" as const,
+    spawn: factory,
+  });
+  const context = { workspaceRoot: root, terminal: controller };
+  const tools = terminalRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "bash", cwd: root, id: "tty_default" }, context);
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit("first screen\r\n");
+  // The first observation marks the revision the model last looked at.
+  const first = JSON.parse(
+    await tools
+      .get("terminal_observe")!
+      .execute({ id: "tty_default", timeoutMs: 1_000 }, context),
+  );
+  expect(first.changed).toBe(true);
+  // Nothing new since: an omitted afterRevision now WAITS (the timeout
+  // result), rather than returning a full frame instantly.
+  const started = Date.now();
+  const second = JSON.parse(
+    await tools
+      .get("terminal_observe")!
+      .execute({ id: "tty_default", timeoutMs: 400 }, context),
+  );
+  expect(second.changed).toBe(false);
+  expect(second.reason).toBe("timeout");
+  expect(Date.now() - started).toBeGreaterThanOrEqual(300);
+  // And new output still returns promptly through the same default.
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit("second screen\r\n");
+  const third = JSON.parse(
+    await tools
+      .get("terminal_observe")!
+      .execute({ id: "tty_default", timeoutMs: 2_000 }, context),
+  );
+  expect(third.changed).toBe(true);
+  expect(third.text).toContain("second screen");
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_default" }, context);
 });

@@ -1,4 +1,14 @@
 import { randomUUID } from "node:crypto";
+import {
+  applyTerminalOutput,
+  createTerminalScreen,
+  renderScreenText,
+  type TerminalScreen,
+} from "./terminal-screen";
+import {
+  SETTLEMENT_SOURCE_KINDS,
+  type SettlementService,
+} from "@natalia/collaboration";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
@@ -53,6 +63,13 @@ type PtySession = {
   cols: number;
   revision: number;
   output: string;
+  /** The virtual screen the byte stream renders onto (the model's human view). */
+  screen: TerminalScreen;
+  /** The last emitted frame's text (the diff base for scroll notices). */
+  lastFrameText?: string;
+  /** The scrollback depth at the last emitted frame. */
+  lastFrameScrollback?: number;
+  settleTimer?: ReturnType<typeof setTimeout>;
   lastObservedText?: string;
   lastObservedRevision?: number;
   lastModelWriteAt?: number;
@@ -73,6 +90,10 @@ export type PtyTerminalControllerInput = {
   spawn?: PtyFactory;
   maxPerSession?: number;
   idleMs?: number;
+  /** The settlement bridge (resolved by the plugin's setup). */
+  settlement?: SettlementService;
+  /** How long the pane stays quiet before a frame is "settled". */
+  frameSettleMs?: number;
 };
 
 const PYTHON_PTY_BRIDGE = `
@@ -519,12 +540,49 @@ export function createPtyTerminalController(
   function appendOutput(session: PtySession, chunk: string) {
     if (!chunk) return;
     session.output = trimOutput(session.output + chunk);
+    // The render layer: the same bytes the raw buffer keeps, applied to
+    // the virtual screen — the model's view is now the pane's rendered
+    // screen, not the stream.
+    applyTerminalOutput(session.screen, chunk);
     session.revision += 1;
     session.lastOutputAt = Date.now();
     touch(session);
     notifyRevision(session.id);
+    armFrameSettle(session);
     for (const listener of outputListeners.get(session.id) ?? [])
       listener(chunk);
+  }
+
+  /**
+   * The frame emitter (the settlement plan's block 3): when the pane goes
+   * quiet for the settle window and the screen differs from the frame the
+   * model last saw, ONE notice is delivered — the model is told the
+   * screen settled instead of polling for it. A fast stream resets the
+   * window (the timer re-arms on every chunk), so a chatty pane emits at
+   * meaningful pauses, not per keystroke.
+   */
+  function armFrameSettle(session: PtySession) {
+    if (!input.settlement || !session.sessionID) return;
+    if (session.settleTimer) clearTimeout(session.settleTimer);
+    session.settleTimer = setTimeout(() => {
+      session.settleTimer = undefined;
+      if (session.status !== "running") return;
+      const text = renderScreenText(session.screen);
+      if (text === session.lastFrameText) return;
+      const scrolled =
+        session.screen.scrollback.length > (session.lastFrameScrollback ?? 0);
+      session.lastFrameText = text;
+      session.lastFrameScrollback = session.screen.scrollback.length;
+      input.settlement?.deliverForSession(session.sessionID!, {
+        subject: session.id,
+        reason: scrolled ? "scrolled" : "settled",
+        summary: scrolled
+          ? `terminal ${session.id} scrolled a screen of new output`
+          : `terminal ${session.id} settled`,
+        sourceKind: SETTLEMENT_SOURCE_KINDS.terminalSettled,
+      });
+    }, input.frameSettleMs ?? 400);
+    session.settleTimer.unref?.();
   }
 
   function markExited(
@@ -601,9 +659,10 @@ export function createPtyTerminalController(
     assertSessionOwner(session, options?.sessionID);
     assertReadable(session);
     return {
-      text: lineWindow(session.output, options?.maxLines),
-      cursorX: 0,
-      cursorY: 0,
+      // The rendered screen: what the pane shows, not what it emitted.
+      text: renderScreenText(session.screen),
+      cursorX: session.screen.cursorX,
+      cursorY: session.screen.cursorY,
       rows: session.rows,
       cols: session.cols,
     };
@@ -743,6 +802,10 @@ export function createPtyTerminalController(
       cols: DEFAULT_COLS,
       revision: 0,
       output: "",
+      screen: createTerminalScreen({
+        rows: DEFAULT_ROWS,
+        cols: DEFAULT_COLS,
+      }),
       lastActivityAt: now,
       disposers: [],
     };
@@ -858,9 +921,11 @@ export function createPtyTerminalController(
     const session = get(id);
     assertReadable(session);
     return {
-      text: session.output,
-      cursorX: 0,
-      cursorY: 0,
+      // The rendered screen, like read: every read surface the model
+      // touches shows the pane, not the stream.
+      text: renderScreenText(session.screen),
+      cursorX: session.screen.cursorX,
+      cursorY: session.screen.cursorY,
       rows: session.rows,
       cols: session.cols,
       revision: session.revision,
@@ -894,7 +959,7 @@ export function createPtyTerminalController(
           changed: session.revision > afterRevision,
           reason: "exited" as const,
         };
-      const text = lineWindow(session.output, options?.maxLines);
+      const text = renderScreenText(session.screen);
       if (session.revision > afterRevision)
         return {
           session: { revision: session.revision },
@@ -935,6 +1000,10 @@ export function createPtyTerminalController(
     const current = get(id);
     current.lastObservedText = text;
     current.lastObservedRevision = revision;
+  }
+
+  function lastObservedRevision(id: string): number | undefined {
+    return get(id).lastObservedRevision;
   }
 
   async function requestHuman(id: string, reason: string, sessionID?: string) {
@@ -1006,6 +1075,8 @@ export function createPtyTerminalController(
         markExited(session, "system");
       }),
     );
+    for (const session of sessions.values())
+      if (session.settleTimer) clearTimeout(session.settleTimer);
     sessions.clear();
     idempotency.clear();
     writes.clear();
@@ -1031,6 +1102,7 @@ export function createPtyTerminalController(
     observe,
     session,
     markObserved,
+    lastObservedRevision,
     requestHuman,
     ttyName,
     setActiveSession,

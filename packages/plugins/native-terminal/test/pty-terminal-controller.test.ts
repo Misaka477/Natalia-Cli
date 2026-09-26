@@ -22,7 +22,11 @@ function fakePty(): { factory: PtyFactory; processes: PtyProcess[] } {
     } = {
       pid: nextPid++,
       write(data) {
-        for (const listener of dataListeners) listener(data);
+        // A real pty's echo applies ONLCR: the newline reaches the
+        // reader as CRLF. The fake mirrors that, so the rendered screen
+        // matches a real pane's.
+        for (const listener of dataListeners)
+          listener(data.replace(/\n/g, "\r\n"));
       },
       resize() {},
       kill() {
@@ -148,9 +152,12 @@ test("pty controller write, read, resize, and observe", async () => {
   });
   expect(again.delivery).toBe("duplicate");
   const snapshot = await controller.snapshot(started.id);
-  expect(snapshot.text).toBe("hello\nhello\n");
+  // The rendered screen: a grid has used rows, not a byte tail — the
+  // trailing newline of the raw echo is a cursor move, not a line.
+  expect(snapshot.text).toBe("hello\nhello");
   const read = await controller.read(started.id);
-  expect(read.text).toBe("hello\nhello\n");
+  expect(read.text).toBe("hello\nhello");
+
   const resized = await controller.resize(started.id, 40, 120, "human");
   expect(resized.rows).toBe(40);
   expect(resized.cols).toBe(120);
@@ -241,12 +248,14 @@ test("pty controller subscribeOutput replays buffer then live chunks", async () 
   const unsubscribe = controller.subscribeOutput!(started.id, (chunk) => {
     chunks.push(chunk);
   });
-  expect(chunks).toEqual(["hello\n"]);
+  // The echo's CRLF reality (ONLCR): a real pty translates the newline,
+  // and the live-chunk listeners see the pane's actual bytes.
+  expect(chunks).toEqual(["hello\r\n"]);
   (processes[0] as PtyProcess & { emit(data: string): void }).emit("world\n");
-  expect(chunks).toEqual(["hello\n", "world\n"]);
+  expect(chunks).toEqual(["hello\r\n", "world\n"]);
   unsubscribe();
   (processes[0] as PtyProcess & { emit(data: string): void }).emit("ignored\n");
-  expect(chunks).toEqual(["hello\n", "world\n"]);
+  expect(chunks).toEqual(["hello\r\n", "world\n"]);
   await controller.close();
 });
 
@@ -444,5 +453,121 @@ test("pty controller refuses to reuse a terminal id from another session", async
       sessionID: "ses_b",
     }),
   ).rejects.toThrow("belongs to session ses_a");
+  await controller.close();
+});
+
+test("the pane reads as its rendered screen, not its byte stream", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-render-"));
+  const { factory, processes } = fakePty();
+  const controller = createPtyTerminalController(
+    controllerInput(root, factory),
+  );
+  await controller.start({
+    command: "bash",
+    cwd: root,
+    id: "term_render",
+    sessionID: "ses_render",
+  });
+  // The app's redraw shape: clear, home, write. The raw capture would
+  // carry the escapes; the read returns the rendered text.
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit("\x1b[2J\x1b[Hloading...\r\x1b[Kready on 5178");
+  const read = await controller.read("term_render");
+  expect(read.text).toBe("ready on 5178");
+  expect(read.text).not.toContain("\x1b");
+  await controller.close();
+});
+
+test("a quiet pane emits one settled frame notice and stays quiet", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-frame-"));
+  const { factory, processes } = fakePty();
+  const notices: Array<{ sessionID: string; notice: Record<string, unknown> }> =
+    [];
+  const controller = createPtyTerminalController({
+    ...controllerInput(root, factory),
+    settlement: {
+      deliverForSession: (
+        sessionID: string,
+        notice: Record<string, unknown>,
+      ) => {
+        notices.push({ sessionID, notice });
+        return true;
+      },
+    },
+    frameSettleMs: 20,
+  });
+  await controller.start({
+    command: "bash",
+    cwd: root,
+    id: "term_frame",
+    sessionID: "ses_frame",
+  });
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit("server up\r\n");
+  await Bun.sleep(80);
+  expect(notices).toHaveLength(1);
+  expect(notices[0]).toMatchObject({
+    sessionID: "ses_frame",
+    notice: {
+      subject: "term_frame",
+      reason: "settled",
+      sourceKind: "terminal-settled",
+    },
+  });
+  // The same screen after another quiet window: no second notice.
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit("");
+  await Bun.sleep(80);
+  expect(notices).toHaveLength(1);
+  await controller.close();
+});
+
+test("a frame with new scrollback reports scrolled, not settled", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-scroll-"));
+  const { factory, processes } = fakePty();
+  const notices: Array<Record<string, unknown>> = [];
+  const controller = createPtyTerminalController({
+    ...controllerInput(root, factory),
+    settlement: {
+      deliverForSession: (
+        _sessionID: string,
+        notice: Record<string, unknown>,
+      ) => {
+        notices.push(notice);
+        return true;
+      },
+    },
+    frameSettleMs: 20,
+  });
+  await controller.start({
+    command: "bash",
+    cwd: root,
+    id: "term_scroll",
+    sessionID: "ses_scroll",
+  });
+  // A screenful of new lines: the scrollback grows past its last frame.
+  for (let line = 0; line < 30; line += 1)
+    (processes[0] as PtyProcess & { emit(data: string): void }).emit(`line ${line}\r\n`);
+  await Bun.sleep(80);
+  expect(notices.length).toBeGreaterThanOrEqual(1);
+  expect(notices.at(-1)).toMatchObject({
+    reason: "scrolled",
+    sourceKind: "terminal-settled",
+  });
+  await controller.close();
+});
+
+test("without the spine the pane renders and stays silent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-bare-"));
+  const { factory, processes } = fakePty();
+  const controller = createPtyTerminalController(
+    controllerInput(root, factory),
+  );
+  await controller.start({
+    command: "bash",
+    cwd: root,
+    id: "term_bare",
+    sessionID: "ses_bare",
+  });
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit("plain text");
+  await Bun.sleep(60);
+  expect((await controller.read("term_bare")).text).toBe("plain text");
   await controller.close();
 });

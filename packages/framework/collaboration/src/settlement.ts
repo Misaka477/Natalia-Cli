@@ -37,6 +37,20 @@ export type SettlementExec = { session: { id: string } };
 
 export type { SettlementNotice, SettlementReason } from "@anthelia/contracts";
 
+/** The registry token for the settlement service (adapters resolve it). */
+export const SETTLEMENT_SERVICE = "natalia.settlement.service";
+
+/**
+ * The service adapters (plugins) resolve: a session-scoped delivery that
+ * finds the live execution and publishes+steers the notice. Plugins cannot
+ * reach the runtime's ports directly — the boundary is this handle, bound
+ * by the composition and looked up by name, exactly like the collaboration
+ * service the Live Work Chat already resolves.
+ */
+export type SettlementService = {
+  deliverForSession(sessionID: string, notice: SettlementNotice): boolean;
+};
+
 /** The producer kinds, named once so adopters share one vocabulary. */
 export const SETTLEMENT_SOURCE_KINDS = {
   processExited: "process-exited",

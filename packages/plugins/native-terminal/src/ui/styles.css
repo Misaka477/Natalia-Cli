@@ -1,4 +1,14 @@
-.terminal-pane { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--neu-bg-light); border-radius: 12px; box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); }
+.terminal-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--neu-bg-light);
+  border-radius: 12px;
+  box-shadow:
+    inset 3px 3px 6px var(--neu-shadow-dark),
+    inset -3px -3px 6px var(--neu-shadow-light);
+}
 .terminal-toolbar {
   display: flex;
   align-items: center;
@@ -15,7 +25,9 @@
   background: var(--neu-bg);
   color: var(--neu-text);
   font-size: 11px;
-  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+  box-shadow:
+    inset 2px 2px 4px var(--neu-shadow-dark),
+    inset -2px -2px 4px var(--neu-shadow-light);
   outline: none;
 }
 .terminal-toolbar-btn {
@@ -26,11 +38,17 @@
   color: var(--neu-muted);
   font-size: 11px;
   cursor: pointer;
-  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+  box-shadow:
+    3px 3px 6px var(--neu-shadow-dark),
+    -3px -3px 6px var(--neu-shadow-light);
 }
-.terminal-toolbar-btn:hover { color: var(--neu-text); }
+.terminal-toolbar-btn:hover {
+  color: var(--neu-text);
+}
 .terminal-toolbar-btn:active {
-  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+  box-shadow:
+    inset 2px 2px 4px var(--neu-shadow-dark),
+    inset -2px -2px 4px var(--neu-shadow-light);
 }
 .terminal-owner-badge {
   padding: 3px 8px;
@@ -42,9 +60,17 @@
 .terminal-owner-badge[data-owner="human"] {
   color: var(--neu-accent);
 }
-.terminal-profile-select { width: 92px; flex-shrink: 0; }
-.terminal-profile-select .neu-select-trigger { padding: 5px 8px; font-size: 11px; }
-.terminal-profile-select .neu-select-option { font-size: 11px; }
+.terminal-profile-select {
+  width: 92px;
+  flex-shrink: 0;
+}
+.terminal-profile-select .neu-select-trigger {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+.terminal-profile-select .neu-select-option {
+  font-size: 11px;
+}
 .terminal-split-stack {
   display: flex;
   flex: 1;
@@ -65,7 +91,14 @@
 .terminal-split-cell[data-active="true"] {
   border-color: var(--neu-accent);
 }
-.terminal-tabs { display: flex; align-items: center; gap: 6px; padding: 8px 10px 0; flex-shrink: 0; overflow-x: auto; }
+.terminal-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 0;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
 .terminal-tab {
   display: inline-flex;
   align-items: center;
@@ -78,14 +111,20 @@
   color: var(--neu-muted);
   font-size: 11px;
   cursor: pointer;
-  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+  box-shadow:
+    3px 3px 6px var(--neu-shadow-dark),
+    -3px -3px 6px var(--neu-shadow-light);
 }
 .terminal-tab[data-active="true"] {
   background: var(--neu-bg-light);
   color: var(--neu-accent);
-  box-shadow: inset 2px 2px 4px var(--neu-shadow-dark), inset -2px -2px 4px var(--neu-shadow-light);
+  box-shadow:
+    inset 2px 2px 4px var(--neu-shadow-dark),
+    inset -2px -2px 4px var(--neu-shadow-light);
 }
-.terminal-tab-label { white-space: nowrap; }
+.terminal-tab-label {
+  white-space: nowrap;
+}
 .terminal-tab-close {
   display: inline-flex;
   align-items: center;
@@ -97,7 +136,9 @@
   font-size: 12px;
   line-height: 1;
 }
-.terminal-tab-close:hover { color: var(--neu-error); }
+.terminal-tab-close:hover {
+  color: var(--neu-error);
+}
 .terminal-tab-add {
   flex-shrink: 0;
   width: 26px;
@@ -109,11 +150,24 @@
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light);
+  box-shadow:
+    3px 3px 6px var(--neu-shadow-dark),
+    -3px -3px 6px var(--neu-shadow-light);
 }
-.terminal-tab-add:disabled { opacity: 0.45; cursor: not-allowed; }
-.terminal-limit-error { padding: 4px 12px 0; font-size: 11px; color: var(--neu-error); }
-.terminal-xterm-stack { position: relative; flex: 1; min-height: 0; }
+.terminal-tab-add:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.terminal-limit-error {
+  padding: 4px 12px 0;
+  font-size: 11px;
+  color: var(--neu-error);
+}
+.terminal-xterm-stack {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
 .terminal-xterm-host {
   position: absolute;
   inset: 0;
@@ -121,7 +175,9 @@
   border-radius: 12px;
   overflow: hidden;
 }
-.terminal-xterm-host[data-active="true"] { display: flex; }
+.terminal-xterm-host[data-active="true"] {
+  display: flex;
+}
 .web-terminal {
   flex: 1;
   min-height: 0;
@@ -130,12 +186,49 @@
   overflow: hidden;
   background: #1e1e20;
 }
-.web-terminal .xterm { height: 100%; border-radius: 10px; overflow: hidden; }
-.web-terminal .xterm-viewport { overflow-y: auto !important; border-radius: 10px; }
-.terminal-output { flex: 1; overflow-y: auto; padding: 12px; font-family: var(--neu-font-mono); font-size: 12px; line-height: 1.6; color: var(--neu-text); }
-.terminal-line { color: var(--neu-muted); white-space: pre-wrap; word-break: break-all; }
-.terminal-line-terminal { color: var(--neu-text); }
-.terminal-line-success { color: var(--neu-success); }
-.terminal-input-line { display: flex; align-items: center; color: var(--neu-muted); font-family: var(--neu-font-mono); font-size: 12px; }
-.terminal-prompt { color: var(--neu-accent); }
-.terminal-cursor { width: 7px; height: 14px; background: var(--neu-muted); animation: neu-blink 1s step-end infinite; margin-left: 2px; }
+.web-terminal .xterm {
+  height: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.web-terminal .xterm-viewport {
+  overflow-y: auto !important;
+  border-radius: 10px;
+}
+.terminal-output {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  font-family: var(--neu-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--neu-text);
+}
+.terminal-line {
+  color: var(--neu-muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.terminal-line-terminal {
+  color: var(--neu-text);
+}
+.terminal-line-success {
+  color: var(--neu-success);
+}
+.terminal-input-line {
+  display: flex;
+  align-items: center;
+  color: var(--neu-muted);
+  font-family: var(--neu-font-mono);
+  font-size: 12px;
+}
+.terminal-prompt {
+  color: var(--neu-accent);
+}
+.terminal-cursor {
+  width: 7px;
+  height: 14px;
+  background: var(--neu-muted);
+  animation: neu-blink 1s step-end infinite;
+  margin-left: 2px;
+}

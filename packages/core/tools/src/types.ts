@@ -233,6 +233,8 @@ export type TerminalToolService = {
   }>;
   session(id: string): { lastObservedText?: string };
   markObserved(id: string, text: string, revision: number): void;
+  /** The revision the model last observed (the observe default's base). */
+  lastObservedRevision(id: string): number | undefined;
   write(
     id: string,
     value: string,

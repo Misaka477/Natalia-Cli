@@ -672,6 +672,8 @@ export type SettlementReason =
   | "ready"
   /** A rendered screen settled (the terminal's quiescence boundary). */
   | "settled"
+  /** A full screen scrolled past (the terminal's flow boundary). */
+  | "scrolled"
   /** The underlying process exited (the terminal's death boundary). */
   | "exited"
   /** It ended worse than failed but short of a diagnosis. */

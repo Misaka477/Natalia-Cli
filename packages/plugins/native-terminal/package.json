@@ -9,11 +9,12 @@
     "./ui": "./src/ui/plugin.tsx"
   },
   "dependencies": {
-    "@anthelia/tools": "workspace:*",
     "@anthelia/contracts": "workspace:*",
     "@anthelia/platform": "workspace:*",
     "@anthelia/plugin": "workspace:*",
     "@anthelia/runtime-services": "workspace:*",
+    "@anthelia/tools": "workspace:*",
+    "@natalia/collaboration": "workspace:*",
     "@natalia/ui-host": "workspace:*",
     "@natalia/ui-kit": "workspace:*",
     "@xterm/addon-canvas": "^0.7.0",

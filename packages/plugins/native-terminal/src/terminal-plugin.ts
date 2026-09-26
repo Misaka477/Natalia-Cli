@@ -1,5 +1,9 @@
 import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import {
+  SETTLEMENT_SERVICE,
+  type SettlementService,
+} from "@natalia/collaboration";
+import {
   terminalController,
   type TerminalController,
   type TerminalControllerInput,
@@ -57,13 +61,18 @@ export function createTerminalPlugin(input: TerminalControllerInput): Plugin {
     setup(api) {
       // The controller input crosses the runtime-services boundary with the
       // host registry typed as `unknown`; the plugin owns the concrete type.
+      // The settlement bridge, resolved by name like the process plugin's
+      // (the sandbox cannot reach ports; the runtime publishes it). A
+      // missing service degrades to a controller that reports no notices.
+      const settlement =
+        api.services.get<SettlementService>(SETTLEMENT_SERVICE);
       controller =
         input.backend === "wezterm" || input.external
           ? createTerminalController({
               ...input,
               external: input.external as NativeTerminalRegistry | undefined,
             })
-          : createPtyTerminalController(input);
+          : createPtyTerminalController({ ...input, settlement });
       api.services.provide(terminalController.id, controller);
       for (const tool of terminalTools()) api.tools.register(tool);
       for (const [alias, target] of Object.entries(

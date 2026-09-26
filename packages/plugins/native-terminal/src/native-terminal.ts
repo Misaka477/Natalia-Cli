@@ -1722,6 +1722,10 @@ export class NativeTerminalRegistry {
     session.lastObservedRevision = revision;
   }
 
+  lastObservedRevision(id: string): number | undefined {
+    return this.get(id).lastObservedRevision;
+  }
+
   private get(id: string): NativeTerminalSession {
     const session = this.sessions.get(id);
     // I3: a pane that exists but belongs to another session is indistinguishable

@@ -349,6 +349,10 @@ export function createTerminalController(input: {
     requireTerminal().markObserved(id, text, revision);
   }
 
+  function lastObservedRevision(id: string): number | undefined {
+    return requireTerminal().lastObservedRevision(id);
+  }
+
   async function requestHuman(id: string, reason: string, sessionID?: string) {
     return publicSession(
       await requireTerminal().requestHuman(id, reason, sessionID),
@@ -394,6 +398,7 @@ export function createTerminalController(input: {
     observe,
     session,
     markObserved,
+    lastObservedRevision,
     requestHuman,
     ttyName,
     setActiveSession,

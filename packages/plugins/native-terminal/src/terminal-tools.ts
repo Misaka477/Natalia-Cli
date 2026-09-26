@@ -267,7 +267,17 @@ function terminalObserveTool(): RuntimeTool {
       const args = requireObject(input);
       const id = requireString(args.id, "id");
       const mode = args.mode || "full";
-      const afterRevision = numberOr(args.afterRevision, 0);
+      // The default is the session's LAST-OBSERVED revision, not 0: an
+      // omitted afterRevision now means "what changed since I last looked"
+      // (a bounded wait), not "give me everything right now". The
+      // current-state escape hatch is mode='latest'. This is the
+      // screenshot's lesson: with 0 the tool returned instantly with a
+      // full frame every poll, and the model's only strategy was to spin.
+      const nativeTerminal = requireNativeTerminal(context);
+      const afterRevision =
+        args.afterRevision === undefined
+          ? (nativeTerminal.lastObservedRevision(id) ?? 0)
+          : numberOr(args.afterRevision, 0);
       if (mode === "latest") {
         const snapshot = await requireNativeTerminal(context).snapshot(id);
         return JSON.stringify({
@@ -291,7 +301,6 @@ function terminalObserveTool(): RuntimeTool {
           text: truncateProcessOutput(snapshot.text, 16_384),
         });
       }
-      const nativeTerminal = requireNativeTerminal(context);
       await nativeTerminal.reconcile();
       const observation = await nativeTerminal.observe(id, afterRevision, {
         maxLines: Math.max(1, Math.min(numberOr(args.scrollbackRows, 60), 200)),

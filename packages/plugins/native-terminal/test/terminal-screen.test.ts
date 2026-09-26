@@ -1,0 +1,119 @@
+import { expect, test } from "bun:test";
+import {
+  applyTerminalOutput,
+  createTerminalScreen,
+  renderScreen,
+  renderScreenText,
+} from "../src/terminal-screen";
+
+/**
+ * The renderer's pins (the Natalia settlement plan's block 3): the byte
+ * stream applied to the grid — the invariant is that the RENDERED screen
+ * shows what the app shows. The fixtures are the shapes TUIs actually
+ * emit: the shell prompt, vim's full-screen layout, a progress bar's
+ * in-place redraw, and a REPL's line editing.
+ */
+
+function screenOf(chunk: string, rows = 24, cols = 80) {
+  const screen = createTerminalScreen({ rows, cols });
+  applyTerminalOutput(screen, chunk);
+  return screen;
+}
+
+test("plain text lands on the grid, one row per line", () => {
+  const screen = screenOf("hello\r\nworld");
+  expect(renderScreenText(screen)).toBe("hello\nworld");
+  expect(screen.cursorX).toBe(5);
+  expect(screen.cursorY).toBe(1);
+});
+
+test("a progress bar's in-place redraw leaves one visible line", () => {
+  // The classic pattern: CR + erase-line + rewrite. The raw stream looks
+  // like three lines of noise; the screen shows one.
+  const screen = createTerminalScreen({ rows: 4, cols: 40 });
+  applyTerminalOutput(screen, "[####----] 40%\r");
+  applyTerminalOutput(screen, "\x1b[K[######--] 60%\r");
+  applyTerminalOutput(screen, "\x1b[K[########] 100%\n");
+  expect(renderScreenText(screen)).toBe("[########] 100%");
+});
+
+test("vim's full-screen layout renders as the editor, not as bytes", () => {
+  // The shape a vim startup emits: alt-screen, cursor home, a status
+  // line, the tilde gutter, then the text. The escapes are applied, not
+  // transported.
+  const screen = createTerminalScreen({ rows: 6, cols: 24 });
+  applyTerminalOutput(
+    screen,
+    "\x1b[?1049h\x1b[H" +
+      "const answer = 42;~" +
+      "\x1b[3;1H~" +
+      "\x1b[4;1H~" +
+      "\x1b[6;1H\x1b[7m 0,1   All\x1b[27m" +
+      "\x1b[1;1H",
+  );
+  const lines = renderScreen(screen);
+  expect(lines[0]).toBe("const answer = 42;~");
+  expect(lines[5]).toContain("All");
+  expect(screen.altScreen).toBe(true);
+  expect(screen.cursorVisible).toBe(true);
+});
+
+test("a cursor-move rewrite is not duplicated text", () => {
+  // The regression's exact shape: an app that moves the cursor up and
+  // rewrites. The old capture showed the same lines repeatedly; the grid
+  // has each line once, with the final content.
+  const screen = createTerminalScreen({ rows: 3, cols: 30 });
+  applyTerminalOutput(screen, "line one\r\nline two");
+  applyTerminalOutput(screen, "\x1b[1;1Hline ONE");
+  const lines = renderScreen(screen);
+  expect(lines[0]).toBe("line ONE");
+  expect(lines[1]).toBe("line two");
+  expect(renderScreenText(screen).split("\n")).toHaveLength(2);
+});
+
+test("scrolling keeps the durable history in the scrollback", () => {
+  const screen = createTerminalScreen({ rows: 2, cols: 20 });
+  applyTerminalOutput(screen, "first\r\nsecond\r\nthird");
+  // Two rows: `first` scrolled off, `third` is the bottom line.
+  expect(renderScreenText(screen)).toBe("second\nthird");
+  expect(screen.scrollback).toEqual(["first"]);
+});
+
+test("erase-display and erase-line blank the right ranges", () => {
+  const screen = createTerminalScreen({ rows: 3, cols: 10 });
+  applyTerminalOutput(screen, "abcdefghij\r\n0123456789");
+  applyTerminalOutput(screen, "\x1b[1;1H\x1b[K"); // clear line 1 from the cursor
+  expect(renderScreen(screen)[0]).toBe("");
+  applyTerminalOutput(screen, "\x1b[2J"); // clear everything
+  // Trailing empties are not content: a cleared screen reads empty.
+  expect(renderScreenText(screen)).toBe("");
+});
+
+test("OSC titles and unknown sequences are dropped, never thrown", () => {
+  const screen = screenOf("\x1b]0;my title\u0007visible\x1b[?25l\x1b[99Ztail");
+  // The title, the cursor-hide mode, and the unknown CSI are all
+  // absorbed; the text around them survives.
+  expect(renderScreenText(screen)).toBe("visibletail");
+  expect(screen.cursorVisible).toBe(false);
+});
+
+test("an unterminated escape is dropped whole", () => {
+  // A truncated capture must not eat the following text or throw.
+  const screen = screenOf("ok\x1b[");
+  expect(renderScreenText(screen)).toBe("ok");
+});
+
+test("the bracketed-paste mode toggles without polluting the text", () => {
+  // The write side wraps pastes in ?2004h/l; the model's view is just
+  // the pasted text.
+  const screen = screenOf("\x1b[?2004hpasted content\x1b[?2004l");
+  expect(renderScreenText(screen)).toBe("pasted content");
+});
+
+test("wide (astral) characters occupy one cell each", () => {
+  // The chat content is Chinese; each code point is one cell here (the
+  // pane's font may render it double-width, but the text is intact).
+  const screen = screenOf("你好");
+  expect(renderScreenText(screen)).toBe("你好");
+  expect(screen.cursorX).toBe(2);
+});
