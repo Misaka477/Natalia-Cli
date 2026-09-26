@@ -84,6 +84,7 @@ test("consults reports the ask/answer distribution as JSON and as a table", asyn
     summary: {
       asked: number;
       answered: number;
+      declined: number;
       open: number;
       avgLatencyMs?: number;
     };
@@ -92,6 +93,7 @@ test("consults reports the ask/answer distribution as JSON and as a table", asyn
   expect(payload.summary).toMatchObject({
     asked: 2,
     answered: 1,
+    declined: 0,
     open: 1,
     avgLatencyMs: 12_000,
   });

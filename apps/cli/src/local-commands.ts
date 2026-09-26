@@ -417,11 +417,12 @@ export async function handleLocalCommands(argv: string[]) {
         console.log("no consults found");
         break;
       }
-      console.log("ASKED\tANSWERED\tOPEN\tAVG_MS\tMAX_MS");
+      console.log("ASKED\tANSWERED\tDECLINED\tOPEN\tAVG_MS\tMAX_MS");
       console.log(
         [
           summary.asked,
           summary.answered,
+          summary.declined,
           summary.open,
           summary.avgLatencyMs ?? "-",
           summary.maxLatencyMs ?? "-",

@@ -36,6 +36,7 @@ function answer(
   replyToID: string,
   text: string,
   at: string,
+  advisorOutcome?: "advised" | "declined",
 ): RuntimeEvent {
   return {
     type: "navi.collab.message",
@@ -49,6 +50,7 @@ function answer(
       replyToID,
       text,
       expectsReply: false,
+      ...(advisorOutcome ? { advisorOutcome } : {}),
       at,
     },
   } as unknown as RuntimeEvent;
@@ -78,6 +80,32 @@ test("a consult is paired into a record with its latency and previews", () => {
   expect(record!.answerPreview).toBe(
     "/app needs root; write it to the workspace root instead.",
   );
+});
+
+test("a decline is a first-class outcome, not a missing answer", () => {
+  const records = consultRecords([
+    question(
+      "collab:q:1",
+      "approve this architecture?",
+      "2026-09-26T10:00:00.000Z",
+    ),
+    answer(
+      "collab:a:1",
+      "collab:q:1",
+      "declining: product tradeoffs are outside my technical remit",
+      "2026-09-26T10:00:08.000Z",
+      "declined",
+    ),
+  ]);
+  expect(records[0]!.outcome).toBe("declined");
+  expect(records[0]!.latencyMs).toBe(8_000);
+  expect(consultSummary(records)).toMatchObject({
+    asked: 1,
+    answered: 0,
+    declined: 1,
+    open: 0,
+    avgLatencyMs: 8_000,
+  });
 });
 
 test("an unanswered consult stays open — the unanswered ask is a fact", () => {
@@ -163,6 +191,7 @@ test("the summary counts the outcomes and the wait's spread", () => {
   expect(consultSummary(records)).toEqual({
     asked: 3,
     answered: 2,
+    declined: 0,
     open: 1,
     avgLatencyMs: 12_000,
     maxLatencyMs: 20_000,
@@ -171,5 +200,10 @@ test("the summary counts the outcomes and the wait's spread", () => {
 
 test("an empty journal is a zero summary", () => {
   expect(consultRecords([])).toEqual([]);
-  expect(consultSummary([])).toEqual({ asked: 0, answered: 0, open: 0 });
+  expect(consultSummary([])).toEqual({
+    asked: 0,
+    answered: 0,
+    declined: 0,
+    open: 0,
+  });
 });

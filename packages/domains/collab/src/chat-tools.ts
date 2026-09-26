@@ -395,12 +395,21 @@ export function createChatTools(ctx: RuntimeContext) {
           properties: {
             questionID: { type: "string" },
             answer: { type: "string" },
+            declined: {
+              type: "boolean",
+              description:
+                "Set when you decline to advise: the question is outside your technical remit and you are not the right source. The answer text must say why. Declining is a legitimate outcome, not a failure — use it only for out-of-remit questions, never for hard ones.",
+            },
           },
           required: ["questionID", "answer"],
           additionalProperties: false,
         },
         async execute(parsed, context) {
-          const args = parsed as { questionID?: string; answer?: string };
+          const args = parsed as {
+            questionID?: string;
+            answer?: string;
+            declined?: boolean;
+          };
           if (
             typeof args.questionID !== "string" ||
             typeof args.answer !== "string"
@@ -422,6 +431,7 @@ export function createChatTools(ctx: RuntimeContext) {
               from: "live_chat",
               replyToID: args.questionID,
               text: redactToolOutput(args.answer, true),
+              ...(args.declined ? { advisorOutcome: "declined" as const } : {}),
             }));
           } catch (error) {
             return `collab_answer: ${

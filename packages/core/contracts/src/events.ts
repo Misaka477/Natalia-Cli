@@ -616,6 +616,13 @@ export type CollaborationMessage =
       kind: "answer";
       replyToID: string;
       expectsReply: false;
+      /**
+       * The advisor contract's outcome (block B): `declined` means the
+       * advisor refused to advise (out of remit) and the text says why —
+       * a legitimate answer, not a failure. Absent on journals written
+       * before the field; the consult ledger reads the absence as advised.
+       */
+      advisorOutcome?: "advised" | "declined";
     })
   | (CollaborationMessageBase & {
       kind: "response";

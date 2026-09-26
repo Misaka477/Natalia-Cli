@@ -47,6 +47,7 @@ export type SendCollaborationInput =
       kind: "answer";
       from: "live_chat";
       replyToID: string;
+      advisorOutcome?: "advised" | "declined";
     })
   | (SendBase & {
       kind: "response";
@@ -252,6 +253,7 @@ function buildMessage(
       to,
       text: input.text,
       expectsReply: false,
+      ...(input.advisorOutcome ? { advisorOutcome: input.advisorOutcome } : {}),
       at,
     };
   return {

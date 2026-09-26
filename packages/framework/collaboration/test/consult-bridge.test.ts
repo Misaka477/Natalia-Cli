@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
 import {
   collaborationTools,
+  consultRecords,
+  consultSummary,
   createCollaborationService,
   expireSessionConsults,
   pendingConsultSession,
@@ -116,6 +118,45 @@ function askToolHarness() {
   const ask = tools.find((tool) => tool.name === "collab_ask")!;
   return { ask, wakes };
 }
+
+test("a declined answer's outcome survives the send into the ledger", async () => {
+  // The passthrough's pin: collab_answer's declined flag travels through
+  // the service's send into the published message, where the ledger's
+  // fold reads it. A decline with no machine-readable carrier is a
+  // declined nobody can count.
+  const events: RuntimeEvent[] = [];
+  let sequence = 0;
+  const service = createCollaborationService({
+    events: (candidate) => (candidate === sessionID ? events : undefined),
+    publish: (_sessionID, event) => events.push(event),
+    nextSequence: () => ++sequence,
+    maxAutoRounds: () => 3,
+    now: () => new Date("2026-09-26T10:00:00.000Z"),
+  });
+  const question = await service.send({
+    sessionID,
+    kind: "question",
+    from: "main_agent",
+    text: "approve this architecture?",
+  });
+  await service.send({
+    sessionID,
+    kind: "answer",
+    from: "live_chat",
+    replyToID: question.message.id,
+    text: "declining: product tradeoffs are outside my remit",
+    advisorOutcome: "declined",
+  });
+  const records = consultRecords(events);
+  expect(records).toHaveLength(1);
+  expect(records[0]!.outcome).toBe("declined");
+  expect(consultSummary(records)).toMatchObject({
+    asked: 1,
+    answered: 0,
+    declined: 1,
+    open: 0,
+  });
+});
 
 test("collab_ask returns the advisor's answer as its tool result", async () => {
   const { ask, wakes } = askToolHarness();

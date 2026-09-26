@@ -174,7 +174,7 @@ export function createNaviChatTurn(ctx: RuntimeContext) {
       messages.push({
         role: "user",
         content:
-          "Natalia (the main agent) sent you collaboration messages, or needs your expert guidance. Read <natalia_collaborations> and the Main context. If there is an internal advisor request, reply with concise technical advice as chat text. Answer open questions with collab_answer. Every informal message marked REPLY_REQUIRED is a reply already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Every reply continues the thread; the runtime caps automatic exchanges. Always produce a concrete reply; never leave the response empty.",
+          "Natalia (the main agent) sent you collaboration messages, or needs your expert guidance. Read <natalia_collaborations> and the Main context. If there is an internal advisor request, reply with concise technical advice as chat text. Answer open questions with collab_answer; when the question is outside your technical remit, answer with declined=true and say why. Every informal message marked REPLY_REQUIRED is a reply already received from Natalia and must be answered with collab_chat using its exact messageID. Never report that she has not replied. Every reply continues the thread; the runtime caps automatic exchanges. Always produce a concrete reply; never leave the response empty.",
       });
     applyLiveContext(messages);
     await applyChatHistoryAttachments(ctx, {

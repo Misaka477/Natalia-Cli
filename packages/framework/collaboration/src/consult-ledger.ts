@@ -12,19 +12,19 @@ import type { RuntimeEvent } from "@anthelia/contracts";
  * will eventually be tuned on: how often the main agent consults, how
  * long it waits, and how many asks never get answered.
  *
- * v1's outcome vocabulary is what the journal can actually express
- * today: `open` (asked, never answered) and `answered`. The advisor's
- * "declined" outcome lands with its producer (the advisor contract,
- * block B — a field with no writer is the half-wired shape this house
- * refuses), and the applied-or-ignored leg is v2 (same reason: no
- * measurable producer yet).
+ * The outcome vocabulary is what the journal can express: `open` (asked,
+ * never answered), `declined` (the advisor refused — out of remit — and
+ * the advisor contract's second discipline made that a first-class
+ * outcome), and `answered` (anything else). The applied-or-ignored leg
+ * stays v2: it has no measurable producer yet, and a field with no
+ * writer is the half-wired shape this house refuses.
  *
  * Previews, never bodies: the journal keeps every entry for the audit
  * trail; a report carries bounded previews so a consult's content can
  * be eyeballed without pasting a conversation into a table.
  */
 
-export type ConsultOutcome = "open" | "answered";
+export type ConsultOutcome = "open" | "answered" | "declined";
 
 export type ConsultRecord = {
   questionID: string;
@@ -42,6 +42,7 @@ export type ConsultRecord = {
 export type ConsultSummary = {
   asked: number;
   answered: number;
+  declined: number;
   open: number;
   /** Minutes between ask and answer, over the answered ones. */
   avgLatencyMs?: number;
@@ -109,7 +110,8 @@ export function consultRecords(
     if (message.kind === "answer" && message.replyToID) {
       const record = byQuestion.get(message.replyToID);
       if (!record || record.outcome !== "open") continue;
-      record.outcome = "answered";
+      record.outcome =
+        message.advisorOutcome === "declined" ? "declined" : "answered";
       record.answeredAt = message.at;
       record.latencyMs = Math.max(
         0,
@@ -126,13 +128,17 @@ export function consultSummary(
   records: readonly ConsultRecord[],
 ): ConsultSummary {
   const answered = records.filter((record) => record.outcome === "answered");
-  const latencies = answered
+  const declined = records.filter((record) => record.outcome === "declined");
+  // The wait happened for declined consults too — the latency spread is
+  // over every consult that got any answer, not only the advised ones.
+  const latencies = records
     .map((record) => record.latencyMs)
     .filter((latency): latency is number => latency !== undefined);
   return {
     asked: records.length,
     answered: answered.length,
-    open: records.length - answered.length,
+    declined: declined.length,
+    open: records.length - answered.length - declined.length,
     ...(latencies.length
       ? {
           avgLatencyMs: Math.round(
