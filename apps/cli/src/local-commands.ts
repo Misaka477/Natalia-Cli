@@ -17,6 +17,7 @@ import {
   segmentTurns,
 } from "@natalia/engineering-intelligence";
 import { createLocalSessionService } from "@anthelia/session-store";
+import { consultRecords, consultSummary } from "@natalia/collaboration";
 import { evalListLines, evalRun } from "./eval-cli";
 import { createRecordedFetch, readCassette } from "@natalia/transport";
 import {
@@ -87,6 +88,7 @@ export async function handleLocalCommands(argv: string[]) {
       "debug-bundle",
       "bench",
       "runs",
+      "consults",
       "update",
     ]).has(subcommand ?? "")
   )
@@ -373,6 +375,65 @@ export async function handleLocalCommands(argv: string[]) {
             group.avgOutputTokens ?? "-",
             group.avgDurationMs ?? "-",
             group.retries,
+          ].join("\t"),
+        );
+      break;
+    }
+    case "consults": {
+      // The advisor pattern's measurement (the Navi advisor plan's block
+      // D): the main agent's questions to Navi and her answers, folded
+      // from every workspace session's journal — pure offline replay, no
+      // daemon, no telemetry. v1 records; the trigger policy waits for
+      // this distribution (先量的东西不许自动).
+      const valueFlags = new Set(["--workspace"]);
+      const positionals: string[] = [];
+      for (let index = 1; index < argv.length; index += 1) {
+        const arg = argv[index]!;
+        if (valueFlags.has(arg)) {
+          index += 1;
+          continue;
+        }
+        if (arg.startsWith("--")) continue;
+        positionals.push(arg);
+      }
+      if (positionals.length) {
+        console.error("usage: natalia consults [--workspace <root>] [--json]");
+        process.exit(1);
+      }
+      const workspaceRoot = valueAfter(argv, "--workspace") ?? process.cwd();
+      const service = createLocalSessionService(workspaceRoot);
+      const rows = await service.list();
+      const records = [];
+      for (const row of rows) {
+        const events = await service.events(row.id).catch(() => []);
+        records.push(...consultRecords(events));
+      }
+      const summary = consultSummary(records);
+      if (argv.includes("--json")) {
+        console.log(JSON.stringify({ summary, records }, null, 2));
+        break;
+      }
+      if (!records.length) {
+        console.log("no consults found");
+        break;
+      }
+      console.log("ASKED\tANSWERED\tOPEN\tAVG_MS\tMAX_MS");
+      console.log(
+        [
+          summary.asked,
+          summary.answered,
+          summary.open,
+          summary.avgLatencyMs ?? "-",
+          summary.maxLatencyMs ?? "-",
+        ].join("\t"),
+      );
+      for (const record of records.slice(-20))
+        console.log(
+          [
+            record.outcome,
+            record.askedAt,
+            record.latencyMs ?? "-",
+            record.questionPreview,
           ].join("\t"),
         );
       break;

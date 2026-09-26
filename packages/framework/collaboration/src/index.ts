@@ -32,3 +32,10 @@ export {
   terminalApprovalScope,
   terminalInputRisk,
 } from "@anthelia/runtime-services";
+export {
+  consultRecords,
+  consultSummary,
+  type ConsultOutcome,
+  type ConsultRecord,
+  type ConsultSummary,
+} from "./consult-ledger";
