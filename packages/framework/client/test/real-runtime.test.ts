@@ -27,6 +27,7 @@ import {
 } from "@anthelia/runtime-services";
 import { checkpointFactory } from "@anthelia/checkpoint";
 import { retryService } from "@anthelia/retry";
+import { resolveWorkspaceJournalDatabasePath } from "@anthelia/platform";
 import { turnController } from "@anthelia/turn-orchestration";
 import { providerModelController } from "@anthelia/provider-model";
 import { compactionService } from "@anthelia/compaction";
@@ -131,6 +132,10 @@ test("real runtime client streams provider output and persists replayable sessio
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_real",
     provider: scriptedProvider("hello from provider"),
   });
@@ -172,6 +177,10 @@ test("real runtime client streams provider output and persists replayable sessio
   const replay: RuntimeEvent[] = [];
   const reopened = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     checkpointDir: join(root, ".natalia", "checkpoint-store"),
     sessionID: "ses_ts7_real",
     provider: scriptedProvider("unused"),
@@ -238,6 +247,10 @@ test("turn orchestration subsystem is present even when plugins.enabled disables
   const kernel = new CapabilityRegistry();
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_turn_orchestration_disabled",
     capabilityRegistry: kernel,
   });
@@ -4571,7 +4584,7 @@ test("runtime session management keeps SQLite projection synchronized", async ()
   await client.sessionTouch?.(duplicated!.id);
   const copyID = duplicated!.id as SessionID;
   const store = new SessionStoreTestDatabase(
-    join(root, ".natalia", "sessions.db"),
+    resolveWorkspaceJournalDatabasePath(root),
   );
   expect(store.get(copyID)).toMatchObject({
     title: "Renamed copy",
@@ -4589,7 +4602,7 @@ test("runtime replaces a generated provider ID with a local SQLite title", async
   const sessionID = "ses_runtime_title_id" as const;
   await mkdir(join(root, ".natalia"), { recursive: true });
   const seeded = new SessionStoreTestDatabase(
-    join(root, ".natalia", "sessions.db"),
+    resolveWorkspaceJournalDatabasePath(root),
   );
   seeded.create(sessionID, "chatcmpl-tool-b10625d073fa5e8d");
   seeded.updateMetadata(sessionID, { titleSource: "generated" });
@@ -4628,7 +4641,7 @@ test("runtime replaces a generated provider ID with a local SQLite title", async
   await client.dispose?.();
 
   const persisted = new SessionStoreTestDatabase(
-    join(root, ".natalia", "sessions.db"),
+    resolveWorkspaceJournalDatabasePath(root),
   );
   expect(persisted.get(sessionID)).toMatchObject({
     title: "修复会话标题",
@@ -4642,7 +4655,7 @@ test("runtime rebuilds a missing JSON session from SQLite history", async () => 
   const sessionID = "ses_runtime_sqlite_rebuild" as const;
   await mkdir(join(root, ".natalia"), { recursive: true });
   const database = new SessionStoreTestDatabase(
-    join(root, ".natalia", "sessions.db"),
+    resolveWorkspaceJournalDatabasePath(root),
   );
   database.create(sessionID, "Recovered SQLite session");
   database.appendEvent(sessionID, {
@@ -5959,6 +5972,10 @@ test("provider admission is persisted before the provider turn begins", async ()
   let started = false;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_admission",
     provider: {
       provider: "test",
@@ -6000,6 +6017,10 @@ test("queued input wakes an idle session after durable admission", async () => {
   let started = false;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_queued_input",
     provider: {
       provider: "test",
@@ -6036,6 +6057,10 @@ test("queued inputs promote in FIFO order after the active turn becomes idle", a
   let release: (() => void) | undefined;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_queued_promotion",
     provider: {
       provider: "test",
@@ -6247,6 +6272,10 @@ test("restart resumes a pending queued input but does not replay interrupted pro
   let calls = 0;
   const reopened = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_restart_queue",
     provider: {
       provider: "test",
@@ -6424,6 +6453,10 @@ test("durable history retains full assistant settlement without live fragments",
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-durable-content-"));
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_durable_content",
     provider: {
       provider: "test",
@@ -6474,6 +6507,10 @@ test("restart restores the latest durable context checkpoint before later events
   }> = [];
   const first = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_context_epoch",
     provider: {
       provider: "test",
@@ -6513,6 +6550,10 @@ test("restart restores the latest durable context checkpoint before later events
 
   const reopened = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_context_epoch",
     provider: {
       provider: "test",
@@ -6550,6 +6591,10 @@ test("context-limit compaction persists a durable context epoch", async () => {
   let attempts = 0;
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_context_compaction",
     provider: {
       provider: "test",
@@ -6654,7 +6699,7 @@ test("SQLite indexed replay recovers pending interactive control state", async (
     join(tmpdir(), "natalia-ts7-sqlite-indexed-interactive-"),
   );
   const sessionID = "ses_ts7_sqlite_indexed_interactive" as SessionID;
-  const databasePath = join(root, ".natalia", "sessions.db");
+  const databasePath = resolveWorkspaceJournalDatabasePath(root);
   await mkdir(join(root, ".natalia"), { recursive: true });
   const store = new SessionStoreTestDatabase(databasePath);
   store.create(sessionID, "Indexed interactive");
@@ -6718,7 +6763,7 @@ test("SQLite indexed replay recovers bounded durable diagnostics", async () => {
     join(tmpdir(), "natalia-ts7-sqlite-indexed-diagnostics-"),
   );
   const sessionID = "ses_ts7_sqlite_indexed_diagnostics" as SessionID;
-  const databasePath = join(root, ".natalia", "sessions.db");
+  const databasePath = resolveWorkspaceJournalDatabasePath(root);
   await mkdir(join(root, ".natalia"), { recursive: true });
   const store = new SessionStoreTestDatabase(databasePath);
   store.create(sessionID, "Indexed diagnostics");
@@ -7114,6 +7159,10 @@ test("real runtime forks a session at a submitted-turn boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-ts7-session-fork-"));
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_ts7_session_fork",
     provider: scriptedProvider("answer"),
   });
@@ -10868,6 +10917,10 @@ test("request_human endTurn settles as waiting_human and resumes automatically a
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_continue_turn",
     nativeTerminal: registry,
     provider,
@@ -11015,6 +11068,10 @@ test("releasing a pane that is not the pending one does not resume or clear stat
   const events: RuntimeEvent[] = [];
   const client = createRealRuntimeClient({
     workspaceRoot: root,
+    // Hermetic about the store: the portable opt-in keeps the journal
+    // workspace-local, so the assertions below read a stable path (and no
+    // store lands in the real home).
+    sessionDir: join(root, ".natalia", "sessions"),
     sessionID: "ses_continue_negative",
     nativeTerminal: registry,
     provider,
@@ -11675,7 +11732,7 @@ test("SQLite restart recovers the pending human terminal and resumes exactly onc
   // on its own before the human acts.
   const root = await mkdtemp(join(tmpdir(), "natalia-sqlite-continue-"));
   const sessionID = "ses_sqlite_continue" as SessionID;
-  const databasePath = join(root, ".natalia", "sessions.db");
+  const databasePath = resolveWorkspaceJournalDatabasePath(root);
 
   // Phase 1: the model asks a human, the turn settles waiting_human, and the
   // pending state is durable in SQLite before the human acts.

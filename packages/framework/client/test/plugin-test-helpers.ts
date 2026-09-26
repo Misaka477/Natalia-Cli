@@ -24,7 +24,15 @@ import {
 } from "../src";
 import { pluginManifestSchema } from "@anthelia/plugin";
 
-const officialPluginDistribution = resolve("dist", "ts", "plugins");
+// The official plugin distribution the repo build writes at the ROOT's
+// dist/ts/plugins. Anchored to this file, not the CWD: the suite is run
+// both from the repo root and from this package, and a CWD-relative
+// resolve silently picked up a stale package-local copy in the latter
+// (the "missing natalia-file-editor" phantom).
+const officialPluginDistribution = resolve(
+  import.meta.dir,
+  "../../../../dist/ts/plugins",
+);
 const officialPluginTestWorkspaces = resolve(
   "dist",
   "ts",
