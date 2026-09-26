@@ -18,7 +18,15 @@ import { readExternalBenchmark } from "../src/eval-reader";
  * it will face, not a mock of it.
  */
 
-const EVAL_DIR = resolve(import.meta.dir, "../../../../devref/eval");
+// The frozen-eval corpus is INPUT DATA (the surface reads whatever
+// directory it is handed, or NATALIA_EVAL_DIR names). A previous revision
+// pointed these tests at the repository's devref/eval — a gitignored
+// developer corpus — which made the suite depend on state no clone has
+// (CI failed with ENOENT on benchmark.json). The fixture below is the
+// minimal REAL subset, committed: the full index and the 360-cell data,
+// plus the two tasks these tests load. Point NATALIA_EVAL_DIR at the
+// full corpus to run against it locally.
+const EVAL_DIR = resolve(import.meta.dir, "fixtures/eval");
 
 test("the frozen eval reads as its typed shape: counts, tasks, cells", async () => {
   const benchmark = await readExternalBenchmark(EVAL_DIR);
