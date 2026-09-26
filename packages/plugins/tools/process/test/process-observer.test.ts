@@ -172,8 +172,7 @@ test("a settled event carries the command and the workspace it ran in", async ()
       }),
     ],
   });
-  const seen: Array<ManagedProcessSettledEvent | ManagedProcessReadyEvent> =
-    [];
+  const seen: Array<ManagedProcessSettledEvent | ManagedProcessReadyEvent> = [];
   harness.observer.subscribe((event) => seen.push(event));
   harness.observer.sync();
 
