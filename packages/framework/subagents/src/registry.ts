@@ -53,12 +53,28 @@ export type StopResult =
       retryAfterMs: number;
     };
 
+/**
+ * A subagent's terminal status mapped to the spine's reason, pure so the
+ * table can be pinned without a run: the registry's own vocabulary
+ * already matches (completed / stopped / failed) — the mapping is kept
+ * explicit so a status added later fails compile here rather than
+ * silently defaulting in a notice.
+ */
+export function subagentSettlementReason(
+  status: SubagentRecord["status"],
+): "completed" | "stopped" | "failed" {
+  if (status === "completed") return "completed";
+  if (status === "failed") return "failed";
+  return "stopped";
+}
+
 export class SubagentRegistry {
   readonly store: SubagentStore;
   private readonly runner: RunnerCallback;
   private readonly clock: () => number;
   private readonly stallThresholdMs: number;
   private readonly wallClockBudgetMs: number;
+  private readonly onSettled?: (record: SubagentRecord) => void;
   /** One deadline timer per running subagent, cleared when its run settles. */
   private readonly budgetTimers = new Map<
     SubagentID,
@@ -82,7 +98,23 @@ export class SubagentRegistry {
     this.clock = opts.clock ?? (() => Date.now());
     this.stallThresholdMs = opts.stallThresholdMs ?? DEFAULT_STALL_MS;
     this.wallClockBudgetMs = opts.wallClockBudgetMs ?? 0;
+    this.onSettled = opts.onSettled;
     this.store = new SubagentStore(opts.workDir, opts.sessionID);
+  }
+
+  /**
+   * Fire the settlement hook once per terminal transition. The record is
+   * already marked, so the notice the parent receives carries the true
+   * ending; a throwing hook degrades (the child's ending must not fail
+   * because a notice could not fly — the spine's discipline).
+   */
+  private notifySettled(record: SubagentRecord): void {
+    if (!this.onSettled) return;
+    try {
+      this.onSettled(record);
+    } catch {
+      // degraded on purpose
+    }
   }
 
   async load(): Promise<void> {
@@ -102,6 +134,10 @@ export class SubagentRegistry {
           text: "subagent stopped because the owning runtime restarted; resubmit the task to continue",
           timestamp: now,
         });
+        // A run the restart interrupted tells its parent too — the same
+        // rule the process adopter applies: a death while the session was
+        // away must not restore silently.
+        this.notifySettled(rec as SubagentRecord);
         recovered = true;
       }
       if (!rec.phase) rec.phase = derivePhase(rec);
@@ -403,6 +439,7 @@ export class SubagentRegistry {
         record.activityDetail = finalStatus;
         record.endedAt = this.clock();
         record.lastActivityAt = this.clock();
+        this.notifySettled(record);
         this.emit({
           agentId: id,
           event: finalStatus === "completed" ? "done" : "stopped",
@@ -431,6 +468,7 @@ export class SubagentRegistry {
             timestamp: this.clock(),
           });
         }
+        this.notifySettled(record);
         this.emit({
           agentId: id,
           event: finalStatus === "stopped" ? "stopped" : "done",

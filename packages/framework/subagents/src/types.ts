@@ -137,4 +137,12 @@ export interface SubagentRegistryOptions {
    * budget. The timer is armed per run, so a retry gets a fresh budget.
    */
   wallClockBudgetMs?: number;
+  /**
+   * The settlement hook: fires at every terminal transition (completed /
+   * stopped / failed) with the record. The composition binds it to the
+   * spine, so the parent that spawned the child is TOLD instead of polling
+   * `agent_wait`. Absent in a bare registry (the unit tests): no notice,
+   * no behavior change.
+   */
+  onSettled?: (record: SubagentRecord) => void;
 }

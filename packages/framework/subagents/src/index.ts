@@ -12,7 +12,7 @@ export type {
   SubagentRegistryOptions,
 } from "./types";
 export { boundVerboseOutput, VERBOSE_OUTPUT_MAX_CHARS } from "./format-output";
-export { SubagentRegistry } from "./registry";
+export { SubagentRegistry, subagentSettlementReason } from "./registry";
 export { SubagentStore } from "./store";
 export { formatStatusCounts, truncate } from "./format";
 export {

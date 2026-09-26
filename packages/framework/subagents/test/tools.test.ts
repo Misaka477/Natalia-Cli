@@ -196,10 +196,16 @@ test("agent_spawn accepts a type parameter", () => {
 
 test("with no configured types the description stays a single line", () => {
   // A section listing nothing reads as "there are types and they are
-  // undocumented".
+  // undocumented" — the notice discipline is not a type section, so it
+  // stays.
   const spawn = agentTools().find((t) => t.name === "agent_spawn")!;
 
-  expect(spawn.description).toBe("Spawn an isolated TS/Bun subagent task.");
+  expect(spawn.description).toBe(
+    "Spawn an isolated TS/Bun subagent task.\n" +
+      "You keep working after the spawn: when the child ends (completed, " +
+      "failed, or stopped) a settlement notice tells you what it " +
+      "concluded, so you do not need to block on agent_wait.",
+  );
 });
 
 test("spawning as a type applies its tool restrictions", async () => {

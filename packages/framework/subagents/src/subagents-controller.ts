@@ -14,6 +14,8 @@ export function createSubagentsController(input: {
   sessionID?: () => string | undefined;
   /** Milliseconds one run may take; 0 disables the budget. */
   wallClockBudgetMs?: number;
+  /** The settlement hook, bound by the composition to the spine. */
+  onSettled?: (record: import("./types").SubagentRecord) => void;
 }): SubagentsController {
   let registry: SubagentRegistry | undefined;
 
@@ -23,6 +25,7 @@ export function createSubagentsController(input: {
       runner,
       sessionID: input.sessionID?.(),
       wallClockBudgetMs: input.wallClockBudgetMs,
+      onSettled: input.onSettled,
     });
     await next.load();
     registry = next;

@@ -42,6 +42,9 @@ function agentSpawnTool(agentTypes: readonly SubagentTypeView[]): RuntimeTool {
   // advertised types current without disturbing the tool's identity.
   const description = [
     "Spawn an isolated TS/Bun subagent task.",
+    "You keep working after the spawn: when the child ends (completed, " +
+      "failed, or stopped) a settlement notice tells you what it " +
+      "concluded, so you do not need to block on agent_wait.",
     renderSubagentTypes(agentTypes),
   ]
     .filter(Boolean)
@@ -362,7 +365,7 @@ function agentWaitTool(): RuntimeTool {
   return {
     name: "agent_wait",
     description:
-      "Wait for one or more subagents to complete. until supports all_terminal or any_terminal. Does not stop the subagent on timeout.",
+      "Convenience wait for one or more subagents to complete. You are USUALLY TOLD: every terminal transition (completed, failed, stopped — including a run the restart interrupted) delivers a settlement notice, so prefer doing other work and reading the notice. until supports all_terminal or any_terminal. Does not stop the subagent on timeout.",
     requiresApproval: false,
     parameters: {
       type: "object",

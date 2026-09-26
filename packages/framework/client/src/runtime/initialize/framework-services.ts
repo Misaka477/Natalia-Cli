@@ -33,11 +33,16 @@ import { compactionService } from "@anthelia/compaction";
 import { checkpointFactory } from "@anthelia/checkpoint";
 import { contextLedgerFactory as contextLedgerFactoryToken } from "@natalia/context-ledger";
 import { createSandboxController, sandboxTools } from "@anthelia/sandbox";
-import { agentTools, createSubagentsController } from "@anthelia/subagents";
+import {
+  agentTools,
+  createSubagentsController,
+  subagentSettlementReason,
+} from "@anthelia/subagents";
 import { createToolPolicyService, toolPolicy } from "@natalia/tool-policy";
 import {
   COLLABORATION_SERVICE,
   SETTLEMENT_SERVICE,
+  SETTLEMENT_SOURCE_KINDS,
   collaborationTools,
   collaborationWaiter,
   createCollaborationService,
@@ -211,6 +216,20 @@ export async function wireFrameworkServices(
     scope: "workspace",
     grants: ["services", "tools"],
   });
+  // The settlement spine's subagent adopter: a terminal transition tells
+  // the session that spawned the child, instead of leaving the parent to
+  // poll `agent_wait`. The record carries the parent session and its
+  // closing text; the reason is the record's own status, mapped pure.
+  const deliverSettlementToSession = (
+    sessionID: string,
+    notice: SettlementNotice,
+  ): boolean => {
+    const exec = ctx.ports
+      .getExecutionBySession()
+      .get(sessionID as import("@anthelia/contracts").SessionID);
+    if (!exec) return false;
+    return ctx.ports.deliverSettlement(exec, notice);
+  };
   const subagents = createSubagentsController({
     workDir: workspaceRoot,
     sessionID: ctx.ports.getSessionID,
@@ -218,6 +237,20 @@ export async function wireFrameworkServices(
     // continues until the session ends, paying for every step it takes.
     wallClockBudgetMs:
       ctx.ports.getTsRuntimeConfig()?.runtime.subagentWallClockMs,
+    onSettled: (record) => {
+      const sessionID = record.parentSessionID ?? ctx.ports.getSessionID();
+      if (!sessionID) return;
+      const closing = record.outputs.at(-1)?.text ?? "";
+      deliverSettlementToSession(sessionID, {
+        subject: record.id,
+        reason: subagentSettlementReason(record.status),
+        summary: `subagent ${record.id} ${record.status}: ${record.task.slice(0, 80)}`,
+        ...(closing.trim()
+          ? { detail: `its closing message: ${closing.slice(0, 400)}` }
+          : {}),
+        sourceKind: SETTLEMENT_SOURCE_KINDS.subagentSettled,
+      });
+    },
   });
   ctx.state.serviceDirectory.provide(subagentsService, subagents);
   // The configured subagent-mode agents are the spawnable types. Advertising
