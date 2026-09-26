@@ -1,5 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
-import { ManagedProcessObserver } from "../src/process-tools";
+import {
+  ManagedProcessObserver,
+  type ManagedProcessReadyEvent,
+  type ManagedProcessSettledEvent,
+} from "../src/process-tools";
 
 /** A record the observer can see, standing in for the registry's own. */
 function record(input: {
@@ -45,6 +49,7 @@ function source(
       );
       settled.push({ id: input.id, status: input.status });
       return {
+        kind: "settled" as const,
         id: input.id,
         command: info.command,
         status: input.status,
@@ -167,14 +172,8 @@ test("a settled event carries the command and the workspace it ran in", async ()
       }),
     ],
   });
-  const seen: Array<{
-    id: string;
-    command: string;
-    status: string;
-    workspaceRoot: string;
-    startedAt: string;
-    endedAt: string;
-  }> = [];
+  const seen: Array<ManagedProcessSettledEvent | ManagedProcessReadyEvent> =
+    [];
   harness.observer.subscribe((event) => seen.push(event));
   harness.observer.sync();
 
@@ -183,6 +182,7 @@ test("a settled event carries the command and the workspace it ran in", async ()
 
   expect(seen).toEqual([
     {
+      kind: "settled",
       id: "proc_9",
       command: "sleep 1",
       status: "exited",

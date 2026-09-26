@@ -8,8 +8,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@anthelia/tools": "workspace:*",
+    "@anthelia/contracts": "workspace:*",
     "@anthelia/platform": "workspace:*",
-    "@anthelia/plugin": "workspace:*"
+    "@anthelia/plugin": "workspace:*",
+    "@anthelia/tools": "workspace:*",
+    "@natalia/collaboration": "workspace:*"
   }
 }

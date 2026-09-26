@@ -37,10 +37,12 @@ import { agentTools, createSubagentsController } from "@anthelia/subagents";
 import { createToolPolicyService, toolPolicy } from "@natalia/tool-policy";
 import {
   COLLABORATION_SERVICE,
+  SETTLEMENT_SERVICE,
   collaborationTools,
   collaborationWaiter,
   createCollaborationService,
   createInteractiveWaiter,
+  type SettlementService,
 } from "@natalia/collaboration";
 import type { ServiceToken } from "@anthelia/runtime-services";
 import {
@@ -108,7 +110,11 @@ import {
   workspaceWriteLock,
   type WorkspaceMutationIdentity,
 } from "@anthelia/workspace";
-import type { RuntimeEvent, SessionID } from "@anthelia/contracts";
+import type {
+  RuntimeEvent,
+  SessionID,
+  SettlementNotice,
+} from "@anthelia/contracts";
 import { responseCacheEnabledFromProfile } from "./response-cache-profile";
 import type { PluginCommandInvocation } from "@anthelia/plugin";
 import {
@@ -274,6 +280,27 @@ export async function wireFrameworkServices(
     COLLABORATION_SERVICE,
     collaborationService,
   );
+  // The settlement service: adapters (the process plugin today, the
+  // terminal/subagents/team next) resolve it by name and deliver their
+  // boundary notices through it — the plugin sandbox cannot reach these
+  // ports directly, and this handle is the one sanctioned bridge (the
+  // collaboration service's pattern).
+  const settlementOwner = registry.registerOwner({
+    id: "natalia-settlement",
+    name: "Settlement",
+    version: "1.0.0",
+    scope: "process",
+    grants: ["services"],
+  });
+  settlementOwner.contribute("services", SETTLEMENT_SERVICE, {
+    deliverForSession: (sessionID: string, notice: SettlementNotice) => {
+      const exec = ctx.ports
+        .getExecutionBySession()
+        .get(sessionID as import("@anthelia/contracts").SessionID);
+      if (!exec) return false;
+      return ctx.ports.deliverSettlement(exec, notice);
+    },
+  } satisfies SettlementService);
   for (const tool of collaborationTools({
     events: collaborationEventsFor,
     publish: (sessionID, event) => {

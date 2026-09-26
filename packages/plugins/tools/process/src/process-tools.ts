@@ -47,6 +47,12 @@ import type {
   ToolExecutionContext,
   ToolFamily,
 } from "@anthelia/tools";
+import type { SettlementReason } from "@anthelia/contracts";
+import {
+  SETTLEMENT_SERVICE,
+  SETTLEMENT_SOURCE_KINDS,
+  type SettlementService,
+} from "@natalia/collaboration";
 
 export type ManagedProcessStatus = "running" | "exited" | "failed" | "stopped";
 
@@ -70,9 +76,31 @@ export type ManagedProcessInfo = {
   deadlineAt?: string;
 };
 
+/**
+ * A terminal transition's settlement reason, pure so the table can be
+ * pinned without a process: our own stop is `stopped`, a non-zero exit
+ * is `failed`, and an exit with no readable code stays `exited` — never
+ * silently a success (the spine's reason discipline).
+ */
+export function settlementReasonFor(
+  status: ManagedProcessSettledEvent["status"],
+  exitCode: number | undefined,
+): SettlementReason {
+  if (status === "stopped") return "stopped";
+  if (status === "failed") return "failed";
+  if (exitCode !== undefined && exitCode !== 0) return "failed";
+  return "exited";
+}
+
 export class ManagedProcessRegistry {
   readonly observer: ManagedProcessObserver;
-  constructor() {
+  /**
+   * The settlement bridge, resolved by the plugin's setup from the
+   * runtime's service registry. Absent in bare constructions (the unit
+   * tests) — a registry without it simply reports no notices, exactly as
+   * it did before the spine existed.
+   */
+  constructor(private readonly settlement?: SettlementService) {
     this.observer = new ManagedProcessObserver({
       snapshot: () =>
         [...this.processes.entries()].flatMap(([workspaceRoot, byID]) =>
@@ -82,31 +110,64 @@ export class ManagedProcessRegistry {
         for (const [workspaceRoot, byID] of this.processes) {
           const info = byID.get(id);
           if (!info || info.status !== "running") continue;
-          info.status = status;
-          info.endedAt = new Date().toISOString();
-          const event: ManagedProcessSettledEvent = {
-            id: info.id,
-            command: info.command,
+          return this.markTerminal(
+            { workspaceRoot } as unknown as ToolExecutionContext,
+            info,
             status,
-            workspaceRoot,
-            ...(info.startedBySessionID
-              ? { sessionID: info.startedBySessionID }
-              : {}),
-            startedAt: info.startedAt,
-            endedAt: info.endedAt,
-            // The record's `exitCode` is `number | null`; the event carries
-            // only a real code, so a null stays absent rather than becoming 0.
-            ...(info.exitCode === null || info.exitCode === undefined
-              ? {}
-              : { exitCode: info.exitCode }),
-          };
-          // Status is persisted by the next save; the observer never writes disk
-          // itself, so it cannot race a concurrent save on the same workspace.
-          return event;
+          );
         }
         return undefined;
       },
+      ready: ({ id, workspaceRoot }) => this.markReady(id, workspaceRoot),
     });
+  }
+
+  /**
+   * The settlement notice for a terminal transition (the spine's process
+   * adopter). The reason is the record's, not the caller's.
+   */
+  private notifySettled(event: ManagedProcessSettledEvent): void {
+    if (!this.settlement || !event.sessionID) return;
+    const reason = settlementReasonFor(event.status, event.exitCode);
+    this.settlement.deliverForSession(event.sessionID, {
+      subject: event.id,
+      reason,
+      summary: `process ${event.id} (${event.command}) ended as ${event.status}`,
+      ...(event.exitCode === undefined
+        ? {}
+        : { detail: `exitCode ${event.exitCode}` }),
+      sourceKind: SETTLEMENT_SOURCE_KINDS.processExited,
+    });
+  }
+
+  /**
+   * The ready probe: mark a record ready when its pattern first matches
+   * the process output, and report the flip. The registry stays the only
+   * writer of `ready` (the observer's sweep asks, it does not write).
+   */
+  private async markReady(
+    id: string,
+    workspaceRoot: string,
+    preReadOutput?: string,
+  ): Promise<boolean> {
+    const info = this.processes.get(workspaceRoot)?.get(id);
+    if (!info || !info.readyPattern || info.ready) return false;
+    if (info.status !== "running") return false;
+    const rawOutput =
+      preReadOutput ?? (await readOptionalFile(info.outputPath));
+    if (!new RegExp(info.readyPattern).test(rawOutput)) return false;
+    info.ready = true;
+    // The readiness notice: the process's own boundary, through the same
+    // spine an exit uses. Best-effort and session-scoped like the exit's.
+    if (this.settlement && info.startedBySessionID)
+      this.settlement.deliverForSession(info.startedBySessionID, {
+        subject: id,
+        reason: "ready",
+        summary: `process ${id} (${info.command}) is ready — its pattern matched`,
+        detail: `pattern: ${info.readyPattern}`,
+        sourceKind: SETTLEMENT_SOURCE_KINDS.processReady,
+      });
+    return true;
   }
 
   /**
@@ -226,6 +287,7 @@ export class ManagedProcessRegistry {
       const settled = this.settleFromRecord(context, info);
       if (settled) return settled;
       return {
+        kind: "settled" as const,
         id: info.id,
         command: info.command,
         status: info.status as "exited" | "stopped" | "failed",
@@ -248,6 +310,9 @@ export class ManagedProcessRegistry {
           resolve(result);
         };
         unsubscribe = this.observer.subscribe((event) => {
+          // Only terminal transitions end a wait; a readiness flip travels
+          // the same channel and is skipped here.
+          if (event.kind !== "settled") return;
           if (event.id !== id || event.workspaceRoot !== context.workspaceRoot)
             return;
           finish(event);
@@ -287,40 +352,67 @@ export class ManagedProcessRegistry {
       alive = false;
     }
     if (alive) return undefined;
-    info.status = "exited";
+    return this.markTerminal(context, info, "exited");
+  }
+
+  /**
+   * The ONE terminal-transition writer: mark the record, build the event,
+   * notify the spine. Every path that can flip running -> terminal goes
+   * through here — the sweep's settle callback, the lazy re-check, the
+   * restore's fingerprint loss — because a silent marker (a `list()` that
+   * drains an exit before the sweep sees it) is a notice lost to a polling
+   * reader, the exact disease this spine exists to cure.
+   */
+  private markTerminal(
+    context: ToolExecutionContext,
+    info: ManagedProcessRuntime,
+    status: "exited" | "stopped" | "failed",
+  ): ManagedProcessSettledEvent {
+    info.status = status;
     info.endedAt = new Date().toISOString();
-    return {
+    const event: ManagedProcessSettledEvent = {
+      kind: "settled",
       id: info.id,
       command: info.command,
-      status: "exited",
+      status,
       workspaceRoot: context.workspaceRoot,
-      startedAt: info.startedAt,
-      endedAt: info.endedAt,
       ...(info.startedBySessionID
         ? { sessionID: info.startedBySessionID }
         : {}),
+      startedAt: info.startedAt,
+      endedAt: info.endedAt,
+      // The record's `exitCode` is `number | null`; the event carries
+      // only a real code, so a null stays absent rather than becoming 0.
+      ...(info.exitCode === null || info.exitCode === undefined
+        ? {}
+        : { exitCode: info.exitCode }),
     };
+    this.notifySettled(event);
+    return event;
   }
 
   async list(context: ToolExecutionContext) {
     await this.load(context);
-    return [...this.workspaceProcesses(context).values()].map((info) =>
-      publicProcessInfo(refreshProcessStatus(info)),
-    );
+    return [...this.workspaceProcesses(context).values()].map((info) => {
+      this.settleFromRecord(context, info);
+      return publicProcessInfo(info);
+    });
   }
 
   async runningCount(context: ToolExecutionContext): Promise<number> {
     await this.load(context);
-    return [...this.workspaceProcesses(context).values()].filter(
-      (info) => refreshProcessStatus(info).status === "running",
-    ).length;
+    return [...this.workspaceProcesses(context).values()].filter((info) => {
+      this.settleFromRecord(context, info);
+      return info.status === "running";
+    }).length;
   }
 
   async get(id: string, context: ToolExecutionContext) {
     await this.load(context);
     const info = this.workspaceProcesses(context).get(id);
     if (!info) throw new Error(`process not found: ${id}`);
-    return publicProcessInfo(refreshProcessStatus(info));
+    this.settleFromRecord(context, info);
+    return publicProcessInfo(info);
   }
 
   async output(id: string, context: ToolExecutionContext) {
@@ -329,9 +421,11 @@ export class ManagedProcessRegistry {
     if (!info) throw new Error(`process not found: ${id}`);
     const rawOutput = await readOptionalFile(info.outputPath);
     info.output = truncateProcessOutput(rawOutput, info.maxOutputBytes);
-    if (info.readyPattern && new RegExp(info.readyPattern).test(rawOutput))
-      info.ready = true;
-    refreshProcessStatus(info);
+    // The lazy ready check delegates to the sweep's writer: the flip
+    // notifies whether the probe or a read found it (one writer, one
+    // notice).
+    await this.markReady(id, context.workspaceRoot, rawOutput);
+    this.settleFromRecord(context, info);
     return info.output;
   }
 
@@ -373,7 +467,8 @@ export class ManagedProcessRegistry {
     if (!info) throw new Error(`process not found: ${id}`);
     info.attached = true;
     await this.save(context);
-    return publicProcessInfo(refreshProcessStatus(info));
+    this.settleFromRecord(context, info);
+    return publicProcessInfo(info);
   }
 
   async detach(id: string, context: ToolExecutionContext) {
@@ -382,7 +477,8 @@ export class ManagedProcessRegistry {
     if (!info) throw new Error(`process not found: ${id}`);
     info.attached = false;
     await this.save(context);
-    return publicProcessInfo(refreshProcessStatus(info));
+    this.settleFromRecord(context, info);
+    return publicProcessInfo(info);
   }
 
   async cleanup(context: ToolExecutionContext) {
@@ -390,7 +486,7 @@ export class ManagedProcessRegistry {
     let removed = 0;
     const processes = this.workspaceProcesses(context);
     for (const [id, info] of processes) {
-      refreshProcessStatus(info);
+      this.settleFromRecord(context, info);
       if (info.status !== "running") {
         processes.delete(id);
         this.clearDeadline(this.deadlineKey(context, id));
@@ -405,27 +501,73 @@ export class ManagedProcessRegistry {
     await this.load(context);
     return {
       root: resolve(context.workspaceRoot),
-      processes: [...this.workspaceProcesses(context).values()].map((info) =>
-        publicProcessInfo(refreshProcessStatus(info)),
-      ),
+      processes: [...this.workspaceProcesses(context).values()].map((info) => {
+        this.settleFromRecord(context, info);
+        return publicProcessInfo(info);
+      }),
     };
   }
 
+  /**
+   * Wait for readiness through the observer, not a poll: the sweep's ready
+   * probe marks the flip, and this call is one more subscriber (the wait
+   * tool's pattern — one watcher per boundary, never a second timer racing
+   * the first).
+   */
   async waitForReady(
     id: string,
     context: ToolExecutionContext,
     timeoutMs = 30000,
   ) {
-    const started = Date.now();
-    while (Date.now() - started < timeoutMs) {
-      await this.output(id, context);
-      const info = this.workspaceProcesses(context).get(id)!;
-      if (!info.readyPattern || info.ready) return publicProcessInfo(info);
-      if (info.status !== "running")
-        throw new Error(`process exited before ready: ${id}`);
-      await Bun.sleep(50);
-    }
-    throw new Error(`process ready timeout: ${id}`);
+    await this.load(context);
+    const info = this.workspaceProcesses(context).get(id);
+    if (!info) throw new Error(`process not found: ${id}`);
+    if (!info.readyPattern || info.ready) return publicProcessInfo(info);
+    if (info.status !== "running")
+      throw new Error(`process exited before ready: ${id}`);
+    return await new Promise<ReturnType<typeof publicProcessInfo>>(
+      (resolve, reject) => {
+        let unsubscribe = () => {};
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (fn: () => void) => {
+          if (timer) clearTimeout(timer);
+          timer = undefined;
+          unsubscribe();
+          fn();
+        };
+        unsubscribe = this.observer.subscribe((event) => {
+          if (event.id !== id || event.workspaceRoot !== context.workspaceRoot)
+            return;
+          if (event.kind === "ready") {
+            finish(() =>
+              resolve(
+                publicProcessInfo(this.workspaceProcesses(context).get(id)!),
+              ),
+            );
+            return;
+          }
+          // A settle event here means the process died before its pattern.
+          finish(() => reject(new Error(`process exited before ready: ${id}`)));
+        });
+        // The sweep is periodic; a pattern that matched moments ago may not
+        // have been probed yet — re-check once on entry rather than waiting a
+        // whole poll.
+        void this.markReady(id, context.workspaceRoot).then((flipped) => {
+          const current = this.workspaceProcesses(context).get(id)!;
+          if (flipped || current.ready)
+            finish(() => resolve(publicProcessInfo(current)));
+        });
+        // Arm the sweep: the subscription above needs it.
+        this.observer.sync();
+        timer = setTimeout(
+          () => {
+            finish(() => reject(new Error(`process ready timeout: ${id}`)));
+          },
+          Math.max(0, timeoutMs),
+        );
+        timer.unref?.();
+      },
+    );
   }
 
   private async load(context: ToolExecutionContext) {
@@ -441,7 +583,7 @@ export class ManagedProcessRegistry {
       ) as { processes?: ManagedProcessRuntime[] };
       for (const info of parsed.processes ?? []) {
         if (!info.id || !info.command || !info.outputPath) continue;
-        const restored = await refreshPersistedProcessStatus(info);
+        const restored = await this.restorePersistedRecord(context, info);
         this.workspaceProcesses(context).set(restored.id, restored);
         if (
           restored.status === "running" &&
@@ -514,6 +656,41 @@ export class ManagedProcessRegistry {
   private deadlineKey(context: ToolExecutionContext, id: string) {
     return `${resolve(context.workspaceRoot)}\0${id}`;
   }
+
+  /**
+   * Restore a persisted record through the notice-bearing checks: liveness
+   * first, then the pid-fingerprint (a pid whose start ticks no longer
+   * match means the process died and the OS reused the pid — an ownership
+   * loss, which is a terminal `failed`, and one that must notify like any
+   * other exit: a process that died while the session was away must not
+   * restore silently).
+   */
+  private async restorePersistedRecord(
+    context: ToolExecutionContext,
+    info: ManagedProcessRuntime,
+  ): Promise<ManagedProcessRuntime> {
+    if (info.status !== "running") return info;
+    let alive = true;
+    try {
+      if (info.pid) process.kill(info.pid, 0);
+    } catch {
+      alive = false;
+    }
+    if (!alive) {
+      this.markTerminal(context, info, "exited");
+      return info;
+    }
+    if (info.pid && info.pidStartTicks) {
+      const current = await processFingerprint(info.pid);
+      if (current.pidStartTicks !== info.pidStartTicks) {
+        info.output =
+          `${info.output}\nmanaged process ownership lost: PID ${info.pid} no longer matches its persisted process fingerprint`.trim();
+        this.markTerminal(context, info, "failed");
+        return info;
+      }
+    }
+    return info;
+  }
 }
 
 type ManagedProcessRuntime = ManagedProcessInfo & {
@@ -524,30 +701,6 @@ type ManagedProcessRuntime = ManagedProcessInfo & {
   commandLine?: string;
   deadlineAt?: string;
 };
-
-async function refreshPersistedProcessStatus(info: ManagedProcessRuntime) {
-  refreshProcessStatus(info);
-  if (info.status !== "running" || !info.pid || !info.pidStartTicks)
-    return info;
-  const current = await processFingerprint(info.pid);
-  if (current.pidStartTicks === info.pidStartTicks) return info;
-  info.status = "failed";
-  info.endedAt = new Date().toISOString();
-  info.output =
-    `${info.output}\nmanaged process ownership lost: PID ${info.pid} no longer matches its persisted process fingerprint`.trim();
-  return info;
-}
-
-function refreshProcessStatus(info: ManagedProcessRuntime) {
-  if (info.status !== "running" || !info.pid) return info;
-  try {
-    process.kill(info.pid, 0);
-  } catch {
-    info.status = "exited";
-    info.endedAt = new Date().toISOString();
-  }
-  return info;
-}
 
 function publicProcessInfo(info: ManagedProcessRuntime): ManagedProcessInfo {
   return {
@@ -704,7 +857,7 @@ function processWaitTool(registry: ManagedProcessRegistry): RuntimeTool {
   return {
     name: "process_wait",
     description:
-      "Wait for a managed process to finish and return how it ended. Returns the current state instead of hanging when the timeout runs out.",
+      "Convenience wait for a managed process to finish and return how it ended. You are USUALLY TOLD: an exit (including a crash and a non-zero code) delivers a settlement notice, so you do not need to block on this — prefer doing other work and reading the notice. Returns the current state instead of hanging when the timeout runs out.",
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -818,7 +971,7 @@ function processReadyTool(registry: ManagedProcessRegistry): RuntimeTool {
   return {
     name: "process_ready",
     description:
-      "Wait until a managed process output matches its ready pattern.",
+      "Wait until a managed process output matches its ready pattern. One subscriber on the observer's sweep, not a poll — and readiness itself also delivers a settlement notice, so a server that comes up while you work elsewhere reaches you without this call.",
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -1088,6 +1241,7 @@ export function createProcessPlugin(): Plugin {
  */
 /** One managed process reaching a terminal state. */
 export interface ManagedProcessSettledEvent {
+  kind: "settled";
   id: string;
   command: string;
   status: "exited" | "stopped" | "failed";
@@ -1131,9 +1285,21 @@ export interface ProcessObserverOptions {
  * every session would be a timer nobody needs, and the sweep is what makes
  * `status` honest rather than merely eventually correct.
  */
+/**
+ * A managed process becoming ready: its `readyPattern` first matched the
+ * output. Readiness is not settlement — the process keeps running — so it
+ * travels the same channel under its own kind (the spine's process adopter
+ * turns it into a `process-ready` notice).
+ */
+export type ManagedProcessReadyEvent = {
+  kind: "ready";
+  id: string;
+  workspaceRoot: string;
+};
+
 export class ManagedProcessObserver {
   private readonly subscribers = new Set<
-    (event: ManagedProcessSettledEvent) => void
+    (event: ManagedProcessSettledEvent | ManagedProcessReadyEvent) => void
   >();
   private readonly pollMs: number;
   private readonly setTimer: (
@@ -1163,6 +1329,8 @@ export class ManagedProcessObserver {
         workspaceRoot: string;
         status: "exited" | "failed";
       }): ManagedProcessSettledEvent | undefined;
+      /** Mark a record ready when its pattern matches; report the flip. */
+      ready?(input: { id: string; workspaceRoot: string }): Promise<boolean>;
     },
     options: ProcessObserverOptions = {},
   ) {
@@ -1171,8 +1339,14 @@ export class ManagedProcessObserver {
     this.clearTimer = options.clearTimer ?? ((timer) => clearTimeout(timer));
   }
 
-  /** Register a settled-notice sink. Returns the unsubscribe. */
-  subscribe(fn: (event: ManagedProcessSettledEvent) => void): () => void {
+  /**
+   * Register a notice sink: terminal transitions AND readiness flips. The
+   * union is the spine's shape — a sink that only cares about settling
+   * filters on the kind (the wait tool does).
+   */
+  subscribe(
+    fn: (event: ManagedProcessSettledEvent | ManagedProcessReadyEvent) => void,
+  ): () => void {
     this.subscribers.add(fn);
     return () => {
       this.subscribers.delete(fn);
@@ -1215,6 +1389,22 @@ export class ManagedProcessObserver {
     try {
       for (const info of this.source.snapshot()) {
         if (info.status !== "running" || !info.pid) continue;
+        // The readiness probe runs before the liveness check: a process can
+        // become ready and exit in the same poll window, and the ready
+        // notice is the one a model is likely waiting for.
+        if (this.source.ready) {
+          const newlyReady = await this.source.ready({
+            id: info.id,
+            workspaceRoot: info.workspaceRoot,
+          });
+          if (newlyReady)
+            for (const subscriber of [...this.subscribers])
+              subscriber({
+                kind: "ready",
+                id: info.id,
+                workspaceRoot: info.workspaceRoot,
+              });
+        }
         // A live pid answers signal 0; anything else has exited. The record is
         // settled through the source so the registry stays the only writer.
         let alive = true;
