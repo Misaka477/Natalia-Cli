@@ -652,6 +652,68 @@ export type NamespacedCollabMessageEventData =
       message: CollaborationMessage;
     };
 
+/**
+ * Why a long-running thing settled — the settlement spine's closed set
+ * (the dsh study's stopReason taxonomy, Natalia-flavored). A notice's
+ * tone and the model's next move both key off it; a free string let a
+ * typo reach durable state where a consumer switching on the reason
+ * would silently fall through to a default — the exact failure the
+ * closed set exists to prevent. `unknown` is the honest landing for an
+ * unnameable ending: reported, never silently treated as success.
+ */
+export type SettlementReason =
+  /** The thing finished its work. */
+  | "completed"
+  /** It ended in failure (a non-zero exit, a thrown turn). */
+  | "failed"
+  /** It was stopped before finishing (abort, kill, cancel). */
+  | "stopped"
+  /** It reached readiness (a ready pattern matched, a service is up). */
+  | "ready"
+  /** A rendered screen settled (the terminal's quiescence boundary). */
+  | "settled"
+  /** The underlying process exited (the terminal's death boundary). */
+  | "exited"
+  /** It ended worse than failed but short of a diagnosis. */
+  | "degraded"
+  /** An unnameable ending — reported, never assumed a success. */
+  | "unknown";
+
+/**
+ * A settlement notice: a long-running thing (a managed process, a
+ * terminal pane, a subagent, a team PR) reached a boundary, and the
+ * main agent is TOLD instead of left polling. The notice is an input,
+ * not a command — the model decides when to read it — and every notice
+ * is a durable fact so replay and audit see what the model was told.
+ */
+/**
+ * The settlement notice as adopters hand it to the spine: what settled,
+ * why, and the one model-facing line. The event above is its durable
+ * form; this is the call shape.
+ */
+export type SettlementNotice = {
+  subject: string;
+  reason: SettlementReason;
+  summary: string;
+  detail?: string;
+  sourceKind: string;
+};
+
+export type SettlementNoticeEventData = {
+  type: "settlement.notice";
+  id: string;
+  /** What settled: the process id, the terminal id, the task id, the PR key. */
+  subject: string;
+  reason: SettlementReason;
+  /** The model-facing line, carried by the injected notice. */
+  summary: string;
+  /** Optional payload: a closing message, an exit code, a frame diff. */
+  detail?: string;
+  /** The producer's kind: process-exited | terminal-settled | subagent-settled | team-pr. */
+  sourceKind: string;
+  at: string;
+};
+
 /** Durable lifecycle phase of a same-session goal. */
 export type GoalPhase = "active" | "paused" | "blocked" | "complete";
 
@@ -2112,6 +2174,7 @@ type RuntimeEventData =
       message: CollaborationMessage;
     }
   | NamespacedCollabMessageEventData
+  | SettlementNoticeEventData
   | {
       type: "settings.updated";
       scope: "global" | "project";

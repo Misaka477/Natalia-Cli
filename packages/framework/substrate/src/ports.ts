@@ -228,6 +228,17 @@ export type RuntimePorts = {
   getTsRuntimeConfig: () => ConfigV3 | undefined;
   nextChatSequence: () => number;
   nextPlanSequence: () => number;
+  nextSettlementSequence: () => number;
+  /**
+   * The settlement spine's delivery: publish the notice fact and steer
+   * (a running turn's next step) or queue (an idle session's new turn).
+   * A false is a degrade — the thing that settled must not fail.
+   */
+  deliverSettlement: (
+    exec: import("./session-execution-state").SessionExecutionState,
+    notice: import("@anthelia/contracts").SettlementNotice,
+    options?: { sessionID?: string },
+  ) => boolean;
   requestNaviWake: (exec: SessionExecutionState) => void;
   requestNiaWake: (exec: SessionExecutionState) => void;
   wakeNia: (exec: SessionExecutionState) => Promise<void>;

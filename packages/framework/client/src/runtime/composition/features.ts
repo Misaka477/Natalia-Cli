@@ -6,6 +6,7 @@ import { createSnapshot } from "../snapshot";
 import { createChatPrompt } from "@natalia/collab";
 import { createChatTools } from "@natalia/collab";
 import { createCollaborationWake } from "@natalia/collab";
+import { createSettlement } from "@natalia/collaboration";
 import { createMailboxPlans } from "@natalia/collab";
 import { createPlanDocRuntime } from "@natalia/collab";
 import { createNaviChatTurn } from "@natalia/collab";
@@ -74,6 +75,14 @@ export function wireFeatures(
   ports.wakeNia = collaborationWake.wakeNia;
   ports.requestNiaWake = collaborationWake.requestNiaWake;
   ports.scheduleInternalWake = collaborationWake.scheduleInternalWake;
+  ports.deliverSettlement = createSettlement({
+    isDisposed: () => ctx.ports.isDisposed(),
+    publishForSession: (exec, event) =>
+      ctx.ports.publishForSession(exec, event),
+    deliverInternalWake: collaborationWake.deliverInternalWake,
+    nextSettlementSequence: () => state.settlementSequence++,
+    serviceDirectory: ctx.state.serviceDirectory,
+  }).deliver;
   const mailboxPlans = createMailboxPlans(ctx);
   ports.createCollabChatTool = mailboxPlans.createCollabChatTool;
   ports.enqueueMailboxMessage = mailboxPlans.enqueueMailboxMessage;

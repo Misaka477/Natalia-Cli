@@ -50,34 +50,24 @@ export function createCollaborationWake(ctx: ProductRuntimeContext) {
     wakeNavi,
     requestNiaWake,
     wakeNia,
+    deliverInternalWake,
   };
 
-  function wakeMainForCollaboration(
+  /**
+   * The internal-wake delivery core, shared by the collaboration wake and
+   * the settlement spine's notices: a message for a main turn that is
+   * actually running is injected into its next provider step synchronously
+   * (the provider loop can claim it before the current step's
+   * correction/error path decides the model ignored it); an idle main
+   * agent gets a durable separate turn. Both paths journal the admitted
+   * input, so replay sees what the model was told.
+   */
+  function deliverInternalWake(
     exec: SessionExecutionState,
-    sourceID: string,
-    kind: string,
-    source: "Navi" | "Nia" = "Navi",
+    id: string,
+    text: string,
   ) {
-    if (ctx.ports.isDisposed()) return;
-    const coordinator = sessionRunCoordinator(exec.session.id as SessionID);
-    // A collaboration message for a main turn that is actually running is
-    // injected into its next provider step synchronously: the provider loop can
-    // claim it before the current step's correction/error path decides the
-    // model ignored the reply. An idle main agent gets a durable separate turn.
     const delivery = exec.activeTurnID ? "next-step" : "next-turn";
-    const id = `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`;
-    const text =
-      source === "Nia"
-        ? `(internal collaboration wake: Nia sent a ${kind}; read her audit findings in <nia_collaborations>, perform the required remediation work now, then reply to Nia with what you changed. Do not acknowledge with chat alone. This is not a user message.)`
-        : `(internal collaboration wake: ${source} sent a ${kind}; read the collaboration context. This is not a user message.)`;
-    logOf(ctx.state.serviceDirectory).info("collab-wake-main", "", {
-      source,
-      kind,
-      sourceID,
-      sessionID: exec.session.id,
-      delivery,
-      coordinatorActive: coordinator.active,
-    });
     if (delivery === "next-step") {
       const admitted = admitInput(exec.session, {
         id,
@@ -101,9 +91,35 @@ export function createCollaborationWake(ctx: ProductRuntimeContext) {
         sessionID: exec.session.id,
         admittedSeq: admitted.admittedSeq,
       });
-      return;
+      return delivery;
     }
     scheduleInternalWake(exec, { id, text, delivery });
+    return delivery;
+  }
+
+  function wakeMainForCollaboration(
+    exec: SessionExecutionState,
+    sourceID: string,
+    kind: string,
+    source: "Navi" | "Nia" = "Navi",
+  ) {
+    if (ctx.ports.isDisposed()) return;
+    const coordinator = sessionRunCoordinator(exec.session.id as SessionID);
+    const delivery = exec.activeTurnID ? "next-step" : "next-turn";
+    const id = `turn_collab_${sourceID.replace(/[^a-zA-Z0-9]/gu, "_")}`;
+    const text =
+      source === "Nia"
+        ? `(internal collaboration wake: Nia sent a ${kind}; read her audit findings in <nia_collaborations>, perform the required remediation work now, then reply to Nia with what you changed. Do not acknowledge with chat alone. This is not a user message.)`
+        : `(internal collaboration wake: ${source} sent a ${kind}; read the collaboration context. This is not a user message.)`;
+    logOf(ctx.state.serviceDirectory).info("collab-wake-main", "", {
+      source,
+      kind,
+      sourceID,
+      sessionID: exec.session.id,
+      delivery,
+      coordinatorActive: coordinator.active,
+    });
+    deliverInternalWake(exec, id, text);
   }
 
   function scheduleInternalWake(

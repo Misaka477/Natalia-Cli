@@ -20,6 +20,7 @@ export type ProductRuntimeState = {
   chatSequence: number;
   collabSequence: number;
   planSequence: number;
+  settlementSequence: number;
   completionSequence: number;
   internalWakeTasks: Set<Promise<unknown>>;
   /**

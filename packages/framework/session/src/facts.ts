@@ -178,6 +178,7 @@ export {
   isCollaborationStreamEvent,
   sessionFactDiagnosticStreamEvents,
   isDiagnosticStreamEvent,
+  settlementRecordsFromEvents,
 } from "./projector";
 export type {
   ProjectedCapability,
@@ -194,6 +195,7 @@ export type {
   SessionIntelligenceFactState,
   SessionIntelligenceFacts,
 } from "./projector";
+export type { SettlementNoticeRecord } from "./projector";
 export { projectInteractiveRequests, requestsForSession } from "./interactive";
 export type {
   InteractiveProjection,

@@ -27,6 +27,7 @@ import {
   settleInterruptedTurns,
   selectedAgentFromEvents,
   selectedModelFromEvents,
+  settlementRecordsFromEvents,
 } from "../src";
 import { JsonSessionStore } from "../src";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -1737,4 +1738,54 @@ test("deserializeProjectionState fails soft on a non-array set field instead of 
     completedTurnIDs: "nope",
   });
   expect(deserializeProjectionState(badCompleted)).toBeUndefined();
+});
+
+test("settlement notices fold into the projection's record list", () => {
+  const events = [
+    {
+      type: "settlement.notice",
+      id: "settlement:terminal-settled:term_a:1",
+      subject: "term_a",
+      reason: "settled",
+      summary: "screen settled",
+      sourceKind: "terminal-settled",
+      at: "2026-09-25T00:00:00.000Z",
+    },
+    {
+      type: "settlement.notice",
+      id: "settlement:process-exited:proc_b:2",
+      subject: "proc_b",
+      reason: "exited",
+      summary: "exited 0",
+      detail: "exitCode 0",
+      sourceKind: "process-exited",
+      at: "2026-09-25T00:00:09.000Z",
+    },
+  ] as unknown as RuntimeEvent[];
+  const records = settlementRecordsFromEvents(events);
+  // Oldest first, and the record is the index (summary/detail stay on
+  // the event) — replay sees exactly what the model was told.
+  expect(records).toEqual([
+    {
+      subject: "term_a",
+      reason: "settled",
+      sourceKind: "terminal-settled",
+      at: "2026-09-25T00:00:00.000Z",
+    },
+    {
+      subject: "proc_b",
+      reason: "exited",
+      sourceKind: "process-exited",
+      at: "2026-09-25T00:00:09.000Z",
+    },
+  ]);
+});
+
+test("a journal without notices folds to an empty list", () => {
+  expect(settlementRecordsFromEvents([])).toEqual([]);
+  expect(
+    settlementRecordsFromEvents([
+      { type: "turn.started", id: "t1" } as unknown as RuntimeEvent,
+    ]),
+  ).toEqual([]);
 });

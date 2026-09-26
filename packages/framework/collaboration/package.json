@@ -9,11 +9,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@anthelia/session": "workspace:*",
-    "@anthelia/tools": "workspace:*",
     "@anthelia/contracts": "workspace:*",
+    "@anthelia/operation-log": "workspace:*",
     "@anthelia/runtime": "workspace:*",
     "@anthelia/runtime-services": "workspace:*",
+    "@anthelia/session": "workspace:*",
+    "@anthelia/tools": "workspace:*",
     "@natalia/work-ledger": "workspace:*"
   },
   "devDependencies": {

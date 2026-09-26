@@ -58,6 +58,11 @@ export const EVENT_MODES: EventModeTable = {
   invariant: "emit",
   // D4: a background review is observation — emit, never flow-stopping.
   self_review: "emit",
+  // The settlement spine's notices are observation — emit, never
+  // flow-stopping: a notice is an input the model reads when it chooses,
+  // and a failed delivery degrades without touching the thing that
+  // settled.
+  settlement: "emit",
   // G-c: an external run's join is a recorded fact — emit, and the
   // comparison it unlocks is a read, not a flow gate.
   external_run: "emit",

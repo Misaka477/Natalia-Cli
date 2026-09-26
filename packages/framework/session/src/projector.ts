@@ -24,6 +24,20 @@ export type SessionProjection = {
   >;
   permissionMode?: "ask" | "auto" | "read_only";
   permissionProfile?: string;
+  /** The settlement notices this session was told (the spine's durable face). */
+  settlements: SettlementNoticeRecord[];
+};
+
+/**
+ * A settlement notice as the projection carries it: what settled, why,
+ * and when — the notice stream's replayable form (the full summary and
+ * detail stay on the event itself; the projection keeps the index).
+ */
+export type SettlementNoticeRecord = {
+  subject: string;
+  reason: import("@anthelia/contracts").SettlementReason;
+  sourceKind: string;
+  at: string;
 };
 
 /** Selects the model-visible durable context after the latest epoch baseline. */
@@ -70,7 +84,29 @@ export function projectSession(session: SessionRecord): SessionProjection {
     chatModelProfile: chatModelProfileFromEvents(replayable),
     permissionMode: permissionModeFromEvents(replayable),
     permissionProfile: permissionProfileFromEvents(replayable),
+    settlements: settlementRecordsFromEvents(replayable),
   };
+}
+
+/**
+ * The settlement notices a session was told, oldest first. A notice is a
+ * durable fact, so replay sees exactly what the model was told — and the
+ * record is the index (the summary stays on the event).
+ */
+export function settlementRecordsFromEvents(
+  events: readonly RuntimeEvent[],
+): SettlementNoticeRecord[] {
+  return events
+    .filter(
+      (event): event is Extract<RuntimeEvent, { type: "settlement.notice" }> =>
+        event.type === "settlement.notice",
+    )
+    .map((event) => ({
+      subject: event.subject,
+      reason: event.reason,
+      sourceKind: event.sourceKind,
+      at: event.at,
+    }));
 }
 
 /**
@@ -142,6 +178,7 @@ export function viewProjection(
     chatModelProfile: chatModelProfileFromEvents(replayable),
     permissionMode: permissionModeFromEvents(replayable),
     permissionProfile: permissionProfileFromEvents(replayable),
+    settlements: settlementRecordsFromEvents(replayable),
   };
 }
 

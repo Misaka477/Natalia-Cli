@@ -84,6 +84,7 @@ export function createCompositionContext(
     collabSequence: 0,
     internalWakeTasks: new Set<Promise<unknown>>(),
     planSequence: 0,
+    settlementSequence: 0,
     completionSequence: 0,
     titleGenerationTasks: new Map(),
   } as unknown as RuntimeState & ProductRuntimeState;
