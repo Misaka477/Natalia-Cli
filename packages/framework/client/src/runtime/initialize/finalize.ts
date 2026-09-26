@@ -185,16 +185,14 @@ export async function finalizeInitialize(
   mark("statusSnapshot");
   // EI §3.9 重启恢复: the Nia audit wake is in-memory, so a restart would drop
   // an in-flight audit. Scan for audit.requested events whose plan never closed
-  // (no audit_passed / audit_gaps / completed status) and re-wake Nia so the
+  // (no audit_gaps / completed status) and re-wake Nia so the
   // audit is not lost across a restart.
   if (scope.activeExec && ctx.ports.requestNiaWake) {
     const closedPlans = new Set<string>();
     for (const event of session.events) {
       if (
         event.type === "plan.doc.status" &&
-        (event.status === "audit_passed" ||
-          event.status === "audit_gaps" ||
-          event.status === "completed")
+        (event.status === "audit_gaps" || event.status === "completed")
       )
         closedPlans.add(event.planID);
     }

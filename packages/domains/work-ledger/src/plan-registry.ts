@@ -17,10 +17,10 @@ export type PlanStatus =
   | "marked"
   | "handed_off"
   | "executing"
+  | "paused"
   | "awaiting_audit"
   | "auditing"
   | "audit_pending"
-  | "audit_passed"
   | "audit_gaps"
   | "completed";
 

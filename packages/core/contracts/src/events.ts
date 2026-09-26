@@ -4325,7 +4325,7 @@ export type RuntimeClient = {
     planID: string,
     sessionID?: string,
   ): Promise<{ status: string }>;
-  /** Updates a plan document lifecycle status (e.g. awaiting_audit, audit_passed). */
+  /** Updates a plan document lifecycle status (e.g. awaiting_audit, audit_gaps). */
   planDocUpdateStatus?(input: {
     planID: string;
     status: string;

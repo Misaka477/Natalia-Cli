@@ -17,7 +17,6 @@ import { RuntimeInvalidParams } from "@anthelia/contracts";
 import type { RuntimeServiceClient } from "@anthelia/runtime-services";
 import { sessionStoreController } from "@anthelia/session-store";
 import { workLedgerController } from "@natalia/work-ledger";
-import { scanAuditRequestFacts } from "@anthelia/substrate";
 import type {
   RuntimeContext,
   SessionExecutionState,
@@ -419,48 +418,16 @@ export function createPlanDocRuntime(ctx: RuntimeContext): PlanDocRuntime {
         }),
         sessionID,
       );
-      if (status === "awaiting_audit" || status === "auditing") {
-        const exec = sessionExec(sessionID);
-        logOf(ctx.state.serviceDirectory).info(
-          "nia-wake-trigger",
-          "plan status requires Nia audit",
-          {
-            planID,
-            status,
-            sessionID,
-            hasExec: Boolean(exec),
-          },
-        );
-        if (exec) {
-          // The wake dedupe/round reads the whole log, not the resident
-          // tail: a fast attach can hold only the post-epoch tail, where an
-          // older audit.requested for this plan is invisible (duplicate
-          // request, or a round that restarts). The shared scan pages the
-          // durable log for it.
-          const auditFacts = await scanAuditRequestFacts(ctx, exec, planID);
-          const round = auditFacts.count + 1;
-          const alreadyRequested =
-            auditFacts.triggerEventIDs.includes(statusID);
-          if (!alreadyRequested) {
-            ctx.ports.publishForSession(
-              exec,
-              requireWorkLedger().buildAuditRequested({
-                id: `audit:${planID}:${ctx.ports.nextPlanSequence()}`,
-                planID,
-                // EI §3.4: bind the audit to the plan document's real
-                // revision, not a hardcoded 1 — an audit must be attributable
-                // to the exact document version it reviewed.
-                planVersion: record.revision ?? 1,
-                triggerEventID: statusID,
-                round,
-                scope: status === "auditing" ? "audit_wake" : "awaiting_audit",
-                at: now,
-              }),
-            );
-          }
-          ctx.ports.requestNiaWake(exec);
-        }
-      }
+      // The status is a LIFECYCLE PROJECTION, never an audit request
+      // (the 2026-09-25 convergence): the block that used to live here
+      // wrote an audit.requested fact and woke Nia on every
+      // awaiting_audit/auditing write — a COMPLETE second trigger running
+      // parallel to the completion fact's one, so any caller that walked
+      // both lines got two audit rounds (the dedupe keys differ). The
+      // audit trigger has exactly one home now: the completion fact's
+      // requestAuditAfterCompletion (which also projects awaiting_audit);
+      // Nia's turn start projects auditing. Writing a status here writes a
+      // status — tombstone in .kilo/plans/landing/plan-audit-line.
       return { updated: true };
     },
   };

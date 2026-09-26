@@ -48,13 +48,13 @@ test("plan registry transitions build the corresponding events", () => {
   const status = buildPlanDocStatus({
     id: "plan:status:1",
     planID: "plan_001",
-    status: "audit_passed",
+    status: "completed",
     at: "2026-09-02T00:03:00.000Z",
   });
   expect(status).toMatchObject({
     type: "plan.doc.status",
     planID: "plan_001",
-    status: "audit_passed",
+    status: "completed",
   });
 });
 

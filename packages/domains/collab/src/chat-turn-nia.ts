@@ -279,6 +279,24 @@ export function createNiaChatTurn(ctx: RuntimeContext) {
       !input.detourReview &&
       (/审计|audit|审核/iu.test(input.text) ||
         (input.internal === true && Boolean(activePlan)));
+    // The auditing projection (the 2026-09-25 convergence): her turn start
+    // is the lifecycle's middle state — awaiting_audit (the completion's
+    // projection) → auditing (here) → her verdict or the turn-end
+    // audit_pending fallback. Gated on the pre-verdict statuses: a plan
+    // that already closed must never be dragged back into auditing.
+    if (
+      auditIntent &&
+      activePlan &&
+      (activePlan.status === "awaiting_audit" ||
+        activePlan.status === "audit_pending")
+    )
+      await ctx.ports.planDocRuntime.planDocUpdateStatus!({
+        planID: activePlan.planID,
+        status: "auditing",
+        ...(input.exec.session.id ? { sessionID: input.exec.session.id } : {}),
+      }).catch(() => {
+        // A projection failure must never fail the audit turn.
+      });
     const requiredAuditAction = () => {
       if (!auditIntent || !activePlan) return undefined;
       if (auditReported || collabSent) return undefined;

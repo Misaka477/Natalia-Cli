@@ -357,20 +357,49 @@ test.each([
 
 test("Nia normal profile selects its configured model and reasoning for submit and wake", async () => {
   const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
+  let sawCompletionToolResult = false;
   const server = Bun.serve({
     port: 0,
     async fetch(request) {
+      const body = (await request.json()) as Record<string, unknown>;
       requests.push({
         path: new URL(request.url).pathname,
-        body: (await request.json()) as Record<string, unknown>,
+        body,
       });
       const openAI = new URL(request.url).pathname.endsWith(
         "/chat/completions",
       );
+      if (!openAI)
+        return new Response("event: message_stop\ndata: {}\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      // Nia's turns carry her collaboration marker and keep the plain
+      // reply; the main agent's turn scripts the completion once and then
+      // settles (the tool result in the request marks the second step).
+      const messages = (body.messages ?? []) as Array<{
+        role: string;
+        content: unknown;
+      }>;
+      const isNiaTurn = messages.some((message) =>
+        String(message.content).includes("<natalia_collaborations>"),
+      );
+      if (isNiaTurn)
+        return new Response(
+          'data: {"choices":[{"delta":{"reasoning_content":"think","content":"ok"}}]}\n\ndata: [DONE]\n\n',
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      sawCompletionToolResult = messages.some(
+        (message) =>
+          message.role === "tool" &&
+          String(message.content).includes('"recorded":true'),
+      );
+      if (!sawCompletionToolResult)
+        return new Response(
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"record_completion","arguments":"{\"taskID\":\"profile-audit\",\"objective\":\"close the audit line\",\"changeSummary\":\"one trigger, projected lifecycle\"}"}}]}}]}\n\ndata: [DONE]\n\n',
+          { headers: { "content-type": "text/event-stream" } },
+        );
       return new Response(
-        openAI
-          ? 'data: {"choices":[{"delta":{"reasoning_content":"think","content":"ok"}}]}\n\ndata: [DONE]\n\n'
-          : "event: message_stop\ndata: {}\n\n",
+        'data: {"choices":[{"delta":{"content":"recorded"}}]}\n\ndata: [DONE]\n\n',
         { headers: { "content-type": "text/event-stream" } },
       );
     },
@@ -432,15 +461,19 @@ test("Nia normal profile selects its configured model and reasoning for submit a
     const marked = await client.planDocMark!({
       path: "plans/profile-audit.md",
     });
-    await client.planDocUpdateStatus!({
-      planID: marked.planID,
-      status: "awaiting_audit",
-    });
-    await Bun.sleep(25);
-    const grokRequests = requests.filter((request) =>
-      request.path.endsWith("/chat/completions"),
+    // The 2026-09-25 convergence: the waker is no longer the status write
+    // (the deleted second trigger) but the completion fact's one home —
+    // requestAuditAfterCompletion. The profile assertion below is the
+    // same one; only how the wake is reached changed.
+    await client.submitAndWait!(`record completion for ${marked.planID}`);
+    await Bun.sleep(50);
+    // The wake is the request the grok profile sent: the main agent runs
+    // on the default (anthropic-compatible) driver, so the driver path
+    // is not the filter — the MODEL is.
+    const grokRequests = requests.filter(
+      (request) => request.body.model === "grok-4.6",
     );
-    expect(grokRequests).toHaveLength(2);
+    expect(grokRequests.length).toBeGreaterThanOrEqual(1);
     expect(grokRequests).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -460,22 +493,80 @@ test("Nia normal profile selects its configured model and reasoning for submit a
   }
 });
 
-test("awaiting audit wakes Nia through her normal profile and namespaced stream", async () => {
+test("a completion wakes Nia; a status write alone wakes nobody (the cut)", async () => {
+  // The 2026-09-25 convergence: the OLD drive was planDocUpdateStatus(
+  // awaiting_audit) — the deleted SECOND trigger. The wake now has exactly
+  // one home: the completion fact's requestAuditAfterCompletion. The
+  // negative half is the cut's own proof — writing the status projects it
+  // and wakes nobody.
   const requests: ProviderStreamRequest[] = [];
   const wakeStarted = gate();
+  let mainSteps = 0;
+  let completionTaskID = "";
+  let auditReported = false;
   const provider: StreamingProvider = {
     provider: "nia-wake-provider",
     model: "nia-wake-model",
     async *stream(request) {
       requests.push(request);
-      if (
-        request.messages.some(
-          (message) =>
-            message.role === "user" &&
-            message.content.includes("Your audit wake request has arrived"),
-        )
-      )
-        wakeStarted.release();
+      const allMessages = String(
+        request.messages.map((message) => message.content).join("\n"),
+      );
+      const niaTurn = allMessages.includes("<natalia_collaborations>");
+      if (!niaTurn) {
+        // The main agent: one completion, then settle. The completion's
+        // taskID is the audit target's planID, so the EI projection has a
+        // plan to project onto.
+        mainSteps += 1;
+        if (mainSteps === 1) {
+          yield {
+            type: "tool_call" as const,
+            calls: [
+              {
+                id: "c1",
+                name: "record_completion",
+                arguments: JSON.stringify({
+                  taskID: completionTaskID,
+                  objective: "close the audit line",
+                  changeSummary: "one trigger, projected lifecycle",
+                }),
+              },
+            ],
+          };
+          return;
+        }
+        yield { type: "content" as const, text: "recorded" };
+        yield { type: "done" as const };
+        return;
+      }
+      const isWakeRequest = request.messages.some(
+        (message) =>
+          message.role === "user" &&
+          message.content.includes("Your audit wake request has arrived"),
+      );
+      if (isWakeRequest) wakeStarted.release();
+      // The audit's happy path: her wake turn's first step reports a
+      // pass (the plan's taskID is the completion's taskID), which closes
+      // the lifecycle — awaiting_audit → auditing → completed. A one-shot
+      // flag, not a message-shape check: her earlier chat in this session
+      // already puts assistant messages in her history.
+      if (isWakeRequest && !auditReported && completionTaskID) {
+        auditReported = true;
+        yield {
+          type: "tool_call" as const,
+          calls: [
+            {
+              id: "c_audit",
+              name: "audit_report",
+              arguments: JSON.stringify({
+                planID: completionTaskID,
+                verdict: "passed",
+              }),
+            },
+          ],
+        };
+        return;
+      }
       yield { type: "thinking" as const, text: "nia-wake-thinking" };
       yield { type: "content" as const, text: "nia wake reply" };
       yield { type: "done" as const };
@@ -489,6 +580,14 @@ test("awaiting audit wakes Nia through her normal profile and namespaced stream"
   });
   const events: RuntimeEvent[] = [];
   client.start((event) => events.push(event));
+  const waitForStatus = async (planID: string, expected: string) => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const { status } = await client.planDocStatus!(planID);
+      if (status === expected) return;
+      await Bun.sleep(100);
+    }
+    throw new Error(`plan ${planID} never reached ${expected}`);
+  };
   try {
     await client.niaChat!.submit({ text: "establish execution" });
     await client.niaChat!.setModelProfile!({
@@ -500,28 +599,58 @@ test("awaiting audit wakes Nia through her normal profile and namespaced stream"
       title: "Audit target",
     });
     const marked = await client.planDocMark!({ path: "plans/audit-target.md" });
+    // Activate: her turn's auditing projection keys off the session's
+    // active plan, and the lifecycle pin below needs the whole chain.
+    await client.planDocActivate!(marked.planID);
+    completionTaskID = marked.planID;
+    await client.submitAndWait!("record it");
+    await wakeStarted.promise;
+    // Any request carrying the wake text: her whole turn (initial plus
+    // corrections). The turn is over by now, so a NEW one after the
+    // status write can only be a new wake.
+    const isWakeRequest = (request: ProviderStreamRequest) =>
+      request.messages.some(
+        (message) =>
+          message.role === "user" &&
+          message.content.includes("Your audit wake request has arrived"),
+      );
+    expect(
+      events.some((event) => eventType(event) === "nia.chat.thinking.delta"),
+    ).toBe(true);
+    // The lifecycle, projected end to end: the completion's EI projection
+    // opened it (awaiting_audit — asserted by the projection test below in
+    // the no-report case), her turn start projected auditing, and her turn
+    // end without an audit_report fell back to audit_pending. Each state
+    // has exactly one owner now.
+    // The whole chain from the journal (a poll would miss the ephemeral
+    // auditing window; the events are the durable truth): the completion's
+    // EI projection opened it, her turn start projected the middle, her
+    // audit_report(passed) closed it. Each state has exactly one owner.
+    await waitForStatus(marked.planID, "completed");
+    const lifecycle = events
+      .filter(
+        (event) =>
+          event.type === "plan.doc.status" &&
+          (event as { planID?: string }).planID === marked.planID,
+      )
+      .map((event) => (event as { status: string }).status);
+    expect(lifecycle).toEqual(["awaiting_audit", "auditing", "completed"]);
+    // The cut: writing the status (the OLD trigger's own input) wakes
+    // nobody — no new wake request appears, before vs after the write.
+    const wakeRequestsBefore = requests.filter(isWakeRequest).length;
+    expect(wakeRequestsBefore).toBeGreaterThanOrEqual(1);
     expect(
       await client.planDocUpdateStatus!({
         planID: marked.planID,
         status: "awaiting_audit",
       }),
     ).toEqual({ updated: true });
-    await wakeStarted.promise;
-    const wake = requests.find((request) =>
-      request.messages.some(
-        (message) =>
-          message.role === "user" &&
-          message.content.includes("Your audit wake request has arrived"),
-      ),
-    );
-    expect(wake).toBeDefined();
-    expect(
-      events.some((event) => eventType(event) === "nia.chat.thinking.delta"),
-    ).toBe(true);
+    await Bun.sleep(100);
+    expect(requests.filter(isWakeRequest).length).toBe(wakeRequestsBefore);
   } finally {
     await client.dispose?.();
   }
-});
+}, 20_000);
 
 test("main, Navi, and Nia publish thinking in their independent namespaces", async () => {
   const requests: ChatRequest[] = [];

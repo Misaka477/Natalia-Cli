@@ -223,7 +223,6 @@ export function evidenceStatusForPlanState(
     case "auditing":
     case "audit_gaps":
       return "implemented";
-    case "audit_passed":
     case "completed":
       return "accepted";
     default:

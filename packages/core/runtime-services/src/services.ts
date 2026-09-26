@@ -638,7 +638,6 @@ export type PlanLifecycleState =
   | "awaiting_audit"
   | "auditing"
   | "audit_pending"
-  | "audit_passed"
   | "audit_gaps"
   | "completed";
 export type ServiceOperation = (...args: any[]) => any;

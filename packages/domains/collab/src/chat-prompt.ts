@@ -243,10 +243,7 @@ export function createChatPrompt(ctx: RuntimeContext) {
     );
     const closedPlans = new Set(
       plans
-        .filter(
-          (plan) =>
-            plan.status === "completed" || plan.status === "audit_passed",
-        )
+        .filter((plan) => plan.status === "completed")
         .map((plan) => plan.planID),
     );
     const pendingAudits = diagnosticStreamFor(exec, chatSession.events)

@@ -170,7 +170,7 @@ test("evidence status transition policy maps plan lifecycle to effective status"
   expect(evidenceStatusForPlanState("auditing", "implemented")).toBe(
     "implemented",
   );
-  expect(evidenceStatusForPlanState("audit_passed", "implemented")).toBe(
+  expect(evidenceStatusForPlanState("completed", "implemented")).toBe(
     "accepted",
   );
   expect(evidenceStatusForPlanState("completed", "implemented")).toBe(

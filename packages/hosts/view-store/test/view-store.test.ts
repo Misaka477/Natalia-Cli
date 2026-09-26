@@ -831,7 +831,7 @@ test("a plan document that reached a settled status is not live planning work", 
     type: "plan.doc.status",
     id: "plan:1:status",
     planID: "plan:1",
-    status: "audit_passed",
+    status: "completed",
     at: "now",
   });
   expect(selectPrimaryActivity(state)).toBeUndefined();

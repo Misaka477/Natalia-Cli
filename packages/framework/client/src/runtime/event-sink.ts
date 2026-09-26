@@ -629,7 +629,7 @@ export function createEventSink(
       // the plan lifecycle still closes even when the model forgets the tool.
       if (last && niaAuditWake && !auditReported) {
         const auditDone =
-          /全部完成|全部通过|没有缺口|已完成|audit_passed|no gaps|all done/iu.test(
+          /全部完成|全部通过|没有缺口|已完成|no gaps|all done/iu.test(
             last.text,
           );
         const active = activePlanForExec(ctx, exec);
