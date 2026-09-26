@@ -576,7 +576,15 @@ export function createContextVault(input: {
   const flushMs = input.flushMs ?? FLUSH_MS;
   const flushN = input.flushN ?? FLUSH_N;
 
+  // Use-after-close is a race, not a caller error: a record queued by a
+  // turn that was still finishing when the vault was disposed lands here
+  // after close (CI's slower teardown makes it routine). The spine's
+  // discipline applies — a closed vault degrades (the write is dropped,
+  // the caller is not thrown at), it never fails the thing that outlived
+  // it.
+  let closed = false;
   function land(records: readonly VaultRecord[], action: string): number {
+    if (closed) return 0;
     if (!records.length) return 0;
     const now = new Date().toISOString();
     db.transaction(() => {
@@ -1009,6 +1017,8 @@ export function createContextVault(input: {
       return { available: true, state };
     },
     close(): void {
+      if (closed) return;
+      closed = true;
       flushNow();
       db.close();
     },

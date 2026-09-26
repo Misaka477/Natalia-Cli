@@ -118,6 +118,11 @@ const skippedDirs = new Set([
   "coverage",
   "dist",
   "node_modules",
+  // Test fixtures are DATA, not source: a committed corpus (the frozen
+  // eval's instructions, an AST grammar sample) legitimately contains
+  // import-shaped text that is not this repository's dependency. Scanning
+  // them traces phantom imports and fails the gate on data.
+  "fixtures",
 ]);
 
 const forbiddenDependencies = [

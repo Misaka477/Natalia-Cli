@@ -7,23 +7,21 @@ name: verify
 # had never been run at all, and the format gate reported 86 files for long
 # enough that nobody read its output. A gate that nothing enforces is advice.
 #
-# This is the enforcement. Run it locally with `npm run verify`; it is the same
-# command, so a green run here and a green run there mean the same thing.
-#
 # What a fresh checkout must do BEFORE the tests — the artifacts are never
-# committed, the repo ships sources: the client suite reads the official plugin
-# distribution at `dist/ts/plugins`, so `verify` builds it first (`npm run
-# build:distribution`, ts-build's distribution mode). The shell tests fail
-# CLOSED without the confinement backend, so the workflow builds that
-# pure-Rust binary before verifying.
+# committed, the repo ships sources: the client suite reads the official
+# plugin distribution at `dist/ts/plugins` (`build:distribution`, ts-build's
+# distribution mode), and the AST face needs the tree-sitter wasm packs
+# (`diff:build-wasm`, 46 languages) — a fresh clone without them parses
+# nothing and the AST tests fail silently. The shell tools fail CLOSED
+# without the confinement backend, so the workflow builds that pure-Rust
+# binary before verifying too.
 #
-# What this workflow deliberately does NOT run: the native release lane
-# (`npm run verify:native` — the full ts:build with the WezTerm staging, the
-# standalone release, the object-store rust acceptance). That fork is built on
-# Ubuntu inside podman for a glibc match (build-wezterm-ubuntu.ts) — a
-# privileged-container job no push should pay for. It stays the release-time
-# gate a maintainer runs where those binaries exist; the distribution mode
-# above proves everything else on every commit.
+# The gates are SEPARATE STEPS, not one command: the runs on this repo keep
+# getting cancelled around the three-minute mark (not by a newer push — a
+# re-run with nothing to supersede it is cancelled the same way; either the
+# platform or something with repo access cancels them). With one long step, a
+# cancel hides which gate was red; with per-gate steps every gate that
+# finished reports itself, and the red one is named.
 
 on:
   push:
@@ -46,16 +44,16 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # The suite runs ~3000 tests and the distribution build precedes it. The
-    # cap is here so a hang fails the job rather than occupying a runner until
+    # The suite runs ~2900 tests and the artifact builds precede it. The cap
+    # is here so a hang fails the job rather than occupying a runner until
     # the platform's own limit.
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
-      # Both runtimes, because the scripts use each: the workspace installs with
-      # bun (the only lockfile is `bun.lock`), and the `verify` script and the
-      # scripts it chains invoke `npm run …` and `npx …`.
+      # Both runtimes, because the scripts use each: the workspace installs
+      # with bun (the only lockfile is `bun.lock`), and the `verify` script
+      # and the scripts it chains invoke `npm run …` and `npx …`.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.0"
@@ -63,23 +61,38 @@ jobs:
         with:
           node-version: "24"
 
-      # The confinement backend: a small pure-Rust binary the shell tools wrap
-      # commands in. Without it the client suite's run_shell tests fail closed
-      # (by design — never run unconstrained), so CI must carry it rather than
-      # verify a fail-closed pass.
+      # Rust for both native artifacts: the confinement backend (the shell
+      # tools fail CLOSED without it — never run unconstrained) and the AST
+      # tree-sitter wasm packs (the wasm32 target for the 46 languages).
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - name: Build the confinement backend
         run: >
           cargo build --release
           --manifest-path packages/hosts/confinement/native/Cargo.toml
 
-      # `--frozen-lockfile` so a dependency that would drift from the committed
-      # lockfile fails here instead of silently changing what is being verified.
+      # `--frozen-lockfile` so a dependency that would drift from the
+      # committed lockfile fails here instead of silently changing what is
+      # being verified.
       - name: Install
         run: bun install --frozen-lockfile
 
-      # One command, and the same one a developer runs. Keeping CI to the single
-      # script is deliberate: a CI that assembled its own step list would be a
-      # second definition of "verified", and the two would drift.
-      - name: Verify
-        run: npm run verify
+      # The gates, one step each (see the header). The artifacts the tests
+      # read are built before the tests, never after.
+      - name: Format
+        run: npm run format
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build the plugin distribution
+        run: npm run build:distribution
+      - name: Build the AST wasm packs
+        run: npm run diff:build-wasm
+      - name: Test
+        run: npm run test
+      - name: Guards
+        run: >
+          npm run guard:imports && npm run guard:contract && npm run guard:deps
+          && npm run guard:suppressions && npm run guard:tests
+          && npm run guard:events && npm run guard:console
+          && npm run guard:test-workspaces

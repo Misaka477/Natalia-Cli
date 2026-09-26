@@ -439,3 +439,27 @@ test("the blob-store option: the vectors answer the same recall through the stor
   // a no-op alias).
   expect(blobs.size).toBeGreaterThan(0);
 });
+
+test("a record that lands after close degrades — the caller is never thrown at", async () => {
+  // The race this closes: a turn still finishing when the vault is
+  // disposed queues a record that lands after close (CI's teardown makes
+  // it routine). A closed vault drops the write; it does not fail the
+  // thing that outlived it.
+  const instance = vault(5);
+  instance.close();
+  // A record that arrives after close: dropped, never thrown at.
+  expect(() =>
+    instance.remember({
+      id: "late:1",
+      workspaceID: "ws",
+      sessionID: "ses",
+      recordType: "session_fact",
+      entityKey: "s:lexical",
+      summary: "rotate the TLS certificates",
+    } as never),
+  ).not.toThrow();
+  // And the flush timer that would have landed it.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  // A second close is idempotent (the dispose path can run twice).
+  expect(() => instance.close()).not.toThrow();
+});
