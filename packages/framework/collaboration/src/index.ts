@@ -39,3 +39,11 @@ export {
   type ConsultRecord,
   type ConsultSummary,
 } from "./consult-ledger";
+export {
+  waitForConsult,
+  resolveConsult,
+  expireSessionConsults,
+  pendingConsultSession,
+  DEFAULT_CONSULT_WAIT_MS,
+  type ConsultReply,
+} from "./consult-bridge";

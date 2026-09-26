@@ -1,3 +1,4 @@
+import { resolveConsult } from "./consult-bridge";
 import type {
   CollaborationMessage,
   CollaborationParticipant,
@@ -103,6 +104,12 @@ export function createCollaborationService(
         type: `${collaborationStream(input.from)}.collab.message`,
         message,
       } as RuntimeEvent);
+      // The synchronous consult line (advisor block A): an answer for a
+      // question the main agent is waiting on resolves that wait. The
+      // question side (`collab_ask`) registers the wait; this is where
+      // the answer side every agent's send flows through resolves it.
+      if (message.kind === "answer" && message.replyToID)
+        resolveConsult(message.replyToID, message.text, message.at);
       console.log("[collab-trace] send", {
         from: input.from,
         to,

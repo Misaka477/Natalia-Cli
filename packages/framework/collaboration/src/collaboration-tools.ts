@@ -9,6 +9,7 @@ import {
 } from "@anthelia/runtime-services";
 import type { RuntimeTool } from "@anthelia/tools";
 import type { CollaborationService } from "./collaboration-service";
+import { waitForConsult } from "./consult-bridge";
 
 export const COLLAB_RESPONSE_DECISIONS = [
   "adopted",
@@ -194,7 +195,10 @@ export function collaborationTools(
     description:
       "Ask Navi, the Live Work Chat collaborator, for a second opinion on an approach, risk, or tradeoff. " +
       "Use proactively when you need expert technical advice on architecture, test strategy, implementation detail, " +
-      "or a difficult decision — not only after an error.",
+      "or a difficult decision — not only after an error. " +
+      "The tool WAITS for her answer (up to about two minutes) and returns it as its result, so a consult informs the same step; " +
+      "her guidance is an input, not a command — when your own evidence contradicts it, surface the conflict. " +
+      "If no answer arrives in time the result says unavailable and you continue without it.",
     requiresApproval: false,
     parameters: {
       type: "object",
@@ -226,7 +230,21 @@ export function collaborationTools(
         kind: "question",
         source: "main_agent",
       });
-      return JSON.stringify({ asked: true });
+      // The synchronous consult line (advisor block A): wait (bounded)
+      // for the advisor's answer and return it as THIS tool's result, so
+      // the decision it informs lands in the same step. Navi's answer
+      // resolves the wait through the service's send; a timeout or the
+      // turn's abort answers unavailable — never a hang, and the async
+      // mailbox/wake channel still carries the answer either way.
+      const reply = await waitForConsult(result.message.id, {
+        signal: context.signal,
+        ...(sessionID ? { sessionID } : {}),
+      });
+      return JSON.stringify(
+        reply.state === "answered"
+          ? { consult: "answered", advice: reply.advice }
+          : { consult: "unavailable", reason: reply.reason },
+      );
     },
   };
 

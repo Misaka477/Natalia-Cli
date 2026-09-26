@@ -13,6 +13,7 @@ import type { ConfigV3, SessionID } from "@anthelia/contracts";
 import type { RuntimeContext } from "@anthelia/substrate";
 import type { RealRuntimeClientOptions } from "@anthelia/substrate";
 import type { SkillMetadata } from "@anthelia/runtime-services";
+import { expireSessionConsults } from "@natalia/collaboration";
 
 export function createPluginAssembly(
   ctx: RuntimeContext,
@@ -132,7 +133,18 @@ export function createPluginAssembly(
             throw new Error(
               `no execution state for session ${input.sessionID}`,
             );
-          await runNaviChatTurn({ ...input, exec }, signal);
+          try {
+            await runNaviChatTurn({ ...input, exec }, signal);
+          } finally {
+            // The synchronous consult line (advisor block A): a navi
+            // turn that ended without answering a pending question
+            // settles it unavailable — the main turn must not wait out
+            // the whole timeout for an advisor that is already gone.
+            expireSessionConsults(
+              input.sessionID,
+              "the advisor's turn ended without answering",
+            );
+          }
         },
         wake: async (id) => {
           const exec = getExecutionBySession().get(id);
