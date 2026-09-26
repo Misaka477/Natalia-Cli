@@ -76,6 +76,29 @@ export function createTurnController(
     assertActive();
     const session = input.sessionFor(sessionID);
     if (!session) return;
+    // The claim space is the durable journal, not this controller's
+    // memory alone: two live clients over one session each hold their own
+    // record, and a claim made in the other one's memory (already
+    // persisted) would be invisible here — both would claim, and the turn
+    // would run twice. But a wholesale adopt would also erase THIS
+    // controller's own claims: its persist is a deferred chain, so a
+    // claim made one iteration ago may not be on disk yet, and the next
+    // iteration would re-promote the same input forever. Merge instead —
+    // a local claim is sticky, the durable one fills the rest.
+    const durableInbox = await input.loadInbox?.(sessionID);
+    if (durableInbox) {
+      const claims = new Map(
+        durableInbox.map((item) => [item.id, item.promotedAt]),
+      );
+      session.inbox = admittedInputs(session).map((item) => ({
+        ...item,
+        promotedAt: item.promotedAt ?? claims.get(item.id),
+      }));
+      // Inputs another client submitted that this record has not seen.
+      const known = new Set(admittedInputs(session).map((item) => item.id));
+      for (const item of durableInbox)
+        if (!known.has(item.id)) session.inbox.push(item);
+    }
     while (true) {
       if (signal?.aborted) throw signal.reason;
       if (

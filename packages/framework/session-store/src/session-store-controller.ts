@@ -20,6 +20,7 @@ import {
   deserializeProjectionState,
   projectSessionMessages,
   serializeProjectionState,
+  type AdmittedSessionInput,
   type SessionMetadata,
   type SessionRecord,
   type SessionRow,
@@ -324,6 +325,22 @@ export function createSessionStoreController(input: {
   async function saveInbox(session: SessionRecord) {
     if (sqliteStore) sqliteStore.replaceInbox(session.id, session.inbox ?? []);
     else await sessionStore.save(session);
+  }
+
+  /**
+   * The durable inbox as it stands on disk — the claim authority. Two live
+   * clients over one session (the product's attach switch, the
+   * two-local-clients test) each carry their own in-memory record, so a
+   * `promotedAt` marked only in one of them is invisible to the other:
+   * both would claim, and the turn would run twice. The turn controller
+   * consults this before its own claim.
+   */
+  async function loadInbox(id: SessionID): Promise<AdmittedSessionInput[]> {
+    if (sqliteStore) return sqliteStore.loadInbox(id);
+    // The JSON store has no inbox-only reader; its file holds the whole
+    // (small) session, so the read is the same cost.
+    const session = await sessionStore.load(id);
+    return session?.inbox ?? [];
   }
 
   function loadRecoveryProjection(id: SessionID) {
@@ -788,6 +805,7 @@ export function createSessionStoreController(input: {
     status,
     load,
     saveInbox,
+    loadInbox,
     loadRecoveryProjection,
     appendEvent,
     appendEvents,

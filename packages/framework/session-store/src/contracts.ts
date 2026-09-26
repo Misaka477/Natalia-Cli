@@ -64,6 +64,12 @@ export interface SessionStoreController {
   }>;
   saveInbox(session: SessionRecord): Promise<void>;
   /**
+   * The durable inbox on disk — the turn controller's claim authority: a
+   * second live client over one session carries its own record, and a
+   * claim made only there would let both run the same turn.
+   */
+  loadInbox(sessionID: SessionID): Promise<AdmittedSessionInput[]>;
+  /**
    * Cheap read of the fast-restore recovery projection (no full event load).
    * Used to re-seed live projections — e.g. the goal status bar — on attach.
    */

@@ -87,6 +87,16 @@ export function wireTurnOrchestration(
       );
       await sessionStore.saveInbox(snapshot);
     },
+    // The claim authority: the durable inbox as it stands on disk. Two
+    // live clients over one session each hold their own record, so a
+    // claim made in the other's memory would be invisible here and the
+    // turn would run twice — the CI red this closes.
+    loadInbox: async (sessionID) => {
+      const sessionStore = ctx.state.serviceDirectory.get(
+        sessionStoreController,
+      );
+      return await sessionStore.loadInbox(sessionID as SessionID);
+    },
     flush: async () => {
       await ctx.ports.getSessionPersistence();
     },

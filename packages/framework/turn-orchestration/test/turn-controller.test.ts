@@ -194,3 +194,70 @@ test("disposed turn orchestration refuses new work", async () => {
     controller.admit(session.id as unknown as string, "s2", "second"),
   ).rejects.toThrow("turn orchestration controller disposed");
 });
+
+test("two controllers over one durable inbox claim each input exactly once", async () => {
+  // The durable session: one journal, two live clients (the product's
+  // attach switch makes this rare, the two-local-clients integration test
+  // makes it real). Each client's controller carries its OWN in-memory
+  // record — so a claim marked only in memory is invisible to the other,
+  // and the same input runs twice (the CI red: first:start, first:end,
+  // second:start, second:end, second:start, second:end).
+  // The durable journal, as the real flow persists it: A's submit, then
+  // A's own claim (its turn ran), then B's submit.
+  const durable = sessionWithInbox([
+    {
+      id: "q1",
+      text: "one",
+      delivery: "next-turn",
+      promotedAt: new Date().toISOString(),
+    },
+    { id: "q2", text: "two", delivery: "next-turn" },
+  ]);
+  durable.inbox ??= [];
+  // Client A's record: loaded at start, BEFORE B's submit — it can see
+  // q1 (unclaimed from its own view) and knows nothing of q2.
+  const recordA = {
+    ...durable,
+    inbox: [{ id: "q1", text: "one", delivery: "next-turn" as const }],
+  } as typeof durable;
+  // Client B's record: loaded after its submit — sees both, q1 still
+  // looks unclaimed from ITS stale view of A's claim.
+  const recordB = { ...durable, inbox: [...(durable.inbox ?? [])] };
+  const turns: string[] = [];
+  const persistedInboxes: string[][] = [];
+  const make = (record: typeof durable) =>
+    createTurnController({
+      session: () => record,
+      activeAbort: () => undefined,
+      sessionFor: (sessionID) =>
+        sessionID === (record.id as unknown as string) ? record : undefined,
+      activeAbortFor: () => undefined,
+      persist: async (fn) => {
+        await fn();
+      },
+      saveInbox: async (snapshot) => {
+        // The durable journal: what a later client would load.
+        const inbox = snapshot.inbox ?? [];
+        durable.inbox = inbox.map((item) => ({ ...item }));
+        persistedInboxes.push(inbox.map((item) => item.id));
+      },
+      // The claim authority: the same journal saveInbox writes.
+      loadInbox: async () => (durable.inbox ?? []).map((item) => ({ ...item })),
+      flush: async () => undefined,
+      runCommand: async () => false,
+      runTurn: async (input) => {
+        turns.push(input.id);
+      },
+    });
+  const controllerA = make(recordA);
+  const controllerB = make(recordB);
+  await controllerB.drain(new AbortController().signal, recordB.id as never);
+  await controllerA.drain(new AbortController().signal, recordA.id as never);
+  // Each input runs exactly once across both controllers.
+  expect(turns).toEqual(["q2"]);
+  // And the durable journal carries the claim (a third client loading it
+  // would not re-run anything).
+  expect(
+    (durable.inbox ?? []).find((item) => item.id === "q2")?.promotedAt,
+  ).toBeString();
+});

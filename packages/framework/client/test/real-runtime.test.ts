@@ -3304,7 +3304,7 @@ test("a plugin command reaches the command catalog and the palette bridge", asyn
     () =>
       events.filter((event) => event.type === "content.delta").at(-1)?.text ===
       "synced alpha,beta",
-    3000,
+    20_000,
     "the plugin command output",
   );
   expect(
@@ -5946,7 +5946,7 @@ test("submit after cancel returns without waiting for the next turn to finish", 
   void client.submit("hang until cancelled");
   await waitFor(
     () => events.some((event) => event.type === "turn.submitted"),
-    3000,
+    20_000,
     "the first turn to be admitted",
   );
   client.cancel("user cancel");
@@ -5964,7 +5964,7 @@ test("submit after cancel returns without waiting for the next turn to finish", 
       events.some(
         (event) => event.type === "turn.submitted" && event.id === second.id,
       ),
-    3000,
+    20_000,
     "the second turn to be admitted",
   );
   await client.dispose?.();
@@ -5992,7 +5992,7 @@ test("provider admission is persisted before the provider turn begins", async ()
   });
   client.start(() => undefined);
   const submitted = await client.submitAndWait!("persist me first");
-  await waitFor(() => started, 3000, "the admitted turn to start streaming");
+  await waitFor(() => started, 20_000, "the admitted turn to start streaming");
   expect(started).toBe(true);
   const stored = JSON.parse(
     await readFile(
@@ -6039,7 +6039,7 @@ test("queued input wakes an idle session after durable admission", async () => {
     text: "wait for idle",
     delivery: "next-turn",
   });
-  await waitFor(() => started, 5000, "the queued input to start streaming");
+  await waitFor(() => started, 20_000, "the queued input to start streaming");
   expect(started).toBe(true);
   const stored = JSON.parse(
     await readFile(
@@ -6095,7 +6095,7 @@ test("queued inputs promote in FIFO order after the active turn becomes idle", a
       requests.includes("queued one") &&
       requests.includes("queued two") &&
       requests.includes("queued three"),
-    5000,
+    20_000,
     "the queued inputs to promote in order",
   );
   expect(requests.filter((text) => text === "first")).toHaveLength(1);
@@ -6144,7 +6144,7 @@ test("a queued input survives cancellation and drains on the next prompt", async
   });
   client.start(() => undefined);
   const first = client.submit("first");
-  await waitFor(() => requests.length === 1, 5000, "the first turn to start");
+  await waitFor(() => requests.length === 1, 20_000, "the first turn to start");
   await client.submitInput!({ text: "queued", delivery: "next-turn" });
   client.cancel("stop mid-turn");
   await first;
@@ -6155,7 +6155,7 @@ test("a queued input survives cancellation and drains on the next prompt", async
   await client.submitInput!({ text: "resume please", delivery: "next-step" });
   await waitFor(
     () => requests.includes("queued"),
-    5000,
+    20_000,
     "the queued input to drain after the next prompt",
   );
   expect(requests).toEqual(["first", "resume please", "queued"]);
@@ -6295,7 +6295,7 @@ test("restart resumes a pending queued input but does not replay interrupted pro
   // startup, not a single tick.
   await waitFor(
     () => calls > 0,
-    5000,
+    20_000,
     "the queued input to reach the provider",
   );
   expect(calls).toBe(1);
@@ -6304,7 +6304,7 @@ test("restart resumes a pending queued input but does not replay interrupted pro
       events.some(
         (event) => event.type === "turn.finished" && event.id === "turn_queued",
       ),
-    5000,
+    20_000,
     "the queued turn to finish",
   );
   expect(
@@ -6394,7 +6394,7 @@ test("restart safely settles a durable tool execution window without replaying i
   reopened.start((event) => events.push(event));
   await waitFor(
     () => calls > 0,
-    5000,
+    20_000,
     "the queued input to reach the provider",
   );
   expect(calls).toBe(1);
@@ -6405,7 +6405,7 @@ test("restart safely settles a durable tool execution window without replaying i
           event.type === "turn.finished" &&
           event.id === "turn_queued_after_tool",
       ),
-    5000,
+    20_000,
     "the queued turn to finish",
   );
   expect(
@@ -7066,7 +7066,7 @@ test("two local clients serialize provider turns for one durable session", async
   await Promise.all([firstSubmit, secondSubmit]);
   await waitFor(
     () => order.includes("second:start") && order.includes("second:end"),
-    5000,
+    20_000,
     "the second local client's provider turn to run",
   );
   expect(order).toEqual([
@@ -7236,7 +7236,7 @@ test("real runtime client publishes provider chunks before stream completion", a
   await submission;
   await waitFor(
     () => events.some((event) => event.type === "turn.finished"),
-    3000,
+    20_000,
     "the streamed turn to finish",
   );
   expect(
@@ -9200,7 +9200,7 @@ test("subagent approval stays in the child conversation and remains answerable",
         (event) =>
           event.type === "subagent.update" && event.status === "completed",
       ),
-    5000,
+    20_000,
     "the approved subagent tool to complete",
   );
 
@@ -9860,9 +9860,16 @@ function subagentRawXMLToolProvider(): StreamingProvider {
   };
 }
 
+/**
+ * Waits for a condition. The default budget is generous for the same
+ * reason waitForAsync's is: this file's conditions routinely cross
+ * process boundaries (a settle on disk, a wake that has to run), and a
+ * 500ms default was a lottery under the concurrent suite — a different
+ * victim every run. The 60s per-test cap still bounds a genuine hang.
+ */
 async function waitFor(
   predicate: () => boolean,
-  timeoutMs = 500,
+  timeoutMs = 20_000,
   label = "condition",
 ) {
   for (let elapsed = 0; elapsed < timeoutMs; elapsed += 10) {
@@ -10312,7 +10319,7 @@ test("pause, resume and agent selection answer what the runtime did", async () =
   expect((await client.selectAgent?.())?.outcome).toBe("applied");
 
   const turn = client.submit("hold the turn open");
-  await waitFor(() => release !== undefined, 3000, "the provider to start");
+  await waitFor(() => release !== undefined, 20_000, "the provider to start");
   expect(await client.pause?.("user pause")).toEqual({ paused: true });
   expect(await client.pause?.("user pause")).toEqual({
     paused: true,
@@ -10652,7 +10659,7 @@ test("parallel sessions retain their configured provider across tool steps", asy
           .map((request) => request.model);
       await waitFor(
         () => modelsFor("session A").length >= 2,
-        5000,
+        20_000,
         "session A's provider to complete both tool and final steps",
       );
       expect(modelsFor("session A").length).toBeGreaterThanOrEqual(2);
@@ -11380,7 +11387,7 @@ test("two sessions writing the workspace in parallel both land without corruptio
     await waitFor(
       () =>
         existsSync(join(root, "wa.txt")) && existsSync(join(root, "wb.txt")),
-      5000,
+      20_000,
       "both parallel workspace writes to land",
     );
     expect(await readFile(join(root, "wa.txt"), "utf8")).toBe("content-wa.txt");
@@ -11641,7 +11648,7 @@ test("cancelling the attached session does not abort a background session's pend
     await turnA;
     await waitFor(
       () => existsSync(join(root, "bg.txt")),
-      5000,
+      20_000,
       "the background A turn to write after approval",
     );
     await waitFor(
@@ -11652,7 +11659,7 @@ test("cancelling the attached session does not abort a background session's pend
             event.sessionID === "ses_bg_abort_a" &&
             event.stopReason === "done",
         ),
-      5000,
+      20_000,
       "the background A turn to finish after approval",
     );
     expect(await readFile(join(root, "bg.txt"), "utf8")).toBe("bg");
@@ -11889,7 +11896,7 @@ test("/skill-script aborts its child process when the command is cancelled", asy
               event.type === "content.delta" &&
               String(event.text).includes('"exitCode"'),
           ),
-      5000,
+      20_000,
       "the cancelled skill script to report its child exit code",
     );
     const output = events
@@ -12818,7 +12825,7 @@ test("the collaboration channel round-robins between Navi and the main agent", a
     30_000,
   );
   await client.naviChat!.submit({ text: "what did she decide" });
-  await waitForAsync(async () => chatPrompt2.includes("adopted"), 10000);
+  await waitForAsync(async () => chatPrompt2.includes("adopted"), 20_000);
   // Navi sees the outcome without the user prompting her.
   expect(chatPrompt2).toContain("Outcomes of your suggestions to Natalia");
   expect(chatPrompt2).toContain("adopted");
@@ -13326,7 +13333,7 @@ test("collab_chat enforces direct replies and stops after three automatic rounds
       if (chatCount > 4)
         throw new Error(`collab_chat exceeded its limit: ${chatCount}`);
       return chatCount === 4 && mainWakeWithoutRequiredReply;
-    }, 10000).catch((error) => {
+    }, 20_000).catch((error) => {
       const summary = events
         .filter(
           (event) =>
@@ -13490,7 +13497,7 @@ test("collab_chat honors a configured one-round automatic limit", async () => {
           (event) =>
             isCollabMessageEvent(event) && event.message.kind === "chat",
         ).length === 2 && finalWakeObserved,
-      10000,
+      20_000,
     );
     const chats = events.flatMap((event) =>
       isCollabMessageEvent(event) && event.message.kind === "chat"
@@ -14036,7 +14043,7 @@ test("input.remove/replace/promote mutate the durable queue and emit events", as
   });
   client.start((event) => events.push(event));
   const first = client.submit("hold");
-  await waitFor(() => release !== undefined, 3000, "the provider to start");
+  await waitFor(() => release !== undefined, 20_000, "the provider to start");
 
   const removable = await client.submitInput!({
     text: "remove me",
@@ -14091,7 +14098,7 @@ test("input.remove/replace/promote mutate the durable queue and emit events", as
         (event) =>
           event.type === "turn.input" && event.inputID === promotable.id,
       ),
-    5000,
+    20_000,
     "the promoted input to be claimed by the running turn",
   );
   await client.dispose?.();

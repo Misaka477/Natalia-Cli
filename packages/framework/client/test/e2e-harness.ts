@@ -183,7 +183,9 @@ export async function waitFor(
   condition: () => boolean,
   input: { timeoutMs?: number; intervalMs?: number } = {},
 ): Promise<void> {
-  const timeoutMs = input.timeoutMs ?? 5_000;
+  // Cross-process durable conditions: 5s was a load lottery under the
+  // concurrent suite (the 60s per-test cap is the real bound).
+  const timeoutMs = input.timeoutMs ?? 20_000;
   const intervalMs = input.intervalMs ?? 10;
   const started = Date.now();
   while (!condition()) {

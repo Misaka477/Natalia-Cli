@@ -48,6 +48,14 @@ export type TurnControllerInput = {
   activeAbortFor(sessionID: string): AbortController | undefined;
   persist(fn: () => Promise<void>): Promise<void>;
   saveInbox(snapshot: SessionRecord): Promise<void>;
+  /**
+   * The durable inbox as it stands on disk — the claim authority. A second
+   * live client over the same session carries its own in-memory record,
+   * so a claim marked only there is invisible here and the turn would run
+   * twice. Optional so the bare unit controllers keep their shape; the
+   * composition always provides it.
+   */
+  loadInbox?(sessionID: string): Promise<AdmittedSessionInput[] | undefined>;
   flush(): Promise<void>;
   runCommand(
     id: string,
