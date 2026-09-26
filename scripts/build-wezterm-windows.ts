@@ -21,7 +21,7 @@ import { join } from "node:path";
  */
 
 const target = "x86_64-pc-windows-gnu";
-const forkDir = join("packages", "plugin-native-terminal", "wezterm");
+const forkDir = join("packages", "plugins", "native-terminal", "wezterm");
 const binaries = ["wezterm", "wezterm-gui", "wezterm-mux-server"];
 
 const home = process.env.HOME;

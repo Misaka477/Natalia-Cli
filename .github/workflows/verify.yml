@@ -9,6 +9,21 @@ name: verify
 #
 # This is the enforcement. Run it locally with `npm run verify`; it is the same
 # command, so a green run here and a green run there mean the same thing.
+#
+# What a fresh checkout must do BEFORE the tests — the artifacts are never
+# committed, the repo ships sources: the client suite reads the official plugin
+# distribution at `dist/ts/plugins`, so `verify` builds it first (`npm run
+# build:distribution`, ts-build's distribution mode). The shell tests fail
+# CLOSED without the confinement backend, so the workflow builds that
+# pure-Rust binary before verifying.
+#
+# What this workflow deliberately does NOT run: the native release lane
+# (`npm run verify:native` — the full ts:build with the WezTerm staging, the
+# standalone release, the object-store rust acceptance). That fork is built on
+# Ubuntu inside podman for a glibc match (build-wezterm-ubuntu.ts) — a
+# privileged-container job no push should pay for. It stays the release-time
+# gate a maintainer runs where those binaries exist; the distribution mode
+# above proves everything else on every commit.
 
 on:
   push:
@@ -31,9 +46,10 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # The suite runs ~2300 tests. The cap is here so a hang fails the job rather
-    # than occupying a runner until the platform's own limit.
-    timeout-minutes: 30
+    # The suite runs ~3000 tests and the distribution build precedes it. The
+    # cap is here so a hang fails the job rather than occupying a runner until
+    # the platform's own limit.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +62,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+
+      # The confinement backend: a small pure-Rust binary the shell tools wrap
+      # commands in. Without it the client suite's run_shell tests fail closed
+      # (by design — never run unconstrained), so CI must carry it rather than
+      # verify a fail-closed pass.
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the confinement backend
+        run: >
+          cargo build --release
+          --manifest-path packages/hosts/confinement/native/Cargo.toml
 
       # `--frozen-lockfile` so a dependency that would drift from the committed
       # lockfile fails here instead of silently changing what is being verified.

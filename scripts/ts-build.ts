@@ -3,6 +3,28 @@ import { join, resolve } from "node:path";
 import { build as viteBuild } from "vite";
 import solid from "vite-plugin-solid";
 
+/**
+ * Two modes, one script:
+ *
+ * - default (the release mode): everything, including staging the WezTerm
+ *   fork's native executables — which must exist because the fork is built
+ *   on Ubuntu inside podman (build-wezterm-ubuntu.ts). A checkout without
+ *   them (CI, a fresh clone) fails loudly here rather than shipping a
+ *   plugin distribution whose terminal cannot start.
+ * - `NATALIA_BUILD_SKIP_NATIVE=1` (the distribution mode, `npm run
+ *   build:distribution`): everything the TEST SUITE needs — the CLI bundle
+ *   and the 16-plugin official distribution — with the native staging
+ *   skipped. This is what makes a fresh CI checkout verifiable: the client
+ *   tests read `dist/ts/plugins`, and producing it must not require a
+ *   containerized native build.
+ */
+const skipNative = process.env.NATALIA_BUILD_SKIP_NATIVE === "1";
+if (skipNative)
+  console.log(
+    "distribution mode: native executable staging skipped " +
+      "(set no NATALIA_BUILD_SKIP_NATIVE for the release build)",
+  );
+
 const target =
   process.env.NATALIA_BUILD_TARGET ?? `${process.platform}-${process.arch}`;
 const version = process.env.NATALIA_TS_VERSION ?? "0.0.0-ts7";
@@ -150,13 +172,27 @@ for (const root of pluginRoots) {
     const executables = ["wezterm", "wezterm-gui", "wezterm-mux-server"].map(
       (name) => `${name}${executableSuffix}`,
     );
-    for (const executable of executables)
-      if (!(await Bun.file(join(nativeRelease, executable)).exists()))
-        throw new Error(`${root}: missing terminal executable ${executable}`);
-    await mkdir(nativeOutdir, { recursive: true });
-    for (const executable of executables)
-      await cp(join(nativeRelease, executable), join(nativeOutdir, executable));
-    releaseFiles.push("wezterm");
+    if (skipNative) {
+      // The distribution stays truthful about what it carries: the release
+      // manifest omits the native tier rather than advertising it.
+      console.log(
+        `${root}: distribution mode — the wezterm executables are not staged`,
+      );
+    } else {
+      for (const executable of executables)
+        if (!(await Bun.file(join(nativeRelease, executable)).exists()))
+          throw new Error(`${root}: missing terminal executable ${executable}`);
+      await mkdir(nativeOutdir, { recursive: true });
+      for (const executable of executables)
+        await cp(
+          join(nativeRelease, executable),
+          join(nativeOutdir, executable),
+        );
+      // Staged means listed: the manifest's `files` is the release
+      // bundle's truth, so a staged tier the manifest omits is a tier the
+      // package drops.
+      releaseFiles.push("wezterm");
+    }
     releaseFiles.push("wezterm-command-worker.js");
   }
 

@@ -266,7 +266,11 @@ test("managed process max runtime stops the owned process group", async () => {
   const childPID = Number(await waitForFile(join(root, "child.pid")));
   expect(started.maxRuntimeMs).toBe(100);
   expect(started.deadlineAt).toBeString();
-  await Bun.sleep(250);
+  // The deadline stops the process at 100ms, but the LIVENESS SWEEP is
+  // what observes it — a ~500ms poll whose timer stretches under the
+  // full-suite load. The window here must outlive the sweep's cadence,
+  // not the deadline's.
+  await Bun.sleep(1_500);
   const status = JSON.parse(
     await tools
       .get("process_status")!

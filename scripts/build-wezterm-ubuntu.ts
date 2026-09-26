@@ -18,7 +18,13 @@ import { join, resolve } from "node:path";
  */
 
 const repoRoot = resolve(join(import.meta.dir, ".."));
-const forkDir = join(repoRoot, "packages", "plugin-native-terminal", "wezterm");
+const forkDir = join(
+  repoRoot,
+  "packages",
+  "plugins",
+  "native-terminal",
+  "wezterm",
+);
 const releaseDir = join(forkDir, "target", "release");
 const containerName = "natalia-ubuntu-build";
 const containerForkDir = "/src/wezterm";
