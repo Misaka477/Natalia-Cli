@@ -595,6 +595,8 @@ export interface TerminalController {
   ): ReturnType<TerminalToolService["observe"]>;
   session(id: string): { lastObservedText?: string };
   markObserved(id: string, text: string, revision: number): void;
+  /** The revision the model last observed (the observe default's base). */
+  lastObservedRevision(id: string): number | undefined;
   requestHuman(
     id: string,
     reason: string,
