@@ -109,7 +109,15 @@ for (const target of targets) {
     // and SHA256SUMS (76 entries), which both tied the artifact to this
     // checkout and made `install.sh` copy files that a later cleanup
     // removed. Any stale copy from a previous build is purged here too.
-    const stateDirs = new Set(["plugin-store", "cli-dev-pty-stores"]);
+    // The hygiene guard's own cleanup keeps this empty between runs; a
+    // hard-killed run leaves workspaces behind, and they must never ship
+    // (19 MiB of test residue in SHA256SUMS ties the artifact to the
+    // machine that built it).
+    const stateDirs = new Set([
+      "plugin-store",
+      "cli-dev-pty-stores",
+      "client-test-workspaces",
+    ]);
     for (const entry of await readdir(join(root, "dist", "ts"))) {
       if (stateDirs.has(entry)) {
         await rm(join(outDir, entry), { recursive: true, force: true });

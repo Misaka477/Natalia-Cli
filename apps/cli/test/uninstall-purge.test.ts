@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   exportStores,
+  nataliaHome,
+  nataliaHomeForExecutable,
   listPurgeTargets,
   purgeConfirmation,
   purgeData,
@@ -182,4 +184,30 @@ test("store export archives the stores with a verifying manifest", async () => {
   );
   expect(archived.toString("utf8")).toBe("RESCUE-RING");
   expect(snapshot(join(home, "stores"))).toEqual(before);
+});
+
+test("an installed binary derives its home from the install layout", () => {
+  // The bug: installing to /tmp/x then running uninstall reported "no
+  // program files under ~/.natalia" — the home came from the default, so
+  // the real install stayed and the real home's stores were counted.
+  const saved = process.env.NATALIA_HOME;
+  try {
+    delete process.env.NATALIA_HOME;
+    // bin/natalia (the installer's symlink target resolves through it)
+    expect(nataliaHomeForExecutable("/opt/natalia/bin/natalia")).toBe(
+      "/opt/natalia",
+    );
+    // versions/<v>/natalia (what process.execPath usually is)
+    expect(
+      nataliaHomeForExecutable("/opt/natalia/versions/0.0.0-m13/natalia"),
+    ).toBe("/opt/natalia");
+    // A dev run (bun) has no install layout: the default stands.
+    expect(nataliaHomeForExecutable("/usr/bin/bun")).toBeUndefined();
+    // The env override still wins over both.
+    process.env.NATALIA_HOME = "/explicit/home";
+    expect(nataliaHome()).toBe("/explicit/home");
+  } finally {
+    if (saved === undefined) delete process.env.NATALIA_HOME;
+    else process.env.NATALIA_HOME = saved;
+  }
 });

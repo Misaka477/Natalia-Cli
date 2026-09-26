@@ -17,10 +17,35 @@ import { cp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { hashTreeFiles } from "@anthelia/platform";
 
 /** The install root: `NATALIA_HOME` overrides (D2 unattended + tests). */
+/**
+ * The install layout the installer writes: `<home>/bin/natalia` is a
+ * relative symlink to `<home>/versions/<version>/natalia`. An INSTALLED
+ * binary derives its home from that layout — otherwise `uninstall` (and
+ * every other store-touching command) operates on whatever `~/.natalia`
+ * happens to be, leaving the real install untouched (the bug this
+ * closes: installing to /tmp/x then running uninstall reported "no
+ * program files under ~/.natalia"). The env still wins: it is the
+ * documented override, and a dev run (bun) has no install layout.
+ */
+export function nataliaHomeForExecutable(execPath: string): string | undefined {
+  const parts = execPath.split("/");
+  const last = parts.at(-1);
+  if (last !== "natalia" && last !== "natalia.ts") return undefined;
+  const parent = parts.at(-2);
+  const grandparent = parts.at(-3);
+  // <home>/bin/natalia (the installer's symlink)
+  if (parent === "bin") return parts.slice(0, -2).join("/") || "/";
+  // <home>/versions/<version>/natalia (what process.execPath usually is:
+  // the grandparent is "versions", the parent is the version dir)
+  if (grandparent === "versions") return parts.slice(0, -3).join("/") || "/";
+  return undefined;
+}
+
 export function nataliaHome(env: NodeJS.ProcessEnv = process.env): string {
-  return env.NATALIA_HOME
-    ? resolve(env.NATALIA_HOME)
-    : join(homedir(), ".natalia");
+  if (env.NATALIA_HOME) return resolve(env.NATALIA_HOME);
+  const derived = nataliaHomeForExecutable(process.execPath);
+  if (derived) return derived;
+  return join(homedir(), ".natalia");
 }
 
 export type StoreSummary = {
