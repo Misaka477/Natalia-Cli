@@ -14,6 +14,9 @@ import { parseBashSimpleCommand } from "@anthelia/tools";
 const SAFE_EXECUTABLES = new Set([
   "basename",
   "cat",
+  // Process and JSON inspection: both read-only by nature.
+  "jq",
+  "ps",
   "cmp",
   "cut",
   "df",
@@ -54,6 +57,35 @@ const SAFE_PACKAGE_SCRIPTS = new Set(["format", "test", "typecheck"]);
 
 function executableName(token: string | undefined) {
   return token?.split(/[\\/]/u).pop() ?? "";
+}
+
+/** The flags a read-only curl may carry: everything else (a body, an
+ * upload, a method override, an output file) is denied by default. */
+const CURL_SAFE_FLAGS = new Set([
+  "-s",
+  "--silent",
+  "-S",
+  "--show-error",
+  "-i",
+  "--include",
+  "-I",
+  "--head",
+  "-m",
+  "--max-time",
+  "-v",
+  "--verbose",
+]);
+
+function curlReadOnly(tokens: string[]) {
+  for (const token of tokens.slice(1)) {
+    if (!token.startsWith("-")) continue;
+    // `--max-time=5` carries its value; the bare form takes the next
+    // token, which the allowlist check still governs.
+    if (CURL_SAFE_FLAGS.has(token)) continue;
+    if (CURL_SAFE_FLAGS.has(token.split("=")[0] ?? "")) continue;
+    return false;
+  }
+  return true;
 }
 
 function unsafeShellSyntax(command: string) {
@@ -200,6 +232,15 @@ export async function niaShellPolicyDenial(
   command: string,
   who: "Nia" | "Navi" = "Nia",
 ): Promise<string | undefined> {
+  // The monorepo's per-package shape (`cd packages/x && bun test`) is a
+  // compound command, and a compound is otherwise refused wholesale —
+  // which would block the ONE verification style this workspace lives
+  // on. Strip a leading `cd <path> &&` and validate the REST with this
+  // same policy: the second command is the actor, so it must pass
+  // everything below (`cd packages/x && rm -rf y` still dies on the rm).
+  const cdPrefix = /^\s*cd\s+("?[^\s&;|<>$`]+"?)\s*&&\s*/u.exec(command);
+  if (cdPrefix)
+    return niaShellPolicyDenial(command.slice(cdPrefix[0].length), who);
   const parsed = await parseBashSimpleCommand(command);
   let tokens: string[];
   if (parsed.ok) {
@@ -275,6 +316,11 @@ export async function niaShellPolicyDenial(
     return pythonReadOnly(tokens)
       ? undefined
       : `${who} shell is read-only; Python may only run mypy/pytest/ruff/unittest`;
+  }
+  if (executable === "curl") {
+    return curlReadOnly(tokens)
+      ? undefined
+      : `${who} shell is read-only and curl may only issue GET/HEAD requests`;
   }
   if (SAFE_TEST_EXECUTABLES.has(executable)) return undefined;
   if (SAFE_EXECUTABLES.has(executable)) return undefined;
