@@ -9,6 +9,10 @@
  */
 import type { Plugin, PluginManifest } from "@anthelia/plugin";
 import {
+  SETTLEMENT_SERVICE,
+  type SettlementService,
+} from "@natalia/collaboration";
+import {
   sandboxService,
   subagentsService,
   teamBehavior,
@@ -58,6 +62,10 @@ export function createTeamPlugin(): Plugin {
             return service?.enabled() ? service : undefined;
           },
           sandboxes: () => api.services.get<SandboxService>(sandboxService.id),
+          // The settlement bridge, resolved by name like the process and
+          // terminal adopters: absent it, the fan-out runs without notices.
+          settlement: () =>
+            api.services.get<SettlementService>(SETTLEMENT_SERVICE),
         }),
       );
       api.tools.register(

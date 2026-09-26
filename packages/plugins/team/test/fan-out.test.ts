@@ -8,11 +8,41 @@ import type { SandboxToolService, SubagentToolService } from "@anthelia/tools";
 import { SnapshotSandboxTestManager as SnapshotSandboxManager } from "@natalia/testing";
 import { SubagentRegistry } from "@anthelia/subagents";
 import {
+  prSettlementReason,
   reviewPRs,
   runFanOut,
   validateOwnershipMap,
   type FanOutPR,
 } from "../src/index";
+
+test("a PR's settlement reason is its own table, pure", () => {
+  const base: FanOutPR = {
+    id: "task",
+    sandboxID: "a1",
+    status: "completed",
+    diff: [],
+    result: "",
+  };
+  // A completed PR is ready …
+  expect(prSettlementReason(base)).toBe("ready");
+  // … unless the build gate failed it (the output rides on the notice).
+  expect(
+    prSettlementReason({
+      ...base,
+      buildEvidence: { ok: false, exitCode: 2, output: "nope" },
+    }),
+  ).toBe("failed");
+  expect(
+    prSettlementReason({
+      ...base,
+      buildEvidence: { ok: true, exitCode: 0, output: "ok" },
+    }),
+  ).toBe("ready");
+  expect(prSettlementReason({ ...base, status: "failed" })).toBe("failed");
+  expect(prSettlementReason({ ...base, status: "stopped" })).toBe("stopped");
+  // A live PR is not coerced into a terminal reason.
+  expect(prSettlementReason({ ...base, status: "running" })).toBe("unknown");
+});
 
 test("runFanOut spawns sandboxed sub-agents in parallel and produces one PR each", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-fanout-"));
@@ -376,4 +406,77 @@ test("a PR sent back for changes keeps its candidate for the sub-agent to redo",
   expect(outcomes[0]?.decision).toBe("request-changes");
   // Nothing was promoted, so nothing may be released.
   expect(deleted).toEqual([]);
+});
+
+test("the drain builds each PR as its candidate lands (not after the batch)", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-fanout-drain-"));
+  const sandboxes = new SnapshotSandboxManager(root);
+  await sandboxes.initialize();
+  const registry = new SubagentRegistry({
+    workDir: join(root, ".natalia", "subagents"),
+    runner: async (task, context) => {
+      const manifest = await sandboxes.create(context.agentId);
+      await writeFile(join(manifest.root, "output.txt"), `made by ${task}`);
+      // The first candidate lands immediately; the second takes a while —
+      // the old batch wait would hold the first PR hostage.
+      if (task.includes("slow"))
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      context.log("done");
+    },
+  });
+  const landed: Array<{ id: string; at: number }> = [];
+  const started = Date.now();
+  const prs = await runFanOut({
+    tasks: [
+      { id: "fast", prompt: "fast task" },
+      { id: "slow", prompt: "slow task" },
+    ],
+    subagents: registry,
+    sandboxes,
+    timeoutMs: 10_000,
+    onPR: (pr) => landed.push({ id: pr.id, at: Date.now() - started }),
+  });
+  // Both PRs are in the queue (the contract is unchanged) …
+  expect(prs).toHaveLength(2);
+  expect(prs.map((pr) => pr.id)).toEqual(["fast", "slow"]);
+  expect(prs.every((pr) => pr.status === "completed")).toBe(true);
+  // … and the first landed long before the slow candidate finished: the
+  // drain, not the batch wait.
+  expect(landed).toHaveLength(2);
+  const fast = landed.find((entry) => entry.id === "fast")!;
+  const slow = landed.find((entry) => entry.id === "slow")!;
+  expect(fast.at).toBeLessThan(slow.at);
+  expect(fast.at).toBeLessThan(500);
+});
+
+test("a straggler past the deadline is reported running, never coerced", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-fanout-straggler-"));
+  const sandboxes = new SnapshotSandboxManager(root);
+  await sandboxes.initialize();
+  const registry = new SubagentRegistry({
+    workDir: join(root, ".natalia", "subagents"),
+    runner: async (task, context) => {
+      const manifest = await sandboxes.create(context.agentId);
+      await writeFile(join(manifest.root, "output.txt"), `made by ${task}`);
+      if (task.includes("slow"))
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+      context.log("done");
+    },
+  });
+  const prs = await runFanOut({
+    tasks: [
+      { id: "quick", prompt: "quick task" },
+      { id: "slow", prompt: "slow task" },
+    ],
+    subagents: registry,
+    sandboxes,
+    timeoutMs: 800,
+  });
+  const quick = prs.find((pr) => pr.id === "quick")!;
+  const slow = prs.find((pr) => pr.id === "slow")!;
+  expect(quick.status).toBe("completed");
+  // The live candidate is reported as it is, and its diff is empty rather
+  // than a guess.
+  expect(slow.status).toBe("running");
+  expect(slow.diff).toEqual([]);
 });

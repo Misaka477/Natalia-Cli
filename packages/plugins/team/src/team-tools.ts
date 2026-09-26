@@ -14,6 +14,11 @@ import {
   validateOwnershipMap,
   type FanOutPR,
 } from "./fan-out";
+import {
+  SETTLEMENT_SOURCE_KINDS,
+  type SettlementService,
+} from "@natalia/collaboration";
+import { prSettlementReason } from "./fan-out";
 import type {
   RuntimeTool,
   SandboxToolService,
@@ -25,11 +30,13 @@ export const TEAM_REVIEW_DECISIONS = ["approve", "request-changes"] as const;
 export function createTeamFanoutTool(input: {
   subagents: () => SubagentToolService | undefined;
   sandboxes: () => SandboxToolService | undefined;
+  /** The settlement bridge, resolved by the plugin's setup. */
+  settlement?: () => SettlementService | undefined;
 }): RuntimeTool {
   return {
     name: "team_fanout",
     description:
-      "Spawn one sandboxed sub-agent per task in parallel (each in its own checked-out worktree, limited to its write domain) and return the PR queue. The sandbox runtime computes each candidate's diff; each PR carries that diff, result and build evidence.",
+      "Spawn one sandboxed sub-agent per task in parallel (each in its own checked-out worktree, limited to its write domain) and return the PR queue. The sandbox runtime computes each candidate's diff; each PR carries that diff, result and build evidence. Each PR is reported to you as it lands (a settlement notice), so review the queue as it fills instead of waiting for the whole batch.",
     requiresApproval: true,
     parameters: {
       type: "object",
@@ -80,6 +87,26 @@ export function createTeamFanoutTool(input: {
         sandboxes,
         buildCommand: args.buildCommand,
         maxConcurrent: runtimeConfig?.maxConcurrent,
+        // The spine's team adopter: each landed PR tells the lead now, not
+        // after the batch. Session-scoped like every other adopter; absent
+        // the spine (or a session) it is a silent no-op.
+        onPR: (pr) => {
+          const settlement = input.settlement?.();
+          const sessionID = (context as { sessionID?: string } | undefined)
+            ?.sessionID;
+          if (!settlement || !sessionID) return;
+          settlement.deliverForSession(sessionID, {
+            subject: pr.id,
+            reason: prSettlementReason(pr),
+            summary:
+              `PR ${pr.id} is ready for review (${pr.status}` +
+              `${pr.buildEvidence ? `, build ${pr.buildEvidence.ok ? "ok" : "failed"}` : ""})`,
+            ...(pr.buildEvidence
+              ? { detail: `build exit ${pr.buildEvidence.exitCode}` }
+              : {}),
+            sourceKind: SETTLEMENT_SOURCE_KINDS.teamPr,
+          });
+        },
       });
       return JSON.stringify(
         prs.map((pr) => ({
