@@ -72,6 +72,8 @@ test("bad channels fail with the file named and the reason given", async () => {
   );
 });
 
+// The bound being tested is the channel's own hard timeout
+// (CHANNEL_FETCH_TIMEOUT_MS = 15s): the test must outlive it.
 test("an HTTP channel resolves absolutely and is hard-bounded", async () => {
   // a channel that answers
   const ok = Bun.serve({
@@ -104,7 +106,7 @@ test("an HTTP channel resolves absolutely and is hard-bounded", async () => {
   ).rejects.toThrow();
   const elapsed = Date.now() - started;
   expect(elapsed).toBeLessThan(20_000); // bounded, not hung
-});
+}, 30_000);
 
 test("compareVersions: the two shapes we ship, honestly ordered", () => {
   expect(compareVersions("0.0.0-m14", "0.0.0-m13")).toBeGreaterThan(0);

@@ -1271,7 +1271,10 @@ export class CheckpointStore {
   private objectRoot() {
     // The shared object library, git-style: one store for checkpoint and the
     // sandbox, so identical files across subsystems share a single object.
-    return resolve(this.workspaceRoot, ".natalia", "objects");
+    // The root is the ObjectStore's own (public since the store moved
+    // outside the workspace): a second hardcoded resolution here is how a
+    // rollback would read a directory the writes never landed in.
+    return this.objects.root;
   }
 
   private objectPath(hash: string) {

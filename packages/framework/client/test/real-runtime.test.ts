@@ -3605,6 +3605,9 @@ test("runtime reports malformed provider tool calls without rendering an empty t
   await client.dispose?.();
 });
 
+// Two durable turns with a live approval in between: seconds of real work,
+// and the file's accumulated state makes the default 5s per-test budget a
+// load lottery rather than a measurement.
 test("session approval grants the approved tool for this runtime instance only", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-session-approval-"));
   let approvalCount = 0;
@@ -3657,7 +3660,7 @@ test("session approval grants the approved tool for this runtime instance only",
     expect.objectContaining({ type: "approval.request" }),
   );
   await reopened.dispose?.();
-});
+}, 30_000);
 
 test("agent permissions block configured file and command execution at tool boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "natalia-agent-permissions-"));

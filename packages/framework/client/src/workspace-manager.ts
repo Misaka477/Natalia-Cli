@@ -322,7 +322,10 @@ export function createWorkspaceManager(
   async function readLocalSessions(
     runtime: WorkspaceRuntime,
   ): Promise<RuntimeSessionSummary[]> {
-    const rows = await createLocalSessionService(runtime.root).list({
+    const rows = await createLocalSessionService(
+      runtime.root,
+      options.sessionDir,
+    ).list({
       useSqliteStore: options.useSqliteStore ?? false,
     });
     return rows.map((row) => ({
@@ -414,7 +417,10 @@ export function createWorkspaceManager(
   async function activeSessionRecency(ws: WorkspaceRuntime): Promise<number> {
     try {
       const settings = await readSettings(ws.root);
-      const rows = await createLocalSessionService(ws.root).list({
+      const rows = await createLocalSessionService(
+        ws.root,
+        options.sessionDir,
+      ).list({
         useSqliteStore: options.useSqliteStore ?? false,
       });
       const active =
@@ -475,7 +481,7 @@ export function createWorkspaceManager(
     await migrateLegacyWorkspaceSessions(root, options.sessionDir);
     const settings = await readSettings(root);
     const sessions = (
-      await createLocalSessionService(root).list({
+      await createLocalSessionService(root, options.sessionDir).list({
         useSqliteStore: options.useSqliteStore ?? false,
       })
     ).filter((session) => !session.archived);
@@ -492,6 +498,18 @@ export function createWorkspaceManager(
       globalConfigPath: options.globalConfigPath,
       useSqliteStore: options.useSqliteStore,
       contextWindowCachePath: options.contextWindowCachePath,
+      // Every store-layout option the manager accepts reaches the client:
+      // accepting them for the migration alone left the runtime reading
+      // the default external store while the caller (or a test) seeded the
+      // opted-in one — two stores, one of them invisible.
+      ...(options.sessionDir ? { sessionDir: options.sessionDir } : {}),
+      ...(options.checkpointDir
+        ? { checkpointDir: options.checkpointDir }
+        : {}),
+      ...(options.operationLogsDir
+        ? { operationLogsDir: options.operationLogsDir }
+        : {}),
+      ...(options.vaultDir ? { vaultDir: options.vaultDir } : {}),
       ...(activeSessionID ? { sessionID: activeSessionID } : {}),
     });
     const ws: WorkspaceRuntime = {

@@ -16,6 +16,11 @@ import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { expect, test } from "bun:test";
 import type { RuntimeEvent } from "@anthelia/contracts";
+import {
+  defaultCheckpointStoreDir,
+  resolveWorkspaceObjectsRoot,
+  workspaceChunksRoot,
+} from "@anthelia/platform";
 import { appendSessionEvent, createSessionRecord } from "@anthelia/session";
 import {
   CheckpointStore,
@@ -192,12 +197,14 @@ symlinkTest(
     await store.gcObjects(true);
     // Objects now live in the shared content-addressed library, not the
     // per-session checkpoint dir.
-    const buckets = await readdir(join(root, ".natalia", "objects"));
+    // The shared content-addressed library's root is the store layer's
+    // (it moved outside the workspace with the §1.6 migration; a hardcoded
+    // workspace path here read a directory nothing writes to).
+    const objectsRoot = resolveWorkspaceObjectsRoot(root);
+    const buckets = await readdir(objectsRoot);
     const hashes = (
       await Promise.all(
-        buckets.map((bucket) =>
-          readdir(join(root, ".natalia", "objects", bucket)),
-        ),
+        buckets.map((bucket) => readdir(join(objectsRoot, bucket))),
       )
     ).flat();
     expect(new Set(hashes).size).toBe(hashes.length);
@@ -619,10 +626,7 @@ test("append-only checkpoints stay small and replay their contexts exactly", asy
   const journalBytes = (
     await readFile(
       join(
-        root,
-        ".natalia",
-        "checkpoints",
-        "ses_delta_replay",
+        defaultCheckpointStoreDir(root, "ses_delta_replay"),
         "journal.jsonl",
       ),
     )
@@ -668,10 +672,7 @@ test("a v2 journal migrates to v3 and keeps every checkpoint", async () => {
     expected.push(ledger.snapshot().entries.map((entry) => entry.id));
   }
   const journalPath = join(
-    root,
-    ".natalia",
-    "checkpoints",
-    "ses_migrate_v2",
+    defaultCheckpointStoreDir(root, "ses_migrate_v2"),
     "journal.jsonl",
   );
   // Rewrite the file in the legacy inline shape.
@@ -733,14 +734,14 @@ test("small checkpoint payloads are inlined instead of chunked", async () => {
     status: "manual",
   });
   const journal = await readFile(
-    join(root, ".natalia", "checkpoints", "ses_inline", "journal.jsonl"),
+    join(defaultCheckpointStoreDir(root, "ses_inline"), "journal.jsonl"),
     "utf8",
   );
   expect(journal).toContain('"inline"');
   expect(journal).not.toContain('"ref"');
   // No chunk files were needed at all for these small payloads.
   const chunkFiles = await countFiles(
-    join(root, ".natalia", "chunks", "ses_inline"),
+    join(workspaceChunksRoot(root), "ses_inline"),
   );
   expect(chunkFiles).toBe(0);
 });
@@ -886,7 +887,7 @@ test("checkpoint store migrates a legacy per-session chunk root on load", async 
   const sessionID = "ses_legacy_chunk_migrate";
   const ledger = new ContextLedger();
   const payload = Buffer.from("legacy chunk payload ".repeat(200));
-  const legacyRoot = join(root, ".natalia", "chunks", sessionID);
+  const legacyRoot = join(workspaceChunksRoot(root), sessionID);
   // Build the pre-A3 loose layout by hand: `<legacyRoot>/<xx>/<hash>`.
   const chunks: string[] = [];
   for (const chunk of contentDefinedChunks(payload)) {
@@ -905,7 +906,7 @@ test("checkpoint store migrates a legacy per-session chunk root on load", async 
   });
   await store.list(); // triggers loadJournal → migrateLegacyRoots
 
-  const shared = new ChunkStore(join(root, ".natalia", "chunks"));
+  const shared = new ChunkStore(workspaceChunksRoot(root));
   expect(await shared.get(ref)).toEqual(payload);
   let legacyStillThere = true;
   try {
@@ -927,10 +928,7 @@ test("pruneV2Backups removes the backup once the v3 journal reconstructs", async
   });
   await store.createCheckpoint({ reason: "manual", context: ledger, step: 1 });
   const journalPath = join(
-    root,
-    ".natalia",
-    "checkpoints",
-    "ses_prune_ok",
+    defaultCheckpointStoreDir(root, "ses_prune_ok"),
     "journal.jsonl",
   );
   const backupPath = `${journalPath}.v2-backup`;
@@ -960,16 +958,13 @@ test("pruneV2Backups keeps the backup when v3 cannot reconstruct", async () => {
   });
   await store.createCheckpoint({ reason: "manual", context: ledger, step: 1 });
   const journalPath = join(
-    root,
-    ".natalia",
-    "checkpoints",
-    "ses_prune_keep",
+    defaultCheckpointStoreDir(root, "ses_prune_keep"),
     "journal.jsonl",
   );
   const backupPath = `${journalPath}.v2-backup`;
   await writeFile(backupPath, "{}\n");
   // Break the shared chunk store: the newest record can no longer reconstruct.
-  await rm(join(root, ".natalia", "chunks"), { recursive: true, force: true });
+  await rm(workspaceChunksRoot(root), { recursive: true, force: true });
 
   await expect(pruneV2Backups(root)).rejects.toThrow();
   expect(existsSync(backupPath)).toBe(true);

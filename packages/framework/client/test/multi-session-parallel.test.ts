@@ -481,6 +481,9 @@ test("two hundred sessions submit and finish concurrently without cross-cancel",
   await client.dispose?.();
 });
 
+// 500 concurrent durable turns: the whole point of the test is that the
+// admission path holds under real load, which is seconds of work by
+// design — the default per-test budget is not meant for it.
 test("five hundred sessions submit and finish concurrently without cross-cancel", async () => {
   const workspaceRoot = await officialPluginWorkspace(
     "multi-session-parallel-500",
@@ -512,4 +515,4 @@ test("five hundred sessions submit and finish concurrently without cross-cancel"
   expect(results.length).toBe(500);
   for (const result of results) expect(result?.id).toBeTruthy();
   await client.dispose?.();
-});
+}, 60_000);

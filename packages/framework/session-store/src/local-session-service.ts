@@ -36,10 +36,13 @@ export type SessionMetadataBundle = {
 };
 
 /** Offline session operations used when no runtime plugin host is running. */
-export function createLocalSessionService(workspaceRoot = process.cwd()) {
+export function createLocalSessionService(
+  workspaceRoot = process.cwd(),
+  sessionDir?: string,
+) {
   const root = resolve(workspaceRoot);
   const json = () =>
-    new JsonSessionStore(resolveWorkspaceJsonSessionsDir(root));
+    new JsonSessionStore(sessionDir ?? resolveWorkspaceJsonSessionsDir(root));
   const sqlite = () => {
     const path = resolveWorkspaceJournalDatabasePath(root);
     return existsSync(path) ? new SqliteSessionStore(path) : undefined;

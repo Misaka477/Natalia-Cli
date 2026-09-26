@@ -96,7 +96,14 @@ export class ObjectStore {
     | undefined;
 
   constructor(
-    private readonly root: string,
+    /**
+     * The store's root, public so consumers that share this library (the
+     * checkpoint store's rollback path) resolve object paths through the
+     * same root the writes went to — the §1.6 migration moved that root
+     * outside the workspace, and a second hardcoded resolution is how a
+     * reader ends up reading a directory the writer never wrote to.
+     */
+    readonly root: string,
     options?: {
       /** The test seam: a daemon factory replacing the lazy spawn. */
       daemonFactory?: (packsDir: string) => Promise<PackDaemon | undefined>;

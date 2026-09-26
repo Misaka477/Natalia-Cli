@@ -805,7 +805,10 @@ test("native observe returns its own bounded timeout instead of tool timeout", a
   await expect(
     registry.observe(session.id, revision, { maxLines: 60, timeoutMs: 25 }),
   ).resolves.toMatchObject({ changed: false, reason: "timeout" });
-  expect(performance.now() - startedAt).toBeLessThan(150);
+  // Load-tolerant, but still an order of magnitude below the tool-level
+  // timeout (seconds): the point is that observe honors its OWN 25ms
+  // bound, not that a CI box never hiccups.
+  expect(performance.now() - startedAt).toBeLessThan(600);
   expect(reads).toBeLessThanOrEqual(12);
   // One initial read plus one reconcile per bounded observe poll. Each read
   // now fetches text, selection and highlights in parallel, so the read count

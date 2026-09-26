@@ -113,6 +113,8 @@ describe("forceRemove", () => {
     expect(chmods).toEqual([["C:\\work\\file.txt", 0o666]]);
   });
 
+  // The retry ladder is 100+200+…+1000ms = 5.5s by design (a transient
+  // lock gets a real chance to clear); the test budget must cover it.
   test("Windows retries transient lock failures then rethrows", async () => {
     let attempts = 0;
     await expect(
@@ -127,5 +129,5 @@ describe("forceRemove", () => {
     // EBUSY/EACCES are transient locks (a just-exited child or an in-flight
     // reader), so removal is retried with a backoff before giving up.
     expect(attempts).toBe(10);
-  });
+  }, 15_000);
 });

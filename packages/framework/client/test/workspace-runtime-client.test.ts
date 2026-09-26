@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { resolveWorkspaceJsonSessionsDir } from "@anthelia/platform";
 import {
   JsonSessionStore,
   SqliteSessionStore,
@@ -100,6 +101,7 @@ for (const useSqliteStore of [false, true]) {
     const options = {
       pluginStoreRoot: officialPluginStoreRoot(root),
       globalConfigPath: join(root, "global-config.json"),
+      sessionDir: join(root, ".natalia", "sessions"),
       useSqliteStore,
     };
     let manager = createWorkspaceManager(options);
@@ -190,6 +192,7 @@ test("workspace proxy chat messages await lazy runtime initialization", async ()
   const options = {
     pluginStoreRoot: officialPluginStoreRoot(root),
     globalConfigPath: join(root, "global-config.json"),
+    sessionDir: join(root, ".natalia", "sessions"),
   };
   const manager = createWorkspaceManager(options);
   try {
@@ -240,6 +243,7 @@ test("workspace proxy intelligence reads await lazy initialization", async () =>
   const options = {
     pluginStoreRoot: officialPluginStoreRoot(root),
     globalConfigPath: join(root, "global-config.json"),
+    sessionDir: join(root, ".natalia", "sessions"),
   };
   const manager = createWorkspaceManager(options);
   try {
@@ -276,6 +280,7 @@ test("chat history survives after the newest event window", async () => {
   const options = {
     pluginStoreRoot: officialPluginStoreRoot(root),
     globalConfigPath: join(root, "global-config.json"),
+    sessionDir: join(root, ".natalia", "sessions"),
   };
   const manager = createWorkspaceManager(options);
   try {
@@ -342,6 +347,7 @@ test("subagent history pages are filtered per subagent", async () => {
   const options = {
     pluginStoreRoot: officialPluginStoreRoot(root),
     globalConfigPath: join(root, "global-config.json"),
+    sessionDir: join(root, ".natalia", "sessions"),
   };
   const manager = createWorkspaceManager(options);
   try {
@@ -617,6 +623,7 @@ test("workspace falls back to last access, ignores pins/archive/stale selection,
   const options = {
     pluginStoreRoot: officialPluginStoreRoot(root),
     globalConfigPath: join(root, "global-config.json"),
+    sessionDir: join(root, ".natalia", "sessions"),
   };
   let manager = createWorkspaceManager(options);
   try {
@@ -670,6 +677,7 @@ test("SQLite restore uses last access instead of pins or deleted legacy JSON", a
   const manager = createWorkspaceManager({
     pluginStoreRoot: officialPluginStoreRoot(root),
     globalConfigPath: join(root, "global-config.json"),
+    sessionDir: join(root, ".natalia", "sessions"),
     useSqliteStore: true,
   });
   try {
@@ -715,6 +723,7 @@ test("workspaceAdd updates the title for an already-registered root", async () =
   const manager = createWorkspaceManager({
     pluginStoreRoot: officialPluginStoreRoot(root),
     globalConfigPath: join(root, "global-config.json"),
+    sessionDir: join(root, ".natalia", "sessions"),
   });
   try {
     const created = await manager.workspaceAdd({ path: root });
@@ -802,11 +811,14 @@ test("workspace delete replaces an inactive workspace's active session", async (
   const previousRegistry = process.env.NATALIA_WORKSPACES_FILE;
   const registryPath = join(firstRoot, "workspaces.json");
   process.env.NATALIA_WORKSPACES_FILE = registryPath;
+  // The store layer resolves each workspace's journal (the §1.6 startup
+  // migration moves a seeded legacy workspace-local store outside); the
+  // seeds must land where the runtimes will actually read.
   const firstStore = new JsonSessionStore(
-    join(firstRoot, ".natalia", "sessions"),
+    resolveWorkspaceJsonSessionsDir(firstRoot),
   );
   const secondStore = new JsonSessionStore(
-    join(secondRoot, ".natalia", "sessions"),
+    resolveWorkspaceJsonSessionsDir(secondRoot),
   );
   const firstSession = createSessionRecord("ses_delete_a", "First");
   const secondSession = createSessionRecord("ses_delete_b", "Second");
