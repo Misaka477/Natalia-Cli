@@ -54,7 +54,7 @@ const CHAT_SHARED_INTELLIGENCE_TOOLS = new Set([
   "work_contract_read",
   "work_graph_query",
 ]);
-const NAVI_EXTRA_TOOLS = new Set(["plan_propose"]);
+const NAVI_EXTRA_TOOLS = new Set(["plan_propose", "run_shell"]);
 
 /** Nia may run shell commands for verification, but the prompt forbids mutating
  * commands; the tool itself is the existing run_shell implementation. */
@@ -280,7 +280,11 @@ export function createChatTools(ctx: RuntimeContext) {
         CHAT_SHARED_INTELLIGENCE_TOOLS.has(tool.name) ||
         NAVI_EXTRA_TOOLS.has(tool.name)
       )
-        visible.push(tool);
+        visible.push(
+          tool.name === "run_shell"
+            ? withCollaboratorShellPolicy(tool, "Navi")
+            : tool,
+        );
     visible.push(
       {
         name: "session_snapshot",
@@ -714,14 +718,17 @@ export function createChatTools(ctx: RuntimeContext) {
     return stableToolOrder(visible);
   }
 
-  function withNiaShellPolicy(tool: RuntimeTool): RuntimeTool {
+  function withCollaboratorShellPolicy(
+    tool: RuntimeTool,
+    who: "Nia" | "Navi",
+  ): RuntimeTool {
     return {
       ...tool,
-      description: `${tool.description} Nia may only run read-only inspection and verification commands.`,
+      description: `${tool.description} ${who} may only run read-only inspection and verification commands.`,
       async execute(input, context) {
         const args = requireObject(input);
         const command = requireString(args.command, "command");
-        const denial = await niaShellPolicyDenial(command);
+        const denial = await niaShellPolicyDenial(command, who);
         if (denial) throw new Error(denial);
         return tool.execute(input, context);
       },
@@ -740,7 +747,9 @@ export function createChatTools(ctx: RuntimeContext) {
           NIA_EXTRA_TOOLS.has(tool.name),
       )
       .map((tool) =>
-        tool.name === "run_shell" ? withNiaShellPolicy(tool) : tool,
+        tool.name === "run_shell"
+          ? withCollaboratorShellPolicy(tool, "Nia")
+          : tool,
       );
     visible.push(
       {

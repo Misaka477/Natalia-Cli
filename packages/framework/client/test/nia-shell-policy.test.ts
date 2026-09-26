@@ -25,6 +25,17 @@ test("Nia shell policy allows read-only inspection and verification commands", a
     await expect(niaShellPolicyDenial(command)).resolves.toBeUndefined();
 });
 
+test("the policy voices the agent it guards", async () => {
+  // Nia's name is the default; Navi's advisor hat speaks in her own voice
+  // so a refusal in her transcript is legible to whoever reads it.
+  await expect(niaShellPolicyDenial("rm -rf build")).resolves.toMatch(
+    /Nia shell/u,
+  );
+  await expect(niaShellPolicyDenial("rm -rf build", "Navi")).resolves.toMatch(
+    /Navi shell/u,
+  );
+});
+
 test("Nia shell policy denies workspace and repository mutations", async () => {
   for (const command of [
     "git commit -m test",

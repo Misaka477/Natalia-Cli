@@ -1,10 +1,15 @@
 import { parseBashSimpleCommand } from "@anthelia/tools";
 
 /**
- * Nia may run inspection and verification commands, but must not mutate the
- * workspace, repository, dependencies or service state. This policy is
- * intentionally deny-by-default: a command must match a safe shape before the
- * existing shell tool is allowed to execute it.
+ * A collaborator (Nia, or Navi in her advisor hat) may run inspection and
+ * verification commands, but must not mutate the workspace, repository,
+ * dependencies or service state. This policy is intentionally
+ * deny-by-default: a command must match a safe shape before the existing
+ * shell tool is allowed to execute it.
+ *
+ * The guard is the mechanism; the prompt is the discipline. The same
+ * deny-by-default policy serves both agents, voice-parameterized, because
+ * "Navi runs tests to check the situation" is the same need as Nia's.
  */
 const SAFE_EXECUTABLES = new Set([
   "basename",
@@ -193,6 +198,7 @@ function pythonReadOnly(tokens: string[]) {
 
 export async function niaShellPolicyDenial(
   command: string,
+  who: "Nia" | "Navi" = "Nia",
 ): Promise<string | undefined> {
   const parsed = await parseBashSimpleCommand(command);
   let tokens: string[];
@@ -204,25 +210,25 @@ export async function niaShellPolicyDenial(
     // the command contains none of the shell metacharacters that make a
     // compound or redirecting command possible.
     if (unsafeShellSyntax(command))
-      return `Nia shell is read-only and only supports one simple command: ${parsed.reason}`;
+      return `${who} shell is read-only and only supports one simple command: ${parsed.reason}`;
     tokens = shellTokens(command);
     if (!tokens.length)
-      return `Nia shell is read-only and only supports one simple command: ${parsed.reason}`;
+      return `${who} shell is read-only and only supports one simple command: ${parsed.reason}`;
   }
   const executable = executableName(tokens[0]);
-  if (!executable) return "Nia shell command is empty";
+  if (!executable) return `${who} shell command is empty`;
 
   if (executable === "git") {
     return gitReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only and cannot change git state";
+      : `${who} shell is read-only and cannot change git state`;
   }
   if (executable === "find")
     return findReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only and find cannot execute or delete files";
+      : `${who} shell is read-only and find cannot execute or delete files`;
   if (executable === "rg" && hasFlagPrefix(tokens, "--pre"))
-    return "Nia shell is read-only and rg cannot execute a preprocessor";
+    return `${who} shell is read-only and rg cannot execute a preprocessor`;
   if (
     executable === "prettier" ||
     executable === "eslint" ||
@@ -230,35 +236,35 @@ export async function niaShellPolicyDenial(
   )
     return formatterReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only and formatters may only check";
+      : `${who} shell is read-only and formatters may only check`;
   if (executable === "tsc")
     return tscReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only; tsc must run with --noEmit";
+      : `${who} shell is read-only; tsc must run with --noEmit`;
   if (executable === "bun") {
     return bunReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only and only bun test/run typecheck|test|format is allowed";
+      : `${who} shell is read-only and only bun test/run typecheck|test|format is allowed`;
   }
   if (executable === "npm" || executable === "pnpm" || executable === "yarn") {
     return packageManagerReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only and only test/typecheck/format scripts are allowed";
+      : `${who} shell is read-only and only test/typecheck/format scripts are allowed`;
   }
   if (executable === "go") {
     return goReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only and only go test/vet/list/env are allowed";
+      : `${who} shell is read-only and only go test/vet/list/env are allowed`;
   }
   if (executable === "cargo") {
     return cargoReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only and only cargo check/test/clippy/metadata are allowed";
+      : `${who} shell is read-only and only cargo check/test/clippy/metadata are allowed`;
   }
   if (executable === "deno") {
     return denoReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only and only deno check/lint/test are allowed";
+      : `${who} shell is read-only and only deno check/lint/test are allowed`;
   }
   if (
     executable === "python" ||
@@ -268,9 +274,9 @@ export async function niaShellPolicyDenial(
   ) {
     return pythonReadOnly(tokens)
       ? undefined
-      : "Nia shell is read-only; Python may only run mypy/pytest/ruff/unittest";
+      : `${who} shell is read-only; Python may only run mypy/pytest/ruff/unittest`;
   }
   if (SAFE_TEST_EXECUTABLES.has(executable)) return undefined;
   if (SAFE_EXECUTABLES.has(executable)) return undefined;
-  return `Nia shell is read-only; command not allowed: ${executable}`;
+  return `${who} shell is read-only; command not allowed: ${executable}`;
 }
