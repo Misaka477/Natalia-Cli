@@ -9912,9 +9912,17 @@ function isCollabMessageEvent(
 }
 
 /** Polls until an async predicate holds (the runtime wakes turns asynchronously). */
+/**
+ * Waits for a durable condition. The default budget is deliberately
+ * generous: these conditions cross process boundaries (a settle on disk,
+ * a wake that has to run), and this file runs for minutes inside a
+ * concurrent suite — a 3s default was a load lottery that failed a
+ * different test on every run. The per-test cap (60s) is what still
+ * bounds a genuine hang.
+ */
 async function waitForAsync(
   predicate: () => Promise<boolean>,
-  timeoutMs = 3000,
+  timeoutMs = 20_000,
 ) {
   for (let elapsed = 0; elapsed < timeoutMs; elapsed += 50) {
     if (await predicate()) return;
@@ -9926,7 +9934,7 @@ async function waitForAsync(
 /** Polls the attached session's history until a turn has settled on disk. */
 async function pollHistoryForFinished(
   client: ReturnType<typeof createRealRuntimeClient>,
-  timeoutMs = 3000,
+  timeoutMs = 20_000,
 ) {
   for (let elapsed = 0; elapsed < timeoutMs; elapsed += 50) {
     // A larger window than 100: seeded constitution rules and session
