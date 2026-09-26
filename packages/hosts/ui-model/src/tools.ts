@@ -399,13 +399,6 @@ export function collapseToolOutput(
   };
 }
 
-export function stripAnsiOutput(value: string) {
-  return value.replace(
-    /[\u001b\u009b](?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu,
-    "",
-  );
-}
-
 export function providerSafeThinkingSummary(
   reasoningVisible: boolean,
   text: string,

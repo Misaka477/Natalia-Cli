@@ -539,7 +539,14 @@ export interface TerminalController {
   reconcile(): Promise<RuntimeNativeTerminalSession[]>;
   read(
     id: string,
-    options?: { maxLines?: number; sessionID?: string },
+    options?: {
+      maxLines?: number;
+      /** The first line to return: 0 is the oldest scrollback line, negatives count from the end. */
+      startLine?: number;
+      /** The last line to return (inclusive). */
+      endLine?: number;
+      sessionID?: string;
+    },
   ): Promise<{
     text: string;
     cursorX: number;

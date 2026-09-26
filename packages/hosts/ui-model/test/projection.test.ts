@@ -8,7 +8,6 @@ import {
   projectToolRender,
   resultView,
   shouldLazyRenderDetail,
-  stripAnsiOutput,
 } from "../src";
 
 test("shell tools classify separately from terminal and generic tools", () => {
@@ -45,13 +44,6 @@ test("tool output collapse follows line and character budgets", () => {
     output: "abcd…",
     overflow: true,
   });
-});
-
-test("shell output projection strips CSI and OSC control sequences", () => {
-  expect(stripAnsiOutput("\u001b[32mok\u001b[0m")).toBe("ok");
-  expect(stripAnsiOutput("before\u001b]0;title\u0007after")).toBe(
-    "beforeafter",
-  );
 });
 
 test("projection cache reuses long markdown and tool projections", () => {

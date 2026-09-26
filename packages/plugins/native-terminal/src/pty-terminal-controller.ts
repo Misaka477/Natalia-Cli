@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   applyTerminalOutput,
   createTerminalScreen,
+  renderScreen,
   renderScreenText,
   type TerminalScreen,
 } from "./terminal-screen";
@@ -653,14 +654,47 @@ export function createPtyTerminalController(
 
   async function read(
     id: string,
-    options?: { maxLines?: number; sessionID?: string },
+    options?: {
+      maxLines?: number;
+      startLine?: number;
+      endLine?: number;
+      sessionID?: string;
+    },
   ) {
     const session = get(id);
     assertSessionOwner(session, options?.sessionID);
     assertReadable(session);
+    // The pane's virtual document: the scrollback (the history the
+    // renderer keeps) followed by the visible screen (the present). Line
+    // addressing is the host's own: 0 is the oldest scrollback line and
+    // negatives count from the end, so `read` and `search` page the WHOLE
+    // pane, not just the viewport. Before this, the rendered read dropped
+    // startLine/endLine and the scrollback was unreachable — the history
+    // existed and nothing could read it.
+    const document = [
+      ...session.screen.scrollback,
+      ...renderScreen(session.screen),
+    ];
+    const maxLines = Math.max(1, Math.min(options?.maxLines ?? 60, 200));
+    const normalize = (line: number) =>
+      line < 0 ? Math.max(0, document.length + line) : line;
+    let start: number;
+    let endExclusive: number;
+    if (options?.startLine === undefined) {
+      // An absent range is the tail window (the host's `-maxLines`).
+      start = Math.max(0, document.length - maxLines);
+      endExclusive = document.length;
+    } else {
+      start = normalize(options.startLine);
+      const end =
+        options?.endLine === undefined
+          ? start + maxLines
+          : normalize(options.endLine);
+      endExclusive = Math.min(document.length, end + 1); // endLine is inclusive
+    }
     return {
-      // The rendered screen: what the pane shows, not what it emitted.
-      text: renderScreenText(session.screen),
+      text: document.slice(start, endExclusive).join("\n"),
+      // The pane's own cursor (screen-relative), as the host reports it.
       cursorX: session.screen.cursorX,
       cursorY: session.screen.cursorY,
       rows: session.rows,

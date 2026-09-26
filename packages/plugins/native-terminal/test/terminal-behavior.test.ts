@@ -816,7 +816,9 @@ test("observe without afterRevision waits for what changed since last look", asy
   await tools
     .get("interactive_terminal_start")!
     .execute({ command: "bash", cwd: root, id: "tty_default" }, context);
-  (processes[0] as PtyProcess & { emit(data: string): void }).emit("first screen\r\n");
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit(
+    "first screen\r\n",
+  );
   // The first observation marks the revision the model last looked at.
   const first = JSON.parse(
     await tools
@@ -836,7 +838,9 @@ test("observe without afterRevision waits for what changed since last look", asy
   expect(second.reason).toBe("timeout");
   expect(Date.now() - started).toBeGreaterThanOrEqual(300);
   // And new output still returns promptly through the same default.
-  (processes[0] as PtyProcess & { emit(data: string): void }).emit("second screen\r\n");
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit(
+    "second screen\r\n",
+  );
   const third = JSON.parse(
     await tools
       .get("terminal_observe")!
@@ -847,4 +851,53 @@ test("observe without afterRevision waits for what changed since last look", asy
   await tools
     .get("interactive_terminal_stop")!
     .execute({ id: "tty_default" }, context);
+});
+
+test("search pages the rendered scrollback, escapes and all gone", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-tools-search-"));
+  const { factory, processes } = fakePtyForBehavior();
+  const controller = createPtyTerminalController({
+    workspaceRoot: root,
+    publish: () => undefined,
+    onPerformance: () => undefined,
+    runtimeID: () => "rt",
+    userRuntimeHome: () => undefined,
+    windowMode: () => "windowless" as const,
+    spawn: factory,
+  });
+  const context = { workspaceRoot: root, terminal: controller };
+  const tools = terminalRegistry();
+  await tools
+    .get("interactive_terminal_start")!
+    .execute({ command: "bash", cwd: root, id: "tty_search" }, context);
+  for (let line = 0; line < 60; line += 1)
+    (processes[0] as PtyProcess & { emit(data: string): void }).emit(
+      line === 37 ? "NEEDLE appears here\r\n" : `filler line ${line}\r\n`,
+    );
+  // The needle scrolled off the viewport long ago: the search pages the
+  // rendered scrollback, and the hit's line is the document line.
+  const hit = JSON.parse(
+    await tools
+      .get("interactive_terminal_search")!
+      .execute(
+        { id: "tty_search", query: "NEEDLE", startLine: 0, endLine: 59 },
+        context,
+      ),
+  );
+  expect(hit.matches).toEqual(
+    expect.arrayContaining([expect.objectContaining({ line: 37 })]),
+  );
+  // The blank page (no hits) is honest.
+  const miss = JSON.parse(
+    await tools
+      .get("interactive_terminal_search")!
+      .execute(
+        { id: "tty_search", query: "ABSENT", startLine: 0, endLine: 59 },
+        context,
+      ),
+  );
+  expect(miss.matches).toEqual([]);
+  await tools
+    .get("interactive_terminal_stop")!
+    .execute({ id: "tty_search" }, context);
 });

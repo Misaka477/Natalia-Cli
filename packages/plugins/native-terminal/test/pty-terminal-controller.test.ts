@@ -470,7 +470,9 @@ test("the pane reads as its rendered screen, not its byte stream", async () => {
   });
   // The app's redraw shape: clear, home, write. The raw capture would
   // carry the escapes; the read returns the rendered text.
-  (processes[0] as PtyProcess & { emit(data: string): void }).emit("\x1b[2J\x1b[Hloading...\r\x1b[Kready on 5178");
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit(
+    "\x1b[2J\x1b[Hloading...\r\x1b[Kready on 5178",
+  );
   const read = await controller.read("term_render");
   expect(read.text).toBe("ready on 5178");
   expect(read.text).not.toContain("\x1b");
@@ -501,7 +503,9 @@ test("a quiet pane emits one settled frame notice and stays quiet", async () => 
     id: "term_frame",
     sessionID: "ses_frame",
   });
-  (processes[0] as PtyProcess & { emit(data: string): void }).emit("server up\r\n");
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit(
+    "server up\r\n",
+  );
   await Bun.sleep(80);
   expect(notices).toHaveLength(1);
   expect(notices[0]).toMatchObject({
@@ -544,7 +548,9 @@ test("a frame with new scrollback reports scrolled, not settled", async () => {
   });
   // A screenful of new lines: the scrollback grows past its last frame.
   for (let line = 0; line < 30; line += 1)
-    (processes[0] as PtyProcess & { emit(data: string): void }).emit(`line ${line}\r\n`);
+    (processes[0] as PtyProcess & { emit(data: string): void }).emit(
+      `line ${line}\r\n`,
+    );
   await Bun.sleep(80);
   expect(notices.length).toBeGreaterThanOrEqual(1);
   expect(notices.at(-1)).toMatchObject({
@@ -566,8 +572,73 @@ test("without the spine the pane renders and stays silent", async () => {
     id: "term_bare",
     sessionID: "ses_bare",
   });
-  (processes[0] as PtyProcess & { emit(data: string): void }).emit("plain text");
+  (processes[0] as PtyProcess & { emit(data: string): void }).emit(
+    "plain text",
+  );
   await Bun.sleep(60);
   expect((await controller.read("term_bare")).text).toBe("plain text");
+  await controller.close();
+});
+
+test("read pages the scrollback, not just the viewport", async () => {
+  const root = await mkdtemp(join(tmpdir(), "natalia-pty-history-"));
+  const { factory, processes } = fakePty();
+  const controller = createPtyTerminalController(
+    controllerInput(root, factory),
+  );
+  await controller.start({
+    command: "bash",
+    cwd: root,
+    id: "term_history",
+    sessionID: "ses_history",
+  });
+  // More lines than the viewport: the older ones scroll off into the
+  // renderer's scrollback.
+  for (let line = 0; line < 40; line += 1)
+    (processes[0] as PtyProcess & { emit(data: string): void }).emit(
+      `log line ${line}\r\n`,
+    );
+  // The default range is the document's tail window (the host's
+  // `-maxLines`: scrollback plus viewport), here all 40 lines.
+  const tail = await controller.read("term_history");
+  expect(tail.text.split("\n")).toHaveLength(40);
+  expect(tail.text).toContain("log line 39");
+  // Line 0 is the OLDEST scrolled-off line — the history is reachable.
+  const oldest = await controller.read("term_history", {
+    startLine: 0,
+    maxLines: 5,
+  });
+  expect(oldest.text.split("\n")[0]).toBe("log line 0");
+  expect(oldest.text).toContain("log line 4");
+  // An explicit range pages the middle.
+  const middle = await controller.read("term_history", {
+    startLine: 10,
+    endLine: 12,
+  });
+  expect(middle.text.split("\n")).toEqual([
+    "log line 10",
+    "log line 11",
+    "log line 12",
+  ]);
+  // Negative lines count from the end (the host's own convention).
+  const fromEnd = await controller.read("term_history", {
+    startLine: -3,
+  });
+  expect(fromEnd.text.split("\n")).toEqual([
+    "log line 37",
+    "log line 38",
+    "log line 39",
+  ]);
+  // A document longer than the window: the default read is still the
+  // bounded tail, not everything.
+  for (let line = 40; line < 100; line += 1)
+    (processes[0] as PtyProcess & { emit(data: string): void }).emit(
+      `log line ${line}\r\n`,
+    );
+  const bounded = await controller.read("term_history", { maxLines: 60 });
+  const boundedLines = bounded.text.split("\n");
+  expect(boundedLines).toHaveLength(60);
+  expect(boundedLines[0]).toBe("log line 40");
+  expect(boundedLines.at(-1)).toBe("log line 99");
   await controller.close();
 });
