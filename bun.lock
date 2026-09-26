@@ -622,6 +622,7 @@
         "@anthelia/plugin": "workspace:*",
         "@anthelia/runtime-services": "workspace:*",
         "@anthelia/tools": "workspace:*",
+        "@natalia/collaboration": "workspace:*",
         "@natalia/ui-host": "workspace:*",
         "@natalia/ui-kit": "workspace:*",
         "@xterm/addon-canvas": "^0.7.0",
@@ -690,9 +691,11 @@
       "name": "@natalia/plugin-tool-process",
       "version": "1.0.0",
       "dependencies": {
+        "@anthelia/contracts": "workspace:*",
         "@anthelia/platform": "workspace:*",
         "@anthelia/plugin": "workspace:*",
         "@anthelia/tools": "workspace:*",
+        "@natalia/collaboration": "workspace:*",
       },
     },
     "packages/plugins/tools/search": {
